@@ -1,0 +1,92 @@
+# 因子参数集中管理 (v1.0)
+# 改这里就能影响所有用到这些参数的因子
+
+# === 缠论参数 ===
+chan:
+  beichi_area_ratio: 0.5         # 段面积比 < 50% 触发背驰
+  beichi_weak_ratio: 0.8         # 段面积比 < 80% 弱背驰
+  min_area_pct: 0.03            # 最小有效面积 (相对价格 3%)
+  include_segment: 3             # 段至少包含 3 笔
+  min_strokes: 5                # 至少 5 笔才算有效段
+
+  # 中枢识别
+  hub_min_width_pct: 3.0        # 中枢宽度至少 3%
+  hub_max_width_pct: 30.0       # 中枢宽度不超过 30% (太宽失效)
+  hub_min_overlap_pct: 0.5      # 段重叠至少 50%
+
+  # 123 买卖点
+  buy_1_discount_pct: 0.05      # 1买距中枢下沿的距离
+  buy_2_break_pct: 0.03         # 2买突破前低 3%
+  buy_3_break_pct: 0.05         # 3买突破中枢 5%
+
+# === 威科夫参数 ===
+wyckoff:
+  accum_ma_gap_max: 0.08        # 累积期 MA50-MA200 偏离 < 8%
+  accum_vol_dry_ratio: 0.75     # 累积期量能萎缩阈值 (20d/120d < 75%)
+  accum_b_test_count: 3         # 累积 B 阶段 ≥ 3 次测试
+  markup_ma_crossover_days: 5  # 金叉持续 5 日
+  markup_ma_angle_min: 2.0      # MA 角度 ≥ 2%/5日
+  dist_bias_200_threshold: 30.0 # 派发 bias_200 > 30%
+  dist_vol_dry_ratio: 0.5       # 派发 3 日量能 < 60d × 50%
+  dist_upthrust_breakout_pct: 1.0
+  dist_upthrust_vol_ratio: 1.5
+
+# === SMC 参数 ===
+smc:
+  fvg_min_size_atr: 0.3         # FVG 缺口 ≥ 0.3×ATR
+  ob_min_size_atr: 0.5          # OB 实体 ≥ 0.5×ATR
+  sweep_min_wick_atr: 0.3       # 扫流影线 ≥ 0.3×ATR
+  ob_mitigation_threshold: 0.5  # OB 填充 50% 视为失效
+
+# === 量价参数 ===
+volume:
+  main_flow_window: 5           # 主力净额窗口
+  obv_trend_window: 20          # OBV 趋势窗口
+  vol_ratio_short: 5            # 短期量比窗口
+  vol_ratio_long: 20            # 长期量比窗口
+  shrink_threshold: 0.85        # 缩量阈值 (vol < MA × 0.85)
+
+# === 5方法矩阵场景判定 ===
+scenes:
+  a_main_lift:
+    wy_stage: Markup
+    min_ma20_dev: 5.0
+    require_no_top_beichi: true
+  b_transition:
+    wy_stage_or_top_beichi: true
+    min_ma20_dev: 0.0
+  c_oscillation:
+    wy_stage_unknown: true
+    min_ma20_dev: -5.0
+    max_ma20_dev: 5.0
+  d_bottom_build:
+    wy_stage_or_bot_beichi: true
+  e_weak:
+    min_ma60_dev: -20.0
+
+# === 信号评级阈值 ===
+signals:
+  resonance:
+    weight_strong: 3            # 3+ 重共振 = 🥇 强信号
+    weight_weak: 2              # 2 重 = 🟡 观察
+    weight_single: 1            # 1 重 = ⬜ 假信号
+  atr:
+    period: 14
+    multiplier: 1.5
+    weekly_threshold_high: 0.08 # > 8% 高波动
+    weekly_threshold_low: 0.05  # < 5% 低波动
+  stop_profit:
+    tier1_pct: 0.20             # +20% 卖 1/3
+    tier2_pct: 0.50             # +50% 再卖 1/3
+    tier3_pct: 1.00             # +100% 全清
+
+# === GA 进化参数 (预留) ===
+ga:
+  population_size: 2000
+  generations: 50
+  p_crossover: 0.6
+  p_subtree_mutate: 0.2
+  p_hoist_mutate: 0.1
+  p_point_mutate: 0.05
+  parsimony_coefficient: 0.005
+  init_depth: [6, 8]

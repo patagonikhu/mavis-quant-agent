@@ -1,0 +1,328 @@
+# 项目级配置 (v1.0, 2026-07-27)
+# 集中管理: 数据拉取范围 + 模型参数 + 阈值
+
+# === 数据拉取 ===
+data:
+  # 1️⃣ 日常 dump 默认 (轻量, 跑 watchlist 用)
+  # 配比 250/156/200 是 5方法×3周期 实测收敛点:
+  #   - 日线 250 根 (1 年) — 缠论 9 段, 威科夫/SMC 跟 750 根完全一致, 不浪费
+  #   - 周线 156 根 (3 年) — 100 根只 1 段"波段不足", 156 根 9 段触发弱背驰
+  #   - 60分 200 根 (10 周) — 80/100 根 SMC 看错方向 (顶部 vs 底部), 200 是甜点
+  kline_days: 250
+  weekly_limit: 250
+  kline_60m_count: 200
+  daily_basic_days: 250   # daily_basic 历史 (PE/PB/市值/换手率), TrendPullback 阈值缩放要用
+
+  # 2️⃣ 回测模式 (3 年全量, 拉一次吃满 5-10 分钟/票)
+  # 日线 750 根 (3 年) / 周线 156 根 (3 年) / 60分 3795 根 (新浪硬上限 ≈ 1.6-2 年)
+  backtest:
+    kline_days: 750
+    weekly_limit: 300
+    kline_60m_count: 3795
+
+  # fflow 历史 (push2delay + OBV 派生)
+  fflow_days: 60
+
+# === 报告输出 ===
+report:
+  # 报告字符长度
+  max_chars: 26000
+
+  # Linter 校验 section 必填数量 (22 + 1)
+  min_sections: 22
+
+  # Regression test 单票 dump timeout (秒)
+  # 稳态 5s, 17 只并发对新浪/腾讯打 68+ 请求偶发限流, 拉到 120s 容错
+  dump_timeout: 240
+
+# === GA 挖因子 ===
+ga:
+  # 默认代/种群
+  default_generations: 10
+  default_population: 100
+
+  # 函数集 (限制避免公式爆炸)
+  function_set: [add, sub, mul, abs]
+
+  # 适应度指标
+  metric: pearson
+
+  # 偏好简单公式的惩罚
+  parsimony_coefficient: 0.001
+
+  # 公式初始树深度
+  init_depth: [2, 6]
+
+  # 训练/测试切分
+  train_ratio: 0.7
+
+# === LightGBM 排序 ===
+lightgbm:
+  num_boost_round: 100      # 小样本少迭代
+  learning_rate: 0.05
+  num_leaves: 7              # 小样本用浅树
+  max_depth: 3
+  min_data_in_leaf: 3
+  feature_fraction: 0.8
+  bagging_fraction: 0.8
+  bagging_freq: 5
+
+# === 阈值 ===
+thresholds:
+  # 报告完整性
+  completeness_min_pct: 50    # 报告完整度 < 50% 不合格
+
+  # 背驰最小有效面积 (相对价格)
+  beichi_min_area_pct: 0.03
+
+  # 量比触发
+  vol_ratio_strong: 2.0       # 量比 > 2 + 涨 = 强放量
+  vol_ratio_moderate: 1.5     # 量比 > 1.5 + 涨 = 弱放量
+
+  # 止损 (硬约束)
+  stop_loss_check: 0.10       # -10% 检查基本面
+  stop_loss_trim: 0.15        # -15% 卖 1/3
+  stop_loss_half: 0.25        # -25% 减半仓
+  stop_loss_clear: 0.35       # -35% 清仓
+
+  # 止盈 (3 层)
+  take_profit_layer1: 0.20    # +20% 卖 1/3
+  take_profit_layer2: 0.50    # +50% 再卖 1/3
+  take_profit_layer3: 1.00    # +100% 全清
+
+# === 路径 ===
+paths:
+  dump_dir: data/dump
+  docs_dir: docs
+  baseline: tests/baselines/v0_baseline.json
+  watchlist: data/watchlist.json
+  events: data/events.json
+  factors_config: config/factors.yaml
+
+# === 评分表 (analysis_evaluators) ===
+scores:
+  # 盈利能力 5 档 (按 ROE %)
+  profitability:
+    tier_1: 90   # ROE >= 20%
+    tier_2: 75   # ROE >= 15%
+    tier_3: 60   # ROE >= 10%
+    tier_4: 40   # ROE >= 5%
+    tier_5: 20   # ROE < 5%
+  # 成长性 5 档 (按营收 YoY %)
+  growth:
+    explosive: 95  # YoY >= 50%
+    strong:    80  # YoY >= 30%
+    moderate:  60  # YoY >= 15%
+    weak:      40  # YoY >= 0%
+    decline:   15  # YoY < 0%
+
+# === 事件/forecast 置信度 ===
+forecast:
+  # Tushare.forecast 自动派生事件的默认置信度
+  default_confidence: 0.95
+
+# === 回测窗口 ===
+backtest:
+  wave_window: 5        # 找最近 2 个波的窗口
+  hub_window: 50        # 中枢识别窗口
+
+
+# === 技术指标阈值 ===
+thresholds:
+  # 量比 (vol_ratio)
+  volume_ratio:
+    strong_surge: 2.0    # 量比 > 2.0 + 涨 = 强放量
+    moderate_surge: 1.5  # 量比 > 1.5 + 涨 = 弱放量
+    dry: 0.7             # 量比 < 0.7 = 缩量
+
+  # RSI (14日)
+  rsi:
+    overbought: 75       # RSI > 75 = 超买
+    oversold: 25         # RSI < 25 = 超卖
+    bullish: 50          # RSI > 50 = 多头占优
+
+  # MA 偏离
+  ma_deviation:
+    ma20_oversold: -20.0  # MA20 偏离 < -20% = 超跌
+    ma20_overbought: 20.0  # MA20 偏离 > 20% = 超买
+    ma20_extreme: 30.0    # MA20 偏离 > 30% = 极端
+
+  # DCF 折现率 (3 档)
+  dcf:
+    discount_rates: [0.08, 0.10, 0.12]
+
+# === signals_5method 阈值 (背驰/量价/MA) ===
+signals:
+  # MA120 偏离
+  ma120:
+    overbought: 50     # > 50% = 高位
+    oversold: -20      # < -20% = 低位蓄势
+
+  # OBV 背离
+  obv_divergence:
+    price_threshold: 5    # 20日涨幅 > 5% 才算价涨
+    obv_threshold: -0.05  # OBV 趋势 < -0.05 算背离
+
+  # 5档状态 (3 项加和)
+  market_state:
+    # 0-3 震荡, 4-6 过渡, 7-9 主升
+    trend_thresholds:
+      strong_bull: 7
+      weak_bull: 4
+
+# === 威科夫 detector 阈值 (v5.7, 2026-07-29 加, 按周期自适应) ===
+# 之前: detector 内部全 hardcode (日线 6% / 60分 6% 永远不触发)
+# 现在: 按 period_label 选不同阈值, 60分阈值降低更合理
+# 改: 改这里就行, 不用动代码
+wyckoff_detectors:
+  # SOS 强势信号 (主升浪启动, 9 sub-event 里最重要的)
+  sos:
+    # 单根涨幅阈值 (60m 2% = 日内 ~5% 合理, 6%=日内 14% 几乎不触发)
+    pct_min:
+      daily: 6.0
+      weekly: 8.0
+      60m: 2.0
+    # 突破窗口 (60m 30 根 = 2 周, daily 60 根 = 3 个月)
+    breakout_window:
+      daily: 60
+      weekly: 12
+      60m: 30
+    # 量比 (全周期统一, 60m 罕见触发)
+    vol_ratio: 3.0
+    vol_quantile_window: 60
+    # vol_quantile 周期分层: 60m 0.95 太严, 60m 放宽到 0.85
+    vol_quantile:
+      daily: 0.95
+      weekly: 0.95
+      60m: 0.85
+    # breakout_tolerance 周期分层: 60m 短周期破前高容差放大
+    breakout_tolerance:
+      daily: 0.01
+      weekly: 0.02
+      60m: 0.05
+    # max_bias 按 周期×板块风格 双重分层
+    max_bias:
+      daily:
+        default: 25.0
+        star: 40.0
+        trending: 35.0
+      weekly:
+        default: 30.0
+        star: 50.0
+      60m:
+        default: 40.0
+        star: 60.0
+        trending: 55.0
+  # Spring 终极震仓 (底部假跌破)
+  spring:
+    support_window: 60
+    # 量比 (60m 震仓更频繁, 阈值放低)
+    vol_ratio:
+      daily: 1.3
+      weekly: 1.5
+      60m: 1.2
+    # max_bias 周期分层: 60m bias 波动大, 阈值放宽 (15→25)
+    max_bias:
+      daily: 15.0
+      weekly: 20.0
+      60m: 25.0
+  # EVR 巨量无结果
+  evr:
+    vol_window: 20
+    # 量比 (60m 波动大, 阈值放低)
+    vol_ratio:
+      daily: 1.8
+      weekly: 2.0
+      60m: 1.5
+    # max_bias 周期分层: 60m bias 通常 25%+, 阈值放宽 (25→35)
+    max_bias:
+      daily: 25.0
+      weekly: 30.0
+      60m: 35.0
+    # 涨跌幅限制 (60m 大涨 5% 是 SOS, EVR 2% 太严, 60m 放宽到 3.5%)
+    max_drop:
+      daily: 2.0
+      weekly: 3.0
+      60m: 3.5
+    max_rise:
+      daily: 2.0
+      weekly: 3.0
+      60m: 3.5
+    # confirm_days / allow_break_pct 2026-07-31 移除:
+    # _evr_confirmation_ok 永远 True (见 helpers.py), 3 bug 修了, 确认机制 60m 无效
+    # 保留 confirm_days/allow_break_pct 函数参数 (兼容), 但不再读 config
+  # TrendPullback 趋势回调
+  trend_pullback:
+    max_bias:
+      daily: 35.0
+      weekly: 40.0
+      60m: 50.0
+    # pullback_pct 周期分层 (P8.A, 2026-07-31):
+    # 60m 短周期回调幅度小, p50 1.65% (< 5% 阈值会卡掉 56% 真信号)
+    # daily 长周期 p50 13.24%, 5% 阈值合理
+    min_pullback:
+      daily: 5.0
+      weekly: 5.0
+      60m: 0.5
+    max_pullback:
+      daily: 20.0
+      weekly: 25.0
+      60m: 8.0
+  # LPS 最后支撑点
+  lps:
+    max_bias:
+      daily:
+        default: 25.0
+        star: 40.0
+      weekly:
+        default: 30.0
+        star: 50.0
+      60m:
+        default: 35.0
+        star: 50.0
+  # Compression 紧凑区间
+  compression:
+    max_bias:
+      daily: 25.0
+      weekly: 30.0
+      60m: 40.0
+  # UTAD 派发后上探 (顶部信号, 2026-07-31 P4 网格搜索最优)
+  utad:
+    ma_long_w: 200
+    lookback: 60
+    # 4 个阈值 (P7 60m 真实 K 线大网格 2500 组合, n>=200 综合分最优)
+    # top 1: breakout=1.0 close_back=-5 vol=1.3 us=0.05 bias=0
+    #   n=207  10d胜 51.2%  20d胜 60.4%  20d均 -0.68%
+    # 关键发现: vol_ratio=1.3 是 60m 必要 (P3 的 0.5 太松, 实战胜率不突出)
+    breakout_pct:
+      daily: 1.0
+      weekly: 1.0
+      60m: 1.0
+    close_back_pct:
+      daily: 0.5
+      weekly: 0.5
+      60m: -5.0     # P7 反推, 接受持续突破形态 (跟 P5 一样)
+    upper_shadow_thr:
+      daily: 0.30
+      weekly: 0.30
+      60m: 0.05
+    vol_ratio_thr:
+      daily: 1.0
+      weekly: 1.0
+      60m: 1.3      # P7 关键发现, 60m 必须严
+    # bias 阈值 (0 是 P3 唯一对的方向)
+  # DistributionStart 派发起点 (顶部信号, 2 个阈值周期分层)
+  distribution_start:
+    confirm_days:
+      daily: 3
+      weekly: 3
+      60m: 6       # 60m 短周期, 缩量窗口扩到 6 根 ≈ 1.5 天
+    vol_dry_ratio:
+      daily: 0.5
+      weekly: 0.5
+      60m: 0.7     # 60m 量波动大, 阈值放宽
+  # 全局 max_bias_200 (按板块风格, 没在 detector 里的会 fallback 到这里)
+  max_bias:
+    default: 25.0
+    star: 40.0
+    trending: 35.0

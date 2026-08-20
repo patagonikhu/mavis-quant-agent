@@ -1,0 +1,189 @@
+{
+  "300274": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 141.21,
+    "hub_high": 159.98,
+    "peg_真实": 0.63,
+    "dcf_l_10": 215.0,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 2.1517069339752197
+  },
+  "300308": {
+    "wyckoff_stage": "?",
+    "wyckoff_confidence": 0,
+    "hub_low": 558.85,
+    "hub_high": 645.0,
+    "peg_真实": 0.15,
+    "dcf_l_10": 963.6,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.6765918731689453
+  },
+  "600089": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 25.22,
+    "hub_high": 28.03,
+    "peg_真实": 0.39,
+    "dcf_l_10": 104.8,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.9192461967468262
+  },
+  "600362": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 39.59,
+    "hub_high": 51.88,
+    "peg_真实": 0.32,
+    "dcf_l_10": 145.9,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.8082630634307861
+  },
+  "601138": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 52.2,
+    "hub_high": 58.54,
+    "peg_真实": 0.27,
+    "dcf_l_10": 1067.6,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.3904881477355957
+  },
+  "002371": {
+    "wyckoff_stage": "Markup",
+    "wyckoff_confidence": 100,
+    "hub_low": 568.22,
+    "hub_high": 721.6,
+    "peg_真实": 1.36,
+    "dcf_l_10": 484.8,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.7694659233093262
+  },
+  "688012": {
+    "wyckoff_stage": "?",
+    "wyckoff_confidence": 0,
+    "hub_low": 292.33,
+    "hub_high": 492.05,
+    "peg_真实": 0.74,
+    "dcf_l_10": 331.9,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.4311580657958984
+  },
+  "688120": {
+    "wyckoff_stage": "Markup",
+    "wyckoff_confidence": 100,
+    "hub_low": 178.56,
+    "hub_high": 288.68,
+    "peg_真实": 1.03,
+    "dcf_l_10": 132.7,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.314819097518921
+  },
+  "688082": {
+    "wyckoff_stage": "Markup",
+    "wyckoff_confidence": 100,
+    "hub_low": 153.89,
+    "hub_high": 218.49,
+    "peg_真实": 2.66,
+    "dcf_l_10": 126.5,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.535430908203125
+  },
+  "300604": {
+    "wyckoff_stage": "Markup",
+    "wyckoff_confidence": 100,
+    "hub_low": 190.0,
+    "hub_high": 258.02,
+    "peg_真实": 1.0,
+    "dcf_l_10": 155.8,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.5257618427276611
+  },
+  "300502": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 490.13,
+    "hub_high": 618.87,
+    "peg_真实": 0.11,
+    "dcf_l_10": 517.4,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.5927050113677979
+  },
+  "300476": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 325.77,
+    "hub_high": 375.8,
+    "peg_真实": 0.12,
+    "dcf_l_10": 177.3,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.5298409461975098
+  },
+  "002463": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 75.33,
+    "hub_high": 93.96,
+    "peg_真实": 0.39,
+    "dcf_l_10": 185.8,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.6980290412902832
+  },
+  "002472": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 36.51,
+    "hub_high": 39.83,
+    "peg_真实": 1.14,
+    "dcf_l_10": 30.3,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.8061778545379639
+  },
+  "300990": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 76.3,
+    "hub_high": 95.3,
+    "peg_真实": 0.26,
+    "dcf_l_10": 11.0,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.4096589088439941
+  },
+  "000725": {
+    "wyckoff_stage": "Markup",
+    "wyckoff_confidence": 100,
+    "hub_low": 4.08,
+    "hub_high": 4.34,
+    "peg_真实": 0.41,
+    "dcf_l_10": 198.6,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.8839542865753174
+  },
+  "002475": {
+    "wyckoff_stage": "Accumulation",
+    "wyckoff_confidence": 100,
+    "hub_low": 52.2,
+    "hub_high": 59.95,
+    "peg_真实": 0.49,
+    "dcf_l_10": 450.8,
+    "main_yi_5d": 0,
+    "5method": {},
+    "_elapsed": 1.5794792175292969
+  }
+}

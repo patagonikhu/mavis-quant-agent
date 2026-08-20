@@ -1,0 +1,8 @@
+{"code": "300274", "name": "阳光电源", "date": "2026-07-24", "signal_type": "BC+中枢+MA_3合1", "model": "BC+中枢+MA", "periods": ["60分"], "count": 1, "sector": "光伏-逆变器+储能", "status": "pending"}
+{"code": "600089", "name": "特变电工", "date": "2026-07-24", "signal_type": "BC+中枢+MA_3合1", "model": "BC+中枢+MA", "periods": ["60分"], "count": 1, "sector": "电力变压器", "status": "pending"}
+{"code": "300274", "name": "阳光电源", "date": "2026-07-24", "signal_type": "BC+中枢+MA+威C_3合1", "model": "BC+中枢+MA+威C", "periods": ["60分"], "count": 1, "sector": "光伏-逆变器+储能", "status": "pending"}
+{"code": "600089", "name": "特变电工", "date": "2026-07-24", "signal_type": "BC+中枢+MA+威C_3合1", "model": "BC+中枢+MA+威C", "periods": ["60分"], "count": 1, "sector": "电力变压器", "status": "pending"}
+{"code": "300274", "name": "阳光电源", "date": "2026-07-24", "signal_type": "BC+中枢+MA+威C_3合1", "model": "BC+中枢+MA+威C", "periods": ["60分"], "count": 1, "sector": "光伏-逆变器+储能", "status": "pending"}
+{"code": "600089", "name": "特变电工", "date": "2026-07-24", "signal_type": "BC+中枢+MA+威C_3合1", "model": "BC+中枢+MA+威C", "periods": ["60分"], "count": 1, "sector": "电力变压器", "status": "pending"}
+{"code": "300274", "name": "阳光电源", "date": "2026-07-24", "signal_type": "BC+中枢+MA+威C_3合1", "model": "BC+中枢+MA+威C", "periods": ["60分"], "count": 1, "sector": "光伏-逆变器+储能", "status": "pending"}
+{"code": "600089", "name": "特变电工", "date": "2026-07-24", "signal_type": "BC+中枢+MA+威C_3合1", "model": "BC+中枢+MA+威C", "periods": ["60分"], "count": 1, "sector": "电力变压器", "status": "pending"}

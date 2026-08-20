@@ -1,0 +1,65 @@
+# 数据源权威配置 (2026-07-24 固化, git tracked)
+# 所有数据 fetch 必须按本表声明的源拉取, 不在表里的数据 = 未支持
+# 改这个文件 = 改全项目数据源 (单一权威)
+#
+# 字段:
+#   primary: 主源 (必填)
+#   fallback: 备源 (可选, 逗号分隔, 按顺序尝试)
+#   unit: 数据单位 (渲染层用, 不影响拉取)
+#   ttl: 缓存秒数 (可选)
+#   note: 备注
+
+real_time:
+  primary: Tushare.daily_basic
+  unit: 元
+  note: 实时价 + PE/PB/换手率, Tushare 2000 积分档 24h 稳定
+
+kline_daily:
+  primary: Tushare.daily
+  fallback: Tushare.pro_bar (复权)
+  unit: 元 (不复权)
+  note: 日 K 线, 默认 250 根
+
+kline_weekly:
+  primary: Tushare.weekly
+  unit: 元
+  note: 周 K 线, 默认 100 根
+
+kline_60min:
+  primary: Sina money.finance.sina.com.cn (公网, 无限制)
+  fallback: — (Tushare.stk_mins 限频 1次/分钟, 太慢, 不用)
+  unit: 元
+  note: 2026-07-24 改单一 Sina 源, Tushare 限流实测不可用
+
+fund_flow:
+  primary: Tushare.moneyflow
+  fallback: OBV 派生 (基于 K线)
+  unit: 万元 (Tushare 真实) / 万手 (OBV 派生)
+  note: 2026-07-24 实测, 字段单位 = 万元, 之前误认亿元
+  warning: "历史 push2his/push2delay fflow 全部限流 (rc=102/WAF). OBV 派生仅方向. fflow 必须从 Tushare.moneyflow 拉"
+
+eps_finance:
+  primary: Tushare.fina_indicator
+  fallback: Tushare.income
+  unit: 元/股
+  note: EPS/ROE/营收/净利
+
+shares_market_cap:
+  primary: Tushare.stock_basic
+  unit: 亿股/亿元
+  note: 总股本 + 流通市值
+
+industry_sector:
+  primary: Tushare.stock_basic.industry
+  unit: — (字符串)
+  note: 行业 + 概念板块
+
+# ❌ 禁用源 (拉取必失败, 历史踩坑)
+banned:
+  - push2.eastmoney.com       # WAF 拒接
+  - push2his.eastmoney.com    # WAF 拒接
+  - 82.push2.eastmoney.com    # WAF 拒接
+  - stock.xueqiu.com          # 需 cookie
+  - web.ifzq.gtimg.cn         # WAF 高频限流 (2026-07-24 实测)
+  - push2delay.eastmoney.com  # rc=102 限流 (2026-07-24 实测)
+  - qt.gtimg.cn               # GBK 编码, 高频限流

@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Data (但保留 sources.yaml + watchlist.json + events.json + sectors.json)
+data/*
+!data/sources.yaml
+!data/watchlist.json
+!data/events.json
+!data/sectors.json
+!data/fetch_log.jsonl  # 稳定性 log 也 git, 跨机器共享
+# 超跌股 watchlist (auto-generated, 跟 git 备份)
+# 但 dump_oversold/ 还是 ignore (70MB, 太大不入 git)
+!data/watchlist_oversold.json
+*.db
+*.sqlite3
+# app/data/ 是源码目录，不受上方 data/ 规则影响
+!app/data/
+# LLM-driven 框架用手维护的数据文件 (项目级配置, 应入库)
+!data/events.json
+!data/watchlist.json
+!data/sectors.json
+# 信号存档 (signal_tracker.py 维护, 应入库以便回测胜率)
+!data/signals/
+!data/signals/**
+
+# Docs (分析报告, 应入库)
+!docs/
+!docs/**
+
+# Cache
+.cache/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Coverage
+.coverage
+htmlcov/
+.coverage.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Claude
+.claude/*
+# Claude Code Skills 是项目级, 应入库 (settings.local.json 仍忽略)
+!.claude/skills/
+!.claude/skills/**
+
+# Mavis plan 笔记 (2026-07-31)
+.zcode/
+
+# 本地环境变量 (含 tushare token 等敏感信息)
+.env
+*.py.bak
