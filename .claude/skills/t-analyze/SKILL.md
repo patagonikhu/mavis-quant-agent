@@ -77,7 +77,7 @@ from tools.analysis.factor_history import compute_factor_history, diff_rows, ext
 
 watchlist = json.load(open('data/watchlist.json'))['stocks']
 today = datetime.date.today().isoformat()
-output_path = Path('docs') / f'batch-{today}.md'
+output_path = Path('docs') / 'signal-watchlist.md'  # 方案 A (2026-08-20): 单文件覆盖
 
 lines = []
 lines.append(f"# 全量扫描 {today}\n")
@@ -170,7 +170,7 @@ PYEOF
 
 ```
 {Step 3 输出的 SUMMARY / FILE 行}
-📄 完整报告: docs/batch-{date}.md
+📄 完整报告: docs/signal-watchlist.md (方案 A, 单文件覆盖)
 ```
 
 ### Step 5: 深挖（可选）

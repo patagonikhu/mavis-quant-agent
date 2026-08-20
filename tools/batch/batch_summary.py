@@ -6,13 +6,16 @@ batch_summary.py — 批量扫描全 watchlist, 输出有 代码+名称+场景+�
 从 "## 📈 因子历史走势" section 提取最后一行 (12 列) → batch md 的 12 列.
 0 重算, 0 from_raw, 0 compute_factor_history.
 
+**v2.1 (2026-08-20)**: 默认输出 `docs/signal-watchlist.md` (单文件, 每天覆盖, 方案 A),
+不是 `docs/batch-{date}.md` (按日期生成 13 个历史文件). 仍保留 `--out` 自定义.
+
 **用法**:
-  python -m tools.batch.batch_summary              # 默认 watchlist 全部
+  python -m tools.batch.batch_summary              # 默认 watchlist 全部 → signal-watchlist.md
   python -m tools.batch.batch_summary 300274 600089  # 指定 codes
   python -m tools.batch.batch_summary --sector CPO  # 板块筛选
   python -m tools.batch.batch_summary --out /tmp/x.md
 
-**对应**: refresh_all.sh 末尾自动调这个生成 batch md
+**对应**: refresh_all.sh 末尾自动调这个生成 signal-watchlist.md
 """
 from __future__ import annotations
 
@@ -434,7 +437,7 @@ def main():
     parser.add_argument("codes", nargs="*", help="指定 codes (e.g. 300274 600089)")
     parser.add_argument("--all", action="store_true", help="跑 watchlist 全部 (默认)")
     parser.add_argument("--sector", help="板块筛选 (e.g. CPO, 光模块, 半导体)")
-    parser.add_argument("--out", help="输出 markdown 路径, 默认 docs/batch-{date}.md")
+    parser.add_argument("--out", help="输出 markdown 路径, 默认 docs/signal-watchlist.md (方案 A, 2026-08-20)")
     args = parser.parse_args()
 
     watchlist = _load_watchlist()
@@ -462,7 +465,7 @@ def main():
     if args.out:
         out_path = Path(args.out)
     else:
-        out_path = DOCS_DIR / f"batch-{datetime.date.today().isoformat()}.md"
+        out_path = DOCS_DIR / "signal-watchlist.md"  # 方案 A (2026-08-20): 单文件, 每天覆盖
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(md, encoding="utf-8")
 
