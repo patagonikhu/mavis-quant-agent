@@ -12,7 +12,6 @@ chan/beichi.py - 背驰 (缠论, 正式段算法 + 趋势/盘整/普通分类)
   beichi_from_segs(segs, closes, dates, hubs) — 结构体背驰结果 (主入口)
   beichi_str_from_segs(...)           — 向后兼容, 返回 display 字符串
   classify_beichi(bc, ...)            — 分类: ⭐趋势/🟡盘整/🔵普通/无
-  find_beichi_signals(segs, hist, dt2i) — 找所有历史背驰信号 (供外部调用)
 """
 from .hub import find_all_hubs
 
@@ -250,39 +249,3 @@ def classify_beichi(bc, hubs=None, p=None, segs=None):
     if bc_type == 'consolidation':
         return f"🟡盘整{suffix}"
     return f"🔵普通{suffix}"
-
-
-def find_beichi_signals(segs, hist, dt2i, direction='top'):
-    """
-    找所有历史背驰信号（供外部调用，主路径用 beichi_from_segs）。
-    """
-    signals = []
-    if direction == 'top':
-        same = [(i, s) for i, s in enumerate(segs) if s['sst'] == 'B']
-        def new_extreme(s1, s2): return s2['ep'] > s1['ep']
-        def area(seg): return seg_red_area(seg, hist, dt2i)
-    else:
-        same = [(i, s) for i, s in enumerate(segs) if s['sst'] == 'T']
-        def new_extreme(s1, s2): return s2['ep'] < s1['ep']
-        def area(seg): return seg_green_area(seg, hist, dt2i)
-
-    for k in range(1, len(same)):
-        i1, s1 = same[k - 1]
-        i2, s2 = same[k]
-        if not new_extreme(s1, s2):
-            continue
-        a1 = area(s1)
-        a2 = area(s2)
-        if a1 <= 0:
-            continue
-        ratio = a2 / a1
-        if ratio < 0.5:
-            signals.append({
-                's1_idx': i1 + 1, 's2_idx': i2 + 1,
-                's1': s1, 's2': s2,
-                'a1': a1, 'a2': a2, 'ratio': ratio,
-                'trigger_date': s2['edt'],
-                'trigger_price': s2['ep'],
-                'direction': direction,
-            })
-    return signals
