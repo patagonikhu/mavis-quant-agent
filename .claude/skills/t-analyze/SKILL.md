@@ -4,6 +4,18 @@ description: 股票分析 + 批量扫描。单只：/t-analyze <code>；全量 w
 user-invocable: true
 allowed-tools:
 
+> 🚨 **复用 Analysis 入口铁律 (2026-08-21 v3.5 固化)**
+>
+> **任何 backtest / 信号回测 / 胜率统计 必须复用 `AnalysisEngine.analyze()` 入口, 禁止自己写算法**:
+> - ✅ 9 detector 走 `Engine.analyze(ctx, as_of_date=as_of)` → `WyckoffStrategy` → `WyckoffStageFactor.compute()` → `sub_events_by_period['daily']`
+> - ✅ 缠论背驰走 `Engine.analyze(ctx, as_of_date=as_of)` → `ChanStrategy` → `build_chan_levels` → `chan.raw['daily']['beichi']`
+> - ✅ 胜率 8-17 v2 修正: UTAD/DistributionStart 触发价=high, Spring=low, 其他=close, 跌穿/升穿 bool
+> - ❌ 禁止直接调 `detect_upthrust` / `detect_spring` 等单层函数 (跟 t-analyze 输出不一致)
+> - ❌ 禁止绕过 `Engine.analyze()` 入口自己写胜率算法 (会跟 t-analyze 链路不一致)
+> - ❌ 禁止用 `c_d` (close) 当 `hist` 参数调背驰函数 (必须用 `_calc_macd_hist(c_d)`)
+> - **backtest 终极版模板**: `/tmp/bt_ULTIMATE.py` (9 detector + 缠论 3 级别 全部走 Engine.analyze 入口)
+> - **2026-08-21 v3.5 删**: `find_beichi_signals` 函数已删 (主路径用 `beichi_from_segs`, 找历史用 `Engine.analyze()` 切 as_of_date 入口)
+
 > 🚨 **拉数据铁律 (2026-07-29 v3.4 固化)**
 >
 > **跑这个 skill 前, 必须先调 `t-pull` skill 拉数据** (走 `tools/dump_data.py`):
@@ -1782,36 +1794,6 @@ def find_all_hubs_full(segs):
                      's1_idx':i+1,'s3_idx':i+3,
                      's1_sdt':s1['sdt'],'s3_edt':s3['edt']})
     return hubs
-
-def find_beichi_signals(segs, hist, dt2i, direction='top'):
-    """找所有背驰信号
-    direction='top': 顶背驰（上涨段，后段面积<前段50%，价格新高）
-    direction='bot': 底背驰（下跌段，后段面积<前段50%，价格新低）
-    """
-    signals=[]
-    if direction=='top':
-        same=[(i,s) for i,s in enumerate(segs) if s['sst']=='B']
-        def new_extreme(s1,s2): return s2['ep']>s1['ep']
-        def area(seg): return seg_red_area(seg,hist,dt2i)
-    else:
-        same=[(i,s) for i,s in enumerate(segs) if s['sst']=='T']
-        def new_extreme(s1,s2): return s2['ep']<s1['ep']
-        def area(seg):
-            if seg['sdt'] not in dt2i or seg['edt'] not in dt2i: return 0.0
-            i1=dt2i[seg['sdt']]; i2=dt2i[seg['edt']]
-            return sum(abs(x) for x in hist[i1:i2+1] if x<0)
-    for k in range(1,len(same)):
-        i1,s1=same[k-1]; i2,s2=same[k]
-        if not new_extreme(s1,s2): continue
-        a1=area(s1); a2=area(s2)
-        if a1<=0: continue
-        ratio=a2/a1
-        if ratio<0.5:
-            signals.append({'s1_idx':i1+1,'s2_idx':i2+1,'s1':s1,'s2':s2,
-                            'a1':a1,'a2':a2,'ratio':ratio,
-                            'trigger_date':s2['edt'],'trigger_price':s2['ep'],
-                            'direction':direction})
-    return signals
 
 def format_chan_output(code, name, data):
     """
