@@ -46,9 +46,10 @@ data/*
 !data/signals/
 !data/signals/**
 
-# Docs (分析报告, 应入库)
+# Docs (其他入库, analyze-* 单独 ignore)
 !docs/
 !docs/**
+docs/analyze-*.md
 
 # Cache
 .cache/
