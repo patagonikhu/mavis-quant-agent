@@ -11,7 +11,7 @@ data:
   kline_days: 250
   weekly_limit: 250
   kline_60m_count: 200
-  daily_basic_days: 250   # daily_basic 历史 (PE/PB/市值/换手率), TrendPullback 阈值缩放要用
+  daily_basic_days: 250   # 2026-08-21 跟 kline_days 同步
 
   # 2️⃣ 回测模式 (3 年全量, 拉一次吃满 5-10 分钟/票)
   # 日线 750 根 (3 年) / 周线 156 根 (3 年) / 60分 3795 根 (新浪硬上限 ≈ 1.6-2 年)
