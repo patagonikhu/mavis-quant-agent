@@ -280,6 +280,22 @@ def _sig_weight(detail: str, direction: str) -> int:
     return score
 
 
+def _importance_label_bot(score: int) -> str:
+    """按底分分档 (10 天合集)"""
+    if score >= 20: return "🟢🟢 极强建仓"
+    if score >= 15: return "🟢 强建仓"
+    if score >= 10: return "🟡 偏强"
+    return "⬜ 观察"
+
+
+def _importance_label_top(score: int) -> str:
+    """按顶分分档 (10 天合集)"""
+    if score >= 20: return "🔴🔴 极强逃顶"
+    if score >= 15: return "🔴 强逃顶"
+    if score >= 10: return "🟠 偏强"
+    return "🟡 观察"
+
+
 def _importance_label(detail: str, direction: str) -> str:
     """根据信号内容返回重要性标签"""
     w = _sig_weight(detail, direction)
@@ -295,12 +311,24 @@ def _importance_label(detail: str, direction: str) -> str:
         return "⬜ 观察"
 
 
-def _build_rows(codes_names: list[tuple[str, str]]) -> tuple[list, list, list, dict]:
-    """直接读 docs/analyze-*.md 拿最后一行, 0 重算
-    all_table_rows 每项: (code, name, scene, last_row_dict, has_sig)
-    返回: (buy_rows, sell_rows, all_table_rows, market_state)
-      market_state: {week: {'state': '牛/熊/震荡', 'score': 0-1, 'metrics': {...}}}
+def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold: int = 6) -> tuple[list, list, list, dict]:
+    """最近 N 天合集 (user 拍板 1 天 → 10 天, 2026-08-21)
+
+    信号列填**具体信号名** (不是数字): "🆕1买(60m) ✅LPS(daily)"
+    排序按 day_top/day_bot 数字 (权重)
+
+    buy_rows / sell_rows 每项: (date, code, name, score, signal_str)
+    all_table_rows 每项: (code, name, scene, last_row_dict, has_sig) —— 14 列原格式
+
+    实现: 调 RawContext.from_dump + compute_factor_history + score_top/bot_signals 重算
+    (md 文件没存 10 天每日信号字符串, 必须重算)
     """
+    import sys
+    sys.path.insert(0, ".")
+    from tools.analysis.analysis_engine import RawContext
+    from tools.analysis.factor_history import (
+        compute_factor_history, diff_rows, score_top_signals, score_bottom_signals
+    )
     from collections import defaultdict
     buy_rows, sell_rows, all_table_rows = [], [], []
     weekly_scores: dict[str, list[tuple[int, int]]] = defaultdict(list)
@@ -315,23 +343,52 @@ def _build_rows(codes_names: list[tuple[str, str]]) -> tuple[list, list, list, d
         if not last:
             n_skip += 1
             continue
-        scene, sigs = _parse_md_scene_and_sigs(md_path)
         n_ok += 1
 
-        # 收集全 60 天因子历史的日分 (用于市场状态判定)
+        # 完整状态表 (14 列原格式, 用最新一行 last_row)
+        scene, _sigs = _parse_md_scene_and_sigs(md_path)
+        has_sig = "⭐" if any(t in last["bsp"] for t in ("0买", "1买", "2买", "3买")) else ""
+        all_table_rows.append((code, name, scene, last, has_sig))
+
+        # 收集全 60 天因子历史的日分 (用于市场状态判定, 仍从 md 读 0 重算)
         for row in _parse_md_factor_history(md_path):
             weekly_scores[row["week"]].append((row["day_top"], row["day_bot"]))
 
-        for s in sigs:
-            if "🆕🔴" in s or "🆕背驰🔴" in s or "🆕UTAD" in s:
-                sell_rows.append((code, name, s[:120], _sig_weight(s, "sell")))
-            elif "🆕🟢" in s or "🆕底背" in s or "🆕SOS" in s or "🆕Spring" in s or "✅LPS" in s or "✅SOS" in s or "✅Spring" in s:
-                buy_rows.append((code, name, s[:120], _sig_weight(s, "buy")))
-
-        has_sig = "⭐" if any(t in last["bsp"] for t in ("0买", "1买", "2买", "3买")) else ""
-
-        all_table_rows.append((code, name, scene, last, has_sig))
-    print(f"  读 md 成功: {n_ok}, 跳过: {n_skip}")
+        # 10 天合集: 重算每日具体信号 (md 没存 10 天每日信号字符串)
+        try:
+            import json
+            dump_path = PROJECT_ROOT / "data" / "dump" / f"{code}.json"
+            if not dump_path.exists():
+                continue
+            dump = json.load(open(dump_path))
+            ctx = RawContext.from_dump(dump)
+            rows = compute_factor_history(ctx, step=1, lookback=n_days)
+            for i in range(1, len(rows)):
+                prev, cur = rows[i - 1], rows[i]
+                changes = diff_rows(prev, cur)
+                date = cur.get("date", "")
+                if not date:
+                    continue
+                top = score_top_signals(changes, cur, prev)
+                bot = score_bottom_signals(changes, cur, prev)
+                # 底信号 (按信号权重 ≥ threshold, 阈值=6 是 sum 形式但实际触发是 6+)
+                if bot["score"] >= threshold:
+                    sig_names = [s[2] for s in bot["signals"][:5]]  # 取前 5 个信号
+                    sig_str = " ".join(sig_names) if sig_names else f"底{bot['score']}"
+                    # 用 _sig_weight 算权重 (按 _sig_weight 加权, 信号越多权重越高)
+                    weight = sum(_sig_weight(s, "buy") for s in sig_names) if sig_names else bot["score"]
+                    if weight >= threshold:
+                        buy_rows.append((date, code, name, weight, sig_str))
+                # 顶信号
+                if top["score"] >= threshold:
+                    sig_names = [s[2] for s in top["signals"][:5]]
+                    sig_str = " ".join(sig_names) if sig_names else f"顶{top['score']}"
+                    weight = sum(_sig_weight(s, "sell") for s in sig_names) if sig_names else top["score"]
+                    if weight >= threshold:
+                        sell_rows.append((date, code, name, weight, sig_str))
+        except Exception as e:
+            print(f"  {code} {name} 重算失败: {e}")
+    print(f"  读 md 成功: {n_ok}, 跳过: {n_skip} (10天窗口 + 阈值≥{threshold}, 重算 signal 名)")
     market_state = compute_market_state(dict(weekly_scores))
     return buy_rows, sell_rows, all_table_rows, market_state
 
@@ -362,34 +419,35 @@ def _render_md(buy_rows, sell_rows, all_table_rows, total_watchlist: int,
         state_line,
     ]
 
-    # ---- 底部信号 ----
-    lines.append("---\n\n## 🟢 底部建仓信号（buy）\n\n")
+    # ---- 底部信号 (4 列: 重要性/代码/名称/信号, 信号列含日期) ----
+    lines.append("---\n\n## 🟢 底部建仓信号 (最近 10 天所有 ≥ 6, 按权重降序)\n\n")
     if buy_rows:
-        # 按权重降序
-        sorted_buy = sorted(buy_rows, key=lambda x: -x[3])
+        sorted_buy = sorted(buy_rows, key=lambda x: (-x[3], -int(x[0])))
         lines += [
             "| 重要性 | 代码 | 名称 | 信号 |\n",
             "|--------|------|------|------|\n",
         ]
-        for code, name, detail, w in sorted_buy:
-            label = _importance_label(detail, "buy")
-            lines.append(f"| {label} | {code} | {name} | {detail} |\n")
+        for date, code, name, score, detail in sorted_buy:
+            label = _importance_label_bot(score)
+            sig_with_date = f"{date} {detail}"
+            lines.append(f"| {label} | {code} | {name} | {sig_with_date} |\n")
     else:
-        lines.append("_今日无底部信号_\n")
+        lines.append("_最近 10 天无底部强信号_\n")
 
-    # ---- 顶部信号 ----
-    lines.append("\n---\n\n## 🔴 顶部逃顶信号（sell）\n\n")
+    # ---- 顶部信号 (4 列: 重要性/代码/名称/信号, 信号列含日期) ----
+    lines.append("\n---\n\n## 🔴 顶部逃顶信号 (最近 10 天所有 ≥ 6, 按权重降序)\n\n")
     if sell_rows:
-        sorted_sell = sorted(sell_rows, key=lambda x: -x[3])
+        sorted_sell = sorted(sell_rows, key=lambda x: (-x[3], -int(x[0])))
         lines += [
             "| 重要性 | 代码 | 名称 | 信号 |\n",
             "|--------|------|------|------|\n",
         ]
-        for code, name, detail, w in sorted_sell:
-            label = _importance_label(detail, "sell")
-            lines.append(f"| {label} | {code} | {name} | {detail} |\n")
+        for date, code, name, score, detail in sorted_sell:
+            label = _importance_label_top(score)
+            sig_with_date = f"{date} {detail}"
+            lines.append(f"| {label} | {code} | {name} | {sig_with_date} |\n")
     else:
-        lines.append("_今日无顶部信号_\n")
+        lines.append("_最近 10 天无顶部强信号_\n")
 
     # 完整状态表 (含日分顶/底)
     lines += [
