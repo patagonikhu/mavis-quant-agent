@@ -2,19 +2,17 @@
 跌 70%+ 距 5y 低 < 3% 股票清单 (含反弹次数)
 
 逻辑:
-1. 用 data/dump_oversold/ weekly 5y 完整数据 粗筛 416 只 (max_drop >= drop%, 距 weekly 末根 5y 低 < gap%)
+1. DataStore.list_codes() 全市场股票，从本地 parquet 聚合周线粗筛
 2. 筛出候选清单 (N 只)
 3. tushare 拉候选清单的 daily 最新价 (今天 8-20)
 4. 用 daily 最新价 重算 gap, 输出最终清单
 """
-import json
 import argparse
 import sys
 from pathlib import Path
 
 sys.path.insert(0, ".")
 
-DUMP_OLD = Path("data/dump_oversold")
 WATCHLIST = Path("data/watchlist_oversold.json")
 
 
@@ -145,19 +143,12 @@ def count_bounces(closes, threshold=0.30, window=3):
     return n
 
 
-def load_oversold_cache(code):
-    """只读 data/dump_oversold/{code}.json (超跌扫描专用缓存)"""
-    p = DUMP_OLD / f"{code}.json"
-    if not p.exists():
-        return None
-    try:
-        with open(p) as f:
-            d = json.load(f)
-        if d.get("weekly"):
-            return d
-    except Exception:
-        pass
-    return None
+def load_weekly(code: str) -> list[dict]:
+    """从本地历史库读日线并聚合成周线。"""
+    from tools.data_store import DataStore
+    from tools.fetch.data_fetcher import _synthesize_weekly
+    kline = DataStore.get_kline(code, limit=1300)  # ~5年
+    return _synthesize_weekly(kline)
 
 
 def main():
@@ -172,12 +163,10 @@ def main():
     args = ap.parse_args()
 
     if not WATCHLIST.exists():
-        print(f"❌ {WATCHLIST} 不存在")
-        return
-
-    with open(WATCHLIST) as f:
-        wl = json.load(f)
-    meta = {s["code"]: s for s in wl["stocks"]}
+        print(f"⚠️ {WATCHLIST} 不存在，将扫描全市场")
+        pass
+    else:
+        pass  # watchlist_oversold.json 已废弃，改走 DataStore.list_codes()
 
     gap_th = args.gap / 100.0
     weekly_gap_th = args.weekly_gap / 100.0
@@ -185,22 +174,21 @@ def main():
     drop_max_th = args.drop_max / 100.0
     lookback_weeks = args.lookback_years * 52  # 5y=260 周
 
-    # 第一步: 用 weekly 末根 (8-14) 粗筛 weekly_gap<10%
-    # 第二步: tushare 拉 daily (8-20) 重算 gap, 精筛 <3%
-    # 第三步: tushare 拉 2024A/2025A 净利, 判断今年亏赚
-    rough_pool = []  # 粗筛后候选
+    from tools.data_store import DataStore
+    from tools.history_sync import sync_incremental
+    sync_incremental()
+    all_codes = DataStore.list_codes()
+    print(f"Loaded: {len(all_codes)} 只股票 (本地历史库)")
+
+    rough_pool = []
     n_loaded = 0
     n_skipped = 0
-    for code, m in meta.items():
-        d = load_oversold_cache(code)
-        if d is None:
-            n_skipped += 1
-            continue
-        # 排除北交所 (920xxx / 830xxx / 8xxxxx.BJ) — 50 万门槛, 不可交易
+    for code in all_codes:
+        # 排除北交所
         if code.startswith(("920", "830", "8")) and len(code) == 6:
             n_skipped += 1
             continue
-        weekly = d.get("weekly", [])
+        weekly = load_weekly(code)
         if len(weekly) < 60:
             n_skipped += 1
             continue
@@ -244,8 +232,8 @@ def main():
 
         rough_pool.append({
             "code": code,
-            "name": m.get("name", "?"),
-            "sector": m.get("sector", "?"),
+            "name": DataStore.get_stock_basic(code).get("name", code),
+            "sector": DataStore.get_stock_basic(code).get("industry", "?"),
             "weekly_cur": weekly_cur,
             "weekly_gap": weekly_gap,
             "lo_5y": lo_5y,
