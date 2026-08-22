@@ -87,27 +87,31 @@ def fetch_all_a_stocks() -> List[Dict[str, Any]]:
 
 
 def fetch_weekly_one(ts_code: str) -> Tuple[List[Dict[str, Any]], str]:
-    """拉单只 weekly 250 根 (走 tushare 内部 _safe_call 缓存/重试)"""
+    """从本地历史库读日线并聚合成周线（走 DataStore，0 网络）"""
     try:
-        df = _PRO.weekly(
-            ts_code=ts_code,
-            start_date=WEEKLY_START,
-            fields=FIELDS_WEEKLY,
-        )
-        if df is None or len(df) == 0:
+        from tools.data_store import DataStore
+        from tools.fetch.data_fetcher import _synthesize_weekly
+        code = _to_code(ts_code)
+        kline = DataStore.get_kline(code, limit=WEEKLY_LIMIT * 5)
+        if not kline:
             return [], "EMPTY"
-        df = df.drop_duplicates().sort_values("trade_date")
-        # 取最近 250 根
-        df = df.tail(WEEKLY_LIMIT)
-        return df.to_dict("records"), "OK"
+        weekly = _synthesize_weekly(kline)
+        if not weekly:
+            return [], "EMPTY"
+        # 统一字段格式（与原 tushare weekly 对齐）
+        result = []
+        for w in weekly[-WEEKLY_LIMIT:]:
+            result.append({
+                "trade_date": str(w.get("trade_date", "")).replace("-", ""),
+                "open":  w.get("open",  0),
+                "high":  w.get("high",  0),
+                "low":   w.get("low",   0),
+                "close": w.get("close", 0),
+                "vol":   w.get("volume", w.get("vol", 0)),
+            })
+        return result, "OK"
     except Exception as e:
-        msg = str(e)
-        if any(k in msg for k in ("每分钟最多", "访问频率", "rate limit")):
-            return [], "RATE_LIMITED"
-        if any(k in msg for k in ("权限", "permission", "未授权")):
-            return [], "PERM_DENIED"
-        logger.warning("weekly(%s) fail: %s", ts_code, e)
-        return [], f"EXCEPTION_{type(e).__name__}"
+        return [], f"ERR_{type(e).__name__}"
 
 
 def compute_drop(weekly: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -380,6 +384,11 @@ def main() -> int:
     if not _load_env_token():
         print("❌ TUSHARE_TOKEN 未配置, 检查 .env 文件", file=sys.stderr)
         return 1
+
+    # 先补缺失交易日（全市场增量，无缺口秒返回）
+    print("🔄 同步K线历史...")
+    from tools.history_sync import sync_incremental
+    sync_incremental()
 
     print(f"🔄 全 A 股 weekly 扫描 (跌幅 ≥ {args.drop_threshold*100:.0f}%, weekly {weekly_limit} 根)")
     print(f"⏰ 开始: {_now()}")
