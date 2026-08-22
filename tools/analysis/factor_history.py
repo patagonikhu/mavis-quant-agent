@@ -23,12 +23,12 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60) -> list[dict]
     Returns:
         list[dict]，按日期升序，每条含:
           date / close / scene / score / resonance
-          wyckoff_daily / wyckoff_weekly / wyckoff_60m
-          sub_event_daily / sub_event_weekly / sub_event_60m
-          daily_beichi / 60m_beichi / weekly_beichi
-          hub_daily / hub_weekly / hub_60m  (各含 low/high/pos/valid)
-          bsp_daily / bsp_weekly / bsp_60m  (含价格字符串的触发点 dict)
-          ma_dev_daily / ma_dev_weekly / ma_dev_60m  (MA20 偏离 %, AnalysisEngine 层计算)
+          wyckoff_daily / wyckoff_weekly
+          sub_event_daily / sub_event_weekly
+          daily_beichi / weekly_beichi
+          hub_daily / hub_weekly  (各含 low/high/pos/valid)
+          bsp_daily / bsp_weekly  (含价格字符串的触发点 dict)
+          ma_dev_daily / ma_dev_weekly  (MA20 偏离 %, AnalysisEngine 层计算)
     """
     from tools.analysis.analysis_engine import AnalysisEngine
     engine = AnalysisEngine()
@@ -53,14 +53,12 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60) -> list[dict]
 
         # 用切片到 as_of 的 K 线（engine.analyze 内部已切片，但 ctx 原始未变）
         as_of_clean = as_of.replace("-", "")[:8]
-        k_slice   = [b for b in ctx.kline     if b["trade_date"].replace("-","")[:8] <= as_of_clean]
-        w_slice   = [b for b in ctx.weekly    if b["trade_date"].replace("-","")[:8] <= as_of_clean]
-        m60_slice = [b for b in ctx.kline_60m if b["trade_date"].replace("-","")[:8] <= as_of_clean]
+        k_slice = [b for b in ctx.kline  if b["trade_date"].replace("-","")[:8] <= as_of_clean]
+        w_slice = [b for b in ctx.weekly if b["trade_date"].replace("-","")[:8] <= as_of_clean]
 
         ma_devs = {
-            "ma_dev_daily":   _ma_dev(k_slice,   20),
-            "ma_dev_weekly":  _ma_dev(w_slice,   20),
-            "ma_dev_60m":     _ma_dev(m60_slice, 20),
+            "ma_dev_daily":  _ma_dev(k_slice, 20),
+            "ma_dev_weekly": _ma_dev(w_slice, 20),
         }
 
         rows.append({**_extract_row(result, as_of, close, ctx), **ma_devs})
@@ -69,7 +67,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60) -> list[dict]
     for field, out_key in [
         ('wyckoff_daily',  'accum_days_daily'),
         ('wyckoff_weekly', 'accum_days_weekly'),
-        ('wyckoff_60m',    'accum_days_60m'),
     ]:
         count = 0
         for row in rows:
@@ -126,37 +123,31 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "upper_shadow_pct":    float(pos_raw.get("upper_shadow_pct", 0.0)) if isinstance(pos_raw, dict) else 0.0,
         "upper_shadow_5d_avg": float(pos_raw.get("upper_shadow_5d_avg", 0.0)) if isinstance(pos_raw, dict) else 0.0,
 
-        # 威科夫三周期
+        # 威科夫二주期
         "wyckoff_daily":  (p3.get("daily")  or {}).get("stage", "?"),
         "wyckoff_weekly": (p3.get("weekly") or {}).get("stage", "?"),
-        "wyckoff_60m":    (p3.get("60min")  or {}).get("stage", "?"),
 
         # 威科夫 sub_event 当天新触发（顶/底都显示）
         "sub_event_daily":  _today_sub_events(wy_raw, "daily",  date),
         "sub_event_weekly": _today_sub_events(wy_raw, "weekly", date),
-        "sub_event_60m":    _today_sub_events(wy_raw, "60min",  date),
 
-        # 缠论背驰三周期（原始字符串）
+        # 缠论背驰二周期（原始字符串）
         "daily_beichi":   (chan_raw.get("daily")  or {}).get("beichi", ""),
         "weekly_beichi":  (chan_raw.get("weekly") or {}).get("beichi", ""),
-        "60m_beichi":     (chan_raw.get("60min")  or {}).get("beichi", ""),
 
         # 背驰分类（含中枢上下文）⭐趋势 / 🟡盘整 / 🔵普通 / 无
         "bc_class_daily":   _bc_class("daily"),
         "bc_class_weekly":  _bc_class("weekly"),
-        "bc_class_60m":     _bc_class("60min"),
 
-        # 中枢三周期（含价格）
+        # 中枢二周期（含价格）
         "hub_daily":  _extract_hub(chan_raw, "daily"),
         "hub_weekly": _extract_hub(chan_raw, "weekly"),
-        "hub_60m":    _extract_hub(chan_raw, "60min"),
 
-        # 买卖点三周期（含价格字符串）
+        # 买卖点二周期（含价格字符串）
         "bsp_daily":  _active_bsp(bsp_raw, "daily"),
         "bsp_weekly": _active_bsp(bsp_raw, "weekly"),
-        "bsp_60m":    _active_bsp(bsp_raw, "60min"),
 
-        # SMC 三周期（日线/周线/60m 各自的 OB/FVG/Sweep）
+        # SMC 日线/周线 OB/FVG/Sweep
         "smc_bull_ob":       (smc_raw.get("nearest_bull_ob")  or {}).get("bottom"),
         "smc_bear_ob":       (smc_raw.get("nearest_bear_ob")  or {}).get("top"),
         "smc_fvg_bull":      (smc_raw.get("nearest_fvg_bull") or {}).get("bottom"),
@@ -168,12 +159,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "smc_w_fvg_bull":    ((smc_raw.get("smc_weekly") or {}).get("nearest_fvg_bull") or {}).get("bottom"),
         "smc_w_fvg_bear":    ((smc_raw.get("smc_weekly") or {}).get("nearest_fvg_bear") or {}).get("top"),
         "smc_w_sweeps_today": _today_sweeps(smc_raw.get("smc_weekly") or {}, date),
-        # 60m SMC
-        "smc_60_bull_ob":    ((smc_raw.get("smc_60m") or {}).get("nearest_bull_ob")  or {}).get("bottom"),
-        "smc_60_bear_ob":    ((smc_raw.get("smc_60m") or {}).get("nearest_bear_ob")  or {}).get("top"),
-        "smc_60_fvg_bull":   ((smc_raw.get("smc_60m") or {}).get("nearest_fvg_bull") or {}).get("bottom"),
-        "smc_60_fvg_bear":   ((smc_raw.get("smc_60m") or {}).get("nearest_fvg_bear") or {}).get("top"),
-        "smc_60_sweeps_today": _today_sweeps(smc_raw.get("smc_60m") or {}, date),
 
         # fflow 主力资金流 (2026-08-17 拆分: 之前 vp_verdict/vp_score 混在一起)
         "fflow_verdict":  fflow_raw.get("verdict", "—"),
@@ -286,12 +271,12 @@ def diff_rows(prev: dict, curr: dict) -> dict:
     changes = {}
 
     # 标量字段：直接比
-    for field in ("scene", "wyckoff_daily", "wyckoff_weekly", "wyckoff_60m"):
+    for field in ("scene", "wyckoff_daily", "wyckoff_weekly"):
         if prev.get(field) != curr.get(field):
             changes[field] = f"{prev.get(field)}→{curr.get(field)}"
 
     # sub_event：只记录与前一天不同的新事件（避免同一事件连续多天重复记录）
-    for field in ("sub_event_daily", "sub_event_weekly", "sub_event_60m"):
+    for field in ("sub_event_daily", "sub_event_weekly"):
         p = prev.get(field, "—") or "—"
         c = curr.get(field, "—") or "—"
         if c != "—" and c != p:
@@ -305,7 +290,7 @@ def diff_rows(prev: dict, curr: dict) -> dict:
         return any(x in b for x in ("顶背", "底背", "弱背"))
 
     # 背驰：只在有效背驰出现/消失时才记录
-    for field in ("daily_beichi", "weekly_beichi", "60m_beichi"):
+    for field in ("daily_beichi", "weekly_beichi"):
         p, c = prev.get(field, ""), curr.get(field, "")
         p_valid = _valid_bc(p)
         c_valid = _valid_bc(c)
@@ -313,7 +298,7 @@ def diff_rows(prev: dict, curr: dict) -> dict:
             changes[field] = f"{p or '无'}→{c or '无'}"
 
     # 买卖点：新出现的点
-    for level in ("bsp_daily", "bsp_weekly", "bsp_60m"):
+    for level in ("bsp_daily", "bsp_weekly"):
         prev_pts = prev.get(level) or {}
         curr_pts = curr.get(level) or {}
         new_pts  = {k: v for k, v in curr_pts.items() if k not in prev_pts}
@@ -324,7 +309,7 @@ def diff_rows(prev: dict, curr: dict) -> dict:
             changes[f"gone_{level}"] = gone_pts
 
     # 中枢变化（区间变 or 位置变，任一触发）
-    for level in ("hub_daily", "hub_weekly", "hub_60m"):
+    for level in ("hub_daily", "hub_weekly"):
         p_hub = prev.get(level) or {}
         c_hub = curr.get(level) or {}
         p_pos = p_hub.get("pos", "—")
@@ -354,7 +339,7 @@ def diff_rows(prev: dict, curr: dict) -> dict:
         if v <= -10: return "≤-10%🟡"
         return "正常"
 
-    for field in ("ma_dev_daily", "ma_dev_weekly", "ma_dev_60m"):
+    for field in ("ma_dev_daily", "ma_dev_weekly"):
         p_v = prev.get(field)
         c_v = curr.get(field)
         if p_v is None or c_v is None:
@@ -362,7 +347,7 @@ def diff_rows(prev: dict, curr: dict) -> dict:
         p_zone = _ma_zone(p_v)
         c_zone = _ma_zone(c_v)
         if p_zone != c_zone:
-            level = field.replace("ma_dev_", "")  # daily / weekly / 60m
+            level = field.replace("ma_dev_", "")  # daily / weekly
             changes[field] = f"{p_zone}→{c_zone}({c_v:+.1f}%)"
 
     return changes
@@ -427,9 +412,8 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
     _bc_field_to_class = {
         "daily_beichi":   "bc_class_daily",
         "weekly_beichi":  "bc_class_weekly",
-        "60m_beichi":     "bc_class_60m",
     }
-    for field in ("daily_beichi", "weekly_beichi", "60m_beichi"):
+    for field in ("daily_beichi", "weekly_beichi"):
         if field not in changes:
             continue
         old_val, new_val = changes[field].split("→", 1)
@@ -455,7 +439,7 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
                                  "sell" if orig == "buy" else "buy"))
 
     # 买卖点（新出现 / 消失）
-    for level in ("bsp_daily", "bsp_weekly", "bsp_60m"):
+    for level in ("bsp_daily", "bsp_weekly"):
         period = level.split("_")[1]
         for label in changes.get(f"new_{level}", {}):
             d = _bsp_direction(label)
@@ -467,7 +451,7 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
                                  "sell" if orig == "buy" else "buy"))
 
     # 威科夫子事件
-    for field in ("sub_event_daily", "sub_event_weekly", "sub_event_60m"):
+    for field in ("sub_event_daily", "sub_event_weekly"):
         event = changes.get(field, "")
         if not event or event == "—":
             continue
@@ -483,7 +467,7 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
         if d: signals.append(("scene_change", changes["scene"], d))
 
     # 中枢位置变化
-    for field in ("hub_daily_pos", "hub_weekly_pos", "hub_60m_pos"):
+    for field in ("hub_daily_pos", "hub_weekly_pos"):
         if field not in changes:
             continue
         d = _hub_direction(changes[field])
@@ -492,12 +476,12 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
             signals.append(("hub_pos_change", f"{changes[field]}({level})", d))
 
     # MA20 偏离穿越
-    for field in ("ma_dev_daily", "ma_dev_weekly", "ma_dev_60m"):
+    for field in ("ma_dev_daily", "ma_dev_weekly"):
         if field not in changes:
             continue
         val = changes[field]   # 例: "正常→≥+20%🟠(+21.3%)"
         new_zone = val.split("→")[-1] if "→" in val else val
-        level = field.replace("ma_dev_", "")  # daily / weekly / 60m
+        level = field.replace("ma_dev_", "")  # daily / weekly
         # 正偏离穿越 → 过热警告（卖）; 负偏离穿越 → 超跌（买）
         if any(t in new_zone for t in ("+10%", "+20%", "+30%")):
             signals.append(("ma_dev_cross", f"MA过热{new_zone}({level})", "sell"))
@@ -538,7 +522,7 @@ def format_signals_for_render(changes: dict) -> list[str]:
         elif sig_type == "ma_dev_cross":
             parts.append(f"📊{detail}")
     # wyckoff stage 变化（不在 extract_signals 里，单独处理）
-    for field in ("wyckoff_daily", "wyckoff_weekly", "wyckoff_60m"):
+    for field in ("wyckoff_daily", "wyckoff_weekly"):
         if field in changes:
             parts.append(f"🔄wy{field.split('_')[1]}:{changes[field]}")
     return parts
@@ -568,9 +552,6 @@ TOP_SIGNAL_WEIGHTS: dict[str, int] = {
     "bc_周线趋势顶背":          8,   # 2026-08-20: 6→8, 8-19 14:40 ⭐trend 顶 胜率 86.9% (551 触发)
     "bc_周线普通顶背":          1,   # 2026-08-21: 3→1, 10% 阈值 胜率 46.9% (<60% 调低)
     "bc_周线盘整顶背":          4,   # 2026-08-20: 1→4, 8-19 14:40 consolidation 顶 胜率 84.2% 严重低估
-    "bc_60m趋势顶背":           2,   # 4→2
-    "bc_60m普通顶背":           2,   # 3→2
-    "bc_60m盘整顶背":           1,   # 保持
     # 中枢
     "hub_跌进中枢":             3,
     "hub_跌出中枢":             7,   # 5→7, 中枢真破位最强信号
@@ -605,7 +586,7 @@ def score_top_signals(
 
     # 1. 买卖点 1卖/2卖/3卖 (新出现才计分, 跟其他信号一致)
     # 2026-08-01: 改规则 — 之前用 row[level] "持续加分"导致重复
-    for level in ("bsp_daily", "bsp_weekly", "bsp_60m"):
+    for level in ("bsp_daily", "bsp_weekly"):
         new_pts = changes.get(f"new_{level}", {}) or {}
         for k in new_pts:
             if "1卖⭐" in k:
@@ -619,7 +600,7 @@ def score_top_signals(
 
     # 2. 威科夫子事件 (新出现)
     _WY_TOP = {"DistributionStart", "UTAD", "EVR", "LPSY", "SOW"}
-    for level in ("sub_event_daily", "sub_event_weekly", "sub_event_60m"):
+    for level in ("sub_event_daily", "sub_event_weekly"):
         curr_ev = row.get(level, "—") or "—"
         prev_ev = (prev_row or {}).get(level, "—") or "—"
         if curr_ev != "—" and curr_ev != prev_ev:
@@ -631,7 +612,6 @@ def score_top_signals(
     _bc_level_map = {
         "bc_class_daily":   ("bc_日线趋势顶背",  "bc_日线普通顶背",  "bc_日线盘整顶背"),
         "bc_class_weekly":  ("bc_周线趋势顶背",  "bc_周线普通顶背",  "bc_周线盘整顶背"),
-        "bc_class_60m":     ("bc_60m趋势顶背",   "bc_60m普通顶背",   "bc_60m盘整顶背"),
     }
     for field, (trend_key, normal_key, consol_key) in _bc_level_map.items():
         curr_cls = row.get(field, "无") or "无"
@@ -648,7 +628,7 @@ def score_top_signals(
 
     # 4. 中枢位置变化 (3 周期都算, 同类只算最高分)
     hub_seen = set()
-    for level in ("hub_daily_pos", "hub_weekly_pos", "hub_60m_pos"):
+    for level in ("hub_daily_pos", "hub_weekly_pos"):
         hub_pos = changes.get(level, "")
         if not hub_pos:
             continue
@@ -712,9 +692,6 @@ BOTTOM_SIGNAL_WEIGHTS: dict[str, int] = {
     "bc_周线趋势底背":         6,   # 8→6
     "bc_周线普通底背":         6,   # 2026-08-20: 4→6, 8-19 14:40 bt_top.log 胜率 87.8% (1222 触发)
     "bc_周线盘整底背":         5,   # 2026-08-20: 1→5, 8-19 14:40 consolidation 底 胜率 89.8% (1129 触发) 最严重低估
-    "bc_60m趋势底背":         2,   # 4→2
-    "bc_60m普通底背":         2,   # 3→2
-    "bc_60m盘整底背":         1,
     # 中枢
     "hub_涨出中枢":            7,   # 5→7
     "hub_涨进中枢":            3,
@@ -744,7 +721,7 @@ def score_bottom_signals(
 
     # 1. 买卖点 1买/2买/3买/0买 (新出现才计分, 跟其他信号一致)
     # 2026-08-01: 改规则 — 之前用 row[level] "持续加分"导致重复
-    for level in ("bsp_daily", "bsp_weekly", "bsp_60m"):
+    for level in ("bsp_daily", "bsp_weekly"):
         new_pts = changes.get(f"new_{level}", {}) or {}
         for k in new_pts:
             if "1买⭐" in k:
@@ -760,7 +737,7 @@ def score_bottom_signals(
 
     # 2. 威科夫底部子事件 (新出现)
     _WY_BOT = {"Spring", "LPS", "SOS", "SC", "AR", "Compression"}
-    for level in ("sub_event_daily", "sub_event_weekly", "sub_event_60m"):
+    for level in ("sub_event_daily", "sub_event_weekly"):
         curr_ev = row.get(level, "—") or "—"
         prev_ev = (prev_row or {}).get(level, "—") or "—"
         if curr_ev != "—" and curr_ev != prev_ev:
@@ -772,7 +749,6 @@ def score_bottom_signals(
     _bc_level_map = {
         "bc_class_daily":   ("bc_日线趋势底背",  "bc_日线普通底背",  "bc_日线盘整底背"),
         "bc_class_weekly":  ("bc_周线趋势底背",  "bc_周线普通底背",  "bc_周线盘整底背"),
-        "bc_class_60m":     ("bc_60m趋势底背",   "bc_60m普通底背",   "bc_60m盘整底背"),
     }
     for field, (trend_key, normal_key, consol_key) in _bc_level_map.items():
         curr_cls = row.get(field, "无") or "无"
@@ -789,7 +765,7 @@ def score_bottom_signals(
 
     # 4. 中枢位置变化 (3 周期都算, 底方向: 止跌 / 反弹)
     hub_seen = set()
-    for level in ("hub_daily_pos", "hub_weekly_pos", "hub_60m_pos"):
+    for level in ("hub_daily_pos", "hub_weekly_pos"):
         hub_pos = changes.get(level, "")
         if not hub_pos:
             continue

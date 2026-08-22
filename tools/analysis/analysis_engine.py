@@ -39,7 +39,6 @@ class RawContext:
     切片逻辑统一在 Engine 层通过 slice(as_of_date) 完成，Strategy 无需感知时间。
     """
     kline:      list        # 日线 K 线 [{date, open, close, high, low, vol, ...}]
-    kline_60m:  list        # 60分 K 线
     weekly:     list        # 周线 K 线（Tushare 真实周线，非合成）
     eps_table:  list        # EPS 历史预测（季报，不随 as_of_date 切片）
     fflow:      dict        # 主力资金流（不切片）
@@ -55,7 +54,6 @@ class RawContext:
     chan_result:    dict = field(default_factory=dict)
     wyckoff_result: dict = field(default_factory=dict)   # 日线
     wyckoff_weekly: dict = field(default_factory=dict)
-    wyckoff_60m:    dict = field(default_factory=dict)
     smc_result:     dict = field(default_factory=dict)
     fflow_result:   dict = field(default_factory=dict)   # 主力资金流 (Tushare.money_flow)
     obv_result:     dict = field(default_factory=dict)   # 经典 OBV (Granville 1963, K线累计)
@@ -69,21 +67,18 @@ class RawContext:
         def date_clean(b, key="trade_date"):
             return b.get(key, "").replace("-", "")[:8]
 
-        k   = [b for b in self.kline     if date_clean(b) <= as_of_clean]
-        k60 = [b for b in self.kline_60m if date_clean(b) <= as_of_clean]
-        w   = [b for b in self.weekly    if date_clean(b) <= as_of_clean]
+        k   = [b for b in self.kline  if date_clean(b) <= as_of_clean]
+        w   = [b for b in self.weekly if date_clean(b) <= as_of_clean]
 
         # 切片正确性验证
-        assert not k   or date_clean(k[-1])   <= as_of_clean, \
+        assert not k or date_clean(k[-1]) <= as_of_clean, \
             f"日线切片错误: 最后一根 {date_clean(k[-1])} > {as_of_clean}"
-        assert not k60 or date_clean(k60[-1]) <= as_of_clean, \
-            f"60分切片错误: 最后一根 {date_clean(k60[-1])} > {as_of_clean}"
-        assert not w   or date_clean(w[-1])   <= as_of_clean, \
+        assert not w or date_clean(w[-1]) <= as_of_clean, \
             f"周线切片错误: 最后一根 {date_clean(w[-1])} > {as_of_clean}"
 
         price = k[-1]["close"] if k else self.current_price
         return RawContext(
-            kline=k, kline_60m=k60, weekly=w,
+            kline=k, weekly=w,
             eps_table=self.eps_table,
             fflow=self.fflow,
             resonance=self.resonance,
@@ -98,11 +93,9 @@ class RawContext:
     def from_dump(cls, dump: dict) -> "RawContext":
         """从现有 dump dict 构造 RawContext（过渡期兼容）"""
         kline     = dump.get("kline") or []
-        kline_60m = dump.get("kline_60m") or []
         weekly    = dump.get("weekly") or dump.get("tushare", {}).get("weekly") or []
         return cls(
             kline=kline,
-            kline_60m=kline_60m,
             weekly=weekly,
             eps_table=dump.get("eps_table") or [],
             fflow=dump.get("fflow") or {},
@@ -164,10 +157,8 @@ class AnalysisResult:
         if ctx is not None:
             if ctx.wyckoff_result: d.setdefault("wyckoff",        ctx.wyckoff_result)
             if ctx.wyckoff_weekly: d.setdefault("wyckoff_weekly", ctx.wyckoff_weekly)
-            if ctx.wyckoff_60m:    d.setdefault("wyckoff_60m",    ctx.wyckoff_60m)
             if ctx.smc_result:
                 d.setdefault("smc",        ctx.smc_result)
-                d.setdefault("smc_60m",    ctx.smc_result.get("smc_60m") or {})
                 d.setdefault("smc_weekly", ctx.smc_result.get("smc_weekly") or {})
             if ctx.fflow_result:   d.setdefault("fflow",           ctx.fflow_result)
             if ctx.obv_result:     d.setdefault("obv",             ctx.obv_result)
@@ -232,9 +223,8 @@ class WyckoffStrategy(AnalysisStrategy):
         sub_events_by_period = {}
         wyckoff_3period = {}
         for level, bars, label in [
-            ("daily",  ctx.kline,     "daily"),
-            ("weekly", ctx.weekly,    "weekly"),
-            ("60min",  ctx.kline_60m, "60m"),
+            ("daily",  ctx.kline,  "daily"),
+            ("weekly", ctx.weekly, "weekly"),
         ]:
             if bars and len(bars) >= 30:
                 out = WyckoffStageFactor().compute(
@@ -259,13 +249,92 @@ class WyckoffStrategy(AnalysisStrategy):
         # 写回 ctx 供 Phase2 Strategy 使用
         ctx.wyckoff_result = wyckoff_3period.get("daily", {})
         ctx.wyckoff_weekly = wyckoff_3period.get("weekly", {})
-        ctx.wyckoff_60m    = wyckoff_3period.get("60min", {})
 
         raw = {**daily_out, "sub_events_by_period": sub_events_by_period, "3period": wyckoff_3period}
         return FactorScore(
             name=self.name, score=score, weight=self.weight,
             signals=signals, summary=f"威科夫 {stage}", raw=raw,
         )
+
+
+class MacdDivergenceStrategy(AnalysisStrategy):
+    """MACD 底背驰 (前 30d 内) → 分数, 与 A→M + 缠论 底背驰组成三重确认
+       底背驰定义: 价创新低 但 MACD hist 没创新低 (底部反转信号)
+       权重 0.05 (辅助确认, 不主导总分)
+    """
+    name = "macd_div"
+    weight = 0.05
+    LOOKBACK = 30  # 30d 内有底背驰即可
+
+    def _ema(self, arr, n):
+        alpha = 2 / (n + 1)
+        out = list(arr)
+        for i in range(1, len(out)):
+            out[i] = alpha * out[i] + (1 - alpha) * out[i-1]
+        return out
+
+    def _macd_hist(self, closes):
+        if len(closes) < 35:
+            return [0.0] * len(closes)
+        ema12 = self._ema(closes, 12)
+        ema26 = self._ema(closes, 26)
+        diff = [a - b for a, b in zip(ema12, ema26)]
+        dea = self._ema(diff, 9)
+        return [2 * (d - e) for d, e in zip(diff, dea)]
+
+    def _detect_bot_div(self, lows, hist, i_trigger, lookback=30):
+        """检查 i_trigger 前 lookback 天内是否有底背驰"""
+        if i_trigger < lookback + 5:
+            return False, None
+        win_lo = lows[i_trigger - lookback: i_trigger + 1]
+        win_hi = hist[i_trigger - lookback: i_trigger + 1]
+        cur_idx = win_lo.index(min(win_lo))
+        if cur_idx < 3:
+            return False, None
+        prev_lo = win_lo[:cur_idx]
+        if not prev_lo:
+            return False, None
+        prev_idx = prev_lo.index(min(prev_lo))
+        # 底背驰: 价创新低 + hist 没新低
+        if win_lo[cur_idx] < win_lo[prev_idx] and win_hi[cur_idx] > win_hi[prev_idx]:
+            return True, {
+                'cur_idx': cur_idx,
+                'prev_idx': prev_idx,
+                'price_drop_pct': (win_lo[cur_idx] / win_lo[prev_idx] - 1) * 100,
+                'hist_rise': win_hi[cur_idx] - win_hi[prev_idx],
+            }
+        return False, None
+
+    def analyze(self, ctx: RawContext) -> FactorScore:
+        kline = ctx.kline
+        if len(kline) < 60:
+            return FactorScore(name=self.name, score=0.0, weight=self.weight,
+                               signals=[], summary="MACD背驰 数据不足", raw={})
+
+        closes = [k["close"] for k in kline]
+        lows = [k["low"] for k in kline]
+        dates = [k.get("trade_date", "") for k in kline]
+        hist = self._macd_hist(closes)
+
+        i_now = len(kline) - 1
+        has_div, detail = self._detect_bot_div(lows, hist, i_now, self.LOOKBACK)
+
+        signals = []
+        if has_div:
+            signals.append(f"MACD 底背驰 ({self.LOOKBACK}d内) 价{detail['price_drop_pct']:.1f}%/hist+{detail['hist_rise']:.2f}")
+            score = 0.6
+        else:
+            score = 0.0
+
+        ctx.macd_div_result = {
+            'has_bot_div': has_div,
+            'detail': detail,
+            'lookback_days': self.LOOKBACK,
+        }
+        summary = "MACD底背驰 ✅" if has_div else "MACD底背驰 —"
+        return FactorScore(name=self.name, score=score, weight=self.weight,
+                           signals=signals, summary=summary,
+                           raw=ctx.macd_div_result)
 
 
 class SmcStrategy(AnalysisStrategy):
@@ -293,21 +362,19 @@ class SmcStrategy(AnalysisStrategy):
                 return {}
 
         smc_d  = _run(ctx.kline,     "daily")
-        smc_60 = _run(ctx.kline_60m, "60min")
-        smc_w  = _run(ctx.weekly,    "weekly")
+        smc_w  = _run(ctx.weekly, "weekly")
 
-        # 合并存储（daily 向后兼容，三周期独立）
-        smc = {**smc_d, "smc_60m": smc_60, "smc_weekly": smc_w}
+        # 合并存储（daily 向后兼容，双周期独立）
+        smc = {**smc_d, "smc_weekly": smc_w}
         ctx.smc_result = smc
 
         total_obs = (smc_d.get("total_obs", 0) or 0) + \
-                    (smc_60.get("total_obs", 0) or 0) + \
                     (smc_w.get("total_obs", 0) or 0)
         sweeps = len(smc_d.get("recent_sweeps") or [])
         score = min(total_obs * 0.1, 0.5) if total_obs > 0 else 0.0
         signals = []
         if total_obs > 3:
-            signals.append(f"SMC OB {total_obs}个(日/60m/周)")
+            signals.append(f"SMC OB {total_obs}个(日/周)")
         if sweeps > 0:
             signals.append(f"SMC 扫流 ×{sweeps}")
         return FactorScore(
@@ -452,22 +519,19 @@ class ChanStrategy(AnalysisStrategy):
     def analyze(self, ctx: RawContext) -> FactorScore:
         from tools.factors.chan.three_levels import build_chan_levels
 
-        kline     = ctx.kline
-        kline_60m = ctx.kline_60m
+        kline = ctx.kline
 
         chan = {}
         try:
             result = build_chan_levels(
                 ctx.code, ctx.name,
                 lambda c: kline,
-                lambda c: kline_60m,
             )
             if result:
-                res_w, res_d, res_60, bc_w, bc_d, bc_60 = result
+                res_w, res_d, bc_w, bc_d = result
                 chan = {
                     "weekly": {**(res_w or {}), "beichi": bc_w},
                     "daily":  {**(res_d or {}), "beichi": bc_d},
-                    "60min":  {**(res_60 or {}), "beichi": bc_60},
                 }
         except Exception:
             pass
@@ -476,7 +540,7 @@ class ChanStrategy(AnalysisStrategy):
         signals = []
         score_total = 0.0
         cnt = 0
-        for level in ["weekly", "daily", "60min"]:
+        for level in ["weekly", "daily"]:
             d   = chan.get(level, {}) or {}
             pos = d.get("pos", "—") or (d.get("hub", {}) or {}).get("pos", "—")
             beichi = d.get("beichi", {})
@@ -703,10 +767,10 @@ class BuySellPointsStrategy(AnalysisStrategy):
         # 读 ctx.chan_result（由 ChanStrategy Phase1 算好写入）
         chan = ctx.chan_result
         bsp = {}
-        for level_key in ["weekly", "daily", "60min"]:
+        for level_key in ["weekly", "daily"]:
             res = chan.get(level_key) or {}
             beichi_str = res.get("beichi", "")
-            klines = ctx.kline_60m if level_key == "60min" else (ctx.kline if level_key == "daily" else None)
+            klines = ctx.kline if level_key == "daily" else None
             try:
                 out = bsp_factor(df=None, res=res, beichi_str=beichi_str,
                                  klines=klines, level_key=level_key)
@@ -888,12 +952,13 @@ class MonitorTriggersStrategy(AnalysisStrategy):
 # Phase1：基础因子，互不依赖，结果写入 ctx 供 Phase2 读
 PHASE1_STRATEGIES: list[type[AnalysisStrategy]] = [
     ChanStrategy,           # 0.20  → ctx.chan_result
-    WyckoffStrategy,        # 0.20  → ctx.wyckoff_result / wyckoff_weekly / wyckoff_60m
+    WyckoffStrategy,        # 0.20  → ctx.wyckoff_result / wyckoff_weekly
     SmcStrategy,            # 0.10  → ctx.smc_result
     ObvStrategy,            # 0.10  → ctx.obv_result  (先于 FflowStrategy, 让 fflow 双判定读 ctx.obv_result)
     FflowStrategy,          # 0.10  → ctx.fflow_result
     ResonanceStrategy,      # 0.15  → ctx.resonance_result
     PegStrategy,            # 0.15
+    MacdDivergenceStrategy, # 0.05  → ctx.macd_div_result  (MACD 底背驰, 辅助确认)
 ]
 
 # Phase2：依赖 Phase1 的 ctx 共享结果，不重算
@@ -1046,17 +1111,16 @@ class AnalysisEngine:
 
         if stage == "Accumulation":
             ma60_dev = self._calc_ma60_dev(ctx)
-            # 60min 底背 / 日线中枢下方 从 ctx.chan_result 读
             chan_res  = ctx.chan_result
-            bc_60 = (chan_res.get("60min") or {}).get("beichi", {})
-            bot_60 = (bc_60.get("direction") == "bot" and bc_60.get("strength") in ("strong", "weak")) \
-                     if isinstance(bc_60, dict) else "底背" in str(bc_60)
+            bc_d = (chan_res.get("daily") or {}).get("beichi", {})
+            bot_d = (bc_d.get("direction") == "bot" and bc_d.get("strength") in ("strong", "weak")) \
+                     if isinstance(bc_d, dict) else "底背" in str(bc_d)
             daily_pos = str((chan_res.get("daily") or {}).get("hub", {}).get("pos", "") or "")
             hub_below = any(t in daily_pos for t in ["下方", "跌穿"])
             # 共振 1d 从 ctx.resonance_result 读
             res_1d_positive = (ctx.resonance_result.get("1d") or {}).get("score", 0) > 0
 
-            if ma60_dev < -0.05 and (bot_60 or hub_below) and res_1d_positive:
+            if ma60_dev < -0.05 and (bot_d or hub_below) and res_1d_positive:
                 return ("D", "底部建仓", signals)
 
         chan_score = chan.score if chan else 0.0

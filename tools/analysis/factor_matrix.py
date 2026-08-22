@@ -379,7 +379,6 @@ def build_factor_matrix(
     period_configs = [
         ('weekly', '1.5x'),
         ('daily', '1.0x'),
-        ('60min', '0.5x'),
     ]
     for level, weight in period_configs:
         chan_period = chan_raw.get(level, {})
@@ -388,15 +387,15 @@ def build_factor_matrix(
         chan_str = (s5.get('chan') or {}).get(level, '—')
 
         # 威科夫: 周期对应键 (日线无后缀, 周/60分有)
-        wy_key = {'weekly': 'wyckoff_weekly', 'daily': 'wyckoff', '60min': 'wyckoff_60m'}[level]
+        wy_key = {'weekly': 'wyckoff_weekly', 'daily': 'wyckoff'}[level]
         wyckoff = s5.get(wy_key) or s5.get('wyckoff') or {}
 
         # SMC: 同样
-        smc_key = {'weekly': 'smc_weekly', 'daily': 'smc', '60min': 'smc_60m'}[level]
+        smc_key = {'weekly': 'smc_weekly', 'daily': 'smc'}[level]
         smc = s5.get(smc_key) or s5.get('smc') or {}
 
-        # 共振: 只有 weekly 和 60m 有独立键
-        res_key = {'weekly': 'resonance_weekly', 'daily': 'resonance', '60min': 'resonance_60m'}[level]
+        # 共振: weekly 有独立键
+        res_key = {'weekly': 'resonance_weekly', 'daily': 'resonance'}[level]
         res = s5.get(res_key) or s5.get('resonance') or {}
 
         # 量价: 2026-08-17 拆分 fflow + obv 独立 strategy, 这里合成回 vp dict 给下游用
@@ -450,7 +449,7 @@ def get_buy_recommendation(matrix_result: dict) -> Optional[dict]:
     从 因子矩阵提取"建议买入价"
     优先级: 日线 composite.buy_target > 周线 > 60分
     """
-    for level in ['daily', 'weekly', '60min']:
+    for level in ['daily', 'weekly']:
         comp = matrix_result['matrix'][level].get('composite', {})
         if comp.get('direction') == 'long' and comp.get('buy_target'):
             return {
@@ -465,9 +464,9 @@ def get_buy_recommendation(matrix_result: dict) -> Optional[dict]:
 def get_sell_recommendation(matrix_result: dict) -> Optional[dict]:
     """
     从 因子矩阵提取"建议卖出价"
-    优先级: 日线 composite.sell_target > 周线 > 60分
+    优先级: 日线 composite.sell_target > 周线
     """
-    for level in ['daily', 'weekly', '60min']:
+    for level in ['daily', 'weekly']:
         comp = matrix_result['matrix'][level].get('composite', {})
         if comp.get('direction') == 'short' and comp.get('sell_target'):
             return {
@@ -501,40 +500,28 @@ def render_factor_matrix_md(matrix_result: dict) -> str:
               f"**行动**: {matrix_result['action']}\n")
 
     # 因子 × 3 周期 (含价格)
-    md.append("**🎯 因子 × 3 周期 (含中枢 + 123 买卖点 + 建议价格):**\n")
-    md.append("| 维度 | 周线 (1.5x) | 日线 (1.0x) | 60分 (0.5x) |")
-    md.append("|---|---|---|---|")
+    md.append("**🎯 因子 × 2 周期 (含中枢 + 123 买卖点 + 建议价格):**\n")
+    md.append("| 维度 | 周线 (1.5x) | 日线 (1.0x) |")
+    md.append("|---|---|---|")
 
-    # 缠论行
     md.append("| **缠论 (中枢+买卖点)** | "
               f"{_md_chan(m['weekly']['chan'])} | "
-              f"{_md_chan(m['daily']['chan'])} | "
-              f"{_md_chan(m['60min']['chan'])} |")
-    # 威科夫
+              f"{_md_chan(m['daily']['chan'])} |")
     md.append("| **威科夫 (3 大阶段)** | "
               f"{_md_wy(m['weekly']['wyckoff'])} | "
-              f"{_md_wy(m['daily']['wyckoff'])} | "
-              f"{_md_wy(m['60min']['wyckoff'])} |")
-    # SMC
+              f"{_md_wy(m['daily']['wyckoff'])} |")
     md.append("| **SMC (OB/FVG/Sweep)** | "
               f"{_md_smc(m['weekly']['smc'])} | "
-              f"{_md_smc(m['daily']['smc'])} | "
-              f"{_md_smc(m['60min']['smc'])} |")
-    # 量价 (2026-08-17 拆分后: fflow 主力净流入 + OBV 段背离 同行展示)
+              f"{_md_smc(m['daily']['smc'])} |")
     md.append("| **量价 (fflow+OBV)** | "
               f"{_md_volume_price(m['weekly']['volume_price'])} | "
-              f"{_md_volume_price(m['daily']['volume_price'])} | "
-              f"{_md_volume_price(m['60min']['volume_price'])} |")
-    # 共振
+              f"{_md_volume_price(m['daily']['volume_price'])} |")
     md.append("| **多市场共振** | "
               f"{_md_res(m['weekly']['resonance'])} | "
-              f"{_md_res(m['daily']['resonance'])} | "
-              f"{_md_res(m['60min']['resonance'])} |")
-    # 综合判定 + 建议价
+              f"{_md_res(m['daily']['resonance'])} |")
     md.append("| **🎯 综合判定** | "
               f"{_md_composite(m['weekly']['composite'])} | "
-              f"{_md_composite(m['daily']['composite'])} | "
-              f"{_md_composite(m['60min']['composite'])} |")
+              f"{_md_composite(m['daily']['composite'])} |")
     md.append("")
 
     # 实战建议 (取日线 composite)

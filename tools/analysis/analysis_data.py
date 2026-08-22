@@ -304,7 +304,6 @@ class AnalysisData:
 
     kline: list[KLineBar] = field(default_factory=list)
     kline_status: Optional[DataStatus] = None
-    kline_60m: list[dict] = field(default_factory=list)  # 60分 K 线 (给 5 合 1 顶部预警, 2026-07-25 加)
 
     ma_table: list[MaRow] = field(default_factory=list)
     ma_status: Optional[DataStatus] = None
@@ -648,14 +647,11 @@ class AnalysisData:
             chan_data = {
                 "weekly": chan_raw.get("weekly", {}),
                 "daily":  chan_raw.get("daily", {}),
-                "60min":  chan_raw.get("60min", {}),
                 "beichi": {
                     "weekly": (lambda b: b.get("display", "") if isinstance(b, dict) else b)(
                         (chan_raw.get("weekly") or {}).get("beichi", "")),
                     "daily":  (lambda b: b.get("display", "") if isinstance(b, dict) else b)(
                         (chan_raw.get("daily")  or {}).get("beichi", "")),
-                    "60min":  (lambda b: b.get("display", "") if isinstance(b, dict) else b)(
-                        (chan_raw.get("60min")  or {}).get("beichi", "")),
                 },
             }
 
@@ -667,8 +663,6 @@ class AnalysisData:
             pe_ttm=raw.get("pe_ttm"),
             kline=[KLineBar(**bar) for bar in kline_raw],
             kline_status=DataStatus(name="kline", status=_infer_status("kline", bool(kline_raw))),
-            # 2026-07-25 加: 60分 K 线 (给 5 合 1 顶部预警, 避免 render 阶段拉数据)
-            kline_60m=list(raw.get("kline_60m") or []),
             ma_table=ma_table,
             ma_status=DataStatus(name="ma", status="OK" if ma_table else "EMPTY"),
             fflow_data=[

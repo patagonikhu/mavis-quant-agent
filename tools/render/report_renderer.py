@@ -148,13 +148,6 @@ def _section_fflow(data: AnalysisData) -> str:
     return "\n".join(lines)
 
 
-def _section_chan_60m(data: AnalysisData) -> str:
-    """60 分级背驰 — 必须由缠论 skill 计算, 这里给占位"""
-    if data.chan_data and "60m" in data.chan_data:
-        ch = data.chan_data["60m"]
-        return f"**60分顶背驰:** {ch.get('top_count', 0)} 个  /  **底背驰:** {ch.get('bottom_count', 0)} 个\n"
-    return "> **数据状态:** ⚠️ 缠论数据未传入\n> **说明:** 60 分背驰由 `/t-trigger` 计算, 此处不直接展示\n"
-
 
 def _section_chan_full(data: AnalysisData) -> str:
     """缠论完整 4 级别 — 从 dump JSON 的 chan 字段生成 (2026-07-24 修复: 之前只放占位)"""
@@ -165,7 +158,6 @@ def _section_chan_full(data: AnalysisData) -> str:
     if data.chan_data:
         weekly = data.chan_data.get("weekly", {})
         daily = data.chan_data.get("daily", {})
-        m60 = data.chan_data.get("60min", {})
         beichi = data.chan_data.get("beichi", {})
 
         def _hub_str(hub):
@@ -193,7 +185,6 @@ def _section_chan_full(data: AnalysisData) -> str:
             "|---|---|---|---|",
             f"| 周 | {_hub_str(weekly.get('hub', {}))} | {_seg_count(weekly)} | {weekly.get('hub', {}).get('seg_idx', '—') or '—'} |",
             f"| 日 | {_hub_str(daily.get('hub', {}))} | {_seg_count(daily)} | {daily.get('hub', {}).get('seg_idx', '—') or '—'} |",
-            f"| 60分 | {_hub_str(m60.get('hub', {}))} | {_seg_count(m60)} | {m60.get('hub', {}).get('seg_idx', '—') or '—'} |",
             "",
             "**中枢构成 (日线最近 8 段):**",
             _segs_table(daily) or "_无段数据_",
@@ -204,14 +195,12 @@ def _section_chan_full(data: AnalysisData) -> str:
 
     return """> **数据状态:** ⚠️ 缠论 4 级别表未传入
 > **说明:** 完整缠论数据由 `/t-trigger` 计算, 见 `docs/analyze-{code}.md` 后续 section
-> **占位:** 周/日/60分/30分 中枢列表 + 段列表 + 背驰信号 — 由 t-trigger 注入
+> **占位:** 周/日 中枢列表 + 段列表 + 背驰信号 — 由 t-trigger 注入
 
 | 级别 | 中枢数 | 段数 | 顶背驰 | 底背驰 |
 |---|---|---|---|---|
 | 周 | — | — | — | — |
 | 日 | — | — | — | — |
-| 60分 | — | — | — | — |
-| 30分 | — | — | — | — |
 """
 
 
@@ -871,7 +860,7 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
     # v5.10.42: 3 周期 sub_events 都从 s5.get("wyckoff").sub_events_by_period[level] 拿
     _wy_data_for_sub = s5.get("wyckoff") or {}
     _sub_by_period = _wy_data_for_sub.get("sub_events_by_period", {}) or {}
-    _level_key_map = {"weekly": "weekly", "daily": "daily", "60min": "60min"}
+    _level_key_map = {"weekly": "weekly", "daily": "daily"}
     _level_sub_events = _sub_by_period.get(_level_key_map.get(level, level), []) or []
 
     # ── 1. 缠论 ─────────────────────────────────────────────
@@ -929,8 +918,8 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
         wy_data = s5.get("wyckoff_weekly") or s5.get("wyckoff") or {}
         wy_focus_label = "长线趋势"
     else:
-        wy_data = s5.get("wyckoff_60m") or s5.get("wyckoff") or {}
-        wy_focus_label = "近期微结构"
+        wy_data = s5.get("wyckoff") or {}
+        wy_focus_label = wy_data.get("action", "等待")
     wy_stage = wy_data.get("stage", "?")
     wy_name  = wy_data.get("stage_name", "未知")
     wy_conf  = wy_data.get("confidence", 0)
@@ -960,8 +949,6 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
     # ── 3. SMC (各周期用真实独立数据) ────────────────────────────
     if level == "weekly":
         smc = s5.get("smc_weekly") or s5.get("smc") or {}
-    elif level == "60min":
-        smc = s5.get("smc_60m") or s5.get("smc") or {}
     else:
         smc = s5.get("smc") or {}
 
@@ -1061,9 +1048,6 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
     if level == "weekly":
         res = s5.get("resonance_weekly") or s5.get("resonance") or {}
         res_label = "20日"
-    elif level == "60min":
-        res = s5.get("resonance_60m") or s5.get("resonance") or {}
-        res_label = "1日"
     else:
         res = s5.get("resonance") or {}
         res_label = "5日"
@@ -1073,11 +1057,9 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
     res_sector = res.get("sector_ret_5d", res.get("sector_ret", 0))
     res_focus  = f"个股{res_stock:+.1f}% / 板块{res_sector:+.1f}% ({res_label}窗口) — {res_dir}"
 
-    # 止跌信号（仅日线计算，其他周期显示说明）
+    # 止跌信号（仅日线计算，周线显示说明）
     if level == "weekly":
         stop_signal = "周线不适用 (看日线止跌)"
-    elif level == "60min":
-        stop_signal = "60分不适用 (看日线止跌)"
     else:  # daily
         stop_signal = "❓ K线不足"
         if data.kline and len(data.kline) >= 2:
@@ -1100,7 +1082,7 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
                 stop_signal = "❓ 计算异常"
 
     # 买卖点 (从 buy_sell_points 取对应周期)
-    bsp_level_key = {"weekly": "weekly", "daily": "daily", "60min": "60min"}.get(level, "daily")
+    bsp_level_key = {"weekly": "weekly", "daily": "daily"}.get(level, "daily")
     bsp = (data.buy_sell_points or {}).get(bsp_level_key, {})
     bsp_action = bsp.get("action", "观察")
     bsp_active = [(k, v) for k, v in bsp.items()
@@ -1201,13 +1183,6 @@ def _section_daily(data: AnalysisData) -> str:
     if not data.chan_data and not data.analysis:
         return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
     return _section_period(data, "daily", "日线", "1.0x", ("5d", "10d", "20d"))
-
-
-def _section_60min(data: AnalysisData) -> str:
-    """📋 60分分析 (5 方法)"""
-    if not data.chan_data and not data.analysis:
-        return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
-    return _section_period(data, "60min", "60分", "0.5x", ("3d", "5d", "10d"))
 
 
 def _section_factor_matrix(data: AnalysisData) -> str:
@@ -1399,16 +1374,14 @@ def _sweep_str(row: dict) -> str:
 
 
 def _ma_str(row: dict) -> str:
-    """MA 三周期偏离: "+4.0% / -8.8% / +0.8%"
+    """MA 두 주기 편차: "+4.0% / -8.8%"
     2026-07-31 提到模块级
     """
     d = row.get('ma_dev_daily')
     w = row.get('ma_dev_weekly')
-    m = row.get('ma_dev_60m')
     d_s = f"{d:+.1f}%" if d is not None else "—"
     w_s = f"{w:+.1f}%" if w is not None else "—"
-    m_s = f"{m:+.1f}%" if m is not None else "—"
-    return f"{d_s} / {w_s} / {m_s}"
+    return f"{d_s} / {w_s}"
 
 
 def _pos_str(row: dict) -> str:
@@ -1438,16 +1411,13 @@ def _has_signal(row: dict) -> bool:
         if "(0%)" in b or "段1=0.0" in b: return False
         return True
     b   = row.get("daily_beichi")  or ""
-    b60 = row.get("60m_beichi")    or ""
     bw  = row.get("weekly_beichi") or ""
     se_d  = row.get("sub_event_daily", "—")
-    se_60 = row.get("sub_event_60m", "—")
     return (
         (valid_bc(b)   and any(x in b   for x in ("顶背","底背","弱背"))) or
-        (valid_bc(b60) and any(x in b60 for x in ("顶背","底背"))) or
         (valid_bc(bw)  and any(x in bw  for x in ("顶背","底背"))) or
-        bool(row.get("bsp_daily")) or bool(row.get("bsp_60m")) or bool(row.get("bsp_weekly")) or
-        se_d != "—" or se_60 != "—" or
+        bool(row.get("bsp_daily")) or bool(row.get("bsp_weekly")) or
+        se_d != "—" or
         bool(row.get("smc_sweeps_today"))
     )
 
@@ -1469,8 +1439,8 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
     if not rows:
         return "> 数据不足\n"
 
-    HEADER = "| 日期 | 收盘 | 威科夫(日/周/60) | 子事件(日/周/60) | 背驰(日/周/60) | MA(日/周/60) | 日中枢 | 周中枢 | 60分中枢 | 买卖点 | 变化 | 日分(顶/底) | A天(日/周/60) | OBV |"
-    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | 背驰(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | 日分(顶/底) | A天(日/周) | OBV |"
+    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     HEADER_N = HEADER.count("|") - 1  # 15
     lines = [HEADER, SEP]
 
@@ -1480,11 +1450,11 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
             # 跳过无变化的日子, 但强制保留最后一行 (今天)
             continue
 
-        wy  = f"{row['wyckoff_daily'][0]}/{row['wyckoff_weekly'][0]}/{row['wyckoff_60m'][0]}"
+        wy  = f"{row['wyckoff_daily'][0]}/{row['wyckoff_weekly'][0]}"
         def se_short(s):
             if not s or s == "—": return "—"
             return s.split(" (")[0]
-        se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}/{se_short(row.get('sub_event_60m'))}"
+        se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
         def _bc_with_class(bc, bc_class):
             short = _bc_short(bc)
             if short == "—":
@@ -1499,12 +1469,10 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
                 return f"{short}🟡{s_suffix}"
             return f"{short}{s_suffix}"
         bc3 = (f"{_bc_with_class(row['daily_beichi'], row.get('bc_class_daily'))}/"
-               f"{_bc_with_class(row['weekly_beichi'], row.get('bc_class_weekly'))}/"
-               f"{_bc_with_class(row['60m_beichi'], row.get('bc_class_60m'))}")
-        # bsp: 3 个周期分别标 (daily/weekly/60m), 空格 join
-        # 2026-08-01: 加 timeframe 标识, 跟其他列对齐
+               f"{_bc_with_class(row['weekly_beichi'], row.get('bc_class_weekly'))}")
+        # bsp: 2 개 주기 (daily/weekly)
         bsp_parts = []
-        for k, lbl in (("bsp_daily", "日"), ("bsp_weekly", "周"), ("bsp_60m", "60m")):
+        for k, lbl in (("bsp_daily", "日"), ("bsp_weekly", "周")):
             for l in _bsp_str(row.get(k)).split():
                 if l and l != "—":
                     bsp_parts.append(f"{l}({lbl})")
@@ -1532,14 +1500,13 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
 
         ad = row.get('accum_days_daily', 0)
         aw = row.get('accum_days_weekly', 0)
-        a6 = row.get('accum_days_60m', 0)
-        accum_str = f"{ad}/{aw}/{a6}" if any([ad, aw, a6]) else "—"
+        accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
 
         line = (
             f"| {row['date']} | ¥{row['close']:.1f} "
             f"| {wy} | {se} | {bc3} "
             f"| {_ma_str(row)} "
-            f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} | {_hub_str(row['hub_60m'])} "
+            f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
             f"| {b3} | {chg_str} | {day_score} | {accum_str} "
             f"| {obv_label(row)} |"
         )
@@ -1612,7 +1579,7 @@ def _section_chan_three_elements(data: AnalysisData) -> str:
 | 要素 | 状态 | 说明 |
 |---|---|---|
 | **中枢位置** | {calc_pos} | {extra} |
-| **背驰信号** | {beichi.get('daily') or beichi.get('60min') or beichi.get('weekly') or '尚无背驰信号'} | 段面积比较 (日/60分/周) |
+| **背驰信号** | {beichi.get('daily') or beichi.get('weekly') or '尚无背驰信号'} | 段面积比较 (日/周) |
 | **止跌信号** | {beichi.get('止跌') or beichi.get('stop_loss_signal') or ('✅ 出现' if beichi.get('bottom') else '⚠️ 未出现')} | 缩量+长下影+次日不新低 |
 
 **操作建议:** {action}
@@ -1625,7 +1592,7 @@ def _section_chan_signals(data: AnalysisData) -> str:
         return "> **数据状态:** ⚠️ 缠论信号未生成\n"
     chan = data.chan_data
     buy_points, sell_points = [], []
-    for level in ["weekly", "daily", "60min"]:
+    for level in ["weekly", "daily"]:
         segs = (chan.get(level) or {}).get("segs", []) or []
         if segs:
             last = segs[-1]
@@ -1649,13 +1616,12 @@ def _section_chan_signals(data: AnalysisData) -> str:
         if found: return f"📈 关注卖出"
         return "持续观察"
 
-    return f"""**3 级别中枢/段/背驰汇总 (周/日/60分):**
+    return f"""**2 级别中枢/段/背驰汇总 (周/日):**
 
 | 级别 | 中枢 | 段数 | 末段方向 | 潜在信号 |
 |---|---|---|---|---|
 | 周 | {_hub_str('weekly')} | {len((chan.get('weekly') or {}).get('segs', []) or [])} | {_last_dir('weekly')} | {_signal_str('weekly', _last_dir('weekly'))} |
 | 日 | {_hub_str('daily')} | {len((chan.get('daily') or {}).get('segs', []) or [])} | {_last_dir('daily')} | {_signal_str('daily', _last_dir('daily'))} |
-| 60分 | {_hub_str('60min')} | {len((chan.get('60min') or {}).get('segs', []) or [])} | {_last_dir('60min')} | {_signal_str('60min', _last_dir('60min'))} |
 
 **买点:** {'无' if not buy_points else ', '.join(buy_points)} | **卖点:** {'无' if not sell_points else ', '.join(sell_points)}
 """
@@ -1669,7 +1635,7 @@ def _section_buy_sell_points(data: AnalysisData) -> str:
 
     lines = ["| 周期 | 0买(逆势) | 1买 | 2买 | 3买 | 1卖 | 2卖 | 3卖 | 操作 |",
              "|---|---|---|---|---|---|---|---|---|"]
-    for lv, label in [("weekly","周线"), ("daily","日线"), ("60min","60分")]:
+    for lv, label in [("weekly","周线"), ("daily","日线")]:
         lv_data = bsp.get(lv, {})
         if not lv_data:
             continue
@@ -2014,11 +1980,6 @@ def render_report(data: AnalysisData, sector: str = "—") -> str:
 
 ### 📋 日线分析 (5 方法 × 日线视角)
 {_section_daily(data)}
-
----
-
-### 📋 60分分析 (5 方法 × 60分视角)
-{_section_60min(data)}
 
 ---
 

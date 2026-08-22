@@ -1,11 +1,11 @@
 """
-chan/three_levels.py - 周/日/60分 三级别缠论分析入口
+chan/three_levels.py - 周/日 二级别缠论分析入口
 
 主函数:
-  build_chan_levels(code, name, get_day, get_60m)
-      — 完整三级别分析, 返回 (res_w, res_d, res_60, bc_w_str, bc_d_str, bc_60_str)
-  format_chan_table(res_w, res_d, res_60, bc_w, bc_d, bc_60, stop_signal, p)
-      — 渲染三级别中枢+背驰表格
+  build_chan_levels(code, name, get_day)
+      — 完整二级别分析, 返回 (res_w, res_d, bc_w, bc_d)
+  format_chan_table(res_w, res_d, bc_w, bc_d, stop_signal, p)
+      — 渲染二级别中枢+背驰表格
 
 向后兼容别名 (供旧代码过渡):
   analyze_three_levels = build_chan_levels
@@ -23,13 +23,14 @@ def _low(b): return b['low'] if isinstance(b, dict) else b[4]
 def _vol(b): return b['volume'] if isinstance(b, dict) else b[5]
 
 
-def build_chan_levels(code, name, get_day, get_60m):
+def build_chan_levels(code, name, get_day, get_60m=None):
     """
-    完整三级别缠论分析（周/日/60分）
+    周/日 二级别缠论分析
 
-    get_day, get_60m: callable, 返回 [{trade_date, open, close, high, low, volume}, ...]
+    get_day: callable, 返回 [{trade_date, open, close, high, low, volume}, ...]
+    get_60m: 保留参数兼容旧调用, 不再使用
 
-    返回: (res_w, res_d, res_60, bc_w, bc_d, bc_60)
+    返回: (res_w, res_d, bc_w, bc_d)
       res_*  — analyze_hub_v2 结果
       bc_*   — beichi_from_segs 结构体 (含 display / bc_type / direction / strength)
     """
@@ -62,40 +63,30 @@ def build_chan_levels(code, name, get_day, get_60m):
     h_d = [_high(b) for b in kd_day]
     l_d = [_low(b) for b in kd_day]
 
-    kd_60 = get_60m(code) or []
-    d_60 = [_date(b) for b in kd_60]
-    c_60 = [_close(b) for b in kd_60]
-    h_60 = [_high(b) for b in kd_60]
-    l_60 = [_low(b) for b in kd_60]
-
     # 笔→段→中枢
-    res_w  = analyze_hub_v2(d_w, c_w, h_w, l_w, '周线')
-    res_d  = analyze_hub_v2(d_d, c_d, h_d, l_d, '日线')
-    res_60 = analyze_hub_v2(d_60, c_60, h_60, l_60, '60分') if len(c_60) >= 30 \
-             else {'error': '数据不足', 'label': '60分', 'segs': []}
+    res_w = analyze_hub_v2(d_w, c_w, h_w, l_w, '周线')
+    res_d = analyze_hub_v2(d_d, c_d, h_d, l_d, '日线')
 
     # 背驰：用已算好的正式段，不重跑 K 线扫描
-    p_d  = c_d[-1]  if c_d  else 0
-    p_w  = c_w[-1]  if c_w  else 0
-    p_60 = c_60[-1] if c_60 else 0
+    p_d = c_d[-1] if c_d else 0
+    p_w = c_w[-1] if c_w else 0
     _bc_empty = {'display': '数据不足', 'direction': 'none', 'strength': 'none',
                  'bc_type': 'normal', 'ratio': 0, 'a1': 0, 'a2': 0, 's1_hub': -1, 's2_hub': -1}
-    hubs_w  = find_all_hubs(res_w.get('segs', []),  p_w)  if len(c_w) >= 30 else []
-    hubs_d  = find_all_hubs(res_d.get('segs', []),  p_d)
-    hubs_60 = find_all_hubs(res_60.get('segs', []), p_60) if len(c_60) >= 30 else []
-    bc_w  = beichi_from_segs(res_w.get('segs', []),  c_w,  d_w,  hubs_w) \
-            if len(c_w) >= 30 else _bc_empty
-    bc_d  = beichi_from_segs(res_d.get('segs', []),  c_d,  d_d,  hubs_d)
-    bc_60 = beichi_from_segs(res_60.get('segs', []), c_60, d_60, hubs_60) \
-            if len(c_60) >= 30 else _bc_empty
+    hubs_w = find_all_hubs(res_w.get('segs', []), p_w) if len(c_w) >= 30 else []
+    hubs_d = find_all_hubs(res_d.get('segs', []), p_d)
+    bc_w = beichi_from_segs(res_w.get('segs', []), c_w, d_w, hubs_w) \
+           if len(c_w) >= 30 else _bc_empty
+    bc_d = beichi_from_segs(res_d.get('segs', []), c_d, d_d, hubs_d)
 
-    return res_w, res_d, res_60, bc_w, bc_d, bc_60
+    return res_w, res_d, bc_w, bc_d
 
 
-def format_chan_table(res_w, res_d, res_60, bc_w, bc_d, bc_60, stop_signal, p):
+def format_chan_table(res_w, res_d, bc_w, bc_d, stop_signal, p,
+                     res_60=None, bc_60=None):
     """
-    渲染三级别中枢 + 背驰 + 止跌表格
+    渲染二级别中枢 + 背驰 + 止跌表格
     列：级别 / 下沿 / 上沿 / 位置 / 背驰信号(面积) / 趋势背驰 / 止损 / 加仓位 / 止跌
+    res_60/bc_60: 保留参数兼容旧调用, 不再使用
     """
     def hub_info(res):
         h = res.get('hub', {})
@@ -134,38 +125,33 @@ def format_chan_table(res_w, res_d, res_60, bc_w, bc_d, bc_60, stop_signal, p):
 
     wl, wu, wp, wh = hub_info(res_w)
     dl, du, dp, dh = hub_info(res_d)
-    hl2, hu, hp, hh2 = hub_info(res_60)
 
-    segs_w  = res_w.get('segs', [])
-    segs_d  = res_d.get('segs', [])
-    segs_60 = res_60.get('segs', [])
-    hubs_w  = find_all_hubs(segs_w,  p)
-    hubs_d  = find_all_hubs(segs_d,  p)
-    hubs_60 = find_all_hubs(segs_60, p)
-    trend_w  = classify_beichi(bc_w)
-    trend_d  = classify_beichi(bc_d)
-    trend_60 = classify_beichi(bc_60)
+    segs_w = res_w.get('segs', [])
+    segs_d = res_d.get('segs', [])
+    hubs_w = find_all_hubs(segs_w, p)
+    hubs_d = find_all_hubs(segs_d, p)
+    trend_w = classify_beichi(bc_w)
+    trend_d = classify_beichi(bc_d)
 
-    def row(label, lo, hi, pos, bc_str, trend, res):
+    def row(label, lo, hi, pos, bc_str, trend, res, extra=""):
         area = bc_area(bc_str)
         bc_cell = f"{bc_short(bc_str)} {area}"
         return (f"  | {label:<4} | {lo:<6} | {hi:<6} | {pos:<6} | "
                 f"{bc_cell:<26} | {trend:<9} | {op_stop(res, p):<8} | "
-                f"{op_add(res, p):<8} |")
+                f"{op_add(res, p):<8} |{extra}")
 
-    lines = ["📐 三级中枢 + 背驰 + 止跌\n"]
+    lines = ["📐 二级中枢 + 背驰 + 止跌\n"]
     lines.append("  | 级别 | 下沿   | 上沿   | 位置   | 背驰信号(面积段1→段2)     | 趋势背驰  | 止损     | 加仓位   |")
     lines.append("  |------|--------|--------|--------|---------------------------|-----------|----------|----------|")
     lines.append(row('周线', wl, wu, wp, bc_w, trend_w, res_w))
-    lines.append(row('日线', dl, du, dp, bc_d, trend_d, res_d))
-    lines.append(row('60分', hl2, hu, hp, bc_60, trend_60, res_60) + f" 止跌:{stop_signal[:6]} |")
+    lines.append(row('日线', dl, du, dp, bc_d, trend_d, res_d, f" 止跌:{stop_signal[:6]} |"))
     lines.append("")
 
     w_ok = bool(wh.get('valid') and wh.get('low', 999) <= p)
     bot = any(
         (isinstance(x, dict) and x.get('direction') == 'bot' and x.get('strength') in ('strong', 'weak'))
         or (isinstance(x, str) and '底背驰' in x)
-        for x in [bc_w, bc_d, bc_60]
+        for x in [bc_w, bc_d]
     )
     has_stop = stop_signal != "❌无"
     score = int(w_ok) + int(bot) + int(has_stop)

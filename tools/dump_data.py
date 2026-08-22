@@ -69,18 +69,6 @@ DUMP_SCHEMA = {
             "pct_chg":    {"raw": "pct_chg",     "unit": "%"},
         },
     },
-    "kline_60m": {
-        "fetcher": "fetch_kline_60m", "raw": "60m bars", "unit": "见子字段",
-        "fields": {
-            "trade_date": {"raw": "date/datetime", "unit": "datetime str", "note": "旧名 date，删除 date_only"},
-            "open":       {"raw": "open",           "unit": "元"},
-            "close":      {"raw": "close",          "unit": "元"},
-            "high":       {"raw": "high",           "unit": "元"},
-            "low":        {"raw": "low",            "unit": "元"},
-            "volume":     {"raw": "vol/volume",     "unit": "手",         "note": "Sina=volume Tushare=vol，统一存 volume"},
-            "pct_chg":    {"raw": "pct_chg",        "unit": "%"},
-        },
-    },
     "weekly": {
         "fetcher": "get_weekly", "raw": "weekly bars", "unit": "见子字段",
         "fields": {
@@ -235,7 +223,7 @@ def _build_raw_only(code: str, raw: dict) -> dict:
     """
     2026-07-29 v5.6 加: 构造只含 raw 字段的 dict (Phase 1 拉数据完成后, 不跑分析)
     包含: code/name/as_of/close/pe_ttm/pb/total_mv/...
-          kline/kline_60m/weekly/eps_table/tushare/fflow
+          kline/weekly/eps_table/tushare/fflow
     字段对齐完整 dump (除 analysis 相关: chan/factor/buy_sell_points/...
                                                 three_layer_position/exit_signals/...
                                                 stop_profit_loss/monitor_triggers/...
@@ -260,7 +248,6 @@ def _build_raw_only(code: str, raw: dict) -> dict:
         "industry": raw.get("industry", ""),
         "list_date": raw.get("list_date", ""),
         "kline": raw.get("kline") or [],
-        "kline_60m": raw.get("kline_60m") or [],  # v5.10.13: fetch_all 7 段已拉, 删重复 subprocess curl
         "weekly": _normalize_weekly_for_top(raw.get("weekly") or []),
         "fflow": fflow,
         "eps_table": eps_table,
@@ -465,8 +452,6 @@ def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) ->
         # 2026-07-25 加: 60 分 K 线 (sina, 给 5 合 1 顶部预警)
         # v5.6 fix: analyze_only 模式从 raw 取 (避免重复拉 sina)
         # v5.10.9 修: 非 analyze_only 模式也直接从 raw 取 (fetch_all 并发 7 段已拉), 0 重复拉 Sina
-        "kline_60m": (raw.get("kline_60m") or []),
-
         # 2026-07-29 v5.6 加: 顶层 weekly K 线 (从 raw 提, 之前只在 tushare.weekly 段)
         # 字段对齐 kline 格式 (date/open/close/high/low/vol/amount/pct_chg)
         "weekly": (raw.get("weekly") if analyze_only and raw.get("weekly") is not None else _normalize_weekly_for_top(raw.get("weekly") or [])),
@@ -664,15 +649,15 @@ def collect_data_sources(data: dict) -> dict:
 
     # 4. 缠论分析
     chan = data.get("chan") or {}
-    has_chan = bool(chan.get("daily") or chan.get("60min"))
+    has_chan = bool(chan.get("daily") or chan.get("weekly"))
     sources.append({
-        "section": "缠论三级别",
+        "section": "缠论二级别",
         "type": "本地算法",
         "primary": "tools/chan_analysis.analyze_three_levels",
         "fallback": "— (无备源, 算法稳定)",
         "status": "OK" if has_chan else "EMPTY",
         "key": "chan",
-        "value": f"周/日/60分 + 30分" if has_chan else "—",
+        "value": f"周/日" if has_chan else "—",
     })
 
     # 5. 主力分析 (fflow)
@@ -823,7 +808,6 @@ def main():
     chan = data.get('chan') or {}
     print(f"  - 周线段: {len((chan.get('weekly') or {}).get('segs', []))}")
     print(f"  - 日线段: {len((chan.get('daily') or {}).get('segs', []))}")
-    print(f"  - 60分段: {len((chan.get('60min') or {}).get('segs', []))}")
     print(f"  - 日线中枢: {(chan.get('daily') or {}).get('hub', {}).get('valid', False)}")
     fflow = data.get('fflow') or {}
     print(f"  - fflow verdict: {fflow.get('verdict', 'N/A')}")
