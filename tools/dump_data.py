@@ -360,15 +360,19 @@ def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) ->
 
     # === Phase 1: 拉数据 ===
     if not analyze_only:
-        from pathlib import Path as _Path
-        _has_local = any((_Path("data/history/daily")).glob("*.parquet"))
-        if _has_local:
-            # 本地历史库存在：先幂等补缺失交易日（无缺口秒返回），再从本地读
-            from tools.history_sync import sync_incremental
-            sync_incremental()
+        from tools.history_sync import sync_incremental, read_kline
+
+        # 幂等补缺失交易日：有缺口才拉，无缺口秒返回
+        # 历史库未建档时 sync_incremental 会提示 --init，不报错
+        sync_incremental()
+
+        # 检查本地是否有足够K线（至少30根才有意义）
+        ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"
+        _local_bars = read_kline(ts_code, limit=30)
+        if len(_local_bars) >= 30:
             raw = fetch_from_local(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
         else:
-            # 历史库未建档：走原有网络拉取
+            # 本地数据不足（未建档或历史太短）→ 走网络拉取兜底
             raw = fetch_all(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
     else:
         # analyze_only: 从 disk 读 raw
