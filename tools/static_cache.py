@@ -33,6 +33,20 @@ _TTL_STOCK_BASIC = 30 * 24 * 3600   # 30天
 _TTL_EPS         = 30 * 24 * 3600   # 30天
 
 
+def _watchlist_codes() -> set:
+    """返回 watchlist.json 里的股票代码集合，用于判断是否需要缓存。"""
+    try:
+        return {s["code"] for s in json.loads(
+            Path("data/watchlist.json").read_text(encoding="utf-8")
+        ).get("stocks", [])}
+    except Exception:
+        return set()
+
+
+def _in_watchlist(code: str) -> bool:
+    return code in _watchlist_codes()
+
+
 # ============================================================
 # 1. 工具函数
 # ============================================================
@@ -65,11 +79,10 @@ def _now_str() -> str:
 # ============================================================
 
 def get_daily_basic(code: str, force: bool = False) -> dict:
-    """返回单只股票最新的 daily_basic 快照。
+    """返回单只股票最新的 daily_basic 快照。只对 watchlist 股票缓存/拉取。"""
+    if not _in_watchlist(code):
+        return {}
 
-    返回: {"total_mv": float, "circ_mv": float, "pe_ttm": float, "pb": float,
-            "turnover_rate": float, "volume_ratio": float, "updated": "YYYYMMDD"}
-    """
     cache = _load_json(DAILY_BASIC_PATH)
     entry = cache.get(code)
 
@@ -131,11 +144,10 @@ def refresh_daily_basic(codes: list[str]):
 # ============================================================
 
 def get_stock_basic(code: str, force: bool = False) -> dict:
-    """返回单只股票的静态基础信息。
+    """返回单只股票的静态基础信息。只对 watchlist 股票缓存/拉取。"""
+    if not _in_watchlist(code):
+        return {}
 
-    返回: {"name": str, "industry": str, "list_date": str,
-            "total_share": float, "float_share": float, "updated": "YYYYMMDD"}
-    """
     cache = _load_json(STOCK_BASIC_PATH)
     entry = cache.get(code)
 
@@ -192,7 +204,10 @@ def refresh_stock_basic(codes: list[str]):
 # ============================================================
 
 def get_eps(code: str, force: bool = False) -> list[dict]:
-    """返回单只股票的 EPS 预期表（与 analysis 消费的 eps_table 格式一致）。"""
+    """返回单只股票的 EPS 预期表。只对 watchlist 股票缓存/拉取。"""
+    if not _in_watchlist(code):
+        return []
+
     path = EPS_DIR / f"{code}.json"
 
     if not force and not _is_stale(path, _TTL_EPS):

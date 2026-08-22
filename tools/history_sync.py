@@ -189,7 +189,10 @@ def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: in
         if limit:
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date DESC LIMIT {limit}"
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date"
-        df = duckdb.execute(sql).df()
+        # 每次用独立连接，避免多线程共享连接问题
+        con = duckdb.connect()
+        df = con.execute(sql).df()
+        con.close()
         return df.to_dict("records")
     except Exception as e:
         print(f"  ⚠️ read_kline {ts_code} 失败: {e}", file=sys.stderr)

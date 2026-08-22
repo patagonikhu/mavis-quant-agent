@@ -79,16 +79,21 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     """从 AnalysisResult 提取单行因子快照"""
     from tools.factors.chan import find_all_hubs, classify_beichi
-    chan_raw = result.factor_scores["chan"].raw
-    bsp_raw  = result.factor_scores["buy_sell_points"].raw
-    wy_raw   = result.factor_scores["wyckoff"].raw
-    smc_raw  = result.factor_scores["smc"].raw or {}
-    # 2026-08-17 拆分: 量价拆成 fflow + obv 两个独立 strategy, factor_history 同步拆字段
-    fflow_fs = result.factor_scores.get("fflow")
-    obv_fs   = result.factor_scores.get("obv")
+    fs = result.factor_scores
+    chan_fs  = fs.get("chan")
+    bsp_fs   = fs.get("buy_sell_points")
+    wy_fs    = fs.get("wyckoff")
+    smc_fs   = fs.get("smc")
+    fflow_fs = fs.get("fflow")
+    obv_fs   = fs.get("obv")
+
+    chan_raw  = (chan_fs.raw  if chan_fs  else {}) or {}
+    bsp_raw   = (bsp_fs.raw  if bsp_fs  else {}) or {}
+    wy_raw    = (wy_fs.raw   if wy_fs   else {}) or {}
+    smc_raw   = (smc_fs.raw  if smc_fs  else {}) or {}
     fflow_raw = (fflow_fs.raw if fflow_fs else {}) or {}
-    obv_raw   = (obv_fs.raw   if obv_fs   else {}) or {}
-    p3       = wy_raw.get("3period") or {}
+    obv_raw   = (obv_fs.raw   if obv_fs  else {}) or {}
+    p3        = wy_raw.get("3period") or {}
 
     def _bc_class(level: str) -> str:
         """背驰分类: ⭐趋势顶背/底背  🟡盘整顶背/底背  🔵普通顶背/底背  无"""
