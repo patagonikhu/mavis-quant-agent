@@ -47,7 +47,7 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
 
         # 只算最近 window+30 天，只跑 3 个 strategy
         lookback = window + 30
-        rows = compute_factor_history(ctx, step=1, lookback=lookback,
+        rows = compute_factor_history(ctx, step=2, lookback=lookback,
                                       strategies=strategies)
         if not rows:
             return None

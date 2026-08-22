@@ -23,11 +23,21 @@ import argparse
 import json
 import sys
 import time
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
 HISTORY_DIR = Path("data/history/daily")
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+
+_tl = threading.local()  # thread-local duckdb 连接
+
+def _conn():
+    """每线程复用同一个 duckdb 连接，避免每次 connect() 开销。"""
+    import duckdb
+    if not hasattr(_tl, "con"):
+        _tl.con = duckdb.connect()
+    return _tl.con
 
 
 # ============================================================
@@ -189,10 +199,8 @@ def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: in
         if limit:
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date DESC LIMIT {limit}"
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date"
-        # 每次用独立连接，避免多线程共享连接问题
-        con = duckdb.connect()
-        df = con.execute(sql).df()
-        con.close()
+        # 每线程复用连接（thread-local），避免每次 connect() 开销
+        df = _conn().execute(sql).df()
         return df.to_dict("records")
     except Exception as e:
         print(f"  ⚠️ read_kline {ts_code} 失败: {e}", file=sys.stderr)
