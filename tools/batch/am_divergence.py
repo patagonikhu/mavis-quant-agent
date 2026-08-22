@@ -41,7 +41,7 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
         from tools.analysis.factor_history import compute_factor_history
 
         strategies = [WyckoffStrategy, ChanStrategy, MacdDivergenceStrategy]
-        ctx = DataStore.get_ctx(code)
+        ctx = DataStore.get_ctx(code, kline_only=True)  # 全市场扫描，不需要 eps/stock_basic
         if len(ctx.kline) < 60:
             return None
 

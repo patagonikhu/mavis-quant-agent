@@ -143,24 +143,17 @@ def is_oversold(drop_pct: float, threshold: float = DROP_THRESHOLD) -> bool:
     return drop_pct <= -threshold
 
 
-def process_one(basic: Dict[str, Any], drop_threshold: float, incremental: bool = True,
-                 max_age_days: int = 7) -> Tuple[str, Dict[str, Any]]:
-    """单只全流程: ST 过滤 + 拉 weekly + 算 drop.
+def process_one(basic: Dict[str, Any], drop_threshold: float,
+                incremental: bool = True, max_age_days: int = 7) -> Tuple[str, Dict[str, Any]]:
+    """单只全流程: ST 过滤 + 读本地 weekly + 算 drop。
 
-    增量机制 (incremental=True, 默认):
-      - 检查 data/dump_oversold/{code}.json 存在 → 跳过拉, 从 dump 读 weekly 重算 drop
-      - dump 写策略 (v2, user 8-20 拍板): 不管 pick/ok/short 都写 (含 weekly), fail 写 fail placeholder
-      - 下次跑: 有 dump skip 拉取, 没 dump 才拉, fail placeholder 重试
-
+    weekly 从本地历史库读（DataStore），0 网络调用。
     返回 (status, payload):
-      - ('pick', {...})   命中超跌
-      - ('ok', {...})     拉成功但没超跌
-      - ('cached', {...}) 从 dump 读 (增量), 复用 weekly
-      - ('skip_st', {...})
-      - ('short', {...})  数据不足
-      - ('rate', {...})   频控
-      - ('perm', {...})
-      - ('err', {...})    其它
+      - ('pick', {...})    命中超跌
+      - ('ok', {...})      未超跌
+      - ('skip_st', {...}) ST/退市
+      - ('short', {...})   数据不足
+      - ('err', {...})     异常
     """
     ts_code = basic.get("ts_code", "")
     code = _to_code(ts_code)
@@ -171,38 +164,9 @@ def process_one(basic: Dict[str, Any], drop_threshold: float, incremental: bool 
     if is_st_or_delisted(name):
         return "skip_st", meta
 
-    # 增量: 检查 dump (status="ok" 含 weekly, 跳过拉; < max_age_days 才 skip)
-    if incremental:
-        dump_fp = os.path.join(DUMP_OVER_DIR, f"{code}.json")
-        if os.path.exists(dump_fp):
-            try:
-                with open(dump_fp, encoding="utf-8") as f:
-                    cached = json.load(f)
-                cached_status = cached.get("status", "ok")
-                cached_as_of = cached.get("as_of", "")
-                # 1 周内 dump 跳过 (user 8-20 拍板 max_age_days=7)
-                try:
-                    cached_dt = datetime.fromisoformat(cached_as_of) if cached_as_of else None
-                    age_days = (datetime.now() - cached_dt).days if cached_dt else 999
-                except Exception:
-                    age_days = 999
-                if cached_status == "ok" and cached.get("weekly") and age_days <= max_age_days:
-                    # 成功 + 1 周内 → 跳过拉, 从 dump 重算 drop
-                    weekly = cached["weekly"]
-                    m = compute_drop(weekly)
-                    if m is None:
-                        return "short", {**meta, "weekly": weekly}
-                    payload = {**meta, "weekly": weekly, **m}
-                    if is_oversold(m["drop_pct"], drop_threshold):
-                        return "pick", payload
-                    return "cached", payload
-                # fail / 1 周前 / 无 weekly → 重试拉
-            except Exception as e:
-                logger.warning("read dump_oversold %s fail, fallback to fetch: %s", code, e)
-
     weekly, status = fetch_weekly_one(ts_code)
     if not weekly:
-        return status.lower().split("_")[0] if "RATE" in status else "err", {**meta, "status": status, "weekly": []}
+        return "err", {**meta, "status": status, "weekly": []}
 
     m = compute_drop(weekly)
     if m is None:
@@ -212,31 +176,6 @@ def process_one(basic: Dict[str, Any], drop_threshold: float, incremental: bool 
     if is_oversold(m["drop_pct"], drop_threshold):
         return "pick", payload
     return "ok", payload
-
-
-def write_dump_lite(code: str, basic: Dict[str, Any], weekly: List[Dict[str, Any]],
-                     status: str = "ok", reason: str = "") -> str:
-    """写 lite dump 到 data/dump_oversold/{code}.json
-
-    status:
-      - "ok": 拉成功, 含 weekly (不管跌幅够不够)
-      - "fail": 拉失败, weekly=[], 含 reason (频控/权限/异常)
-    """
-    os.makedirs(DUMP_OVER_DIR, exist_ok=True)
-    fp = os.path.join(DUMP_OVER_DIR, f"{code}.json")
-    payload = {
-        "code": code,
-        "name": basic.get("name", ""),
-        "industry": basic.get("industry", ""),
-        "list_date": basic.get("list_date", ""),
-        "as_of": _now(),
-        "status": status,
-        "reason": reason,
-        "weekly": weekly,
-    }
-    with open(fp, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=1)
-    return fp
 
 
 def build_watchlist(picks: List[Dict[str, Any]], drop_threshold: float,

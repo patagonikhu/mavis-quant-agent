@@ -68,30 +68,38 @@ class DataStore:
         return get_eps(code)
 
     @classmethod
-    def get_ctx(cls, code: str):
-        """返回 RawContext（L1 数据层唯一入口）。"""
+    def get_ctx(cls, code: str, kline_only: bool = False):
+        """返回 RawContext（L1 数据层唯一入口）。
+
+        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps 网络调用。
+        适合全市场扫描场景（am_divergence 等）。
+        """
         from tools.analysis.analysis_engine import RawContext
         from tools.fetch.data_fetcher import _synthesize_weekly
 
-        kline   = cls.get_kline(code)
-        weekly  = _synthesize_weekly(kline)
-        sb      = cls.get_stock_basic(code)
-        db      = cls.get_daily_basic(code)
-        eps     = cls.get_eps(code)
-        ts_code = _to_ts_code(code)
-        close   = kline[-1]["close"] if kline else (db.get("close") or 0.0)
+        kline  = cls.get_kline(code)
+        weekly = _synthesize_weekly(kline)
+        close  = kline[-1]["close"] if kline else 0.0
+
+        if kline_only:
+            return RawContext(
+                kline=kline, weekly=weekly,
+                eps_table=[], fflow={}, moneyflow=[],
+                current_price=close, market_cap_yi=0.0,
+                industry="", code=code, name="",
+            )
+
+        sb  = cls.get_stock_basic(code)
+        db  = cls.get_daily_basic(code)
+        eps = cls.get_eps(code)
 
         return RawContext(
-            kline=kline,
-            weekly=weekly,
-            eps_table=eps,
-            fflow={},
-            moneyflow=[],
-            current_price=close,
+            kline=kline, weekly=weekly,
+            eps_table=eps, fflow={}, moneyflow=[],
+            current_price=db.get("close") or close,
             market_cap_yi=db.get("total_mv") or 0.0,
             industry=sb.get("industry", ""),
-            code=code,
-            name=sb.get("name", ""),
+            code=code, name=sb.get("name", ""),
         )
 
     @classmethod
