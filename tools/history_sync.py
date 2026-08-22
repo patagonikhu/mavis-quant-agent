@@ -272,41 +272,60 @@ def sync_incremental(target_date: str | None = None) -> int:
 
 
 def sync_init(start_year: int = 2020) -> int:
-    """首次建档：按月拉全市场历史K线。
-    - 每月拉完立即写入（不等年底），限流/出错时已拉数据不丢
-    - 下次跑自动跳过已有月份（幂等）
+    """首次建档：按天拉全市场K线，按月批量写入。
+
+    - 每天调一次 daily(trade_date=date)，约5000行，不超 Tushare 6000行限制
+    - 每月积攒完写一次文件（减少 IO）
+    - 已有日期自动跳过（幂等），限流时先写盘再退出
     """
-    from tools.fetch.tushare_fetcher import get_daily_range
+    from tools.fetch.tushare_fetcher import get_daily_by_date
+    from collections import defaultdict
 
     today = _today()
-    ranges = _month_ranges(start_year, today)
-    print(f"  📦 首次建档: {start_year}-01-01 ~ {today}，共 {len(ranges)} 个月")
+    start = f"{start_year}0101"
+    all_dates = _get_trading_dates(start, today)
+    missing = [d for d in all_dates if not has_data_for_date(d)]
 
-    total = 0
-    for i, (start, end) in enumerate(ranges):
-        year = int(start[:4])
-        path = _parquet_path(year)
-        if path.exists() and has_data_for_date(start):
-            print(f"    跳过 {start[:6]} (已有)")
-            continue
+    if not missing:
+        print(f"  ✅ 已全量建档 ({start_year}-{today})")
+        return 0
 
-        records, status = get_daily_range(start, end)
+    total_days = len(all_dates)
+    done_days  = total_days - len(missing)
+    print(f"  📦 建档 {start_year}-01-01 ~ {today}，共 {total_days} 个交易日，待补 {len(missing)} 天")
+
+    count = 0
+    month_buf: dict[str, list] = defaultdict(list)  # "YYYYMM" → records
+
+    for i, date in enumerate(missing):
+        records, status = get_daily_by_date(date)
         if not records:
             if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
-                print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘，下次跑继续")
+                # 限流：把已积攒的写盘再退出
+                for ym, recs in month_buf.items():
+                    if recs:
+                        print(f"    💾 写入 {ym}: {len(recs)} 条")
+                        _append_records(recs)
+                print(f"  ⚠️ 限流退出 ({status})，下次跑继续")
                 sys.exit(0)
-            print(f"    跳过 {start[:6]} (状态: {status})")
-            time.sleep(0.5)
+            print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
             continue
 
-        # 每月立即写入，限流时不丢数据
-        n = _append_records(records)
-        total += n
-        pct = (i + 1) / len(ranges) * 100
-        print(f"    ✅ {start[:6]}: {n} 条 [{pct:.0f}%]")
-        time.sleep(0.5)
+        ym = date[:6]
+        month_buf[ym].extend(records)
+        count += len(records)
 
-    return total
+        # 每月最后一天（或当月最后一条待处理）写入
+        next_ym = missing[i + 1][:6] if i + 1 < len(missing) else None
+        if next_ym != ym and month_buf[ym]:
+            n = _append_records(month_buf[ym])
+            pct = (done_days + i + 1) / total_days * 100
+            print(f"    💾 {ym}: {n} 条写入 [{pct:.0f}%]")
+            month_buf[ym] = []
+
+        time.sleep(0.15)
+
+    return count
 
     return total
 
