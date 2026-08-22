@@ -351,9 +351,9 @@ def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) ->
     拉取单只股票的所有数据 + 跑分析, dump 到 JSON 结构
 
     2026-07-29 v5.6 加: 拆分 Phase 1 / Phase 2
-      - pull_only=True: 只拉数据, 不跑分析, 不写 JSON
-      - analyze_only=True: 读 data/dump/{code}.json, 跑分析, 写回
-      - 默认 (False/False): pull + analyze 串行 (backward compat)
+      - pull_only=True: 只拉数据, 不跑分析
+      - analyze_only=True: 从 DataStore 读数据, 跑分析
+      - 默认 (False/False): 同步增量 + analyze 串行
     """
     from tools.fetch.data_fetcher import fetch_from_local
     from tools.fetch.tushare_fetcher import get_fund_flow_combined
@@ -375,10 +375,9 @@ def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) ->
 
         raw = fetch_from_local(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
     else:
-        # analyze_only: 从 disk 读 raw
-        import json as _j
-        with open(f"data/dump/{code}.json", encoding="utf-8") as _f:
-            raw = _j.load(_f)
+        # analyze_only: 从 DataStore 读（不重拉数据）
+        from tools.data_store import DataStore
+        raw = DataStore.get_raw(code)
 
     if pull_only:
         # 只返回 raw 字段 (不跑分析)

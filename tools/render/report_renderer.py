@@ -14,13 +14,11 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
 
 使用方式 (必须先走 dump 层):
   # Step 1: dump 层拉数据 (唯一网络入口)
-  # bash tools/with_venv.sh python -m tools.dump_data 002371
-
-  # Step 2: analysisengine 层读 dump + 算 factor
-  from tools.dump_data import load_dump
+  # Step 2: 读数据 + 算 factor
+  from tools.data_store import DataStore
   from tools.analysis.analysis_data import AnalysisData
-  dump = load_dump("002371")
-  data = AnalysisData.from_dump(dump)
+  raw = DataStore.get_raw("002371")
+  data = AnalysisData.from_dump(raw)
 
   # Step 3: render 层纯渲染
   from tools.render.report_renderer import render_report
@@ -1688,17 +1686,9 @@ def _section_data_sources(data: AnalysisData) -> str:
 
 
 def _section_ts_basic(data: AnalysisData) -> str:
-    """📊 基础信息 (Tushare) — 从 dump 读"""
-    import json as _json
-    from pathlib import Path
-    sb = {}
-    dump_path = Path(f"data/dump/{data.code}.json")
-    if dump_path.exists():
-        try:
-            raw_full = _json.loads(dump_path.read_text(encoding="utf-8"))
-            sb = (raw_full.get("tushare") or {}).get("stock_basic") or {}
-        except Exception:
-            pass
+    """📊 基础信息 (Tushare) — 从 DataStore 读"""
+    from tools.data_store import DataStore
+    sb = DataStore.get_stock_basic(data.code)
     name     = sb.get("name")     or data.name or "未知"
     industry = sb.get("industry") or data.industry if hasattr(data, "industry") else "未知"
     list_date= sb.get("list_date", "未知")
@@ -1711,144 +1701,6 @@ def _section_ts_basic(data: AnalysisData) -> str:
             f"**行业:** {industry}  **上市日期:** {list_date}  "
             f"**总股本:** {total_sh:.2f}亿股  **流通股本:** {float_sh:.2f}亿股  **市场:** {market}\n\n"
             "> **数据源:** Tushare.stock_basic (dump)\n")
-
-
-def _section_ts_pe_pb(data: AnalysisData) -> str:
-    """💹 PE / PB / 市值 (Tushare daily_basic)"""
-    db = ((data.raw_tushare or {}) if hasattr(data, "raw_tushare") else {})
-    # 从 dump tushare.daily_basic 取最新一条
-    daily_basic = ((getattr(data, "_raw", None) or {}).get("tushare") or {}).get("daily_basic") or []
-    if not daily_basic and not data.current_price:
-        return "> **数据状态:** ⚠️ PE/PB 数据未拉取\n"
-    rt = daily_basic[-1] if daily_basic else {}
-    price = data.current_price or rt.get("close", 0) or 0
-    pe = data.pe_ttm or rt.get("pe_ttm") or 0
-    pb = rt.get("pb") or 0
-    turnover = rt.get("turnover_rate") or 0
-    total_mv = (rt.get("total_mv") or 0) / 1e4  # 万 → 亿
-    circ_mv = (rt.get("circ_mv") or 0) / 1e4
-    return (f"**最新价:** ¥{price:.2f}  **PE(TTM):** {pe:.2f}倍  "
-            f"**PB:** {pb:.2f}倍  **换手率:** {turnover:.2f}%  "
-            f"**总市值:** {total_mv:.2f}亿  **流通市值:** {circ_mv:.2f}亿\n\n"
-            "> **数据源:** Tushare.daily_basic (dump)\n")
-
-
-def _section_ts_weekly_monthly(data: AnalysisData) -> str:
-    """📈 周线 / 月线 K"""
-    wrows = data.ts_weekly or []
-    mrows = data.ts_monthly or []
-    if not wrows and not mrows:
-        return "> **数据状态:** ⚠️ 周月线数据未存入 dump (需重新 dump_data)\n"
-    lines = ["**周线 (最近 12 周):**\n", "| 周末 | 收盘 | 涨跌幅 |", "|---|---|---|"]
-    for i, r in enumerate(wrows[-12:]):
-        prev = float(wrows[-12:][i-1]["close"]) if i > 0 else float(r["close"])
-        pct = (float(r["close"]) / prev - 1) * 100 if i > 0 else 0
-        lines.append(f"| {r.get('trade_date','—')} | ¥{float(r['close']):.2f} | {pct:+.2f}% |")
-    lines += ["\n**月线走势:**\n", "| 月末 | 收盘 | 涨跌幅 |", "|---|---|---|"]
-    for i, r in enumerate(mrows[-6:]):
-        prev = float(mrows[-6:][i-1]["close"]) if i > 0 else float(r["close"])
-        pct = (float(r["close"]) / prev - 1) * 100 if i > 0 else 0
-        lines.append(f"| {r.get('trade_date','—')} | ¥{float(r['close']):.2f} | {pct:+.2f}% |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.weekly + Tushare.monthly (dump)\n"
-
-
-def _section_ts_north_flow(data: AnalysisData) -> str:
-    """🌐 北向资金"""
-    rows = data.ts_north_flow or []
-    if not rows:
-        return "> **数据状态:** ⚠️ 北向资金数据未存入 dump (需重新 dump_data)\n"
-    lines = ["| 日期 | 净买额 (万) | 方向 |", "|---|---|---|"]
-    for r in rows[:5]:
-        net = r.get("net_amount", 0) or 0
-        lines.append(f"| {r.get('trade_date','—')} | {net:.0f} | {'🔵 买入' if net > 0 else '🟠 卖出'} |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.hsgt_top10 (dump)\n"
-
-
-def _section_ts_margin(data: AnalysisData) -> str:
-    """💳 融资融券"""
-    rows = data.ts_margin or []
-    if not rows:
-        return "> **数据状态:** ⚠️ 融资融券数据未存入 dump (需重新 dump_data)\n"
-    rows_list = rows if isinstance(rows, list) else [rows]
-    lines = ["| 日期 | 融资余额 (亿) | 融券余额 (亿) |", "|---|---|---|"]
-    for r in rows_list[:5]:
-        lines.append(f"| {r.get('trade_date','—')} | {float(r.get('rzye',0) or 0)/1e8:.2f} | {float(r.get('rqye',0) or 0)/1e8:.2f} |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.margin (dump)\n"
-
-
-def _section_ts_top_list(data: AnalysisData) -> str:
-    """🐉 龙虎榜"""
-    rows = data.ts_top_list or []
-    if not rows:
-        return "> **数据状态:** ✅ 当日未上龙虎榜 (正常，非异常股无上榜)\n"
-    lines = ["| 代码 | 名称 | 净买额 (万) | 解读 |", "|---|---|---|---|"]
-    for r in rows[:10]:
-        net = float(r.get("net_amount", 0) or 0) / 1e4
-        lines.append(f"| {str(r.get('ts_code','—'))[:6]} | {r.get('name','—')} | {net:+,.0f} | {'🟢主力买' if net > 0 else '🟠主力卖'} |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.top_list (dump)\n"
-
-
-def _section_ts_finance(data: AnalysisData) -> str:
-    """💵 财务指标"""
-    rows = data.ts_fina_rows or []
-    if not rows:
-        # fallback: 用 dump tushare.fina_indicator (单期 dict)
-        fi = ((getattr(data, "_raw", None) or {}).get("tushare") or {}).get("fina_indicator")
-        rows = [fi] if isinstance(fi, dict) and fi else []
-    if not rows:
-        return "> **数据状态:** ⚠️ 财务指标未存入 dump (需重新 dump_data)\n"
-    lines = ["| 报告期 | ROE | 毛利率 | 净利率 | 资负率 | 营收YoY | 净利YoY |", "|---|---|---|---|---|---|---|"]
-    for r in rows[:4]:
-        lines.append(f"| {r.get('end_date','—')} | {float(r.get('roe',0) or 0):.1f}% | "
-                     f"{float(r.get('grossprofit_margin',0) or 0):.1f}% | "
-                     f"{float(r.get('netprofit_margin',0) or 0):.1f}% | "
-                     f"{float(r.get('debt_to_assets',0) or 0):.1f}% | "
-                     f"{float(r.get('or_yoy',0) or 0):+.1f}% | "
-                     f"{float(r.get('np_yoy',0) or 0):+.1f}% |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.fina_indicator (dump)\n"
-
-
-def _section_ts_dividend(data: AnalysisData) -> str:
-    """💰 分红送转"""
-    rows = data.ts_dividend or []
-    if not rows:
-        return "> **数据状态:** ⚠️ 分红数据未存入 dump (需重新 dump_data)\n"
-    lines = ["| 年度 | 分红方案 | 每股派 (元) | 股权登记日 |", "|---|---|---|---|"]
-    for r in rows[:10]:
-        lines.append(f"| {str(r.get('end_date','—'))[:4]} | {r.get('div_proc','—')} | "
-                     f"{float(r.get('cash_div',0) or 0):.3f} | {r.get('record_date','—')} |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.dividend (dump)\n"
-
-
-def _section_ts_forecast(data: AnalysisData) -> str:
-    """📊 业绩预告 — 从 dump 读"""
-    # 优先从 dump tushare.forecast 读
-    rows = ((getattr(data, "_tushare_dump", None) or {}).get("forecast")
-            or (data.raw_tushare if hasattr(data, "raw_tushare") else None))
-    # fallback: 从 raw 取
-    if not rows:
-        import sys
-        # analysis_data 在 from_raw 时把 raw 存了吗? 没有，但 forecast 在 tushare 字段
-        pass
-    # 直接从 dump.json tushare.forecast 取 (已在 dump_data 里写入)
-    # analysis_data 里没有单独字段，暂时用 dump 路径
-    import json as _json
-    from pathlib import Path
-    dump_path = Path(f"data/dump/{data.code}.json")
-    if dump_path.exists():
-        try:
-            raw_full = _json.loads(dump_path.read_text(encoding="utf-8"))
-            rows = (raw_full.get("tushare") or {}).get("forecast") or []
-        except Exception:
-            rows = []
-    if not rows:
-        return "> **数据状态:** ⚠️ 业绩预告未存入 dump (需重新 dump_data)\n"
-    lines = ["| 报告期 | 预告类型 | 净利变动 | 摘要 |", "|---|---|---|---|"]
-    for r in rows[:5]:
-        p = r.get("p_change", 0) or 0
-        lines.append(f"| {r.get('ann_date','未知')} | {r.get('type','未知')} | "
-                     f"{'🟢' if p>0 else '🔴'} {p:+.1f}% | {str(r.get('summary','无摘要'))[:50]} |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.forecast (dump)\n"
 
 
 def _section_t_events(data: AnalysisData) -> str:
@@ -2078,46 +1930,6 @@ def render_report(data: AnalysisData, sector: str = "—") -> str:
 
 ---
 
-## 💹 PE / PB / 市值 (Tushare daily_basic)
-{_section_ts_pe_pb(data)}
-
----
-
-## 📈 周线 / 月线 K (Tushare)
-{_section_ts_weekly_monthly(data)}
-
----
-
-## 🌐 北向资金 (沪深股通)
-{_section_ts_north_flow(data)}
-
----
-
-## 💳 融资融券
-{_section_ts_margin(data)}
-
----
-
-## 🐉 龙虎榜 (近 1 日, Tushare)
-{_section_ts_top_list(data)}
-
----
-
-## 💵 财务指标 (ROE/毛利率/净利率/资产负债率)
-{_section_ts_finance(data)}
-
----
-
-## 💰 分红送转 (近 10 年)
-{_section_ts_dividend(data)}
-
----
-
-## 📊 业绩预告 (Tushare forecast, 2000 积分档) ⭐
-{_section_ts_forecast(data)}
-
----
-
 ## 🎯 T 框架事件 (业绩自动 + 非业绩手维护, 2026-07-23 升级)
 {_section_t_events(data)}
 
@@ -2154,10 +1966,10 @@ if __name__ == "__main__":
 
     test_code = sys.argv[1] if len(sys.argv) > 1 else "002371"
 
-    from tools.dump_data import load_dump
+    from tools.data_store import DataStore
     from tools.analysis.analysis_data import AnalysisData
-    dump = load_dump(test_code)
-    data = AnalysisData.from_dump(dump)
+    raw = DataStore.get_raw(test_code)
+    data = AnalysisData.from_dump(raw)
     md = render_report(data)
-    print(md[:2000])  # 打印前 2000 字
+    print(md[:2000])
     print(f"\n\n... 总长度 {len(md)} 字符 ...")

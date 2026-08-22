@@ -2,7 +2,7 @@
 analysis_engine.py — analysis 层 (策略模式) (2026-07-30 v5.10.25)
 
 **架构 (3 层)**:
-- L1 dump 层: data/dump/{code}.json (factor.* 原始结果)
+- L1 dump 层: DataStore.get_raw(code) / get_ctx(code)
 - L2 analysis 层 (本文件): AnalysisEngine.analyze(dump) → analysis dict
 - L3 render 层: render_report(analysis, dump) → markdown
 
@@ -1195,13 +1195,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     code = sys.argv[1]
-    dump_path = Path(__file__).resolve().parent.parent / "data" / "dump" / f"{code}.json"
-    if not dump_path.exists():
-        print(f"❌ dump 不存在: {dump_path}")
-        sys.exit(1)
-
-    dump = json.load(open(dump_path, encoding="utf-8"))
-    result = analyze_dump(dump)
+    from tools.data_store import DataStore
+    ctx = DataStore.get_ctx(code)
+    result = AnalysisEngine().analyze(ctx)
 
     print(f"📊 {result.code} {result.name} (¥{result.current_price})")
     print(f"   场景: {result.scene} ({result.scene_name})")
