@@ -355,7 +355,7 @@ def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) ->
       - analyze_only=True: 读 data/dump/{code}.json, 跑分析, 写回
       - 默认 (False/False): pull + analyze 串行 (backward compat)
     """
-    from tools.fetch.data_fetcher import fetch_all, fetch_from_local
+    from tools.fetch.data_fetcher import fetch_from_local
     from tools.fetch.tushare_fetcher import get_fund_flow_combined
 
     # === Phase 1: 拉数据 ===
@@ -363,17 +363,17 @@ def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) ->
         from tools.history_sync import sync_incremental, read_kline
 
         # 幂等补缺失交易日：有缺口才拉，无缺口秒返回
-        # 历史库未建档时 sync_incremental 会提示 --init，不报错
         sync_incremental()
 
-        # 检查本地是否有足够K线（至少30根才有意义）
+        # 检查本地是否有足够K线
         ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"
         _local_bars = read_kline(ts_code, limit=30)
-        if len(_local_bars) >= 30:
-            raw = fetch_from_local(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
-        else:
-            # 本地数据不足（未建档或历史太短）→ 走网络拉取兜底
-            raw = fetch_all(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
+        if len(_local_bars) < 30:
+            print(f"⚠️ 本地历史库数据不足（{len(_local_bars)} 根），请先运行:")
+            print(f"   tools/with_venv.sh python -m tools.history_sync --init")
+            return None
+
+        raw = fetch_from_local(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
     else:
         # analyze_only: 从 disk 读 raw
         import json as _j
