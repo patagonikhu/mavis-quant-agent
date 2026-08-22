@@ -68,62 +68,31 @@ class DataStore:
         return get_eps(code)
 
     @classmethod
-    def get_raw(cls, code: str) -> dict:
-        """组装完整 raw dict，格式与原 dump json 兼容。
+    def get_ctx(cls, code: str):
+        """返回 RawContext（L1 数据层唯一入口）。"""
+        from tools.analysis.analysis_engine import RawContext
+        from tools.fetch.data_fetcher import _synthesize_weekly
 
-        替代:
-            json.load(open(f"data/dump/{code}.json"))
-            load_dump(code)
-        """
         kline   = cls.get_kline(code)
-        weekly  = cls.get_weekly(code)
+        weekly  = _synthesize_weekly(kline)
         sb      = cls.get_stock_basic(code)
         db      = cls.get_daily_basic(code)
         eps     = cls.get_eps(code)
+        ts_code = _to_ts_code(code)
+        close   = kline[-1]["close"] if kline else (db.get("close") or 0.0)
 
-        close = kline[-1]["close"] if kline else (db.get("close") or 0)
-
-        return {
-            "code":          code,
-            "name":          sb.get("name", ""),
-            "industry":      sb.get("industry", ""),
-            "list_date":     sb.get("list_date", ""),
-            "close":         close,
-            "pe_ttm":        db.get("pe_ttm"),
-            "pb":            db.get("pb"),
-            "total_mv":      db.get("total_mv"),
-            "circ_mv":       db.get("circ_mv"),
-            "total_share":   sb.get("total_share", 0),
-            "turnover_rate": db.get("turnover_rate"),
-            "volume_ratio":  db.get("volume_ratio"),
-            "kline":         kline,
-            "weekly":        weekly,
-            "eps_table":     eps,
-            "fflow":         {},
-            "tushare": {
-                "stock_basic": {
-                    "ts_code":   _to_ts_code(code),
-                    "name":      sb.get("name", ""),
-                    "industry":  sb.get("industry", ""),
-                    "list_date": sb.get("list_date", ""),
-                    "market":    sb.get("market", ""),
-                },
-                "money_flow": [],
-                "weekly":     weekly,
-            },
-        }
-
-    @classmethod
-    def get_ctx(cls, code: str):
-        """直接返回 RawContext，替代 RawContext.from_dump(dump)。
-
-        替代:
-            dump = json.load(open(...))
-            ctx = RawContext.from_dump(dump)
-        """
-        from tools.analysis.analysis_engine import RawContext
-        raw = cls.get_raw(code)
-        return RawContext.from_dump(raw)
+        return RawContext(
+            kline=kline,
+            weekly=weekly,
+            eps_table=eps,
+            fflow={},
+            moneyflow=[],
+            current_price=close,
+            market_cap_yi=db.get("total_mv") or 0.0,
+            industry=sb.get("industry", ""),
+            code=code,
+            name=sb.get("name", ""),
+        )
 
     @classmethod
     def list_codes(cls) -> list[str]:

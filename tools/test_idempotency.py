@@ -2,20 +2,21 @@
 test_idempotency.py — render_report 幂等性测试
 用法: PYTHONPATH=. python3 tools/test_idempotency.py [code]
 """
-import json, hashlib, sys
-from pathlib import Path
+import hashlib, sys
+from tools.data_store import DataStore
+from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.analysis_data import AnalysisData
 from tools.render.report_renderer import render_report
 
 def test(code: str = "300274", runs: int = 3) -> bool:
-    dump = Path(f"data/dump/{code}.json")
-    if not dump.exists():
-        print(f"❌ dump 不存在: {dump}")
+    ctx = DataStore.get_ctx(code)
+    if not ctx.kline:
+        print(f"❌ {code} 本地无K线")
         return False
-    raw = json.loads(dump.read_text(encoding="utf-8"))
     hashes = set()
     for i in range(runs):
-        data = AnalysisData.from_raw(raw)
+        result = AnalysisEngine().analyze(ctx)
+        data = AnalysisData.from_result(ctx, result)
         md = render_report(data)
         hashes.add(hashlib.md5(md.encode()).hexdigest())
     ok = len(hashes) == 1

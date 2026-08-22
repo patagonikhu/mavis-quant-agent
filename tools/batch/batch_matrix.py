@@ -78,17 +78,19 @@ def render_one_matrix(code: str) -> str:
     v5.10.26 改: dump.get("signals_5method") 字段已删, 改用 AnalysisEngine
     v5.10.42 改: 删 AnalysisData.signals_5method property 兼容层 (5 处全部改读 data.analysis)
     """
-    dump = _load_dump(code)
-    if not dump:
-        return f"## {code} 跳过\n\n> ❌ dump 不存在, 跑 `bash tools/refresh_all.sh {code}`\n"
+    from tools.data_store import DataStore
+    from tools.analysis.analysis_engine import AnalysisEngine
 
-    name = dump.get("name", code)
-    current_price = dump.get("current_price", 0)
-    # v5.10.30 改: 用 analyze_dump_to_dict (内含 factor.* 3 周期桥接)
-    from tools.analysis.analysis_engine import analyze_dump_to_dict
-    s5 = analyze_dump_to_dict(dump)  # dict 含 wyckoff_weekly/60m 桥接
-    chan_data = dump.get("chan") or {}
-    buy_sell_points = dump.get("buy_sell_points") or {}
+    ctx = DataStore.get_ctx(code)
+    if not ctx.kline:
+        return f"## {code} 跳过\n\n> ❌ 本地无K线, 跑 `history_sync --init`\n"
+
+    name = ctx.name or code
+    current_price = ctx.current_price or 0
+    result = AnalysisEngine().analyze(ctx)
+    s5 = result.to_dict(ctx)
+    chan_data = s5.get("chan") or {}
+    buy_sell_points = s5.get("buy_sell_points") or {}
 
     if s5.get("error"):
         return f"## {code} 跳过 (AnalysisEngine 失败)\n\n> ❌ {s5['error']}\n\n---\n\n"

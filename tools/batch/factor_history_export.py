@@ -54,21 +54,16 @@ def _load_name_from_dump(code: str, dump: dict) -> str:
 
 
 def export_one(code: str, years: int, out_path: Path | None) -> tuple[str, Path, int]:
-    """导出单只票的历史因子
-
-    Returns:
-        (code, output_path, row_count)
-    """
-    p = DUMP_DIR / f"{code}.json"
-    if not p.exists():
-        raise FileNotFoundError(f"dump 不存在: {p}")
-    raw = json.load(open(p, encoding="utf-8"))
-    name = _load_name_from_dump(code, raw)
-
-    # 构造 AnalysisData, 复用 _section_factor_history (0 重复代码)
+    """导出单只票的历史因子"""
+    from tools.data_store import DataStore
+    from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.analysis_data import AnalysisData
     from tools.render.report_renderer import _section_factor_history
-    data = AnalysisData.from_raw(raw)
+
+    ctx = DataStore.get_ctx(code)
+    name = ctx.name or code
+    result = AnalysisEngine().analyze(ctx)
+    data = AnalysisData.from_result(ctx, result)
 
     lookback = years * TRADING_DAYS_PER_YEAR
     t0 = time.time()

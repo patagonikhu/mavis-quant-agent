@@ -87,24 +87,6 @@ class RawContext:
             name=self.name,
         )
 
-    @classmethod
-    def from_dump(cls, dump: dict) -> "RawContext":
-        """从现有 dump dict 构造 RawContext（过渡期兼容）"""
-        kline     = dump.get("kline") or []
-        weekly    = dump.get("weekly") or dump.get("tushare", {}).get("weekly") or []
-        return cls(
-            kline=kline,
-            weekly=weekly,
-            eps_table=dump.get("eps_table") or [],
-            fflow=dump.get("fflow") or {},
-            moneyflow=dump.get("tushare", {}).get("money_flow") or [],
-            current_price=dump.get("close") or (kline[-1]["close"] if kline else 0.0),
-            industry=dump.get("industry", ""),
-            market_cap_yi=dump.get("total_mv") or 0.0,
-            code=dump.get("code") or "",
-            name=dump.get("name") or "",
-        )
-
 
 @dataclass
 class FactorScore:
@@ -950,19 +932,13 @@ class AnalysisEngine:
         self._phase2 = [s() for s in all_s if s in PHASE2_STRATEGIES]
         self._instances = self._phase1 + self._phase2
 
-    def analyze(self, ctx_or_dump, as_of_date: str | None = None) -> "AnalysisResult":
-        """核心入口: RawContext（或兼容旧 dump dict）→ AnalysisResult
+    def analyze(self, ctx: "RawContext", as_of_date: str | None = None) -> "AnalysisResult":
+        """核心入口: RawContext → AnalysisResult
 
         Args:
-            ctx_or_dump: RawContext 实例，或旧版 dump dict（自动转换）
+            ctx:         RawContext 实例
             as_of_date:  "2026-07-01" 格式，传入时对 K 线做截断（回测用）
         """
-        # 兼容旧 dump dict 调用
-        if isinstance(ctx_or_dump, dict):
-            ctx = RawContext.from_dump(ctx_or_dump)
-        else:
-            ctx = ctx_or_dump
-
         # 统一切片，Strategy 收到的永远是已截断的 ctx
         if as_of_date:
             ctx = ctx.slice(as_of_date)
@@ -1129,19 +1105,6 @@ class AnalysisEngine:
 # ============================================================
 
 _engine = AnalysisEngine()
-
-
-def analyze_dump(dump: dict) -> AnalysisResult:
-    """util: dump dict → AnalysisResult（兼容旧调用）"""
-    ctx = RawContext.from_dump(dump)
-    return _engine.analyze(ctx)
-
-
-def analyze_dump_to_dict(dump: dict) -> dict:
-    """util: dump dict → analysis dict（兼容旧 signals_5method dict 接口）"""
-    ctx = RawContext.from_dump(dump)
-    result = _engine.analyze(ctx)
-    return result.to_dict(ctx)
 
 
 # ============================================================

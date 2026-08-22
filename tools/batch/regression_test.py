@@ -117,9 +117,13 @@ def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
 
         if render:
             try:
+                from tools.data_store import DataStore
+                from tools.analysis.analysis_engine import AnalysisEngine
                 from tools.analysis.analysis_data import AnalysisData
                 from tools.render.report_renderer import render_report
-                render_report(AnalysisData.from_dump(dump))
+                ctx = DataStore.get_ctx(code)
+                result = AnalysisEngine().analyze(ctx)
+                render_report(AnalysisData.from_result(ctx, result))
             except Exception as e:
                 logger.warning("render {code} failed: {e}", code=code, e=e)
 
@@ -159,7 +163,7 @@ def _load_pending() -> list:
 
 
 # === 3. 提取关键字段 ===
-def extract_fields(dump: dict) -> dict:
+def extract_fields(code: str) -> dict:
     """从 dump.json 提取要回测的关键字段 (排除 _meta 避免时间戳干扰)
 
     v5.10.31 改: 走 AnalysisData.from_raw() util 类读 dump 字段
@@ -170,15 +174,17 @@ def extract_fields(dump: dict) -> dict:
     注意: 只提取 dump 字面字段 (重拉后值不变)
     分析层输出 (scene/score/4in1) 是 render 时算, 不进 baseline
     """
-    if dump is None:
+    if not code:
         return {}
 
-    # 走 util 类 (跟 t-analyze / t-batch 同入口)
+    from tools.data_store import DataStore
+    from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.analysis_data import AnalysisData
-    ad = AnalysisData.from_raw(dump)  # 触发 dump 字段读取, 1 处定义
+    ctx = DataStore.get_ctx(code)
+    result = AnalysisEngine().analyze(ctx)
+    ad = AnalysisData.from_result(ctx, result)
 
-    factor = dump.get('factor', {})
-    # hub 从 analysis 层 chan_result 读（dump.factor 已删，chan 由 AnalysisEngine 实时算）
+    factor = {}
     chan_daily = (ad.analysis or {}).get('chan', {}).get('daily', {}) or {}
     hub_daily  = chan_daily.get('hub', {}) or {}
     # v5.10.36 改: peg/dcf 从 dump 顶层挪到 analysis 层 (AnalysisEngine.analyze 时算)

@@ -159,17 +159,17 @@ def _main():
     parser.add_argument("--format", choices=["table", "json"], default="table")
     args = parser.parse_args()
 
-    dump_path = f"data/dump/{args.code}.json"
-    try:
-        dump = json.load(open(dump_path))
-    except FileNotFoundError:
-        print(f"❌ dump 不存在: {dump_path}")
-        print(f"   先跑: bash tools/with_venv.sh python3 -m tools.dump_data {args.code}")
-        sys.exit(1)
-
+    from tools.data_store import DataStore
+    from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.analysis_data import AnalysisData
-    data = AnalysisData.from_raw(dump)
-    name = dump.get("name", "")
+
+    ctx = DataStore.get_ctx(args.code)
+    if not ctx.kline:
+        print(f"❌ {args.code} 本地无K线，请先运行 history_sync --init")
+        sys.exit(1)
+    result = AnalysisEngine().analyze(ctx)
+    data = AnalysisData.from_result(ctx, result)
+    name = ctx.name or ""
 
     print(f"📊 计算 {args.code} {name} 周度顶信号评分 (lookback={args.lookback})...")
     results = compute_weekly_top_score(data.ctx, lookback=args.lookback)

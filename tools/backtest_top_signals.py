@@ -117,21 +117,19 @@ SIGNALS = {**TOP_SIGNALS, **BOT_SIGNALS, **SELL_SIGNALS}
 
 
 def run(forward_days: int, threshold_pct: float) -> None:
-    from tools.analysis.analysis_engine import AnalysisEngine, RawContext
+    from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.factor_history import compute_factor_history, backtest_signal
+    from tools.data_store import DataStore
 
-    dump_files = sorted(DUMP_DIR.glob("*.json"))
-    print(f"扫描 {len(dump_files)} 个 dump 文件 | forward={forward_days}d | threshold={threshold_pct}%\n")
+    codes = DataStore.watchlist_codes() or DataStore.list_codes()
+    print(f"扫描 {len(codes)} 只股票 | forward={forward_days}d | threshold={threshold_pct}%\n")
 
-    # 汇总: signal_name -> {tp, fp, fn}
     totals: dict[str, dict] = {k: {"tp": 0, "fp": 0, "fn": 0} for k in SIGNALS}
     engine = AnalysisEngine()
 
-    for dump_file in dump_files:
-        code = dump_file.stem
+    for code in codes:
         try:
-            d = json.load(open(dump_file))
-            ctx = RawContext.from_dump(d)
+            ctx = DataStore.get_ctx(code)
             if len(ctx.kline) < forward_days + 10:
                 continue
             # lookback 用全量 K 线长度

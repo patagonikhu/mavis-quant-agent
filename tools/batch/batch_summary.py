@@ -356,12 +356,10 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
 
         # 10 天合集: 重算每日具体信号 (md 没存 10 天每日信号字符串)
         try:
-            import json
-            dump_path = PROJECT_ROOT / "data" / "dump" / f"{code}.json"
-            if not dump_path.exists():
+            from tools.data_store import DataStore
+            ctx = DataStore.get_ctx(code)
+            if not ctx.kline:
                 continue
-            dump = json.load(open(dump_path))
-            ctx = RawContext.from_dump(dump)
             rows = compute_factor_history(ctx, step=1, lookback=n_days)
             for i in range(1, len(rows)):
                 prev, cur = rows[i - 1], rows[i]
