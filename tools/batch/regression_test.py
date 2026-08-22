@@ -99,7 +99,6 @@ def load_dump(code: str) -> dict:
 def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
     """跑 dump_data, 返回 (新dump, 耗时秒)
 
-    v5.10.18 大改: 删 subprocess, 改 in-process 调 AgentData
     用户原话:
       - 'test dump 和平时的dump 要share 逻辑的' → 跟 t-analyze / t-watchlist 同入口
       - 'dump 期间撞墙 你就不写文件不就好了, 继续执行呀' → 撞墙这只跳过, 其他继续
@@ -112,20 +111,15 @@ def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
     """
     start = time.time()
     try:
-        # 跟平时 t-analyze 走完全相同的入口 (AgentData 类, C 方案 v5.11)
-        from tools.batch.agent_data import AgentData
-        # max_age_min=0 强制重拉 (baseline 场景)
-        # max_age_min=60 走 cache (test 场景, 跟平时一样)
-        ad = AgentData(code, max_age_min=0)  # baseline 必拉, test 也必拉 (回归测试要看新逻辑)
-        dump = ad.raw()
+        from tools.dump_data import analyze
+        dump = analyze(code)
         elapsed = time.time() - start
 
-        # v5.10.18: 撞墙/fail 标记 → skip, 不写盘
-        # AgentData._fetch_and_dump 失败时 raise (save_dump 不会执行, dump 文件不会被脏写)
-        # 这里只处理成功路径
         if render:
             try:
-                ad.render()  # 可选, regression 不需要, 但保持跟平时一样
+                from tools.analysis.analysis_data import AnalysisData
+                from tools.render.report_renderer import render_report
+                render_report(AnalysisData.from_dump(dump))
             except Exception as e:
                 logger.warning("render {code} failed: {e}", code=code, e=e)
 
@@ -348,7 +342,6 @@ def run_dump_only(codes: List[str] = DEFAULT_CODES, workers: int = 1):
     用户原话:
       - 'regression_test 你也分步跑呀, dump 和测试分成两个独立的步骤'
       - 'dump 期间撞墙 你就不写文件不就好了, 继续执行呀, 下次再重跑这些dump 失败的就行了'
-      - 'test dump 和平时的dump 要share 逻辑的' → 走 AgentData in-process
     """
     # v5.10.18: 合并 pending_retry 列表 (上次撞墙待重试的)
     pending = _load_pending()

@@ -346,166 +346,86 @@ def _fetch_tushare_safe(code: str, eps_table: list = None) -> dict:
         }
 
 
-def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) -> dict:
-    """
-    拉取单只股票的所有数据 + 跑分析, dump 到 JSON 结构
+def analyze(code: str) -> dict:
+    """단只股票：从本地读数据 + 跑分析，返回 raw dict。
 
-    2026-07-29 v5.6 加: 拆分 Phase 1 / Phase 2
-      - pull_only=True: 只拉数据, 不跑分析
-      - analyze_only=True: 从 DataStore 读数据, 跑分析
-      - 默认 (False/False): 同步增量 + analyze 串行
+    不做网络同步（sync 由调用方在更上层负责调一次）。
     """
-    from tools.fetch.data_fetcher import fetch_from_local
+    from tools.data_store import DataStore
     from tools.fetch.tushare_fetcher import get_fund_flow_combined
 
-    # === Phase 1: 拉数据 ===
-    if not analyze_only:
-        from tools.history_sync import sync_incremental, read_kline
+    raw = DataStore.get_raw(code)
+    if not raw.get("kline"):
+        print(f"⚠️ {code} 本地无K线，请先运行: tools/with_venv.sh python -m tools.history_sync --init")
+        return {}
 
-        # 幂等补缺失交易日：有缺口才拉，无缺口秒返回
-        sync_incremental()
-
-        # 检查本地是否有足够K线
-        ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"
-        _local_bars = read_kline(ts_code, limit=30)
-        if len(_local_bars) < 30:
-            print(f"⚠️ 本地历史库数据不足（{len(_local_bars)} 根），请先运行:")
-            print(f"   tools/with_venv.sh python -m tools.history_sync --init")
-            return None
-
-        raw = fetch_from_local(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
-    else:
-        # analyze_only: 从 DataStore 读（不重拉数据）
-        from tools.data_store import DataStore
-        raw = DataStore.get_raw(code)
-
-    if pull_only:
-        # 只返回 raw 字段 (不跑分析)
-        return _build_raw_only(code, raw)
-
-    # 读 events.json (项目级)
+    # 读 events.json
     events = []
     try:
         import json as _json
         with open("data/events.json", "r", encoding="utf-8") as f:
-            events_data = _json.load(f)
-            events = events_data.get("events", [])
+            events = _json.load(f).get("events", [])
     except Exception:
         pass
+
     kd_day = raw.get("kline", [])
 
-
-    # 1. fflow 组合
-    fflow = get_fund_flow_combined(code, days=60, moneyflow_list=raw.get("moneyflow"))
-
-    # 1.5 多市场共振 (需要网络拉指数K线，属于原始数据层，存入dump)
+    # 多市场共振（实时算，需要网络拉指数K线）
     resonance = {}
     try:
         from tools.factors.macro.resonance import resonance_3period as _resonance_fn
         res_3p = _resonance_fn(code, periods=(1, 5, 20))
-        res_5d = res_3p.get(5, {})
         resonance = {
-            "1d": res_3p.get(1, {}),
-            "5d": res_5d,
+            "1d":  res_3p.get(1, {}),
+            "5d":  res_3p.get(5, {}),
             "20d": res_3p.get(20, {}),
         }
     except Exception:
         pass
 
-    # 2.5 拉 EPS 表 (用于 PEG 计算)
-    eps_table = raw.get("eps_table", [])
-    if not eps_table:
-        # 2026-07-22: data_fetcher 走 tushare, 这里兜底用 tushare fina_indicator 直接补
-        try:
-            from tools.fetch.tushare_fetcher import get_fina_indicator
-            fi, _ = get_fina_indicator(code)
-            if fi and fi.get("eps") is not None:
-                end = fi.get("end_date", "")
-                period = f"{end[:4]}A" if len(end) == 8 and end[4:6] == "12" else f"{end[:4]}Q1"
-                eps_table = [{
-                    "year": period,
-                    "year_mark": "A" if "A" in period else "Q1",
-                    "eps": float(fi.get("eps", 0) or 0),
-                    "net_profit_yi": 0.0,
-                    "revenue_yi": 0.0,
-                    "roe": float(fi.get("roe", 0) or 0),
-                }]
-        except Exception:
-            eps_table = []
+    eps_table = raw.get("eps_table") or []
 
-    # 3. 实时价/EPS/技术指标 (来自 raw)
     return {
-        "code": code,
-        "name": raw.get("name", ""),
-        "as_of": datetime.now().isoformat(),
-        "close": raw.get("close"),
-        "pe_ttm": raw.get("pe_ttm"),
-        "pb": raw.get("pb"),
-        "total_mv": raw.get("total_mv"),
-        "circ_mv": raw.get("circ_mv"),
-        "total_share": raw.get("total_share"),
+        "code":          code,
+        "name":          raw.get("name", ""),
+        "as_of":         datetime.now().isoformat(),
+        "close":         raw.get("close"),
+        "pe_ttm":        raw.get("pe_ttm"),
+        "pb":            raw.get("pb"),
+        "total_mv":      raw.get("total_mv"),
+        "circ_mv":       raw.get("circ_mv"),
+        "total_share":   raw.get("total_share"),
         "turnover_rate": raw.get("turnover_rate"),
-        "volume_ratio": raw.get("volume_ratio"),
-        "industry": raw.get("industry", ""),
-        "list_date": raw.get("list_date", ""),
-
-        # K线 (原始数据，factor 由 AnalysisEngine 实时计算)
-        "kline": kd_day[-250:] if kd_day else [],
-
-        # fflow 组合方案
-        "fflow": fflow,
-
-        # 多市场共振 (指数K线，网络数据，存dump供 Engine 读)
-        "resonance": resonance,
-
-        # EPS / 财报
-        "eps_table": raw.get("eps_table", []),
-
-        # 2026-07-25 加: 60 分 K 线 (sina, 给 5 合 1 顶部预警)
-        # v5.6 fix: analyze_only 模式从 raw 取 (避免重复拉 sina)
-        # v5.10.9 修: 非 analyze_only 模式也直接从 raw 取 (fetch_all 并发 7 段已拉), 0 重复拉 Sina
-        # 2026-07-29 v5.6 加: 顶层 weekly K 线 (从 raw 提, 之前只在 tushare.weekly 段)
-        # 字段对齐 kline 格式 (date/open/close/high/low/vol/amount/pct_chg)
-        "weekly": (raw.get("weekly") if analyze_only and raw.get("weekly") is not None else _normalize_weekly_for_top(raw.get("weekly") or [])),
-
-        # v5.10.23 删: daily_basic_long (22 年历史 1253 KB/dump, 0 consumer, 死字段)
-        # 之前 v5.6/v5.10.16: 写 dump 顶层 + fetch_all 串行拉, 0 consumer (TrendPullback 从 total_mv 顶层读)
-        # 顶层 pe_ttm/pb/total_mv/... 仍存 (从 db[-1] 取, fetch_all 改 limit=1)
-
-        # 2.4 tushare 段
-        # schema 兼容 render_report: stock_basic/fina_indicator 是 dict, daily_basic 是 list
-        # v5.6 fix: analyze_only 模式从 raw.tushare 直接用 (Phase 1 已写好), 不重新构造避免再调 Tushare
-        "tushare": (raw.get("tushare") if analyze_only and raw.get("tushare") else {
-            "stock_basic": {"ts_code": code, "name": raw.get("name", ""), "industry": raw.get("industry", ""), "list_date": raw.get("list_date", ""), "market": "A股"},
-            "daily_basic": [{
-                "trade_date": str(datetime.now().date()),
-                "close": raw.get("close"),
-                "pe_ttm": raw.get("pe_ttm"),
-                "pb": raw.get("pb"),
-                "total_mv": (raw.get("total_mv") or 0) * 1e4,  # 亿 → 万
-                "circ_mv": (raw.get("circ_mv") or 0) * 1e4,
-                "turnover_rate": raw.get("turnover_rate"),
-            }] if raw.get("close") else [],
-            "fina_indicator": {
-                "roe": eps_table[0].get("roe", 0) if eps_table else 0,
-                "eps": eps_table[0].get("eps", 0) if eps_table else 0,
-            } if eps_table else {},
-            "money_flow": fflow.get("data_columns", {}).get("real", []),
-            "forecast": _fetch_tushare_forecast(code),
-            # 扩展段: 幂等性要求存入 dump，不在 renderer 实时拉取
-            **_fetch_tushare_extended(code, weekly=raw.get("weekly")),  # v5.5 fix: 复用 fetch_all weekly, 避免重复拉 weekly
+        "volume_ratio":  raw.get("volume_ratio"),
+        "industry":      raw.get("industry", ""),
+        "list_date":     raw.get("list_date", ""),
+        "kline":         kd_day[-_PROJECT_CFG["data"]["kline_days"]:] if kd_day else [],
+        "weekly":        _normalize_weekly_for_top(raw.get("weekly") or []),
+        "fflow":         {},
+        "resonance":     resonance,
+        "eps_table":     eps_table,
+        "tushare": {
+            "stock_basic": {
+                "ts_code":   code,
+                "name":      raw.get("name", ""),
+                "industry":  raw.get("industry", ""),
+                "list_date": raw.get("list_date", ""),
+                "market":    "A股",
+            },
+            "money_flow": [],
+            "weekly":     raw.get("weekly") or [],
             "statuses": {
                 "stock_basic": "OK" if raw.get("name") else "EMPTY",
-                "daily_basic": "OK" if raw.get("close") else "EMPTY",
-                "fflow": "OK" if fflow.get("fflow_available") else "EMPTY",
-                "eps": "OK" if eps_table else "EMPTY",
-                "fina_indicator": "OK" if eps_table else "EMPTY",
-                "forecast": "OK" if _fetch_tushare_forecast(code) else "EMPTY",
+                "kline":       "OK" if kd_day else "EMPTY",
+                "eps":         "OK" if eps_table else "EMPTY",
             },
-        }),
-
-        # 注: 其他数据 (PEG/DCF/四问/T 框架) 在 Phase 2 由 LLM 算
+        },
     }
+
+
+# 向后兼容别名
+def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) -> dict:
+    return analyze(code)
 
 
 def save_dump(data: dict, out_dir: str = None) -> str:
@@ -784,69 +704,43 @@ def attach_data_sources(json_path: str) -> dict:
 
 
 def main():
-    """dump_data.py CLI 入口 (2026-07-29 C 方案 v1.0 thin wrapper)
+    """dump_data.py CLI 入口
 
-    全部走 AgentData 类, 老 CLI 参数保持兼容:
-      python -m tools.dump_data 002028              # 默认 max_age_min=60
-      python -m tools.dump_data 002028 --render     # 拉 + 渲染
-      python -m tools.dump_data 002028 --analyze-only  # 永不重拉
-      python -m tools.dump_data 002028 --force      # 永远重拉
+    用法:
+      python -m tools.dump_data 002028           # 同步增量 + 分析
+      python -m tools.dump_data 002028 --render  # 同步增量 + 分析 + 渲染报告
     """
-    from tools.batch.agent_data import AgentData
+    from tools.history_sync import sync_incremental
+    from tools.analysis.analysis_data import AnalysisData
+    from tools.render.report_renderer import render_report
 
     parser = argparse.ArgumentParser()
     parser.add_argument("code", help="股票代码 (如 300274)")
-    parser.add_argument("--render", action="store_true", help="渲染报告 (Phase 2)")
-    parser.add_argument("--analyze-only", action="store_true", help="只读 data/dump/{code}.json 跑分析+渲染, 不重拉数据")
-    parser.add_argument("--force", action="store_true", help="强制重拉 (跳过缓存)")
-    parser.add_argument("--age", type=int, default=60, help="max_age_min (默认 60)")
-    parser.add_argument("--out", default=None, help="输出目录 (默认 <project-root>/data/dump/)")
+    parser.add_argument("--render", action="store_true", help="渲染报告")
     args = parser.parse_args()
 
-    # CLI 参数 → max_age_min
-    if args.analyze_only:
-        max_age = 999999  # 永不重拉
-    elif args.force:
-        max_age = 0  # 永远重拉
-    else:
-        max_age = args.age  # 默认 60
+    # 1. 全市场增量同步（只补缺失交易日，无缺口秒返回）
+    print(f"🔄 同步K线历史...")
+    sync_incremental()
 
-    print(f"📥 拉数据: {args.code} (max_age_min={max_age})")
-    ad = AgentData(args.code, max_age_min=max_age)
-    print(f"  - {ad}")
-    data = ad.raw()
-    print(f"  - 价: ¥{data.get('close')}")
-    print(f"  - K线: {len(data.get('kline', []))} 根")
-    chan = data.get('chan') or {}
-    print(f"  - 周线段: {len((chan.get('weekly') or {}).get('segs', []))}")
-    print(f"  - 日线段: {len((chan.get('daily') or {}).get('segs', []))}")
-    print(f"  - 日线中枢: {(chan.get('daily') or {}).get('hub', {}).get('valid', False)}")
-    fflow = data.get('fflow') or {}
-    print(f"  - fflow verdict: {fflow.get('verdict', 'N/A')}")
-    # 注: data['factor'] (wyckoff/smc 算子原始输出) 字段历史上由 AnalysisEngine 实时算,
-    #     dump_data 不写这个 key, 这里不 print 避免误导. factor 算子在 AnalysisEngine.analyze 里跑.
+    # 2. 从本地读数据 + 跑分析
+    print(f"📊 分析: {args.code}")
+    data_dict = analyze(args.code)
+    if not data_dict:
+        return
 
-    out = save_dump(data, args.out)
-    # 固化数据源矩阵到 dump (2026-07-22, 不丢)
-    ds = attach_data_sources(out)
-    # 从 forecast 派生 T 框架事件 (2026-07-23, 替代手维护业绩事件)
-    n_events = attach_events_from_forecast(data)  # in-place, 写到 data["events"]
-    if n_events:
-        # 重写文件 (因为 attach_events_from_forecast 改了 data)
-        with open(out, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-    n_sources = len(ds.get("sources", []))
-    n_ok = ds.get("summary", {}).get("ok", 0)
-    n_empty = ds.get("summary", {}).get("empty", 0)
-    print(f"  - 数据源矩阵: {n_sources} 段 ({n_ok} OK / {n_empty} EMPTY)")
-    print(f"✅ 数据已存: {out}")
+    print(f"  - 价: ¥{data_dict.get('close')}")
+    print(f"  - K线: {len(data_dict.get('kline', []))} 根")
 
+    # 3. 渲染报告（可选）
     if args.render:
         print(f"\n🎨 渲染报告...")
-        # 2026-07-29 C 方案: 渲染走 AgentData.render() 统一入口
-        md = ad.render()
-        name = data.get("name", "")
+        ad = AnalysisData.from_dump(data_dict)
+        md = render_report(ad)
+        name = data_dict.get("name", "")
         report_path = Path(__file__).parent.parent / "docs" / f"analyze-{args.code}-{name}.md"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(md, encoding="utf-8")
         print(f"✅ 报告已存: {report_path} ({len(md)} chars)")
 
 
