@@ -12,26 +12,22 @@ from __future__ import annotations
 from typing import Callable
 
 
-def compute_factor_history(ctx, step: int = 1, lookback: int = 60) -> list[dict]:
+def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
+                           strategies=None) -> list[dict]:
     """计算最近 lookback 天的因子历史，每 step 天一个节点。
 
     Args:
-        ctx:      RawContext，含完整 K 线
-        step:     采样间隔（render 用 5，回测用 1）
-        lookback: 回看天数（默认 60 = 3个月）
+        ctx:        RawContext，含完整 K 线
+        step:       采样间隔（render 用 5，回测用 1）
+        lookback:   回看天数（默认 60 = 3个月）
+        strategies: 传入 strategy 类列表（如 [WyckoffStrategy, ChanStrategy]），
+                    None 表示跑全部。按需传入可大幅提速。
 
     Returns:
-        list[dict]，按日期升序，每条含:
-          date / close / scene / score / resonance
-          wyckoff_daily / wyckoff_weekly
-          sub_event_daily / sub_event_weekly
-          daily_beichi / weekly_beichi
-          hub_daily / hub_weekly  (各含 low/high/pos/valid)
-          bsp_daily / bsp_weekly  (含价格字符串的触发点 dict)
-          ma_dev_daily / ma_dev_weekly  (MA20 偏离 %, AnalysisEngine 层计算)
+        list[dict]，按日期升序
     """
     from tools.analysis.analysis_engine import AnalysisEngine
-    engine = AnalysisEngine()
+    engine = AnalysisEngine(strategies=strategies)
     engine.analyze(ctx)   # 热身，消除冷启动开销
 
     kline = ctx.kline
