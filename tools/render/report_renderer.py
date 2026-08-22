@@ -16,9 +16,12 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
   # Step 1: dump 层拉数据 (唯一网络入口)
   # Step 2: 读数据 + 算 factor
   from tools.data_store import DataStore
+  from tools.analysis.analysis_engine import AnalysisEngine
   from tools.analysis.analysis_data import AnalysisData
-  raw = DataStore.get_raw("002371")
-  data = AnalysisData.from_dump(raw)
+
+  ctx    = DataStore.get_ctx("002371")
+  result = AnalysisEngine().analyze(ctx)
+  data   = AnalysisData.from_result(ctx, result)
 
   # Step 3: render 层纯渲染
   from tools.render.report_renderer import render_report
@@ -1957,9 +1960,11 @@ if __name__ == "__main__":
     test_code = sys.argv[1] if len(sys.argv) > 1 else "002371"
 
     from tools.data_store import DataStore
+    from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.analysis_data import AnalysisData
-    raw = DataStore.get_raw(test_code)
-    data = AnalysisData.from_dump(raw)
+    ctx    = DataStore.get_ctx(test_code)
+    result = AnalysisEngine().analyze(ctx)
+    data   = AnalysisData.from_result(ctx, result)
     md = render_report(data)
     print(md[:2000])
     print(f"\n\n... 总长度 {len(md)} 字符 ...")

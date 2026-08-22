@@ -34,15 +34,6 @@ DOCS_DIR = PROJECT_ROOT / "docs"
 DEFAULT_HOLDINGS = ['300274', '600089', '002475', '002028', '601138', '600362']
 
 
-def _load_dump(code: str) -> dict | None:
-    """读 dump, 不存在返 None"""
-    p = DUMP_DIR / f"{code}.json"
-    if not p.exists():
-        return None
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
-
-
 def _resolve_codes(args) -> list[str]:
     """根据 CLI 参数拿 codes 列表"""
     if args.codes:

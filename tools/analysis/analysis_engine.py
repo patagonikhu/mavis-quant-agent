@@ -2,7 +2,7 @@
 analysis_engine.py — analysis 层 (策略模式) (2026-07-30 v5.10.25)
 
 **架构 (3 层)**:
-- L1 dump 层: DataStore.get_raw(code) / get_ctx(code)
+- L1 dump 层: DataStore.get_ctx(code)
 - L2 analysis 层 (本文件): AnalysisEngine.analyze(dump) → analysis dict
 - L3 render 层: render_report(analysis, dump) → markdown
 

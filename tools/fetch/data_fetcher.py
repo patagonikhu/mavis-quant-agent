@@ -248,33 +248,9 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
     except Exception as e:
         return None, f"IMPORT_FAIL_{type(e).__name__}"
 
-    # 增量 cache (2026-07-28 v5.3): 读上次 dump 的 kline 末日期, 仅拉新数据
-    # 注: dump_data 存 kline 是 date 升序 (最早→最新), klines[-1] = 最新一根
-    last_cached_date = ""
-    if use_cache:
-        try:
-            import json as _json
-            from pathlib import Path
-            cache_path = Path(__file__).resolve().parent.parent.parent / "data" / "dump" / f"{code}.json"
-            if cache_path.exists():
-                cached = _json.load(open(cache_path, encoding="utf-8"))
-                klines = cached.get("kline", [])
-                if klines and len(klines) > 0:
-                    last_cached_date = klines[-1].get("date", "")
-        except Exception:
-            last_cached_date = ""
-
-    if last_cached_date:
-        # 增量: 拉 last_cached_date 之后的数据
-        # tushare 增量比 limit=N 快得多
-        rows, status = _ts_daily(code, start_date=last_cached_date)
-        if not rows:
-            return None, status or "EMPTY"
-    else:
-        # 全量: 拉最近 N 天
-        rows, status = _ts_daily(code, limit=days)
-        if not rows:
-            return None, status or "EMPTY"
+    rows, status = _ts_daily(code, limit=days)
+    if not rows:
+        return None, status or "EMPTY"
 
     result = []
     for r in rows:
@@ -291,32 +267,6 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
             continue
     if not result:
         return None, "PARSE_FAIL"
-
-    # 增量 cache merge (2026-07-28): 把 cache 旧数据 + 新数据合并, 去重
-    if use_cache and last_cached_date:
-        try:
-            cached = _json.load(open(Path(__file__).resolve().parent.parent.parent / "data" / "dump" / f"{code}.json", encoding="utf-8"))
-            old_klines = cached.get("kline", [])
-            if old_klines:
-                # 新数据 (result) 是 date 升序, 旧数据 (old_klines) 也是升序
-                # 用 date 字段去重 (set)
-                seen = set()
-                merged = []
-                # 先加新的 (新数据优先, 字段最新), 再补旧的
-                for k in (result + old_klines):
-                    d = k.get("date", "")
-                    if d and d not in seen:
-                        seen.add(d)
-                        merged.append(k)
-                # 强制升序 (旧→新, 跟 cache 一致)
-                merged.sort(key=lambda x: x.get("date", ""))
-                # 截断到 days 根 (取最后 days 根 = 最新 N 天)
-                merged = merged[-days:]
-                result = merged
-        except Exception as e:
-            # 增量失败, fallback 到全量 (但保留原 result)
-            import sys
-            print(f"[get_kline] cache merge failed: {type(e).__name__}: {e}", file=sys.stderr)
 
     return result, "OK"
 

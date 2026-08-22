@@ -46,13 +46,6 @@ def _load_name_from_watchlist(code: str) -> str | None:
     return None
 
 
-def _load_name_from_dump(code: str, dump: dict) -> str:
-    """从 dump 或 watchlist 拿 name"""
-    if dump.get("name"):
-        return dump["name"]
-    return _load_name_from_watchlist(code) or code
-
-
 def export_one(code: str, years: int, out_path: Path | None) -> tuple[str, Path, int]:
     """导出单只票的历史因子"""
     from tools.data_store import DataStore

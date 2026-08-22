@@ -85,16 +85,6 @@ DEFAULT_TOLERANCE = {
 }
 
 
-# === 1. 加载 dump 文件 ===
-def load_dump(code: str) -> dict:
-    """读 data/dump/{code}.json"""
-    path = Path("data/dump") / f"{code}.json"
-    if not path.exists():
-        return None
-    with open(path) as f:
-        return json.load(f)
-
-
 # === 2. 跑 dump (重新生成) ===
 def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
     """跑 dump_data, 返回 (新dump, 耗时秒)

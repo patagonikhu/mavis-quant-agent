@@ -145,8 +145,8 @@ def count_bounces(closes, threshold=0.30, window=3):
     return n
 
 
-def load_dump(code):
-    """只读 data/dump_oversold/{code}.json (416 只 weekly 末根 8-14)"""
+def load_oversold_cache(code):
+    """只读 data/dump_oversold/{code}.json (超跌扫描专用缓存)"""
     p = DUMP_OLD / f"{code}.json"
     if not p.exists():
         return None
@@ -192,7 +192,7 @@ def main():
     n_loaded = 0
     n_skipped = 0
     for code, m in meta.items():
-        d = load_dump(code)
+        d = load_oversold_cache(code)
         if d is None:
             n_skipped += 1
             continue

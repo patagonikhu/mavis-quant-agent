@@ -37,21 +37,19 @@ from gplearn.genetic import SymbolicRegressor
 
 
 def fetch_features(code: str = "300274") -> pd.DataFrame:
-    """从 data/dump/{code}.json 拉数据, 算 7 个 factor 输出 + 基础 OHLCV"""
-    dump_path = Path(f"data/dump/{code}.json")
-    if not dump_path.exists():
-        raise FileNotFoundError(f"找不到 {dump_path}, 先跑 bash tools/refresh_all.sh {code}")
+    """从本地历史库读K线，算 7 个 factor 输出 + 基础 OHLCV"""
+    from tools.data_store import DataStore
+    ctx = DataStore.get_ctx(code)
+    if not ctx.kline:
+        raise FileNotFoundError(f"本地无K线: {code}，先跑 python -m tools.history_sync --init")
 
-    raw = json.load(open(dump_path))
-
-    # 基础 K 线
-    kline = raw["kline"]
+    kline = ctx.kline
     df = pd.DataFrame({
-        "date": [k["date"] for k in kline],
-        "open": [k["open"] for k in kline],
-        "high": [k["high"] for k in kline],
-        "low": [k["low"] for k in kline],
-        "close": [k["close"] for k in kline],
+        "date":   [k["trade_date"] for k in kline],
+        "open":   [k["open"]   for k in kline],
+        "high":   [k["high"]   for k in kline],
+        "low":    [k["low"]    for k in kline],
+        "close":  [k["close"]  for k in kline],
         "volume": [k.get("vol", k.get("volume", 0)) for k in kline],
     })
     df["date"] = pd.to_datetime(df["date"])

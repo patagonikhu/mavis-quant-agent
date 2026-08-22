@@ -3,7 +3,7 @@ analysis_data.py — 分析数据契约 (v1.0, 2026-07-21)
 
 架构铁律 (三层分离):
   AnalysisEngine 层 = 纯计算 factor, 零网络请求
-  ✅ 只读 dump dict 字段 (由 dump_data.py 写入 data/dump/{code}.json)
+  ✅ 只从 DataStore.get_ctx() + AnalysisEngine.analyze() 构建
   ❌ 禁止 import requests / subprocess curl / fetch_all / 任何网络调用
 
 设计目标:
