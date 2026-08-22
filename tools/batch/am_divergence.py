@@ -94,11 +94,10 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
                 chan_date = r["date"]
                 break
 
-        # MACD 底背驰（从 factor_scores 读）
+        # MACD 底背驰（从 factor_history 行读）
         macd_date = None
         for r in reversed(lookback_rows):
-            macd = r.get("macd_div") or {}
-            if isinstance(macd, dict) and macd.get("triggered"):
+            if r.get("macd_div_bot"):
                 macd_date = r["date"]
                 break
 

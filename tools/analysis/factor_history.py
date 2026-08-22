@@ -163,10 +163,14 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "fflow_trend_3d": fflow_raw.get("trend_3d", "—"),
 
         # OBV 经典量价 (2026-08-17 拆分: 独立 strategy)
-        "obv_verdict":      obv_raw.get("verdict", "—"),
+        "obv_verdict":        obv_raw.get("verdict", "—"),
         "obv_strategy_score": obv_raw.get("score", 0),
-        "obv_div_bot_60d":  obv_raw.get("obv_div_bot_60d", 0),
-        "obv_div_top_60d":  obv_raw.get("obv_div_top_60d", 0),
+        "obv_div_bot_60d":    obv_raw.get("obv_div_bot_60d", 0),
+        "obv_div_top_60d":    obv_raw.get("obv_div_top_60d", 0),
+
+        # MACD 底背驰
+        "macd_div_bot": (result.factor_scores.get("macd_div").raw or {}).get("has_bot_div", False)
+                        if result.factor_scores.get("macd_div") else False,
     }
 
 
