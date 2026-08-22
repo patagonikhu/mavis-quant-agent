@@ -357,16 +357,18 @@ def dump_code(code: str, pull_only: bool = False, analyze_only: bool = False) ->
     """
     from tools.fetch.data_fetcher import fetch_all, fetch_from_local
     from tools.fetch.tushare_fetcher import get_fund_flow_combined
-    from tools.history_sync import has_data_for_date
 
     # === Phase 1: 拉数据 ===
     if not analyze_only:
-        # 本地历史库存在则从本地读，否则回退到网络拉取
         from pathlib import Path as _Path
         _has_local = any((_Path("data/history/daily")).glob("*.parquet"))
         if _has_local:
+            # 本地历史库存在：先幂等补缺失交易日（无缺口秒返回），再从本地读
+            from tools.history_sync import sync_incremental
+            sync_incremental()
             raw = fetch_from_local(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
         else:
+            # 历史库未建档：走原有网络拉取
             raw = fetch_all(code, kline_days=_PROJECT_CFG["data"]["kline_days"])
     else:
         # analyze_only: 从 disk 读 raw
