@@ -735,6 +735,99 @@ class AnalysisData:
             ts_fina_rows=((raw.get("tushare") or {}).get("fina_rows") or []),
         )
 
+    @classmethod
+    def from_result(cls, ctx: "RawContext", result: "AnalysisResult") -> "AnalysisData":
+        """从 RawContext (L1) + AnalysisResult (L2) 构造 AnalysisData (L3)。
+
+        这是三层分离后的正确入口，不再自己跑 analysis。
+        """
+        from tools.analysis.analysis_engine import AnalysisResult as AR
+
+        # K线相关辅助数据
+        kline_raw = ctx.kline or []
+        ma_table = []
+        technical = None
+        if kline_raw:
+            closes = [bar["close"] for bar in kline_raw]
+            current = closes[-1] if closes else 0
+            for period, name in [(5, "MA5"), (20, "MA20"), (60, "MA60"), (120, "MA120")]:
+                if len(closes) >= period:
+                    ma = sum(closes[-period:]) / period
+                    ma_table.append(MaRow(
+                        period=name,
+                        value=round(ma, 2),
+                        deviation=round((current / ma - 1) * 100, 2),
+                    ))
+            try:
+                from tools.fetch.data_fetcher import compute_indicators
+                technical = compute_indicators(kline_raw)
+            except Exception as e:
+                technical = {"error": str(e)}
+
+        # EPS
+        eps_raw = ctx.eps_table or []
+        eps_table = []
+        for r in eps_raw:
+            try:
+                eps_table.append(EpsRow(**{k: r[k] for k in EpsRow.__dataclass_fields__ if k in r}))
+            except Exception:
+                pass
+
+        # analysis dict（L2 结果）
+        signals_5 = result.to_dict(ctx)
+
+        # chan_data
+        chan_raw = signals_5.get("chan", {})
+        chan_data = None
+        if chan_raw:
+            chan_data = {
+                "weekly": chan_raw.get("weekly", {}),
+                "daily":  chan_raw.get("daily", {}),
+                "beichi": {
+                    "weekly": (lambda b: b.get("display", "") if isinstance(b, dict) else b)(
+                        (chan_raw.get("weekly") or {}).get("beichi", "")),
+                    "daily":  (lambda b: b.get("display", "") if isinstance(b, dict) else b)(
+                        (chan_raw.get("daily")  or {}).get("beichi", "")),
+                },
+            }
+
+        # 机械推导字段
+        raw_for_mech = {
+            "close":    ctx.current_price,
+            "total_mv": ctx.market_cap_yi,
+            "eps_table": eps_raw,
+            "industry": ctx.industry,
+            "code":     ctx.code,
+            "name":     ctx.name,
+        }
+
+        return cls(
+            code=ctx.code,
+            name=ctx.name,
+            current_price=ctx.current_price,
+            price_status=DataStatus(name="price", status="OK" if ctx.current_price else "EMPTY"),
+            pe_ttm=None,
+            kline=[KLineBar(**{k: bar[k] for k in KLineBar.__dataclass_fields__ if k in bar})
+                   for bar in kline_raw],
+            kline_status=DataStatus(name="kline", status="OK" if kline_raw else "EMPTY"),
+            ma_table=ma_table,
+            ma_status=DataStatus(name="ma", status="OK" if ma_table else "EMPTY"),
+            eps_table=eps_table,
+            eps_status=DataStatus(name="eps", status="OK" if eps_table else "EMPTY"),
+            technical=technical,
+            technical_status=DataStatus(name="technical",
+                                        status="OK" if technical and "error" not in technical else "EMPTY"),
+            analysis=signals_5,
+            chan_data=chan_data,
+            ctx=ctx,
+            four_questions=_mech_four_questions(raw_for_mech, signals_5),
+            t_frame=_mech_t_frame(raw_for_mech),
+            position_layer=_mech_position_layer(signals_5, ma_table),
+            exit_signals=_mech_exit_signals(signals_5, ma_table),
+            monitor_triggers=_mech_monitor_triggers(signals_5, ma_table),
+            market_cap_yi=ctx.market_cap_yi,
+        )
+
     # ============================================================
     # 完整性
     # ============================================================

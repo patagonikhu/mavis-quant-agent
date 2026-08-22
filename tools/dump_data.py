@@ -695,33 +695,41 @@ def main():
       python -m tools.dump_data 002028 --render  # 同步增量 + 分析 + 渲染报告
     """
     from tools.history_sync import sync_incremental
+    from tools.data_store import DataStore
+    from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.analysis_data import AnalysisData
-    from tools.render.report_renderer import render_report
 
     parser = argparse.ArgumentParser()
     parser.add_argument("code", help="股票代码 (如 300274)")
     parser.add_argument("--render", action="store_true", help="渲染报告")
     args = parser.parse_args()
 
-    # 1. 全市场增量同步（只补缺失交易日，无缺口秒返回）
+    # L0: 全市场增量同步（只补缺失交易日，无缺口秒返回）
     print(f"🔄 同步K线历史...")
     sync_incremental()
 
-    # 2. 从本地读数据 + 跑分析
+    # L1: 读数据
     print(f"📊 分析: {args.code}")
-    data_dict = analyze(args.code)
-    if not data_dict:
+    ctx = DataStore.get_ctx(args.code)
+    if not ctx.kline:
+        print(f"⚠️ {args.code} 本地无K线，请先运行: tools/with_venv.sh python -m tools.history_sync --init")
         return
 
-    print(f"  - 价: ¥{data_dict.get('close')}")
-    print(f"  - K线: {len(data_dict.get('kline', []))} 根")
+    print(f"  - 价: ¥{ctx.current_price}")
+    print(f"  - K线: {len(ctx.kline)} 根")
 
-    # 3. 渲染报告（可选）
+    # L2: 跑分析
+    engine = AnalysisEngine()
+    result = engine.analyze(ctx)
+    print(f"  - 场景: {result.scene} | 总分: {result.total_score:+.2f}")
+
+    # L3: 渲染报告（可选）
     if args.render:
+        from tools.render.report_renderer import render_report
         print(f"\n🎨 渲染报告...")
-        ad = AnalysisData.from_dump(data_dict)
-        md = render_report(ad)
-        name = data_dict.get("name", "")
+        data = AnalysisData.from_result(ctx, result)
+        md = render_report(data)
+        name = ctx.name or args.code
         report_path = Path(__file__).parent.parent / "docs" / f"analyze-{args.code}-{name}.md"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(md, encoding="utf-8")
