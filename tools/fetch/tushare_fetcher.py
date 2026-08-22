@@ -282,6 +282,37 @@ def get_daily(code: str, start_date: str = "", end_date: str = "", limit: int = 
     return data, "OK"
 
 
+def get_daily_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
+    """按交易日拉全市场日K线，一次返回当天所有股票。
+
+    trade_date: YYYYMMDD
+    返回: [{ts_code, trade_date, open, high, low, close, vol, amount, pct_chg}, ...]
+    """
+    data, status = _safe_call(
+        "daily",
+        trade_date=trade_date,
+        fields="ts_code,trade_date,open,high,low,close,pre_close,vol,amount,pct_chg",
+    )
+    return data, status
+
+
+def get_daily_range(start_date: str, end_date: str) -> tuple[list[dict] | None, str]:
+    """按日期范围拉全市场日K线（不限 ts_code），用于首次建档。
+
+    一次调用返回该区间内全市场所有股票所有日期的数据。
+    start_date/end_date: YYYYMMDD
+    """
+    data, status = _safe_call(
+        "daily",
+        start_date=start_date,
+        end_date=end_date,
+        fields="ts_code,trade_date,open,high,low,close,pre_close,vol,amount,pct_chg",
+    )
+    if data:
+        data.sort(key=lambda x: (x["trade_date"], x["ts_code"]))
+    return data, status
+
+
 # ============================================================
 # 3. daily_basic — PE/PB/市值 (替代 push2 f164)
 # ============================================================

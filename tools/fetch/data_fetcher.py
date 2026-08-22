@@ -689,6 +689,147 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     return result
 
 
+def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
+    """从本地历史库 + 缓存组装 raw dict，0 网络调用。
+
+    依赖:
+      - data/history/daily/*.parquet  (由 history_sync 维护)
+      - data/cache/daily_basic.json   (由 static_cache 维护)
+      - data/cache/stock_basic.json   (由 static_cache 维护)
+      - data/cache/eps/{code}.json    (由 static_cache 维护)
+
+    返回格式与 fetch_all 一致，供 dump_data 无缝替换。
+    """
+    from datetime import datetime
+
+    result = {
+        "code": code,
+        "name": "",
+        "sector": "",
+        "close": None,
+        "pe_ttm": None,
+        "pb": None,
+        "total_mv": None,
+        "circ_mv": None,
+        "total_share": None,
+        "turnover_rate": None,
+        "volume_ratio": None,
+        "industry": "",
+        "list_date": "",
+        "kline": [],
+        "weekly": [],
+        "moneyflow": [],
+        "eps_table": [],
+        "fflow": {},
+        "statuses": {},
+        "fetch_time": datetime.now().isoformat(),
+        "_source": "local",
+    }
+
+    from tools.history_sync import read_kline
+    from tools.static_cache import get_daily_basic, get_stock_basic, get_eps
+
+    ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"
+
+    # 1. K线（从 parquet 读，升序）
+    bars_raw = read_kline(ts_code, limit=kline_days)
+    if bars_raw:
+        kline = []
+        for r in bars_raw:
+            try:
+                kline.append({
+                    "trade_date": str(r.get("trade_date", "")),
+                    "open":    float(r.get("open",    0) or 0),
+                    "close":   float(r.get("close",   0) or 0),
+                    "high":    float(r.get("high",    0) or 0),
+                    "low":     float(r.get("low",     0) or 0),
+                    "volume":  float(r.get("vol",     r.get("volume", 0)) or 0),
+                    "amount":  float(r.get("amount",  0) or 0),
+                    "pct_chg": float(r.get("pct_chg", 0) or 0),
+                })
+            except (TypeError, ValueError):
+                continue
+        result["kline"] = kline
+        result["close"] = kline[-1]["close"] if kline else None
+        result["statuses"]["kline"] = "OK"
+    else:
+        result["statuses"]["kline"] = "EMPTY"
+
+    # 2. 周线（从日线合成，5根日线→1根周线）
+    if result["kline"]:
+        result["weekly"] = _synthesize_weekly(result["kline"])
+        result["statuses"]["weekly"] = "OK" if result["weekly"] else "EMPTY"
+
+    # 3. stock_basic（缓存）
+    sb = get_stock_basic(code)
+    if sb:
+        result["name"]       = sb.get("name", "")
+        result["industry"]   = sb.get("industry", "")
+        result["list_date"]  = sb.get("list_date", "")
+        result["total_share"]= sb.get("total_share", 0)
+        result["statuses"]["stock_basic"] = "OK"
+    else:
+        result["statuses"]["stock_basic"] = "EMPTY"
+
+    # 4. daily_basic（缓存）
+    db = get_daily_basic(code)
+    if db:
+        result["pe_ttm"]        = db.get("pe_ttm")
+        result["pb"]            = db.get("pb")
+        result["total_mv"]      = db.get("total_mv")
+        result["circ_mv"]       = db.get("circ_mv")
+        result["turnover_rate"] = db.get("turnover_rate")
+        result["volume_ratio"]  = db.get("volume_ratio")
+        result["statuses"]["daily_basic"] = "OK"
+    else:
+        result["statuses"]["daily_basic"] = "EMPTY"
+
+    # 5. EPS（缓存）
+    eps = get_eps(code)
+    result["eps_table"] = eps or []
+    result["statuses"]["eps"] = "OK" if eps else "EMPTY"
+
+    result["statuses"]["price"] = "OK" if result.get("close") else "EMPTY"
+    return result
+
+
+def _synthesize_weekly(kline: list[dict]) -> list[dict]:
+    """从日线合成周线（自然周，周一开盘~周五收盘）。"""
+    from datetime import datetime
+    if not kline:
+        return []
+
+    weeks: dict[str, list] = {}
+    for bar in kline:
+        try:
+            d = datetime.strptime(str(bar["trade_date"])[:8], "%Y%m%d")
+        except ValueError:
+            try:
+                d = datetime.strptime(str(bar["trade_date"])[:10], "%Y-%m-%d")
+            except ValueError:
+                continue
+        # ISO 周键：年-周号
+        week_key = d.strftime("%G-%V")
+        weeks.setdefault(week_key, []).append(bar)
+
+    result = []
+    for week_key in sorted(weeks):
+        bars = weeks[week_key]
+        result.append({
+            "trade_date": bars[-1]["trade_date"],  # 周五（最后一个交易日）
+            "open":    bars[0]["open"],
+            "close":   bars[-1]["close"],
+            "high":    max(b["high"] for b in bars),
+            "low":     min(b["low"]  for b in bars),
+            "volume":  sum(b.get("volume", b.get("vol", 0)) for b in bars),
+            "amount":  sum(b.get("amount", 0) for b in bars),
+            "pct_chg": round(
+                (bars[-1]["close"] / bars[0]["open"] - 1) * 100, 2
+            ) if bars[0]["open"] else 0,
+        })
+    return result
+
+
 # ============================================================
 # 状态展示
 # ============================================================

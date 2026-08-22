@@ -1,0 +1,335 @@
+"""
+tools/history_sync.py — 本地 K 线历史库增量同步
+
+存储结构:
+  data/history/daily/
+    2021.parquet   ← 全市场当年所有交易日K线
+    2022.parquet
+    ...
+    2026.parquet   ← 当年文件，每天增量追加
+
+用法:
+  # 首次建档 (拉5年历史, 约60次调用)
+  tools/with_venv.sh python -m tools.history_sync --init
+
+  # 日常增量 (只补缺失交易日, 通常1次调用)
+  tools/with_venv.sh python -m tools.history_sync
+
+  # 指定日期
+  tools/with_venv.sh python -m tools.history_sync --date 20260822
+"""
+
+import argparse
+import json
+import sys
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+HISTORY_DIR = Path("data/history/daily")
+HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ============================================================
+# 1. 工具函数
+# ============================================================
+
+def _to_ts_code(code: str) -> str:
+    """000725 → 000725.SZ / 600000 → 600000.SH"""
+    if "." in code:
+        return code
+    c = code.strip()
+    if c.startswith(("0", "3")):
+        return f"{c}.SZ"
+    if c.startswith(("6", "9")):
+        return f"{c}.SH"
+    return f"{c}.SZ"
+
+
+def _parquet_path(year: int) -> Path:
+    return HISTORY_DIR / f"{year}.parquet"
+
+
+def _get_local_max_date() -> str | None:
+    """返回本地所有 parquet 里最新的 trade_date (YYYYMMDD)，没有数据返回 None。"""
+    try:
+        import duckdb
+        files = sorted(HISTORY_DIR.glob("*.parquet"))
+        if not files:
+            return None
+        # 只扫最近两年文件，快
+        recent = [str(f) for f in files[-2:]]
+        glob_expr = "', '".join(recent)
+        result = duckdb.execute(
+            f"SELECT MAX(trade_date) FROM read_parquet(['{glob_expr}'])"
+        ).fetchone()
+        return result[0] if result else None
+    except Exception as e:
+        print(f"  ⚠️ 读本地最新日期失败: {e}", file=sys.stderr)
+        return None
+
+
+def _get_trading_dates(start: str, end: str) -> list[str]:
+    """生成 start~end 之间的交易日列表（排除周末，不排除节假日）。
+    节假日 tushare 返回空 df，调用方跳过即可。
+    start/end: YYYYMMDD
+    """
+    dates = []
+    d = datetime.strptime(start, "%Y%m%d")
+    end_d = datetime.strptime(end, "%Y%m%d")
+    while d <= end_d:
+        if d.weekday() < 5:  # 0=Mon ~ 4=Fri
+            dates.append(d.strftime("%Y%m%d"))
+        d += timedelta(days=1)
+    return dates
+
+
+def _today() -> str:
+    return datetime.now().strftime("%Y%m%d")
+
+
+def _month_ranges(start_year: int, end_date: str) -> list[tuple[str, str]]:
+    """生成按月的 (start, end) 列表，用于首次建档批量拉取。"""
+    ranges = []
+    end = datetime.strptime(end_date, "%Y%m%d")
+    d = datetime(start_year, 1, 1)
+    while d <= end:
+        month_start = d.strftime("%Y%m%d")
+        # 当月最后一天
+        if d.month == 12:
+            month_end = datetime(d.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            month_end = datetime(d.year, d.month + 1, 1) - timedelta(days=1)
+        month_end = min(month_end, end)
+        ranges.append((month_start, month_end.strftime("%Y%m%d")))
+        # 下一个月
+        if d.month == 12:
+            d = datetime(d.year + 1, 1, 1)
+        else:
+            d = datetime(d.year, d.month + 1, 1)
+    return ranges
+
+
+# ============================================================
+# 2. 写入 parquet
+# ============================================================
+
+def _append_records(records: list[dict]):
+    """把 records 写入按年分片的 parquet 文件。records 可能跨多年。"""
+    if not records:
+        return 0
+
+    import duckdb
+    import pandas as pd
+
+    df = pd.DataFrame(records)
+    # 统一字段类型
+    df["trade_date"] = df["trade_date"].astype(str)
+    for col in ["open", "high", "low", "close", "pre_close", "pct_chg"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    for col in ["vol", "amount"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df["year"] = df["trade_date"].str[:4].astype(int)
+    total = 0
+
+    for year, group in df.groupby("year"):
+        group = group.drop(columns=["year"])
+        path = _parquet_path(year)
+
+        if path.exists():
+            # 读旧数据，去重后合并写回
+            old_df = duckdb.execute(f"SELECT * FROM read_parquet('{path}')").df()
+            combined = pd.concat([old_df, group], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["ts_code", "trade_date"], keep="last")
+            combined = combined.sort_values(["trade_date", "ts_code"])
+        else:
+            combined = group.sort_values(["trade_date", "ts_code"])
+
+        duckdb.execute(
+            f"COPY (SELECT * FROM combined) TO '{path}' (FORMAT PARQUET)"
+        )
+        total += len(group)
+
+    return total
+
+
+# ============================================================
+# 3. 读取接口（供 dump_data 调用）
+# ============================================================
+
+def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: int = 0) -> list[dict]:
+    """从本地 parquet 读单只股票的K线，格式与 tushare get_daily 一致。
+
+    Args:
+        ts_code: 如 '002371.SZ'
+        start_date/end_date: YYYYMMDD，不传则读全量
+        limit: 取最近N根，0=全部
+    """
+    try:
+        import duckdb
+        files = sorted(HISTORY_DIR.glob("*.parquet"))
+        if not files:
+            return []
+        glob_pattern = str(HISTORY_DIR / "*.parquet")
+        where = [f"ts_code = '{ts_code}'"]
+        if start_date:
+            where.append(f"trade_date >= '{start_date}'")
+        if end_date:
+            where.append(f"trade_date <= '{end_date}'")
+        where_sql = " AND ".join(where)
+        sql = f"""
+            SELECT ts_code, trade_date, open, high, low, close, pre_close, vol, amount, pct_chg
+            FROM read_parquet('{glob_pattern}')
+            WHERE {where_sql}
+            ORDER BY trade_date
+        """
+        if limit:
+            sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date DESC LIMIT {limit}"
+            sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date"
+        df = duckdb.execute(sql).df()
+        return df.to_dict("records")
+    except Exception as e:
+        print(f"  ⚠️ read_kline {ts_code} 失败: {e}", file=sys.stderr)
+        return []
+
+
+def has_data_for_date(trade_date: str) -> bool:
+    """检查本地是否已有某交易日的数据。"""
+    try:
+        import duckdb
+        year = trade_date[:4]
+        path = _parquet_path(int(year))
+        if not path.exists():
+            return False
+        result = duckdb.execute(
+            f"SELECT COUNT(*) FROM read_parquet('{path}') WHERE trade_date = '{trade_date}'"
+        ).fetchone()
+        return result[0] > 0 if result else False
+    except Exception:
+        return False
+
+
+# ============================================================
+# 4. 增量同步
+# ============================================================
+
+def sync_incremental(target_date: str | None = None) -> int:
+    """增量同步：只拉本地缺失的交易日。
+
+    Returns: 新增的 bar 数量
+    """
+    from tools.fetch.tushare_fetcher import get_daily_by_date
+
+    today = target_date or _today()
+    max_local = _get_local_max_date()
+
+    if max_local is None:
+        print("  ⚠️ 本地无数据，请先运行 --init 建档", file=sys.stderr)
+        return 0
+
+    if max_local >= today:
+        print(f"  ✅ 已是最新 (本地最新: {max_local})")
+        return 0
+
+    # 找缺失的交易日
+    next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+    missing = _get_trading_dates(next_date, today)
+    # 过滤掉已有的
+    missing = [d for d in missing if not has_data_for_date(d)]
+
+    if not missing:
+        print(f"  ✅ 无缺失数据 (本地最新: {max_local})")
+        return 0
+
+    print(f"  📥 需补 {len(missing)} 个交易日: {missing[0]} ~ {missing[-1]}")
+    total = 0
+    for date in missing:
+        records, status = get_daily_by_date(date)
+        if not records:
+            print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
+            continue
+        n = _append_records(records)
+        total += n
+        print(f"    ✅ {date}: {n} 只")
+        time.sleep(0.3)  # tushare 频控
+
+    return total
+
+
+def sync_init(start_year: int = 2020) -> int:
+    """首次建档：按月拉全市场历史K线。
+
+    start_year: 从哪年开始，默认2020（约5年）
+    """
+    from tools.fetch.tushare_fetcher import get_daily_range
+
+    today = _today()
+    ranges = _month_ranges(start_year, today)
+    print(f"  📦 首次建档: {start_year}-01-01 ~ {today}，共 {len(ranges)} 个月")
+
+    total = 0
+    for i, (start, end) in enumerate(ranges):
+        # 跳过本地已有的月份（文件存在且包含该月数据）
+        year = int(start[:4])
+        path = _parquet_path(year)
+        if path.exists() and has_data_for_date(start):
+            # 检查这个月的第一个工作日是否已有
+            print(f"    跳过 {start[:6]} (已有)")
+            continue
+
+        records, status = get_daily_range(start, end)
+        if not records:
+            print(f"    跳过 {start[:6]} (状态: {status})")
+            time.sleep(0.5)
+            continue
+
+        n = _append_records(records)
+        total += n
+        pct = (i + 1) / len(ranges) * 100
+        print(f"    ✅ {start[:6]}: {n} 条 [{pct:.0f}%]")
+        time.sleep(0.5)  # tushare 频控，每分钟约100次
+
+    return total
+
+
+# ============================================================
+# 5. CLI
+# ============================================================
+
+def main():
+    parser = argparse.ArgumentParser(description="K线历史库增量同步")
+    parser.add_argument("--init", action="store_true", help="首次建档，拉全量历史")
+    parser.add_argument("--start-year", type=int, default=2020, help="建档起始年份 (默认2020)")
+    parser.add_argument("--date", help="指定同步到某天 YYYYMMDD (默认今天)")
+    args = parser.parse_args()
+
+    t0 = time.time()
+
+    if args.init:
+        print(f"🏗️  首次建档模式 (起始年: {args.start_year})")
+        n = sync_init(args.start_year)
+        print(f"\n✅ 建档完成: {n} 条K线，耗时 {time.time()-t0:.1f}s")
+    else:
+        print("🔄 增量同步模式")
+        n = sync_incremental(args.date)
+        if n:
+            print(f"\n✅ 同步完成: 新增 {n} 条K线，耗时 {time.time()-t0:.1f}s")
+
+    # 显示本地库状态
+    try:
+        import duckdb
+        files = list(HISTORY_DIR.glob("*.parquet"))
+        if files:
+            total = duckdb.execute(
+                f"SELECT COUNT(*), MIN(trade_date), MAX(trade_date) FROM read_parquet('{HISTORY_DIR}/*.parquet')"
+            ).fetchone()
+            print(f"📊 本地库: {total[0]:,} 条 | {total[1]} ~ {total[2]} | {len(files)} 个年份文件")
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    main()
