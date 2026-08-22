@@ -94,7 +94,6 @@ DUMP_SCHEMA = {
         },
     },
     "eps_table":  {"fetcher": "datacenter RPT_HSF10_RESPREDICT", "raw": "EPS consensus", "unit": "见子字段"},
-    "resonance":  {"fetcher": "resonance_3period",  "raw": "index klines", "unit": "dict"},
     "tushare":    {"fetcher": "multiple tushare APIs", "raw": "multiple",  "unit": "nested dict"},
 }
 
@@ -369,20 +368,6 @@ def analyze(code: str) -> dict:
         pass
 
     kd_day = raw.get("kline", [])
-
-    # 多市场共振（实时算，需要网络拉指数K线）
-    resonance = {}
-    try:
-        from tools.factors.macro.resonance import resonance_3period as _resonance_fn
-        res_3p = _resonance_fn(code, periods=(1, 5, 20))
-        resonance = {
-            "1d":  res_3p.get(1, {}),
-            "5d":  res_3p.get(5, {}),
-            "20d": res_3p.get(20, {}),
-        }
-    except Exception:
-        pass
-
     eps_table = raw.get("eps_table") or []
 
     return {
@@ -402,7 +387,6 @@ def analyze(code: str) -> dict:
         "kline":         kd_day[-_PROJECT_CFG["data"]["kline_days"]:] if kd_day else [],
         "weekly":        _normalize_weekly_for_top(raw.get("weekly") or []),
         "fflow":         {},
-        "resonance":     resonance,
         "eps_table":     eps_table,
         "tushare": {
             "stock_basic": {

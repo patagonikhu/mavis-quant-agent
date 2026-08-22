@@ -1042,18 +1042,8 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
     else:
         obv_focus = "OBV 无数据"
 
-    # ── 5. 多市场共振 (各周期用真实独立时间窗口) ────────────────
-    if level == "weekly":
-        res = s5.get("resonance_weekly") or s5.get("resonance") or {}
-        res_label = "20日"
-    else:
-        res = s5.get("resonance") or {}
-        res_label = "5日"
-    res_dir    = res.get("direction", "无数据")
-    # v5.10.2 改: resonance_3period 输出 stock_ret/sector_ret (不带 _Nd 后缀), 兼容读 stock_ret_Nd
-    res_stock  = res.get("stock_ret_5d", res.get("stock_ret", 0))
-    res_sector = res.get("sector_ret_5d", res.get("sector_ret", 0))
-    res_focus  = f"个股{res_stock:+.1f}% / 板块{res_sector:+.1f}% ({res_label}窗口) — {res_dir}"
+    # ── 5. 多市场共振 (已移除网络数据源，显示占位)
+    res_focus = "多市场共振: 已移除 (resonance_3period 网络调用删除)"
 
     # 止跌信号（仅日线计算，周线显示说明）
     if level == "weekly":

@@ -100,7 +100,6 @@ class DataStore:
             "weekly":        weekly,
             "eps_table":     eps,
             "fflow":         {},
-            "resonance":     {},
             "tushare": {
                 "stock_basic": {
                     "ts_code":   _to_ts_code(code),

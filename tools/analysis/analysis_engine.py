@@ -42,11 +42,10 @@ class RawContext:
     weekly:     list        # 周线 K 线（Tushare 真实周线，非合成）
     eps_table:  list        # EPS 历史预测（季报，不随 as_of_date 切片）
     fflow:      dict        # 主力资金流（不切片）
-    resonance:  dict = field(default_factory=dict)  # 多市场共振（网络数据，存dump，不切片）
     moneyflow:  list = field(default_factory=list)  # Tushare money_flow 原始列表（不切片）
     current_price:  float = 0.0
     market_cap_yi:  float = 0.0
-    industry: str = ""  # 2026-08-06 加: sector_overheat 走个股代理时记录
+    industry: str = ""
     code: str = ""
     name: str = ""
 
@@ -81,7 +80,6 @@ class RawContext:
             kline=k, weekly=w,
             eps_table=self.eps_table,
             fflow=self.fflow,
-            resonance=self.resonance,
             moneyflow=self.moneyflow,
             current_price=price,
             market_cap_yi=self.market_cap_yi,
@@ -99,7 +97,6 @@ class RawContext:
             weekly=weekly,
             eps_table=dump.get("eps_table") or [],
             fflow=dump.get("fflow") or {},
-            resonance=dump.get("resonance") or {},
             moneyflow=dump.get("tushare", {}).get("money_flow") or [],
             current_price=dump.get("close") or (kline[-1]["close"] if kline else 0.0),
             industry=dump.get("industry", ""),
@@ -472,42 +469,6 @@ class ObvStrategy(AnalysisStrategy):
         return FactorScore(
             name=self.name, score=score, weight=self.weight,
             signals=signals, summary=summary, raw=obv,
-        )
-
-
-class ResonanceStrategy(AnalysisStrategy):
-    """多市场共振 (1d/5d/20d) → 分数，从 ctx.kline 直接计算"""
-    name = "resonance"
-    weight = 0.15
-
-    def analyze(self, ctx: RawContext) -> FactorScore:
-        # resonance 是网络数据，从 ctx.resonance 读（dump_data 预算好存入 dump）
-        res = ctx.resonance or {}
-        ctx.resonance_result = res
-
-        d_score_map = {
-            "🟢四向↑": 1.0, "🟢四向": 1.0,
-            "🟡三向↑": 0.5,
-            "⬜分歧": 0.0,
-            "🟠三向↓": -0.5,
-            "🔴四向↓": -1.0, "🔴四向": -1.0,
-        }
-        signals = []
-        score_total = 0.0
-        cnt = 0
-        for period in ["1d", "5d", "20d"]:
-            d = res.get(period, {}) or {}
-            direction = d.get("direction", "—")
-            d_score = d_score_map.get(direction, 0.0)
-            if d_score != 0.0 or direction != "—":
-                score_total += d_score
-                cnt += 1
-                signals.append(f"共振 {period} {direction}")
-
-        avg = score_total / cnt if cnt > 0 else 0.0
-        return FactorScore(
-            name=self.name, score=avg, weight=self.weight,
-            signals=signals, summary=f"共振 {cnt}/3 周期", raw=res,
         )
 
 
@@ -951,14 +912,13 @@ class MonitorTriggersStrategy(AnalysisStrategy):
 
 # Phase1：基础因子，互不依赖，结果写入 ctx 供 Phase2 读
 PHASE1_STRATEGIES: list[type[AnalysisStrategy]] = [
-    ChanStrategy,           # 0.20  → ctx.chan_result
-    WyckoffStrategy,        # 0.20  → ctx.wyckoff_result / wyckoff_weekly
-    SmcStrategy,            # 0.10  → ctx.smc_result
-    ObvStrategy,            # 0.10  → ctx.obv_result  (先于 FflowStrategy, 让 fflow 双判定读 ctx.obv_result)
-    FflowStrategy,          # 0.10  → ctx.fflow_result
-    ResonanceStrategy,      # 0.15  → ctx.resonance_result
+    ChanStrategy,           # 0.20
+    WyckoffStrategy,        # 0.20
+    SmcStrategy,            # 0.10
+    ObvStrategy,            # 0.10
+    FflowStrategy,          # 0.10
     PegStrategy,            # 0.15
-    MacdDivergenceStrategy, # 0.05  → ctx.macd_div_result  (MACD 底背驰, 辅助确认)
+    MacdDivergenceStrategy, # 0.05
 ]
 
 # Phase2：依赖 Phase1 的 ctx 共享结果，不重算
