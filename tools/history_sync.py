@@ -249,11 +249,16 @@ def sync_incremental(target_date: str | None = None) -> int:
     for date in missing:
         records, status = get_daily_by_date(date)
         if not records:
+            if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
+                if all_records:
+                    _append_records(all_records)
+                print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘")
+                sys.exit(0)
             print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
             continue
         all_records.extend(records)
         print(f"    ✅ {date}: {len(records)} 只")
-        time.sleep(0.3)  # tushare 频控
+        time.sleep(0.3)
 
     # 所有缺失天收集完后一次性写入，避免每天读写一次文件
     if all_records:
@@ -264,16 +269,15 @@ def sync_incremental(target_date: str | None = None) -> int:
 
 
 def sync_init(start_year: int = 2020) -> int:
-    """首次建档：按月拉全市场历史K线，按年批量写入。"""
+    """首次建档：按月拉全市场历史K线。
+    - 每月拉完立即写入（不等年底），限流/出错时已拉数据不丢
+    - 下次跑自动跳过已有月份（幂等）
+    """
     from tools.fetch.tushare_fetcher import get_daily_range
 
     today = _today()
     ranges = _month_ranges(start_year, today)
     print(f"  📦 首次建档: {start_year}-01-01 ~ {today}，共 {len(ranges)} 个月")
-
-    # 按年分组，每年收集完所有月份数据后一次性写入
-    from collections import defaultdict
-    year_records: dict[int, list] = defaultdict(list)
 
     total = 0
     for i, (start, end) in enumerate(ranges):
@@ -285,29 +289,21 @@ def sync_init(start_year: int = 2020) -> int:
 
         records, status = get_daily_range(start, end)
         if not records:
+            if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
+                print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘，下次跑继续")
+                sys.exit(0)
             print(f"    跳过 {start[:6]} (状态: {status})")
             time.sleep(0.5)
             continue
 
-        year_records[year].extend(records)
+        # 每月立即写入，限流时不丢数据
+        n = _append_records(records)
+        total += n
         pct = (i + 1) / len(ranges) * 100
-        print(f"    ✅ {start[:6]}: {len(records)} 条 [{pct:.0f}%]")
+        print(f"    ✅ {start[:6]}: {n} 条 [{pct:.0f}%]")
         time.sleep(0.5)
 
-        # 当年最后一个月拉完，立即写入（释放内存）
-        is_last_month_of_year = (end[:4] != str(year + 1)) and (
-            i == len(ranges) - 1 or int(ranges[i + 1][0][:4]) > year
-        )
-        if is_last_month_of_year and year_records[year]:
-            print(f"    💾 写入 {year} 年: {len(year_records[year])} 条")
-            total += _append_records(year_records[year])
-            year_records[year] = []  # 释放内存
-
-    # 收尾：写入未满一年的数据
-    for year, recs in year_records.items():
-        if recs:
-            print(f"    💾 写入 {year} 年: {len(recs)} 条")
-            total += _append_records(recs)
+    return total
 
     return total
 

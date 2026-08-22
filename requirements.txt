@@ -1,15 +1,19 @@
-# 核心依赖 (2026-07-27)
-# 安装: uv pip install -r requirements.txt (推荐, 快) 或 pip install -r requirements.txt
+# 核心依赖
+# 安装: uv sync (推荐) 或 pip install -r requirements.txt
 
-# 因子计算 + 报告
-pandas>=2.0
-numpy>=1.24
-pyyaml>=6.0
+# 数据获取
+tushare>=1.4.0
 requests>=2.31
+python-dotenv>=1.0
 
-# 遗传算法挖因子 (Day 9)
+# 数据存储 + 分析
+duckdb>=1.5.5
+pandas>=3.0
+numpy>=1.24
+
+# 配置
+pyyaml>=6.0
+
+# 因子挖掘 (可选)
 gplearn>=0.4
-
-# LightGBM 多因子打分 (Day 11)
 lightgbm>=4.0
-

@@ -7,6 +7,14 @@ name = "ashare-quant-agent"
 version = "0.1.0"
 description = "A股量化智能投顾 Agent"
 requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=1.5.5",
+    "pandas>=3.0.5",
+    "tushare>=1.4.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
