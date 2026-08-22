@@ -232,8 +232,8 @@ def main():
 
         rough_pool.append({
             "code": code,
-            "name": DataStore.get_stock_basic(code).get("name", code),
-            "sector": DataStore.get_stock_basic(code).get("industry", "?"),
+            "name": code,
+            "sector": "—",
             "weekly_cur": weekly_cur,
             "weekly_gap": weekly_gap,
             "lo_5y": lo_5y,
