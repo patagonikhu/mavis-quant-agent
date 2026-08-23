@@ -41,7 +41,7 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
         from tools.analysis.factor_history import compute_factor_history
 
         strategies = [WyckoffStrategy, ChanStrategy, MacdDivergenceStrategy]
-        ctx = DataStore.get_ctx(code, kline_only=True, limit=120)  # 只需近 window+30 天，120根足够
+        ctx = DataStore.get_ctx(code, kline_only=True, limit=250)  # 需要 200 日均线，250 根保证一致性
         if len(ctx.kline) < 60:
             return None
 
