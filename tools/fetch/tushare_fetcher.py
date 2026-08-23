@@ -296,6 +296,20 @@ def get_daily_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
     return data, status
 
 
+def get_daily_basic_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
+    """按交易日拉全市场 daily_basic，一次返回当天所有股票的 PE/PB/市值。
+
+    trade_date: YYYYMMDD
+    返回: [{ts_code, trade_date, close, pe_ttm, pb, total_mv, circ_mv, turnover_rate, volume_ratio}, ...]
+    """
+    data, status = _safe_call(
+        "daily_basic",
+        trade_date=trade_date,
+        fields="ts_code,trade_date,close,pe,pe_ttm,pb,total_mv,circ_mv,turnover_rate,volume_ratio",
+    )
+    return data, status
+
+
 def get_daily_range(start_date: str, end_date: str) -> tuple[list[dict] | None, str]:
     """按日期范围拉全市场日K线（不限 ts_code），用于首次建档。
 

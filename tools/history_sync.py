@@ -324,6 +324,10 @@ def sync_incremental(target_date: str | None = None) -> int:
         total = _append_records(all_records)
     else:
         total = 0
+
+    # 同步 daily_basic（PE/PB/市值）
+    sync_daily_basic(target_date)
+
     return total
 
 
@@ -387,7 +391,134 @@ def sync_init(start_year: int = 2020) -> int:
 
 
 # ============================================================
-# 5. CLI
+# 5. daily_basic 增量同步（PE/PB/市值，按季度分片，保留近1年）
+# ============================================================
+
+DAILY_BASIC_DIR = Path("data/history/daily_basic")
+DAILY_BASIC_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _db_parquet_path(quarter: str) -> Path:
+    return DAILY_BASIC_DIR / f"{quarter}.parquet"
+
+
+def _get_db_max_date() -> str | None:
+    """返回本地 daily_basic 最新 trade_date。"""
+    try:
+        import duckdb
+        files = sorted(DAILY_BASIC_DIR.glob("*.parquet"))
+        if not files:
+            return None
+        recent = [str(f) for f in files[-2:]]
+        glob_expr = "', '".join(recent)
+        result = duckdb.execute(
+            f"SELECT MAX(trade_date) FROM read_parquet(['{glob_expr}'])"
+        ).fetchone()
+        return result[0] if result else None
+    except Exception:
+        return None
+
+
+def _append_daily_basic(records: list[dict]):
+    """把 records 按季度写入 daily_basic parquet。"""
+    if not records:
+        return
+    import duckdb
+    import pandas as pd
+    df = pd.DataFrame(records)
+    df["trade_date"] = df["trade_date"].astype(str)
+    df["quarter"] = df["trade_date"].apply(_quarter_of)
+    for quarter, qdf in df.groupby("quarter"):
+        qdf = qdf.drop(columns=["quarter"])
+        path = _db_parquet_path(quarter)
+        if path.exists():
+            old = duckdb.execute(f"SELECT * FROM read_parquet('{path}')").df()
+            qdf = pd.concat([old, qdf]).drop_duplicates(
+                subset=["ts_code", "trade_date"], keep="last"
+            ).sort_values(["trade_date", "ts_code"])
+        else:
+            qdf = qdf.sort_values(["trade_date", "ts_code"])
+        duckdb.execute(f"COPY (SELECT * FROM qdf) TO '{path}' (FORMAT PARQUET)")
+
+
+def _prune_daily_basic_old(keep_days: int = 365):
+    """删除超过 keep_days 天的季度文件（默认保留近1年）。"""
+    import duckdb
+    cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y%m%d")
+    cutoff_q = _quarter_of(cutoff)
+    for f in sorted(DAILY_BASIC_DIR.glob("*.parquet")):
+        if f.stem < cutoff_q:
+            f.unlink()
+            print(f"  🗑️  删除过期: {f.name}")
+
+
+def sync_daily_basic(target_date: str | None = None) -> int:
+    """增量同步 daily_basic：只拉缺失的交易日，保留近1年数据。
+
+    Returns: 新增的 bar 数量
+    """
+    from tools.fetch.tushare_fetcher import get_daily_basic_by_date
+
+    today = target_date or _today()
+    max_local = _get_db_max_date()
+
+    # 首次同步：拉近1年
+    if max_local is None:
+        start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
+        print(f"  🏗️  daily_basic 首次建档，从 {start} 开始...")
+        max_local = (datetime.strptime(start, "%Y%m%d") - timedelta(days=1)).strftime("%Y%m%d")
+
+    if max_local >= today:
+        print(f"  ✅ daily_basic 已是最新 (本地最新: {max_local})")
+        _prune_daily_basic_old()
+        return 0
+
+    next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+    missing = _get_trading_dates(next_date, today)
+    missing = [d for d in missing if not has_data_for_date(d)]  # 跳过 K 线也没有的日期
+
+    if not missing:
+        print(f"  ✅ daily_basic 已是最新 (本地最新: {max_local})")
+        return 0
+
+    print(f"  📥 daily_basic 同步 {len(missing)} 天...")
+    total = 0
+    for date in missing:
+        records, status = get_daily_basic_by_date(date)
+        if records:
+            _append_daily_basic(records)
+            total += len(records)
+            print(f"    💾 {date}: {len(records)} 条")
+        time.sleep(0.2)  # Tushare 频控
+
+    _prune_daily_basic_old()
+    return total
+
+
+def read_daily_basic(ts_code: str) -> dict:
+    """读取单只股票最新一天的 daily_basic。"""
+    try:
+        import duckdb
+        files = sorted(DAILY_BASIC_DIR.glob("*.parquet"))
+        if not files:
+            return {}
+        recent = [str(f) for f in files[-2:]]
+        glob_expr = "', '".join(recent)
+        result = duckdb.execute(f"""
+            SELECT * FROM read_parquet(['{glob_expr}'])
+            WHERE ts_code = '{ts_code}'
+            ORDER BY trade_date DESC
+            LIMIT 1
+        """).fetchdf()
+        if result.empty:
+            return {}
+        return result.iloc[0].to_dict()
+    except Exception:
+        return {}
+
+
+# ============================================================
+# 6. CLI
 # ============================================================
 
 def main():

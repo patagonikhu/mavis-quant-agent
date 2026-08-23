@@ -70,7 +70,13 @@ class DataStore:
 
     @classmethod
     def get_daily_basic(cls, code: str) -> dict:
-        """PE/PB/市值等估值快照（每周更新）。"""
+        """PE/PB/市值等估值快照。优先从 parquet 读（无需网络），fallback JSON cache。"""
+        from tools.history_sync import read_daily_basic
+        ts_code = _to_ts_code(code)
+        result = read_daily_basic(ts_code)
+        if result:
+            return result
+        # fallback: 旧 JSON cache（watchlist 股票有）
         from tools.static_cache import get_daily_basic
         return get_daily_basic(code)
 
