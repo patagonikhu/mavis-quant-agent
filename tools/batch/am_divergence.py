@@ -45,14 +45,15 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
         if len(ctx.kline) < 60:
             return None
 
-        lookback = window + 30
+        lookback = window + 50  # 多加 20 天给"前10天无 Markup"检查用
         rows = compute_factor_history(ctx, step=1, lookback=lookback,
                                       strategies=strategies)
         if not rows:
             return None
 
-        # 找最近 window 天内的 A→M 切换
-        recent = rows[-window:] if len(rows) >= window else rows
+        # A→M 切换必须在最近 2 天内（太晚没意义）
+        # 要求：切换前 20 天内没有 Markup（排除短暂中断后回来的噪音）
+        recent = rows[-2:] if len(rows) >= 2 else rows
 
         am_switch_row = None
         for i, row in enumerate(recent):
@@ -60,6 +61,12 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
             prev_stage = (prev or {}).get("wyckoff_daily", "")
             curr_stage = row.get("wyckoff_daily", "")
             if "Markup" not in str(prev_stage) and "Markup" in str(curr_stage):
+                switch_idx_local = next((j for j, r in enumerate(rows) if r["date"] == row["date"]), None)
+                if switch_idx_local is None:
+                    continue
+                pre20 = rows[max(0, switch_idx_local - 20): switch_idx_local]
+                if any("Markup" in str(r.get("wyckoff_daily", "")) for r in pre20):
+                    continue  # 前 20 天有 Markup，是短暂中断，跳过
                 am_switch_row = row
                 break
 
@@ -75,7 +82,7 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
 
         lookback_rows = rows[max(0, switch_idx - 30): switch_idx + 1]
 
-        # 缠论底背驰
+        # 缠论底背驰（30天内）
         chan_date = None
         for r in reversed(lookback_rows):
             bc = r.get("daily_beichi") or {}
@@ -88,17 +95,15 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
                 chan_date = r["date"]
                 break
 
-        # MACD 底背驰
-        macd_date = next((r["date"] for r in reversed(lookback_rows) if r.get("macd_div_bot")), None)
+        # MACD 底背驰（5天内，作为 LPS 信号）
+        macd_lookback = rows[max(0, switch_idx - 5): switch_idx + 1]
+        macd_date = next((r["date"] for r in reversed(macd_lookback) if r.get("macd_div_bot")), None)
 
         has_chan = chan_date is not None
         has_macd = macd_date is not None
-        # require_macd=True: A→M + 缠论 + MACD 三重
-        # require_macd=False (--no-macd): A→M + MACD 即可（缠论字段当前可能为空）
-        if require_macd:
-            confirmed = has_chan and has_macd
-        else:
-            confirmed = has_macd  # 只要 MACD 底背驰
+        # require_macd=True (默认): A→M + MACD 底背驰
+        # require_macd=False (--no-macd): 只要 A→M
+        confirmed = has_macd if require_macd else True
         if not confirmed:
             return None
 
@@ -110,11 +115,13 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
         except Exception:
             days_ago = 99
 
-        sb = DataStore.get_stock_basic(code)
+        sb = DataStore.get_stock_basic(code)  # 只读本地缓存，无网络
+        name = sb.get("name", code) or code
+        industry = sb.get("industry", "")
         return {
             "code":      code,
-            "name":      sb.get("name", code),
-            "industry":  sb.get("industry", ""),
+            "name":      name,
+            "industry":  industry,
             "am_date":   am_date,
             "am_price":  am_price,
             "chan_date":  chan_date or "—",
