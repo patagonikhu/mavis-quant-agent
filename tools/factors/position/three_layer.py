@@ -1,7 +1,7 @@
 """
 position/three_layer.py - 三层仓位策略因子 (Day D2, 2026-07-27)
 
-把 原 dump_data.calc_three_layer_position (原 line 518-629, 114 行) 提炼成独立 factor
+把 老 data 工具.calc_three_layer_position (原 line 518-629, 114 行) 提炼成独立 factor
 
 4 层仓位: 逆势仓 (10-15%) / 底仓 (25-30%) / 中仓 (20-25%) / 波动仓 (20-25%)
 + 止损阶梯 + 目标阶梯

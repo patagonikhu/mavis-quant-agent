@@ -2,7 +2,7 @@
 factors/price/returns.py - 日收益率因子 (Day 1 示例)
 
 最简单的因子: 算日收益率
-不依赖任何外部 (不调 原 dump_data), 纯 pandas
+不依赖任何外部 (不调 老 data 工具), 纯 pandas
 
 Day 1 用来测试 factor 框架能不能跑通
 """

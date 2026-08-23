@@ -5,7 +5,7 @@ data_fetcher.py — 统一数据抓取层 (v4.0, 2026-07-22)
   - 历史: v1-v3 用 push2/qtimg/ifzq/datacenter, WAF 频发 + 多源不一致
   - 现在: 5 个 getter 全部委托给 tools.tushare_fetcher, 单一权威源
   - 历史 fallback 链 (push2/qtimg/datacenter) 全部移除, 函数签名保留
-    以保 render_report / analysis_data / 原 dump_data 等外部 import 不破坏
+    以保 render_report / analysis_data / 老 data 工具 等外部 import 不破坏
 
 数据源矩阵 (v4.0):
   ┌──────────────┬─────────────────────────────────────────┐
@@ -236,7 +236,7 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
         真要复权用 Tushare.pro_bar (另需 2000 积分), 暂用不复权
 
     v5.3 (2026-07-28): 加增量缓存 use_cache=True
-      - 读 data/dump/{code}.json 找 kline 最后一日
+      - 读 data/_old_d/{code}.json 找 kline 最后一日
       - 仅拉新数据 (start_date=last_date+1), merge 旧数据
       - 跨数不变 (仍是 days 根), 但 API 调用从 1 次变 N 根新增
       - 节省: 重 dump 全部 57 只从 ~2.4 分钟 → ~30 秒
@@ -396,7 +396,7 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
       - income (1 次, 给 EPS np_yi 用)
     v5.6 (2026-07-29): daily_basic_long 拆出 fetch_all
       - fetch_all 保持 6 段并发 (Tushare 全接口 80/分 内, 实际跑 watchlist 平均 6-7 段/秒)
-      - daily_basic_long (250 天 PE/PB/市值/换手率) 由 原 dump_data 顶层另外拉
+      - daily_basic_long (250 天 PE/PB/市值/换手率) 由 老 data 工具 顶层另外拉
         1 只票 +1 API call, watchlist 间隔 60s 自然恢复, 不在 fetch_all 内部串行 (会拖累 13s+)
 
     配合 tushare_fetcher 1 小时内存缓存, 同一只股二次跑 0.5s 内
@@ -421,7 +421,7 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
 
     def _fetch_60m_via_ds(code: str, n: int = 400):
         """v5.10.9 加: 走 data_source.fetch_kline_60m (Tushare 主源 + Sina 备源, 走 1 小时内存缓存)
-        避免 原 dump_data 后面重复拉 3 次 (calc_buy_sell_points klines_60 + dump['kline_60m'] + analyze_three_levels get_60m)
+        避免 老 data 工具 后面重复拉 3 次 (calc_buy_sell_points klines_60 + dump['kline_60m'] + analyze_three_levels get_60m)
         """
         from tools.fetch.data_source import fetch_kline_60m
         bars, st = fetch_kline_60m(code, n=n)
@@ -454,11 +454,11 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     # 2026-07-29 v5.6 加: daily_basic 历史 (PE/PB/市值/换手率), 走 config
     daily_basic_days = _PROJECT_CFG.get("data", {}).get("daily_basic_days", 250)
 
-    # ===== 并发拉 7 段（v5.10.9: +60m kline, 避免 原 dump_data 后面重复拉 Sina 60m）=====
+    # ===== 并发拉 7 段（v5.10.9: +60m kline, 避免 老 data 工具 后面重复拉 Sina 60m）=====
     # v5.6: daily_basic_long 拆出 fetch_all (避免 7 段并发撞 Tushare 单接口频控, daily_basic 单接口 100/分)
-    # fetch_all 保持快, daily_basic_long 由 原 dump_data 单独调 (1 只票 +1 API call, watchlist 间隔 60s 自然恢复)
-    # v5.10.9 加: 60m K 线 (Sina, timeout 5s + retry 1s/2s) — 之前 原 dump_data 拉 3 次 (line 783/1031/analyze_three_levels)
-    #          现在 fetch_all 1 次拉, 原 dump_data 0 重拉, watchlist 整体快 3-5s/只
+    # fetch_all 保持快, daily_basic_long 由 老 data 工具 单独调 (1 只票 +1 API call, watchlist 间隔 60s 自然恢复)
+    # v5.10.9 加: 60m K 线 (Sina, timeout 5s + retry 1s/2s) — 之前 老 data 工具 拉 3 次 (line 783/1031/analyze_three_levels)
+    #          现在 fetch_all 1 次拉, 老 data 工具 0 重拉, watchlist 整体快 3-5s/只
     import time as _t
     _t0 = _t.time()
     with ThreadPoolExecutor(max_workers=5) as ex:
@@ -581,9 +581,9 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
         result["statuses"]["weekly"] = wk_s or "EMPTY"
 
     # 8. 60分 K 线 (v5.10.9 改: 用并发 7 段结果, 0 重复拉)
-    # 之前 (v5.6): subprocess Sina curl 拉 (line 838), 跟 fetch_all 主体串联, 原 dump_data 还会在 line 783/1031 重复拉
+    # 之前 (v5.6): subprocess Sina curl 拉 (line 838), 跟 fetch_all 主体串联, 老 data 工具 还会在 line 783/1031 重复拉
     # 现在: 并发 7 段已经拉过 (line 707 fut_60m.result()), 直接用 kline_60m / kline_60m_s
-    # 保留格式转换: 跟 原 dump_data 期望一致 (date/date_only/open/high/low/close/vol/pct_chg)
+    # 保留格式转换: 跟 老 data 工具 期望一致 (date/date_only/open/high/low/close/vol/pct_chg)
     if kline_60m:
         kline_60m_fmt = []
         prev_close = None
@@ -648,7 +648,7 @@ def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
       - data/cache/stock_basic.json   (由 static_cache 维护)
       - data/cache/eps/{code}.json    (由 static_cache 维护)
 
-    返回格式与 fetch_all 一致，供 原 dump_data 无缝替换。
+    返回格式与 fetch_all 一致，供 老 data 工具 无缝替换。
     """
     from datetime import datetime
 

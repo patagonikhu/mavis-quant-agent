@@ -96,7 +96,7 @@ DUMP_FAIL=()
 
 dump_one() {
     local code=$1
-    # 8-22 重写: sync_stock.py 走 DataStore + parquet, 不写 data/dump/{code}.json
+    # 8-22 重写: sync_stock.py 走 DataStore + parquet, 不写 data/_old_d/{code}.json
     # 判定成功 = 命令退出码 0 + 输出含 "K线: N 根"
     if bash tools/with_venv.sh python3 -m tools.sync_stock "$code" >"$DUMP_DIR/${code}.log" 2>&1; then
         if grep -q "K线: " "$DUMP_DIR/${code}.log" 2>/dev/null; then

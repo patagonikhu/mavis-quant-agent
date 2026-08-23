@@ -1,7 +1,7 @@
 """
 risk/exit_signals.py - 退出信号因子 (Day D3, 2026-07-27)
 
-把 原 dump_data.calc_exit_signals (原 line 540-612, 73 行) 提炼成独立 factor
+把 老 data 工具.calc_exit_signals (原 line 540-612, 73 行) 提炼成独立 factor
 
 5 类 14 子信号综合判定: 缠论 + 估值 + 主力 三维
 - 🟢 强烈进货: 60分底背 + 止跌 + PEG<1.5 + fflow 进货 (3+ 绿 + 0 红)
@@ -55,11 +55,11 @@ class ExitSignalsFactor(Factor):
         g = (E3 / E0 - 1) / 3 if E0 else 0
         peg = fwd_pe / (g * 100) if g > 0 else 0
 
-        # === 2. L/E3 (简化, 跟原 dump_data 一致) ===
+        # === 2. L/E3 (简化, 跟老 data 工具 一致) ===
         L_E3 = 0.69 if peg < 1.0 else 1.5
 
         # === 3. vs MA120 (简化) ===
-        ma120_dev = -31  # 占位, 应从 K 线算 (跟原 dump_data 一致)
+        ma120_dev = -31  # 占位, 应从 K 线算 (跟老 data 工具 一致)
 
         # === 4. 缠论信号 (固化字段) ===
         bot_60 = chan_signals.get("60min_底背", False)

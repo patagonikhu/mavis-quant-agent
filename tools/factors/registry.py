@@ -4,7 +4,7 @@ factor_registry.py - 因子注册表 (v1.0)
 作用:
 1. 集中管理所有可用因子 (避免散落各文件)
 2. 统一变量名 (避免 chan_beichi / beichi_str / beichi_d 混乱)
-3. 一键跑所有因子 (供 原 dump_data / GA / report 调用)
+3. 一键跑所有因子 (供 老 data 工具 / GA / report 调用)
 """
 from typing import Dict, List, Type, Any, Optional
 import pandas as pd
@@ -146,7 +146,7 @@ class FactorRunner:
                     dict_results[name] = {"error": str(e)}
                 else:
                     result[name] = pd.NA
-        # 把 dict 结果挂到 DataFrame.attrs (供 原 dump_data / report 读)
+        # 把 dict 结果挂到 DataFrame.attrs (供 老 data 工具 / report 读)
         if dict_results:
             result.attrs["dict_factors"] = dict_results
         return result

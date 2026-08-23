@@ -9,7 +9,7 @@ smc/__init__.py - SMC (Smart Money Concepts) 算法库 (按 factor 库组织)
   - analysis: smc_analysis 主入口
 
 Factor 抽象层 (output_type=dict):
-  - ob: SMC OB 5 档判定 (原 dump_data._factor_chan_signals 用)
+  - ob: SMC OB 5 档判定 (老 data 工具._factor_chan_signals 用)
 """
 from .atr import calc_atr
 from .order_blocks import find_order_blocks

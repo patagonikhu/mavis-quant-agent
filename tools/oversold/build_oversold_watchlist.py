@@ -5,7 +5,7 @@ build_oversold_watchlist.py — 超跌股 watchlist 构建器 (2026-08-20, user 
 - ❌ 不读 AnalysisEngine / signals_5method / factor_history
 - ❌ 不读 fflow / EPS / 估值
 - ✅ 拉全 A 股 weekly 250 根 → 筛跌幅 ≥ 70% → 写 watchlist_oversold.json
-- ✅ 走 dump_oversold/ 缓存, 跟 data/dump/ 不冲突
+- ✅ 走 _old_oversold/ 缓存, 跟 data/_old_d/ 不冲突
 - ✅ 输出 watchlist_oversold.json 跟 watchlist.json 同结构, 复用 refresh_all.sh
 
 设计原则:
@@ -39,7 +39,7 @@ from tools.fetch.tushare_fetcher import _PRO, _load_dotenv  # noqa: E402
 _load_dotenv()
 
 # === 配置 ===
-DUMP_OVER_DIR = "data/dump_oversold"          # lite dump 缓存
+DUMP_OVER_DIR = "data/_old_oversold"          # lite dump 缓存
 WATCHLIST_OUT = "data/watchlist_oversold.json"  # 主输出
 DOCS_OUT = "docs/oversold.md"                  # 人读报告
 
@@ -305,9 +305,9 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=8,
                         help="并发 worker 数 (默认 8, 单线程 = 1)")
     parser.add_argument("--no-incremental", action="store_true",
-                        help="关闭增量模式 (默认开, 跳过已有 dump_oversold/{code}.json)")
+                        help="关闭增量模式 (默认开, 跳过已有 _old_oversold/{code}.json)")
     parser.add_argument("--max-age-days", type=int, default=7,
-                        help="dump_oversold/{code}.json as_of 距今 < N 天才 cached, 否则重拉 (默认 7)")
+                        help="_old_oversold/{code}.json as_of 距今 < N 天才 cached, 否则重拉 (默认 7)")
     args = parser.parse_args()
 
     # 用 local 变量覆盖 module-level
@@ -400,7 +400,7 @@ def main() -> int:
                 }
                 write_dump_lite(payload["code"], basic_for_dump, payload["weekly"], status="ok")
             except Exception as e:
-                logger.warning("write dump_oversold %s fail: %s", payload["code"], e)
+                logger.warning("write _old_oversold %s fail: %s", payload["code"], e)
             picks.append({k: v for k, v in payload.items() if k not in ("weekly", "ts_code")})
         elif status == "ok":
             stats["weekly_ok"] += 1
@@ -413,7 +413,7 @@ def main() -> int:
                 }
                 write_dump_lite(payload["code"], basic_for_dump, payload["weekly"], status="ok")
             except Exception as e:
-                logger.warning("write dump_oversold %s fail: %s", payload["code"], e)
+                logger.warning("write _old_oversold %s fail: %s", payload["code"], e)
         elif status == "short":
             stats["weekly_ok"] += 1
             stats["skip_short_hist"] += 1
@@ -425,7 +425,7 @@ def main() -> int:
                 }
                 write_dump_lite(payload["code"], basic_for_dump, payload["weekly"], status="ok")
             except Exception as e:
-                logger.warning("write dump_oversold %s fail: %s", payload["code"], e)
+                logger.warning("write _old_oversold %s fail: %s", payload["code"], e)
         elif status == "cached":
             stats["cached"] += 1
             # 缓存的也算 picks/ok
@@ -445,7 +445,7 @@ def main() -> int:
                 }
                 write_dump_lite(payload["code"], basic_for_dump, [], status="fail", reason="RATE_LIMITED")
             except Exception as e:
-                logger.warning("write dump_oversold %s fail: %s", payload["code"], e)
+                logger.warning("write _old_oversold %s fail: %s", payload["code"], e)
         elif status == "perm":
             stats["weekly_fail"] += 1
             stats["perm_denied"] += 1
@@ -457,7 +457,7 @@ def main() -> int:
                 }
                 write_dump_lite(payload["code"], basic_for_dump, [], status="fail", reason="PERM_DENIED")
             except Exception as e:
-                logger.warning("write dump_oversold %s fail: %s", payload["code"], e)
+                logger.warning("write _old_oversold %s fail: %s", payload["code"], e)
         else:  # err
             stats["weekly_fail"] += 1
             stats["other_fail"] += 1
@@ -470,7 +470,7 @@ def main() -> int:
                 }
                 write_dump_lite(payload["code"], basic_for_dump, [], status="fail", reason=reason)
             except Exception as e:
-                logger.warning("write dump_oversold %s fail: %s", payload["code"], e)
+                logger.warning("write _old_oversold %s fail: %s", payload["code"], e)
 
         # 进度打印 (每 200 只或每 10 秒)
         if cur % 200 == 0 or (time.time() - nonlocal_last_report[0]) > 10:

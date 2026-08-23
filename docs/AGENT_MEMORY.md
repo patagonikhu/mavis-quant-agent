@@ -21,7 +21,7 @@
 **唯一数据源**: `data/history/daily/{year}.parquet` (duckdb 读, 按年分片)
 **唯一入口**: `tools/data_store.py` `DataStore` (classmethod, 静态访问)
 **同步**: `tools/history_sync.py` `sync_incremental()` (幂等, 增量补缺失)
-**单只工具**: `tools/sync_stock.py` (替代老 `dump_data.py`, 7-22 删)
+**单只工具**: `tools/sync_stock.py` (替代老 `老 data 工具.py`, 7-22 删)
 **全市场扫**: `tools/batch/am_divergence.py` (t-am-divergence skill 配套)
 **分析引擎**: `tools/analysis/analysis_engine.py` (8 strategies, PHASE1_STRATEGIES)
 **因子历史**: `tools/analysis/factor_history.py` (含 `macd_div_bot` 字段)
@@ -76,11 +76,11 @@ DataStore.watchlist_codes()               # watchlist.json
 | DataStore 入口 | `tools/data_store.py` |
 | Tushare fetch | `tools/fetch/tushare_fetcher.py` (含 `get_daily_by_date` 批量) |
 | 同步脚本 | `tools/history_sync.py` |
-| 单只工具 (替代 dump_data) | `tools/sync_stock.py` |
+| 单只工具 (替代老 data 工具) | `tools/sync_stock.py` |
 | 全市场扫脚本 | `tools/batch/am_divergence.py` |
 | 三层分析入口 | `tools/analysis/analysis_engine.py` (8 strategies) |
 | 因子历史计算 | `tools/analysis/factor_history.py` (含 `macd_div_bot`) |
-| ~~老的 watchlist dump~~ | ⚠️ `tools/dump_data.py` **已删** (7-22 660 行僵尸) |
+| ~~老的 watchlist dump~~ | ⚠️ `tools/老 data 工具.py` **已删** (7-22 660 行僵尸) |
 
 ---
 
@@ -112,21 +112,21 @@ DataStore.watchlist_codes()               # watchlist.json
 ## 🛠️ 8-24 清理记录 (commit 6036d4f + 后续)
 
 **删除**:
-- `tools/dump_data.py` (661 行僵尸, 7-22)
+- `tools/老 data 工具.py` (661 行僵尸, 7-22)
 - 9 个死 skill (见上表)
-- `data/dump/` 目录
+- `data/_old_d/` 目录
 
 **修复**:
-- `tools/data_store.py` 删 dead `from tools.dump_data import _PROJECT_CFG` (module-level 已有)
+- `tools/data_store.py` 删 dead `from tools.老 data 工具 import _PROJECT_CFG` (module-level 已有)
 - `tools/batch/regression_test.py:104` 改走 `DataStore + AnalysisEngine`
 - `tools/refresh_all.sh` dump 成功判定: 文件存在 → "K线: " grep
 
 **批量清理** (commit 6036d4f, 34 文件):
-- 47 个文件 `dump_data` → `原 dump_data` (历史) / `sync_stock` (新)
+- 47 个文件 `老 data` → `老 data 工具` (历史) / `sync_stock` (新)
 - 16 个旧 `docs/analyze-*.md` 错误信息改 `sync_stock`
 - `.claude/skills/_shared/analysis_framework.md` 改 `sync_stock.py`
 - `docs/watchlist-overview.md` 改 `DataStore.get_ctx()`
 - `tools/render/report_renderer.py` 6 处错误信息改 `sync_stock`
-- 20+ 因子文件 docstring 改 "原 dump_data"
+- 20+ 因子文件 docstring 改 "老 data 工具"
 
 ---

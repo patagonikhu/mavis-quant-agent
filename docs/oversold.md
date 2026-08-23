@@ -25,7 +25,7 @@
 ## 📁 输出文件
 
 - `data/watchlist_oversold.json` — 新 watchlist, 跟 `data/watchlist.json` 同结构, 可走完整 analysis
-- `data/dump_oversold/{code}.json` — lite dump 缓存 (weekly 250 根 + name/industry), 0 个
+- `data/_old_oversold/{code}.json` — lite 缓存 (weekly 250 根 + name/industry), 0 个
 - `docs/oversold.md` — 本报告
 
 ## 🚀 下一步

@@ -1,7 +1,7 @@
 """
 chan/verdict.py - 缠论综合判定因子
 
-把 原 dump_data._factor_chan_signals 末段 (line 324-336) 缠论综合判定提炼成独立因子
+把 老 data 工具._factor_chan_signals 末段 (line 324-336) 缠论综合判定提炼成独立因子
 
 输入: bot_60, top_60, stop_signal, d_pos (4 个判定值)
 输出: dict {verdict: str} — 跟原 verdict 变量完全一致
@@ -13,7 +13,7 @@ from tools.factors.base import Factor
 class ChanVerdictFactor(Factor):
     """缠论综合判定因子 (5 档)
 
-    判定优先级 (跟原 dump_data 完全一致):
+    判定优先级 (跟老 data 工具 完全一致):
       1. 60分底背 + 止跌信号 → 🟢 建仓窗口
       2. 60分底背            → 🟡 关注
       3. 60分顶背 + 中枢上方  → 🔴 减仓

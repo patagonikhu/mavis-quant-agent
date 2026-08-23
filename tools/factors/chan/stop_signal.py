@@ -1,7 +1,7 @@
 """
 chan/stop_signal.py - 止跌信号因子
 
-把 原 dump_data._factor_chan_signals 的 8. 止跌信号段 (原 line 421-433) 提炼成独立因子
+把 老 data 工具._factor_chan_signals 的 8. 止跌信号段 (原 line 421-433) 提炼成独立因子
 
 止跌信号 = 缩量 + 长下影 + 次日不创新低 (3 条件 AND 门)
 

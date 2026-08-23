@@ -5,7 +5,7 @@ regression_test.py - 重构回测工具 (v1.0)
 原则: 改一步, 跑一次, 不通过就回滚
 
 用法:
-    # 第一次跑: 建 baseline (用当前 原 dump_data 的输出)
+    # 第一次跑: 建 baseline (用当前 老 data 工具 的输出)
     python3 tools/batch/regression_test.py baseline
 
     # 改代码后跑: 对比 baseline
@@ -85,7 +85,7 @@ DEFAULT_TOLERANCE = {
 
 # === 2. 跑 dump (重新生成) ===
 def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
-    """跑 原 dump_data, 返回 (新dump, 耗时秒)
+    """跑 老 data 工具, 返回 (新dump, 耗时秒)
 
     用户原话:
       - 'test dump 和平时的dump 要share 逻辑的' → 跟 t-analyze / t-watchlist 同入口
@@ -99,7 +99,7 @@ def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
     """
     start = time.time()
     try:
-        # 8-22 重写: 不再调 tools.原 dump_data.analyze (已删), 改走 DataStore + AnalysisEngine
+        # 8-22 重写: 不再调 tools.老 data 工具.analyze (已删), 改走 DataStore + AnalysisEngine
         from tools.data_store import DataStore
         from tools.analysis.analysis_engine import AnalysisEngine
         ctx = DataStore.get_ctx(code)
@@ -274,7 +274,7 @@ def run_baseline(codes: List[str] = DEFAULT_CODES, workers: int = 1, render: boo
 
     Args:
         workers: 并发 worker 数 (默认 1 = 串行)
-                2 风险: 原 dump_data 内部 fetch_all 6 段并发 + 2 worker = 12 段/秒
+                2 风险: 老 data 工具 内部 fetch_all 6 段并发 + 2 worker = 12 段/秒
                        Tushare 全接口 80/分 = 1.33 段/秒, 超 9 倍频控边界
                 1 稳态: 17 baseline ≈ 9.6 分钟
         render: 是否生成 markdown 报告 (默认 False, regression_test 不需要)
@@ -355,7 +355,7 @@ def run_dump_only(codes: List[str] = DEFAULT_CODES, workers: int = 1):
     success_codes = []
 
     def _dump_one(code: str) -> dict:
-        """跑单只 原 dump_data, 返回 {code, status, elapsed}"""
+        """跑单只 老 data 工具, 返回 {code, status, elapsed}"""
         dump, elapsed = run_dump(code, render=False)
         if dump is None:
             return {"code": code, "status": "skip", "elapsed": elapsed}
@@ -419,7 +419,7 @@ def run_compare(codes: List[str] = DEFAULT_CODES) -> bool:
 
     之前 run_test 一行 run_dump + 比对, 撞墙 70s 会污染后续 Tushare 状态
     现在分 2 步:
-      - 步骤 1: dump (上面 run_dump_only, 调 DataStore + AnalysisEngine, 内存 dict 代替 data/dump/{code}.json)
+      - 步骤 1: dump (上面 run_dump_only, 调 DataStore + AnalysisEngine, 内存 dict 代替 data/_old_d/{code}.json)
       - 步骤 2: compare (0 API 调用, 纯内存比对 dump vs baseline)
 
     Args:
@@ -566,7 +566,7 @@ def main():
     if len(sys.argv) < 2:
         print("用法:")
         print("  python3 tools/batch/regression_test.py baseline                       # 建 baseline (dump + 写 baseline.json)")
-        print("  python3 tools/batch/regression_test.py dump                           # 步骤 1: 只跑 原 dump_data, 写盘, 不对比")
+        print("  python3 tools/batch/regression_test.py dump                           # 步骤 1: 只跑 老 data 工具, 写盘, 不对比")
         print("  python3 tools/batch/regression_test.py compare                        # 步骤 2: 只读 dump + 对比 baseline (0 API)")
         print("  python3 tools/batch/regression_test.py test                           # dump + compare 一步走 (默认)")
         print("  python3 tools/batch/regression_test.py all                           # baseline + test")

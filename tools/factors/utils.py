@@ -112,7 +112,7 @@ def _amount_proxy(df: pd.DataFrame) -> pd.Series:
     """
     amount 列缺失或全 0 时,用 volume*close 兜底并换算到"千元"单位。
 
-    原 dump_data 里 amount 字段单位是"千元"(tushare_fetcher 输出),所以兜底时:
+    老 data 工具 里 amount 字段单位是"千元"(tushare_fetcher 输出),所以兜底时:
       amount_千元 = volume × close / 1000
 
     Args:
