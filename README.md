@@ -151,9 +151,6 @@ Layer 3（重点）：MOCVD设备/高纯靶材/外延片
 ├── CLAUDE.md                          # Agent 人设 + 决策框架 + 8个slash命令
 ├── docs/
 │   ├── analysis-framework.md          # 投资四问 + T框架 + PEG + Checklist + 瓶颈猎手
-│   ├── chain-半导体.md                # 半导体产业链图谱
-│   ├── chain-robotics.md              # 机器人产业链图谱
-│   ├── chain-cpb.md                   # CPB产业链
 │   └── analyze-*.md                   # 已完成的个股分析报告 (50+)
 │
 ├── data/                              # 静态数据 (你/Claude 维护)

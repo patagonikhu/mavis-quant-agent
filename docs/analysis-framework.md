@@ -1071,9 +1071,7 @@ Layer 4（基础设施）：电力、冷却、土地、认证
 ```
 
 **与 Mavis 产业链文档的对应：**
-- `docs/chain-半导体.md` = 半导体产业链 Layer 1-3 图谱
-- `docs/chain-robotics.md` = 机器人产业链 Layer 1-3 图谱
-- `docs/chain-cpb.md` = CPB产业链
+- (8-24 删 chain-*.md, 文档已 archive)
 
 ### 16.2 瓶颈判定6条标准
 
