@@ -28,7 +28,7 @@ DAILY_BASIC_PATH = CACHE_DIR / "daily_basic.json"
 STOCK_BASIC_PATH = CACHE_DIR / "stock_basic.json"
 
 # 过期阈值（秒）
-_TTL_DAILY_BASIC = 7  * 24 * 3600   # 7天
+_TTL_DAILY_BASIC = 90 * 24 * 3600   # 90天（一季度）
 _TTL_STOCK_BASIC = 30 * 24 * 3600   # 30天
 _TTL_EPS         = 30 * 24 * 3600   # 30天
 

@@ -56,8 +56,16 @@ def _to_ts_code(code: str) -> str:
     return f"{c}.SZ"
 
 
-def _parquet_path(year: int) -> Path:
-    return HISTORY_DIR / f"{year}.parquet"
+def _quarter_of(trade_date: str) -> str:
+    """YYYYMMDD → 'YYYYQN' 季度标识，如 '20260823' → '2026Q3'"""
+    month = int(trade_date[4:6])
+    q = (month - 1) // 3 + 1
+    return f"{trade_date[:4]}Q{q}"
+
+
+def _parquet_path(year_or_quarter) -> Path:
+    """支持 year（int，向后兼容）或 quarter（str，如 '2026Q3'）"""
+    return HISTORY_DIR / f"{year_or_quarter}.parquet"
 
 
 def _get_local_max_date() -> str | None:
@@ -67,7 +75,7 @@ def _get_local_max_date() -> str | None:
         files = sorted(HISTORY_DIR.glob("*.parquet"))
         if not files:
             return None
-        # 只扫最近两年文件，快
+        # 只扫最近两个文件（季度或年度），快
         recent = [str(f) for f in files[-2:]]
         glob_expr = "', '".join(recent)
         result = duckdb.execute(
@@ -142,12 +150,12 @@ def _append_records(records: list[dict]):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df["year"] = df["trade_date"].str[:4].astype(int)
+    df["quarter"] = df["trade_date"].apply(_quarter_of)
     total = 0
 
-    for year, group in df.groupby("year"):
-        group = group.drop(columns=["year"])
-        path = _parquet_path(year)
+    for quarter, group in df.groupby("quarter"):
+        group = group.drop(columns=["quarter"])
+        path = _parquet_path(quarter)
 
         if path.exists():
             # 读旧数据，去重后合并写回
@@ -186,18 +194,39 @@ def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: in
         if not all_files:
             return []
 
-        # 按 limit 推算需要哪些年份文件（每年约 250 交易日）
-        # 避免全量扫描所有年份
+        # 按 limit 推算需要哪些季度文件（每季度约 63 交易日）
+        # 文件名格式：YYYYQN（新）或 YYYY（旧年度文件，迁移期间兼容）
         if limit > 0 and not start_date:
-            need_years = max(1, (limit // 250) + 2)  # 多加 2 年保险
-            cur_year = datetime.now().year
-            min_year = cur_year - need_years + 1
-            files = [f for f in all_files if int(f.stem) >= min_year]
+            need_quarters = max(1, (limit // 63) + 2)  # 多加 2 个季度保险
+            now = datetime.now()
+            cur_q = (now.month - 1) // 3 + 1
+            # 往前推 need_quarters 个季度
+            y, q = now.year, cur_q
+            min_quarter = None
+            for _ in range(need_quarters - 1):
+                q -= 1
+                if q == 0:
+                    q = 4
+                    y -= 1
+            min_quarter = f"{y}Q{q}"
+            # 兼容旧年度文件：年度文件 stem 是纯数字
+            def _file_ok(f):
+                s = f.stem
+                if s.isdigit():  # 旧年度文件
+                    return int(s) >= y
+                return s >= min_quarter  # 季度文件按字典序比较
+            files = [f for f in all_files if _file_ok(f)]
             if not files:
-                files = all_files  # fallback
+                files = all_files
         elif start_date:
+            min_quarter = _quarter_of(start_date)
             min_year = int(start_date[:4])
-            files = [f for f in all_files if int(f.stem) >= min_year]
+            def _file_ok(f):
+                s = f.stem
+                if s.isdigit():
+                    return int(s) >= min_year
+                return s >= min_quarter
+            files = [f for f in all_files if _file_ok(f)]
             if not files:
                 files = all_files
         else:
