@@ -81,28 +81,19 @@ def _now_str() -> str:
 # ============================================================
 
 def get_daily_basic(code: str, force: bool = False) -> dict:
-    """返回单只股票最新的 daily_basic 快照。只对 watchlist 股票缓存/拉取。"""
-    if not _in_watchlist(code):
-        return {}
-
+    """daily_basic fallback（parquet 已接管主路径，此处仅兜底 watchlist JSON）。"""
     cache = _load_json(DAILY_BASIC_PATH)
     entry = cache.get(code)
-
-    if not force and entry and not _is_stale(DAILY_BASIC_PATH, _TTL_DAILY_BASIC):
-        return entry
-
-    # 需要刷新整个文件（按只刷太零散，统一刷 watchlist）
-    # 单只调用时，如果文件整体没过期但这只没有记录，也拉一次
     if not force and entry:
         return entry
-
-    # 拉单只
+    if not _in_watchlist(code):
+        return {}
+    # watchlist 票且缓存缺失时才拉
     data = _fetch_daily_basic_one(code)
     if data:
         cache[code] = {**data, "updated": _now_str()}
         _save_json(DAILY_BASIC_PATH, cache)
         return cache[code]
-
     return entry or {}
 
 
@@ -146,25 +137,19 @@ def refresh_daily_basic(codes: list[str]):
 # ============================================================
 
 def get_stock_basic(code: str, force: bool = False) -> dict:
-    """返回单只股票的静态基础信息。只对 watchlist 股票缓存/拉取。"""
-    if not _in_watchlist(code):
-        return {}
-
+    """stock_basic fallback（parquet 已接管主路径，此处仅兜底 watchlist JSON）。"""
     cache = _load_json(STOCK_BASIC_PATH)
     entry = cache.get(code)
-
-    if not force and entry and not _is_stale(STOCK_BASIC_PATH, _TTL_STOCK_BASIC):
-        return entry
-
     if not force and entry:
         return entry
-
+    if not _in_watchlist(code):
+        return {}
+    # watchlist 票且缓存缺失时才拉
     data = _fetch_stock_basic_one(code)
     if data:
         cache[code] = {**data, "updated": _now_str()}
         _save_json(STOCK_BASIC_PATH, cache)
         return cache[code]
-
     return entry or {}
 
 
