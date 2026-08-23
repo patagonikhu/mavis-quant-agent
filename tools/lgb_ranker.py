@@ -62,15 +62,15 @@ import lightgbm as lgb
 
 # === 跨机器路径 (2026-07-27) ===
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DUMP_DIR = PROJECT_ROOT / "data" / "dump"
 WATCHLIST_JSON = PROJECT_ROOT / "data" / "watchlist.json"
 DOCS_DIR = PROJECT_ROOT / "docs"
 
 
 # === 1. 基础特征工程 (8 维) ===
 def build_features(code: str) -> dict:
-    """从 dump 拉 8 个特征, 拼成一行"""
-    raw = json.load(open(DUMP_DIR / f"{code}.json"))
+    """拉 8 个特征, 拼成一行 (走 fetch_all 获取最新数据)"""
+    from tools.fetch.data_fetcher import fetch_all
+    raw = fetch_all(code)
     kline = raw.get("kline", [])
     if not kline or len(kline) < 60:
         return None

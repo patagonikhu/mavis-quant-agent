@@ -26,7 +26,6 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DUMP_DIR = PROJECT_ROOT / "data" / "dump"
 WATCHLIST_JSON = PROJECT_ROOT / "data" / "watchlist.json"
 DOCS_DIR = PROJECT_ROOT / "docs"
 

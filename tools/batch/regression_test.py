@@ -43,11 +43,9 @@ except Exception:
 
 # === 配置 ===
 # 2026-08-17 fix: 之前 parent.parent 是 tools/, 加上 /tests/baselines 变 tools/tests/baselines/ 错的
-# 实际 baseline 在项目根 tests/baselines/ (跟 dump_data.py / report_renderer.py 同一级)
+# 实际 baseline 在项目根 tests/baselines/ (跟 sync_stock.py / report_renderer.py 同一级)
 BASELINE_DIR = Path(__file__).parent.parent.parent / "tests" / "baselines"
 BASELINE_DIR.mkdir(parents=True, exist_ok=True)
-DUMP_DIR = Path(__file__).parent.parent.parent / "data" / "dump"
-DUMP_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_CODES = [
     # 核心持仓 5 只
@@ -101,18 +99,18 @@ def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
     """
     start = time.time()
     try:
-        from tools.dump_data import analyze
-        dump = analyze(code)
+        # 8-22 重写: 不再调 tools.dump_data.analyze (已删), 改走 DataStore + AnalysisEngine
+        from tools.data_store import DataStore
+        from tools.analysis.analysis_engine import AnalysisEngine
+        ctx = DataStore.get_ctx(code)
+        result = AnalysisEngine().analyze(ctx)
         elapsed = time.time() - start
+        dump = {"code": code, "result": result, "elapsed": elapsed}
 
         if render:
             try:
-                from tools.data_store import DataStore
-                from tools.analysis.analysis_engine import AnalysisEngine
                 from tools.analysis.analysis_data import AnalysisData
                 from tools.render.report_renderer import render_report
-                ctx = DataStore.get_ctx(code)
-                result = AnalysisEngine().analyze(ctx)
                 render_report(AnalysisData.from_result(ctx, result))
             except Exception as e:
                 logger.warning("render {code} failed: {e}", code=code, e=e)
@@ -183,6 +181,7 @@ def extract_fields(code: str) -> dict:
     peg = ad.peg or {}
     dcf = ad.dcf or {}
 
+    fflow = (ad.analysis or {}).get('volume_price', {}).get('fflow', {}) or {}
     return {
         # 威科夫 (从 analysis 层读)
         "wyckoff_stage": (ad.analysis or {}).get('wyckoff', {}).get('stage', '?'),
@@ -193,8 +192,8 @@ def extract_fields(code: str) -> dict:
         # 财务 (v5.10.36 走 analysis 层 PegFactor/DcfFactor 真值)
         "peg_真实": peg.get('PEG_真实', None) if isinstance(peg, dict) else None,
         "dcf_l_10": (dcf.get('r_10%') or {}).get('L_隐含(亿)', None) if isinstance(dcf, dict) else None,
-        # 主力 (fflow 字段)
-        "main_yi_5d": dump.get('fflow', {}).get('5日主力_亿', 0),
+        # 主力 (fflow 字段, 从 analysis 层读)
+        "main_yi_5d": fflow.get('5日主力_亿', 0),
     }
     # ⚠️ _meta 不提取, 避免时间戳/as_of 干扰回测
 
@@ -347,7 +346,7 @@ def run_dump_only(codes: List[str] = DEFAULT_CODES, workers: int = 1):
         codes = pending + [c for c in codes if c not in pending]
 
     print(f"📥 跑 dump ({len(codes)} 只票, {workers} worker{'s' if workers > 1 else ''})...")
-    print(f"   dump 目录: {DUMP_DIR}\n")
+    print(f"   数据源: DataStore (parquet)\n")
 
     n_pass = 0
     n_fail = 0
@@ -420,7 +419,7 @@ def run_compare(codes: List[str] = DEFAULT_CODES) -> bool:
 
     之前 run_test 一行 run_dump + 比对, 撞墙 70s 会污染后续 Tushare 状态
     现在分 2 步:
-      - 步骤 1: dump (上面 run_dump_only, 调 Tushare, 写 data/dump/{code}.json)
+      - 步骤 1: dump (上面 run_dump_only, 调 DataStore + AnalysisEngine, 内存 dict 代替 data/dump/{code}.json)
       - 步骤 2: compare (0 API 调用, 纯内存比对 dump vs baseline)
 
     Args:
@@ -429,7 +428,7 @@ def run_compare(codes: List[str] = DEFAULT_CODES) -> bool:
     import time as _t
     print(f"🔍 对比 baseline ({len(codes)} 只票)...")
     print(f"   baseline: {BASELINE_DIR / 'v0_baseline.json'}")
-    print(f"   dump 目录: {DUMP_DIR}\n")
+    print(f"   数据源: DataStore (parquet)\n")
 
     # 加载 baseline
     bl_path = BASELINE_DIR / "v0_baseline.json"
@@ -453,22 +452,20 @@ def run_compare(codes: List[str] = DEFAULT_CODES) -> bool:
             n_skip += 1
             continue
 
-        # 0 API 调用: 读已有 dump
-        dump_path = DUMP_DIR / f"{code}.json"
-        if not dump_path.exists():
-            print(f"  ❌ {code} dump 不存在 ({dump_path}), 先跑 dump")
-            n_fail += 1
-            continue
-
+        # 0 API 调用: 走 DataStore (parquet, 无 JSON 依赖)
         try:
-            with open(dump_path) as f:
-                dump = json.load(f)
+            from tools.data_store import DataStore
+            ctx = DataStore.get_ctx(code)
+            if not ctx.kline:
+                print(f"  ❌ {code} DataStore 无K线, 先跑: python -m tools.sync_stock {code}")
+                n_fail += 1
+                continue
         except Exception as e:
-            print(f"  ❌ {code} dump 读失败: {e}")
+            print(f"  ❌ {code} DataStore 读失败: {e}")
             n_fail += 1
             continue
 
-        current = extract_fields(dump)
+        current = extract_fields(code)
         current['5method'] = extract_5method_from_report(code)
         diffs = compare_dumps(baseline[code], current, DEFAULT_TOLERANCE)
 

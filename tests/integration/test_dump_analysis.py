@@ -31,9 +31,8 @@ from tools.analysis.analysis_data import AnalysisData
 from tools.analysis.analysis_engine import AnalysisEngine
 
 
-# ----- Fixture: 5 只已 dump 的票 -----
+# ----- Fixture: 5 只已同步的票 -----
 
-DUMP_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "dump"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # 5 只 fixture: 各板块代表 (持仓 + 半导体 + CPO)
@@ -55,14 +54,18 @@ ALL_STRATEGIES = CORE_STRATEGIES + [("dcf", 0.00)]
 
 @pytest.fixture(scope="module")
 def dumps():
-    """加载 5 只票的 dump (跳过不存在的)"""
+    """加载 5 只票的 ctx (走 DataStore, 跳过无K线的)"""
+    from tools.data_store import DataStore
     loaded = {}
     for code in TEST_CODES:
-        p = DUMP_DIR / f"{code}.json"
-        if p.exists():
-            loaded[code] = json.load(open(p, encoding="utf-8"))
+        try:
+            ctx = DataStore.get_ctx(code)
+            if ctx.kline:
+                loaded[code] = ctx
+        except Exception:
+            pass
     if not loaded:
-        pytest.skip(f"没找到任何 dump 在 {DUMP_DIR}, 跑 bash tools/dump_data.py {TEST_CODES[0]} 先")
+        pytest.skip(f"没找到任何本地K线数据, 先跑: python -m tools.sync_stock {TEST_CODES[0]}")
     return loaded
 
 
@@ -70,14 +73,12 @@ def dumps():
 def analysis_data_per_code(dumps):
     """5 只票的 AnalysisData (构造 + 跑 AnalysisEngine)"""
     result = {}
-    for code, dump in dumps.items():
-        ad = AnalysisData.from_raw(dump)
-        ctx = ad.ctx
-        # 跑 engine 填充 factor_scores + ctx.{fflow,obv,chan,wyckoff,smc}_result
+    for code, ctx in dumps.items():
         engine = AnalysisEngine()
         ar = engine.analyze(ctx)
+        ad = AnalysisData.from_result(ctx, ar)
         result[code] = {
-            "dump": dump,
+            "dump": {},  # DataStore 模式无原始 dump dict
             "ad": ad,
             "ctx": ctx,
             "engine_result": ar,

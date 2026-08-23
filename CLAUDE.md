@@ -12,10 +12,10 @@
 
 ## 🚫 数据拉取铁律
 
-> **唯一入口**: `tools/dump_data.py` (走 dump 路径), 所有网络调用必须经 dump 层
+> **唯一入口**: `tools/sync_stock.py` (走 sync 路径), 所有网络调用必须经 sync 层
 
 ```
-✅ tools/dump_data.py {code} [--render] [--analyze-only]    # 单只拉
+✅ tools/sync_stock.py {code} [--render]                    # 单只拉
 ✅ tools/refresh_all.sh                                     # watchlist 全刷 (4 worker, 启动跑 4 核心模块 import smoke test)
 ✅ tools/pull_all.sh                                        # 批量拉
 ✅ tools/with_venv.sh python -m tools.ensure_fresh --watchlist   # 检查新鲜度
@@ -40,12 +40,25 @@
 
 | 层 | 文件 | 职责 | 禁止 |
 |---|---|---|---|
-| **L1 Dump** | `tools/dump_data.py` | 拉数据 + 写 `data/dump/{code}.json` (raw K线/fflow/EPS/股本 + factor.* 算子输出) | — |
+| **L1 Sync** | `tools/sync_stock.py` | 增量同步 K线到 parquet + 触发分析入口 | — |
 | **L2 Analysis** | `tools/analysis/analysis_engine.py` | Strategy 模式, 7 个策略各算分数 | ❌ 网络 |
 | **L2 容器** | `tools/analysis/analysis_data.py` | `AnalysisData` dataclass, 9 派生字段 (peg/dcf/sector_overheat/five_categories/buy_sell_points/exit_signals/stop_profit_loss/three_layer_position/monitor_triggers) 通过 `@property` 从 `analysis` dict 读 | ❌ 网络 |
 | **L3 Render** | `tools/render/report_renderer.py` | `AnalysisData` → Markdown | ❌ 网络 |
 
-**调用顺序:** `dump_data` → `AnalysisData.from_dump(dump)` → `AnalysisEngine.analyze(ctx)` → `render_report(analysis_data)`, 全程零网络。
+**调用顺序:** `sync_stock` → `DataStore.get_ctx(code)` → `AnalysisEngine.analyze(ctx)` → `render_report(analysis_data)`, 全程零网络。
+
+### 并发设计铁律
+
+任何批量扫描脚本（全市场扫描/watchlist 批处理）必须遵守：
+
+```
+1. sync_incremental()          # 单线程，先跑，补齐本地 parquet 缺口
+2. DataStore.list_codes()      # 获取全量代码
+3. ThreadPoolExecutor(N)       # 再开多线程，每个线程只读 DataStore（0 网络）
+```
+
+**禁止在 worker 线程里调 `sync_incremental()` 或任何网络请求。**
+sync 是全局操作，必须在多线程启动前单线程完成。
 
 ### 7 个 Strategy (v5.10.34 完整)
 
@@ -75,7 +88,7 @@
 ### asof 历史回测 (2026-08-15 三层全加)
 
 `RawContext.slice(as_of_date)` + `engine.analyze(ctx, as_of_date=...)` 切片, 三层 (dump/analysis/render) 统一走 `tools/factors/utils.py::normalize_asof` / `asof_slice`:
-- dump 层: `dump_data.py` 写算子时传 asof
+- dump 层: `sync_stock.py` 写算子时传 asof
 - analysis 层: `price_fflow_factor(asof=...)` / `_obv_factor(asof=...)` / `VolumeOBVFactor.compute(asof_date=...)`
 - factor_history 层: `compute_factor_history(ctx, step, lookback)` 每 step 天一个节点, 跑 `engine.analyze(ctx, as_of_date=as_of)`
 - render 层: 报告 header 显示当前 asof
@@ -95,7 +108,7 @@
 | 块 | 路径 | 是什么 | 备注 |
 |---|---|---|---|
 | **经典 OBV** | `tools/factors/volume/price_fflow.py::_obv_factor` | Granville 1963 经典累计 (价涨+vol/价跌-vol/平盘不动) + 5 类信号 + 60 日段背离多次确认 | v3.5 起在主路径**并联** fflow 算, 不再是 fallback |
-| **VolumeOBVFactor** | `tools/factors/volume/obv_factor.py` | 基于 Tushare `money_flow.main_yi` 主力净流入的 5 档判定 (强/弱/偏出货) | 名字沿用 dump_data 第 5 段"量价 OBV 段"老命名, **跟经典 OBV 无关** |
+| **VolumeOBVFactor** | `tools/factors/volume/obv_factor.py` | 基于 Tushare `money_flow.main_yi` 主力净流入的 5 档判定 (强/弱/偏出货) | 名字沿用旧"量价 OBV 段"命名, **跟经典 OBV 无关** |
 | **因子历史 OBV 30d%** | `tools/analysis/factor_history.py::_compute_obv_30d` | 截至 asof 当天的 30 日 OBV 净增 / 30 日总成交, 供历史回测 | 替代了"价格位置"4 个静态字段, 走 `obv_30d_pct / obv_30d_strength / obv_30d_div` 3 字段 |
 
 **主路径调用链:**
@@ -130,7 +143,7 @@ VolumePriceStrategy.analyze(ctx)
 ## 🐍 Python 环境固化
 
 ```bash
-bash tools/with_venv.sh python -m tools.dump_data 002371   # 拉数据
+bash tools/with_venv.sh python -m tools.sync_stock 002371   # 拉数据
 bash tools/with_venv.sh                                    # 进 REPL
 ```
 
@@ -234,7 +247,7 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 - ✅ 拉代码 (`git pull` 等) 通过 `git config http.proxy` 配 proxy
 - ✅ 推代码 (`git push`) 失败后重试非 proxy 路径
 
-**已知 WAF 拒接域名 (不要直连):** `push2.eastmoney.com` / `push2his.eastmoney.com` → 改走 `tools/dump_data.py`
+**已知 WAF 拒接域名 (不要直连):** `push2.eastmoney.com` / `push2his.eastmoney.com` → 改走 `tools/sync_stock.py`
 
 **🟢 fflow (主力资金净额):**
 

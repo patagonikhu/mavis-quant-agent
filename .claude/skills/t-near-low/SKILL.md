@@ -19,8 +19,8 @@ allowed-tools:
 
 ## 算法 (3 步)
 
-### 第一步: 粗筛 (读 weekly 末根, 不调 tushare)
-遍历 `data/dump_oversold/{code}.json` weekly 250 根:
+### 第一步: 粗筛 (读 DataStore weekly, 不调 tushare)
+遍历 DataStore 全市场 weekly K线 (~5y):
 - **max_drop** (默认 5y 窗口, 可选 3y): high → low 最深回撤
 - **max_drop 范围**: 默认 `70% ≤ max_drop < 80%` (排除 80%+ 异常)
 - **距 5y 低** (用 weekly 末根 8-14): `< 10%` (粗筛)
@@ -35,13 +35,13 @@ allowed-tools:
 
 ### 第三步: 输出清单 (按距低% 升序)
 
-## Step 1: 检查 dump 数据
+## Step 1: 检查本地数据
 
 ```bash
-ls data/dump_oversold/ 2>&1 | wc -l
+bash tools/with_venv.sh python3 -c "from tools.data_store import DataStore; codes = DataStore.list_codes(); print(f'本地 parquet: {len(codes)} 只')"
 ```
 
-如果 < 400, 提示先跑 `bash tools/oversold/build_oversold_watchlist.py` 刷 (1 周 cache).
+如果 < 400, 提示先跑 `bash tools/with_venv.sh python -m tools.history_sync` 同步全市场数据.
 
 ## Step 2: 跑筛选脚本 (并发 8 worker, ~10 秒)
 
@@ -119,12 +119,9 @@ def count_bounces(closes, threshold=0.30, window=3):
     return n
 ```
 
-**5y weekly 数据**: 2021-09-24 ~ 2026-08-14 (250 根, build_oversold_watchlist.py 生成的 lite dump)
+**5y weekly 数据**: DataStore parquet (由 `tools/history_sync.py` 维护, 全市场)
 
 ## 相关资源
 
-- `data/dump_oversold/{code}.json` - 416 只 weekly dump (5y 250 根, status="ok")
-- `data/watchlist_oversold.json` - 416 只超跌股清单
-- `tools/find_near_low.py` - 筛选脚本 (8 worker 并发, ~10 秒)
-- `tools/oversold/build_oversold_watchlist.py` - dump_oversold 生成器 (1 周 cache)
+- `tools/find_near_low.py` - 筛选脚本 (8 worker 并发, ~10 秒, 走 DataStore)
 - `tools/with_venv.sh` - 虚拟环境包装

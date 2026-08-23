@@ -33,51 +33,46 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DUMP_DIR = ROOT / "data" / "dump"
 WATCHLIST = ROOT / "data" / "watchlist.json"
 SECTORS = ROOT / "data" / "sectors.json"
 
 
 def dump_one(code: str, force: bool = False, max_age: int = 3600) -> bool:
     """
-    单只 dump.
-    Return True if dumped (or fresh), False if failed.
+    单只 sync.
+    Return True if synced (or fresh), False if failed.
     """
-    json_path = DUMP_DIR / f"{code}.json"
-    if not force and json_path.exists():
-        # 检查 age
+    if not force:
         try:
-            with open(json_path) as f:
-                data = json.load(f)
-            as_of = data.get("as_of", "")
-            # as_of 格式: "2026-07-22T13:18:00"
+            from tools.data_store import DataStore
             from datetime import datetime
-            as_of_dt = datetime.fromisoformat(as_of)
-            age = (datetime.now() - as_of_dt).total_seconds()
-            if age < max_age:
-                print(f"  ⏩ {code} (age {age:.0f}s, 新鲜, 跳过)")
-                return True
-            else:
-                print(f"  🔄 {code} (age {age:.0f}s, 过期, 刷新中...)")
+            ctx = DataStore.get_ctx(code)
+            if ctx.kline:
+                last_date = ctx.kline[-1].get("trade_date", "")
+                if last_date:
+                    as_of_dt = datetime.strptime(last_date, "%Y%m%d")
+                    age = (datetime.now() - as_of_dt).total_seconds()
+                    if age < max_age:
+                        print(f"  ⏩ {code} (age {age:.0f}s, 新鲜, 跳过)")
+                        return True
+                    else:
+                        print(f"  🔄 {code} (age {age:.0f}s, 过期, 刷新中...)")
         except Exception as e:
             print(f"  ⚠️  {code} (读取失败: {e}, 强制刷)")
     else:
-        if not json_path.exists():
-            print(f"  🆕 {code} (JSON 不存在, dump)")
-        else:
-            print(f"  🔄 {code} (强制刷)")
+        print(f"  🔄 {code} (强制刷)")
 
-    # 实际 dump
+    # 实际 sync
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
     result = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "dump_data.py"), code],
+        [sys.executable, "-m", "tools.sync_stock", code],
         capture_output=True, text=True, env=env
     )
     if result.returncode == 0:
         return True
     else:
-        print(f"     ❌ dump 失败: {result.stderr.strip()[:200]}")
+        print(f"     ❌ sync 失败: {result.stderr.strip()[:200]}")
         return False
 
 

@@ -16,6 +16,19 @@ tools/data_store.py — 统一数据访问层
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+
+def _load_project_cfg() -> dict:
+    try:
+        import yaml
+        p = Path(__file__).parent.parent / "config" / "project.yaml"
+        return yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
+    except Exception:
+        return {}
+
+
+_PROJECT_CFG = _load_project_cfg()
 
 
 def _to_ts_code(code: str) -> str:
@@ -36,7 +49,6 @@ class DataStore:
     def get_kline(cls, code: str, limit: int = 0) -> list[dict]:
         """日线 K线，升序。limit=0 表示全量（默认取 config 里的 kline_days）。"""
         from tools.history_sync import read_kline
-        from tools.dump_data import _PROJECT_CFG
         if limit == 0:
             limit = _PROJECT_CFG.get("data", {}).get("kline_days", 1250)
         ts_code = _to_ts_code(code)

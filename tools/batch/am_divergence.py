@@ -18,7 +18,7 @@ tools/batch/am_divergence.py — 全市场扫描 A→M 阶段切换 + 三重确�
 import argparse
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -31,7 +31,7 @@ if str(ROOT) not in sys.path:
 # 单只扫描
 # ============================================================
 
-def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
+def scan_one(code: str, window: int, require_macd: bool, min_amount_yi: float = 1.0) -> dict | None:
     """扫描单只股票，找 A→M + 三重确认。返回命中信息或 None。"""
     try:
         from tools.data_store import DataStore
@@ -41,19 +41,26 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
         from tools.analysis.factor_history import compute_factor_history
 
         strategies = [WyckoffStrategy, ChanStrategy, MacdDivergenceStrategy]
-        ctx = DataStore.get_ctx(code, kline_only=True)  # 全市场扫描，不需要 eps/stock_basic
+        ctx = DataStore.get_ctx(code, kline_only=True)
         if len(ctx.kline) < 60:
             return None
 
-        # 只算最近 window+30 天，只跑 3 个 strategy
+        # 过滤低成交额：20日均成交额 < min_amount_yi 亿直接跳过
+        # amount 单位是千元，千元→亿元除以 1e5
+        if min_amount_yi > 0:
+            recent_kline = ctx.kline[-20:]
+            amounts = [b.get("amount", 0) or 0 for b in recent_kline]
+            avg_amount_yi = sum(amounts) / len(amounts) / 1e5 if amounts else 0
+            if avg_amount_yi < min_amount_yi:
+                return None
+
         lookback = window + 30
-        rows = compute_factor_history(ctx, step=2, lookback=lookback,
+        rows = compute_factor_history(ctx, step=5, lookback=lookback,
                                       strategies=strategies)
         if not rows:
             return None
 
         # 找最近 window 天内的 A→M 切换
-        today_str = rows[-1]["date"] if rows else ""
         recent = rows[-window:] if len(rows) >= window else rows
 
         am_switch_row = None
@@ -61,19 +68,17 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
             prev = recent[i - 1] if i > 0 else None
             prev_stage = (prev or {}).get("wyckoff_daily", "")
             curr_stage = row.get("wyckoff_daily", "")
-            # A→M: Accumulation → Markup
             if ("Accum" in str(prev_stage) or prev_stage == "Accumulation") and \
                ("Markup" in str(curr_stage)):
                 am_switch_row = row
-                break  # 取最近一次
+                break
 
         if am_switch_row is None:
             return None
 
-        am_date = am_switch_row["date"]
+        am_date  = am_switch_row["date"]
         am_price = am_switch_row.get("close", 0)
 
-        # 找 A→M 切换日之前 30 天内的底背驰信号
         switch_idx = next((i for i, r in enumerate(rows) if r["date"] == am_date), None)
         if switch_idx is None:
             return None
@@ -85,31 +90,20 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
         for r in reversed(lookback_rows):
             bc = r.get("daily_beichi") or {}
             direction = bc.get("direction", "") if isinstance(bc, dict) else ""
-            strength = bc.get("strength", "") if isinstance(bc, dict) else ""
+            strength  = bc.get("strength",  "") if isinstance(bc, dict) else ""
             if direction == "bot" and strength in ("strong", "weak"):
                 chan_date = r["date"]
                 break
-            # 兼容字符串格式
             if isinstance(bc, str) and "底背" in bc:
                 chan_date = r["date"]
                 break
 
-        # MACD 底背驰（从 factor_history 行读）
-        macd_date = None
-        for r in reversed(lookback_rows):
-            if r.get("macd_div_bot"):
-                macd_date = r["date"]
-                break
+        # MACD 底背驰
+        macd_date = next((r["date"] for r in reversed(lookback_rows) if r.get("macd_div_bot")), None)
 
-        # 判断三重确认
         has_chan = chan_date is not None
         has_macd = macd_date is not None
-
-        if require_macd:
-            confirmed = has_chan and has_macd
-        else:
-            confirmed = has_chan  # --no-macd 只要 A→M + 缠论
-
+        confirmed = (has_chan and has_macd) if require_macd else has_chan
         if not confirmed:
             return None
 
@@ -142,11 +136,12 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
 
 def main():
     parser = argparse.ArgumentParser(description="全市场扫描 A→M + 三重确认")
-    parser.add_argument("--window",     type=int, default=5,  help="A→M 切换窗口天数（默认5）")
-    parser.add_argument("--no-macd",    action="store_true",  help="只要 A→M + 缠论，不强求 MACD")
-    parser.add_argument("--workers",    type=int, default=8,  help="并发数（默认8）")
-    parser.add_argument("--write-md",   action="store_true",  help="写 docs/am-divergence-watchlist.md")
-    parser.add_argument("--limit",      type=int, default=0,  help="调试用：只扫前 N 只")
+    parser.add_argument("--window",       type=int,   default=5,   help="A→M 切换窗口天数（默认5）")
+    parser.add_argument("--no-macd",      action="store_true",     help="只要 A→M + 缠论，不强求 MACD")
+    parser.add_argument("--workers",      type=int,   default=4,   help="并发数（默认4，建议不超过 CPU/2）")
+    parser.add_argument("--write-md",     action="store_true",     help="写 docs/am-divergence-watchlist.md")
+    parser.add_argument("--limit",        type=int,   default=0,   help="调试用：只扫前 N 只")
+    parser.add_argument("--min-amount",   type=float, default=1.0, help="20日均成交额下限（亿元，默认1亿，0=不过滤）")
     args = parser.parse_args()
 
     require_macd = not args.no_macd
@@ -161,14 +156,14 @@ def main():
     codes = DataStore.list_codes()
     if args.limit:
         codes = codes[:args.limit]
-    print(f"📊 扫描 {len(codes)} 只股票 | window={args.window}d | macd={'是' if require_macd else '否'} | {args.workers} 并发")
+    print(f"📊 扫描 {len(codes)} 只股票 | window={args.window}d | macd={'是' if require_macd else '否'} | min_amount={args.min_amount}亿 | {args.workers} 并发")
 
     t0 = time.time()
     results = []
     done = 0
 
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futs = {ex.submit(scan_one, code, args.window, require_macd): code
+    with ProcessPoolExecutor(max_workers=args.workers) as ex:
+        futs = {ex.submit(scan_one, code, args.window, require_macd, args.min_amount): code
                 for code in codes}
         for fut in as_completed(futs):
             done += 1

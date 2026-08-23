@@ -96,11 +96,13 @@ DUMP_FAIL=()
 
 dump_one() {
     local code=$1
-    if bash tools/with_venv.sh python3 -m tools.dump_data "$code" >"$DUMP_DIR/${code}.log" 2>&1; then
-        if [ -f "data/dump/${code}.json" ]; then
+    # 8-22 重写: sync_stock.py 走 DataStore + parquet, 不写 data/dump/{code}.json
+    # 判定成功 = 命令退出码 0 + 输出含 "K线: N 根"
+    if bash tools/with_venv.sh python3 -m tools.sync_stock "$code" >"$DUMP_DIR/${code}.log" 2>&1; then
+        if grep -q "K线: " "$DUMP_DIR/${code}.log" 2>/dev/null; then
             echo "DUMP_OK:$code"
         else
-            echo "DUMP_FAIL:$code (JSON 未生成)"
+            echo "DUMP_FAIL:$code (无 K线 输出)"
         fi
     else
         echo "DUMP_FAIL:$code $(tail -1 "$DUMP_DIR/${code}.log" 2>/dev/null)"
@@ -136,8 +138,8 @@ if [ -z "$NO_RENDER" ] && [ "$OK_COUNT" -gt 0 ]; then
     
     render_one() {
         local code=$1
-        # 2026-07-25 收敛: 用 dump_data.py --render (内部调新 renderer report_renderer.render_report)
-        if bash tools/with_venv.sh python3 -m tools.dump_data "$code" --render >"$RENDER_DIR/${code}.log" 2>&1; then
+        # 2026-07-25 收敛: 用 sync_stock.py --render (内部调新 renderer report_renderer.render_report)
+        if bash tools/with_venv.sh python3 -m tools.sync_stock "$code" --render >"$RENDER_DIR/${code}.log" 2>&1; then
             echo "RENDER_OK:$code"
         else
             echo "RENDER_FAIL:$code"

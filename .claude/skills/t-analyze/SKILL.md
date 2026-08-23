@@ -16,9 +16,9 @@ allowed-tools:
 > - **backtest 终极版模板**: `/tmp/bt_ULTIMATE.py` (9 detector + 缠论 3 级别 全部走 Engine.analyze 入口)
 > - **2026-08-21 v3.5 删**: `find_beichi_signals` 函数已删 (主路径用 `beichi_from_segs`, 找历史用 `Engine.analyze()` 切 as_of_date 入口)
 
-> 🚨 **拉数据铁律 (2026-07-29 v3.4 固化)**
+> 🚨 **拉数据铁律 (2026-08-23 v3.6 更新)**
 >
-> **跑这个 skill 前, 必须先调 `t-pull` skill 拉数据** (走 `tools/dump_data.py`):
+> **跑这个 skill 前, 必须先调 `t-pull` skill 拉数据** (走 `tools/sync_stock.py`):
 > /t-analyze 688017
 /t-analyze 688017 绿的谐波
 /t-analyze 特变电工
@@ -73,7 +73,7 @@ bash tools/refresh_all.sh
 
 # 或逐只
 for code in {codes}:
-    bash tools/with_venv.sh python -m tools.dump_data {code} --render
+    bash tools/with_venv.sh python -m tools.sync_stock {code} --render
 ```
 
 ### Step 3: 提取每只股票今日状态，写入 md 文件
@@ -82,9 +82,14 @@ for code in {codes}:
 bash tools/with_venv.sh python3 << 'PYEOF'
 import json, os, sys, datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, '.')
-from tools.analysis.analysis_engine import RawContext
+
+# Step 0: 先同步增量，单线程完成后再开多线程
+from tools.history_sync import sync_incremental
+sync_incremental()
+
 from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
 
 watchlist = json.load(open('data/watchlist.json'))['stocks']
@@ -93,36 +98,27 @@ output_path = Path('docs') / 'signal-watchlist.md'  # 方案 A (2026-08-20): 单
 
 lines = []
 lines.append(f"# 全量扫描 {today}\n")
-lines.append(f"> {len(watchlist)} 只票 | 数据来自 dump | 因子历史 diff\n")
+lines.append(f"> {len(watchlist)} 只票 | 数据来自 DataStore | 因子历史 diff\n")
 
-# -------- buy/sell 信号汇总 --------
+# -------- buy/sell 信号汇总（并发 4 worker）--------
 buy_rows, sell_rows = [], []
 all_table_rows = []
 
-for s in watchlist:
+def _scan_one(s):
     code, name = s['code'], s['name']
-    path = f'data/dump/{code}.json'
-    if not os.path.exists(path):
-        continue
     try:
-        dump = json.load(open(path))
-        ctx  = RawContext.from_dump(dump)
+        from tools.data_store import DataStore
+        ctx = DataStore.get_ctx(code)
+        if not ctx.kline:
+            return None
         rows = compute_factor_history(ctx, step=1, lookback=3)
         if len(rows) < 2:
-            continue
+            return None
         r        = rows[-1]
         changes   = diff_rows(rows[-2], rows[-1])
-        sigs      = extract_signals(changes)           # [(type, detail, direction)]
-        sig_fmtd  = format_signals_for_render(changes)  # emoji 字符串
+        sigs      = extract_signals(changes)
+        sig_fmtd  = format_signals_for_render(changes)
 
-        # 分类到 buy/sell
-        for _, detail, direction in sigs:
-            if direction == 'buy':
-                buy_rows.append((code, name, detail))
-            else:
-                sell_rows.append((code, name, detail))
-
-        # 完整表格行
         hub_d   = r.get('hub_daily') or {}
         hub_str  = f"¥{hub_d.get('low',0):.0f}~{hub_d.get('high',0):.0f}{hub_d.get('pos','')[:2]}" if hub_d.get('valid') else '—'
         wy       = (r.get('wyckoff_daily') or '?')[:10]
@@ -130,9 +126,27 @@ for s in watchlist:
         sig_str  = ' '.join(sig_fmtd) if sig_fmtd else '—'
         scene    = r.get('scene', '?')
         has_sig  = '⭐' if sig_fmtd else ''
-        all_table_rows.append((code, name, scene, wy, ma, hub_str, sig_str, has_sig))
+        return {
+            'code': code, 'name': name, 'sigs': sigs, 'sig_fmtd': sig_fmtd,
+            'table_row': (code, name, scene, wy, ma, hub_str, sig_str, has_sig),
+        }
     except Exception:
-        pass
+        return None
+
+# 并发跑
+with ThreadPoolExecutor(max_workers=4) as ex:
+    futs = {ex.submit(_scan_one, s): s for s in watchlist}
+    for fut in as_completed(futs):
+        r = fut.result()
+        if not r:
+            continue
+        code, name = r['code'], r['name']
+        for _, detail, direction in r['sigs']:
+            if direction == 'buy':
+                buy_rows.append((code, name, detail))
+            else:
+                sell_rows.append((code, name, detail))
+        all_table_rows.append(r['table_row'])
 
 # buy 表
 lines.append("---\n\n## 底部信号（buy）\n\n")
@@ -220,7 +234,7 @@ PYEOF
 ###
 ```bash
 # Step A: 拉数据 + 渲染完整 MD 报告（含因子历史走势 + 技术指标）
-bash tools/with_venv.sh python -m tools.dump_data {code} --render
+bash tools/with_venv.sh python -m tools.sync_stock {code} --render
 
 # Step B: 读 MD 报告（含所有技术指标，无需重复手算）
 # 生成路径: docs/analyze-{code}-{name}.md
@@ -237,8 +251,7 @@ sys.path.insert(0, '.')
 from tools.analysis.analysis_engine import RawContext
 from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals
 
-dump = json.load(open('data/dump/{code}.json'))
-ctx  = RawContext.from_dump(dump)
+ctx = DataStore.get_ctx('{code}')
 rows = compute_factor_history(ctx, step=1, lookback=5)
 if len(rows) >= 2:
     changes = diff_rows(rows[-2], rows[-1])
@@ -270,15 +283,14 @@ else:
 
 # Step D: 读 dump 中的财务数据（不在因子历史里）
 bash tools/with_venv.sh python3 -c "
-import json, sys
-sys.path.insert(0,'.')
+from tools.data_store import DataStore
 from tools.analysis.analysis_data import AnalysisData
 
-dump = json.load(open('data/dump/{code}.json'))
-data = AnalysisData.from_raw(dump)
+ctx = DataStore.get_ctx('{code}')
+ad = AnalysisData.from_result(ctx, __import__('tools.analysis.analysis_engine', fromlist=['AnalysisEngine']).AnalysisEngine().analyze(ctx))
 
 print('=== EPS 预测 ===')
-eps = dump.get('eps_table', [])
+eps = ctx.eps_table
 for row in eps[-4:]:
     print(row)
 
@@ -536,7 +548,7 @@ MA 混乱/无明确信号 + 任意    → 🥈 标准 (按估值决策, MA 不�
 **MA 均线分析 (2026-07-02 收盘):**
 | 均线 | 数值 | 偏离 | 数据源 |
 |---|---|---|---|
-| 当前价 | 60.90 | — | 🟢 qtimg 实时 (push2/push2his 已废弃 WAF 拦截) |
+| 当前价 | 60.90 | — | 🟢 Tushare.daily 实时 |
 | MA5 (5日) | 66.17 | -7.96% | ⚪ 派生 (基于 dump['kline'] 603 条) |
 | MA20 (20日) | 68.17 | -10.67% | ⚪ 派生 |
 | MA60 (60日) | 67.74 | -10.10% | ⚪ 派生 |
@@ -546,7 +558,7 @@ MA 混乱/无明确信号 + 任意    → 🥈 标准 (按估值决策, MA 不�
 **MA 决策修正:** v4 原评级 🥈 标准 → **降为 ⚠️ 观察** (PEG 健康但拉高出货嫌疑)
 
 **数据来源:**
-- K-line 历史: 🟢 读 dump['kline'] (由 tools/dump_data.py 经腾讯 web.ifzq K线 拉取写入; ❌ push2his.eastmoney.com 已废弃 WAF 拦截)
+- K-line 历史: 🟢 DataStore (parquet, Tushare.daily)
 - K-line 条数: 603 条 (2024-01-02 至 2026-07-02)
 - 计算逻辑: MA = close 在 N 日内算术平均值 (Python statistics.mean)
 每条 kline[i] = [date, open, close, high, low, volume, amount]
@@ -1530,7 +1542,7 @@ DCF 隐含 L (市值=1805亿, 净利率5.6%):
 
 | 图例 | 含义 | 来源 |
 |---|---|---|
-| 🟢 | **实数据** (dump 层拉的真值) | `data/dump/{code}.json` (由 tools/dump_data.py 写入) |
+| 🟢 | **实数据** (dump 层拉的真值) | DataStore (由 `tools/sync_stock.py` 同步写入 parquet) |
 | 🟡 | **硬编码** (LLM 训练知识) | STOCK_REGISTRY 里的卡点/leader/板块等元数据 |
 | ⚪ | **计算派生** (从实数据公式算出) | PEG / DCF L / 六关评估 |
 
@@ -1580,8 +1592,8 @@ M. 元数据 (含 EPS 快照)
 
 ###
 1. 读上下文 (events.json / watchlist.json / framework)
-2. **先调 t-pull 拉数据**: `bash tools/with_venv.sh python -m tools.dump_data {code}` — 写入 data/dump/{code}.json
-3. **读 dump 获取股价 + EPS**: `load_dump('{code}')` → dump['realtime'] / dump['eps_table'] (step 2b/2c)
+2. **先调 t-pull 拉数据**: `bash tools/with_venv.sh python -m tools.sync_stock {code}` — 同步 parquet
+3. **读 DataStore 获取股价 + EPS**: `DataStore.get_ctx('{code}')` → `ctx.current_price` / `ctx.eps_table` (step 2b/2c)
 4. **读 dump['kline'] 计算 MA5/20/60/120** (step 2f) — 禁止 curl K线接口
 4. **Bash 计算 PEG 四件套 + DCF L + 5维技术指标** (step 2d/2e/2f.1)
 5. WebSearch (默认开启)
@@ -1681,7 +1693,7 @@ PEG透支 + 主力进货  → ⚠️ 贵但有人买，短线博弈
 PEG透支 + 主力出货  → ❌ 双重卖出，坚决不买
 ```
 
-**数据来源:** 🟢 dump['kline'] (由 dump_data.py 经腾讯 K-line 拉取写入) | ⚪ Python派生 (OBV/vol_ratio)
+**数据来源:** 🟢 DataStore (Tushare.daily parquet) | ⚪ Python派生 (OBV/vol_ratio)
 
 
 ###
@@ -1798,14 +1810,16 @@ def find_all_hubs_full(segs):
 def format_chan_output(code, name, data):
     """
     缠论输出 — 读 data.analysis['chan']，禁止在此重复实现缠论计算。
-    缠论计算已由 tools/dump_data.py → AnalysisData.from_raw() 完成并写入 analysis.chan。
+    缠论计算已由 tools/sync_stock.py → AnalysisEngine.analyze() 完成并写入 analysis.chan。
 
     data: AnalysisData 实例
     用法:
-        from tools.dump_data import load_dump
+        from tools.data_store import DataStore
+        from tools.analysis.analysis_engine import AnalysisEngine
         from tools.analysis.analysis_data import AnalysisData
-        dump = load_dump(code)
-        data = AnalysisData.from_raw(dump)
+        ctx = DataStore.get_ctx(code)
+        result = AnalysisEngine().analyze(ctx)
+        data = AnalysisData.from_result(ctx, result)
         chan = data.analysis.get('chan', {})
 
     chan 字段结构 (由 dump 提供):
@@ -1818,7 +1832,7 @@ def format_chan_output(code, name, data):
     """
     chan = data.analysis.get('chan', {})
     if not chan:
-        return "**⚠️ 缠论数据缺失** — 请先运行 `bash tools/with_venv.sh python -m tools.dump_data {code}`"
+        return "**⚠️ 缠论数据缺失** — 请先运行 `bash tools/with_venv.sh python -m tools.sync_stock {code}`"
 
     levels = chan.get('levels', {})
     p = data.price
@@ -1888,10 +1902,11 @@ def format_chan_output(code, name, data):
 
 
 # 调用方式:
-# from tools.dump_data import load_dump
+# from tools.data_store import DataStore
+# from tools.analysis.analysis_engine import AnalysisEngine
 # from tools.analysis.analysis_data import AnalysisData
-# dump = load_dump(code)
-# data = AnalysisData.from_raw(dump)
+# ctx = DataStore.get_ctx(code)
+# data = AnalysisData.from_result(ctx, AnalysisEngine().analyze(ctx))
 # chan_section = format_chan_output(code, name, data)
 
 ```

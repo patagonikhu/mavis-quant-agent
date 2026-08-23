@@ -372,3 +372,151 @@ Type: bugfix
 **根因:** 跟 factor_history 一样, tv = sum(wv) 包含起点当天
 **修法:** 改 `tv = sum(wv[1:])` 排除起点
 **影响:** 段背离 3/4 → 还是 3/4 (偏差 < 1pp, 不影响 count)
+
+---
+
+## 📅 2026-08-22 实际架构地图 (user 拍板, 防乱拉数据/乱改代码)
+
+Type: architecture_lock
+**触发背景:** 今天我先跑 9 detector 回测 (5y × 60 只, 5 min), 后跑 A→M 回测 (~30s), 然后提议改 analysis_engine.py 加 MacdDivergenceStrategy + 改 dump_data.py — user 怒了: **"我都做完了你还在改啥"**
+
+**核心结论:** 实际架构跟我想的差 10 倍, 8-22 上午我完全错过了 user 9 个 commits。
+
+### 🏗️ 实际数据架构 (2026-08-22 现状)
+
+**唯一数据源: `data/history/daily/{year}.parquet`**
+- 同步: `tools/history_sync.py` (sync_init 5y / sync_incremental 日常)
+- 读: `DataStore.get_kline/get_weekly/get_ctx/list_codes` (parquet + duckdb)
+- Tushare 走 `daily(trade_date=...)` 批量 (250 req = 2.5 min 拉完 1y 全市场)
+
+**僵尸文件: `tools/dump_data.py` (661 行)**
+- commit `6bcb30c 彻底清除 dump json 残留代码` 删了 `analyze/dump_code/save_dump` 函数
+- **data/dump/ 目录已不存在** (该 commit 一起删的)
+- 但 file 还在, 唯一用处: `tools/data_store.py:39` 还在 `from tools.dump_data import _PROJECT_CFG` 拿 config
+- `tools/batch/regression_test.py:104` `from tools.dump_data import analyze` —— **已坏, regression_test 跑不起来**
+- ⚠️ 下次大扫除: 删 dump_data.py (把 _PROJECT_CFG 移到 data_store.py 即可) + 修 regression_test
+
+**没有"老路径 / 新路径"——只有 parquet 一条路。所有 skill 走 DataStore。**
+
+### 📦 DataStore 统一访问层 (tools/data_store.py)
+
+**所有新代码必须走 DataStore, 不要再直接读文件:**
+
+```python
+from tools.data_store import DataStore
+
+DataStore.get_kline(code)         # 日线 K线 (从 parquet)
+DataStore.get_weekly(code)         # 周线 (从日线聚合)
+DataStore.get_ctx(code, kline_only=True)  # RawContext (kline_only=True 跳过网络)
+DataStore.get_stock_basic(code)    # 名称/行业 (从 static_cache)
+DataStore.get_daily_basic(code)    # PE/PB/市值
+DataStore.get_eps(code)            # EPS 一致预期
+DataStore.list_codes()             # 全市场股票 (duckdb 查询 parquet)
+DataStore.watchlist_codes()        # watchlist.json
+```
+
+**kline_only=True 关键:** 全市场扫描时不调网络 (stock_basic/daily_basic), 5000 只从 50 min 降到 2 min
+
+### 🔌 Tushare 接口清单 (tools/fetch/tushare_fetcher.py)
+
+| 函数 | 用途 | 限流档 |
+|---|---|---|
+| `get_daily(code, start, end)` | 单只 K线 | 100 req/min (单接口) |
+| **`get_daily_by_date(date)`** | **一天全市场 (5000 只)** | 100 req/min (单接口) |
+| `get_daily_basic(...)` | PE/PB | 100 req/min |
+| `get_fund_flow(...)` | 资金流 | 100 req/min |
+| `stock_basic()` | 全市场股票列表 | 1 次拿全部 |
+
+**关键发现:** `daily(trade_date=...)` 一次拿一天全市场 (commit 0045a86 之前我不知道), 用这个拉 5000 只 × 1y = 250 req = 2.5 min, 比 per-stock (5000 req = 50 min) 快 20x
+
+### 🎯 AnalysisEngine + 8 Strategies (tools/analysis/analysis_engine.py)
+
+**PHASE1_STRATEGIES 列表 (按顺序):**
+```python
+ChanStrategy,           # 0.20  → ctx.chan_result
+WyckoffStrategy,        # 0.20  → ctx.wyckoff_result / wyckoff_weekly / wyckoff_60m
+SmcStrategy,            # 0.10
+ObvStrategy,            # 0.10
+FflowStrategy,          # 0.10
+ResonanceStrategy,      # 0.15
+PegStrategy,            # 0.15
+MacdDivergenceStrategy, # 0.05  (新加, line 239-316, 检测前 30d MACD 底背驰)
+```
+
+**新策略怎么加 (正确流程):**
+1. 写新 Strategy class (继承 AnalysisStrategy, name/weight/analyze 三个方法)
+2. 在 PHASE1_STRATEGIES 注册
+3. **如果新策略输出 ctx.xxx_result, 改 factor_history.py 让 _extract_row 能读**
+4. (历史回测) `compute_factor_history(ctx, step, lookback, strategies=[...])` 支持策略子集
+
+### 📊 factor_history.py (tools/analysis/factor_history.py)
+
+**新字段 `macd_div_bot` (line 177-178):**
+```python
+"macd_div_bot": (result.factor_scores.get("macd_div").raw or {}).get("has_bot_div", False)
+if result.factor_scores.get("macd_div") else False
+```
+
+**这是 am_divergence 的核心数据源** — 每天一行记录是否 MACD 底背驰, 用 `compute_factor_history` 算
+
+### 🔧 t-am-divergence (commit 0045a86)
+
+**完整链路:**
+1. `sync_incremental()` 补缺失交易日
+2. `DataStore.list_codes()` 拿全市场代码
+3. 每只只跑 3 个 strategy: `[WyckoffStrategy, ChanStrategy, MacdDivergenceStrategy]`
+4. `compute_factor_history(lookback=window+30, strategies=[...])` 算历史
+5. 找最近 window 天内的 A→M 切换 (Accumulation → Markup)
+6. 检查切换日前 30d 内:
+   - 缠论底背驰: `daily_beichi.direction == "bot"`
+   - MACD 底背驰: `macd_div_bot == True`
+7. 三重确认 → 输出清单 (表格 + docs/*.md)
+
+**性能声明 (SKILL.md):** 5000 只 × 3 strategy × 35 天 ÷ 8 并发 ≈ 2-3 min (但 **未实测验证**)
+
+### 🚫 严禁 (我之前犯的错)
+
+| 错 | 后果 | 正确做法 |
+|---|---|---|
+| 跑 per-stock `dump_data.py` 拉全市场 | 5000 req × 0.3s = 50 min 限流 | 走 `history_sync.py` 按天拉, 250 req = 2.5 min |
+| 直接读 `data/dump/{code}.json` | **目录已不存在, 直接爆 FileNotFound** | 走 `DataStore.get_kline/get_ctx` |
+| 直接改 `analysis_engine.py` 加 strategy | 没在 PHASE1_STRATEGIES 注册 / factor_history 没对应字段 | 先看现有 strategy 怎么写, 加完必须改 factor_history.py + 跑 smoke test |
+| 写新 skill 不用 DataStore | 跟现有架构脱节 | 先看最近 1-2 天的 commit 实际做了什么, 别凭印象改 |
+| 跑 9 detector backtest (5y × 60只) | 8 min, 跟现状无关 | 看 8-22 凌晨已跑的结果, 改用它 |
+| **跑 `/tmp/bt_*.py` 临时回测脚本** | 跟 t-analyze 走两套代码, 触发数对不上 (8-21 教训) | 走 `Engine.analyze()` 或 `WyckoffStageFactor` (跟 t-analyze 一致) |
+| **跑 `/tmp/bt_ULTIMATE.py` 等早写脚本** | 老 API, 跟现状不对齐 | 重写走 `DataStore + AnalysisEngine + compute_factor_history` |
+
+### ✅ 加新东西的正确流程 (防再犯)
+
+1. **先 `git log --oneline -20` 看最近 commit 实际做了什么** (我之前完全错过 8-22 上午 9 个 commit)
+2. **先看 SKILL.md 和 t-analyze 的代码再动手** (不要凭印象写)
+3. **新 strategy 必须 3 步走:** 写 class → PHASE1_STRATEGIES 注册 → factor_history.py 加字段
+4. **新数据走 history_sync.py + DataStore, 不要碰 dump_data.py** (僵尸, 仅供 _PROJECT_CFG 导入)
+5. **任何 .py 改动先 `python -c "import xxx"` smoke test** (8-15 factor_history.py bug 教训)
+6. **加 markdown skill 之前先看 t-near-low 实际怎么写的** (我之前 t-near-low 还在引用 `data/dump_oversold/`, 已迁移 DataStore, 但 SKILL.md 没更新)
+7. **写 `/tmp/bt_*.py` 之前先想:** 这个回测能不能加到 `tools/batch/*.py` 走 `compute_factor_history`? 一致性 > 临时快
+
+### 📁 当前文件路径速查 (2026-08-22 现状)
+
+| 用途 | 路径 |
+|---|---|
+| 项目 memory (真源) | `docs/AGENT_MEMORY.md` |
+| Agent memory (mirror) | `~/.minimax/agents/mavis/memory/MEMORY.md` |
+| CLAUDE.md (Claude Code 入口) | `CLAUDE.md` (项目根) |
+| Skills | `.claude/skills/*/SKILL.md` |
+| **唯一数据源** | `data/history/daily/{year}.parquet` (duckdb 读) |
+| DataStore 入口 | `tools/data_store.py` |
+| Tushare fetch | `tools/fetch/tushare_fetcher.py` (含 `get_daily_by_date` 批量) |
+| 同步脚本 | `tools/history_sync.py` |
+| 全市场扫脚本 | `tools/batch/am_divergence.py` |
+| 三层分析入口 | `tools/analysis/analysis_engine.py` (8 strategies) |
+| 因子历史计算 | `tools/analysis/factor_history.py` (含 `macd_div_bot` 字段) |
+| ~~老的 watchlist dump~~ | ⚠️ `tools/dump_data.py` 是僵尸 (data/dump/ 已删) |
+
+### 🎯 接下来要做的 (8-22 evening 拍板)
+
+- [ ] 修 `t-near-low/SKILL.md` (引用 `dump_oversold` 已过期)
+- [ ] 跑一次 `/t-am-divergence --limit 100` 验证性能 (2-3 min 是否真)
+- [ ] 跑全市场 5000 只验证 (sync_init 5y 后跑扫描)
+- [ ] (清理) 删 `tools/dump_data.py` 僵尸, 把 `_PROJECT_CFG` 移到 `data_store.py` + 修 `regression_test.py:104` 断引用
+- [ ] 决定 `config/project.yaml kline_days: 1300` 留还是改 (5y 给 dump_data.py 僵尸, 但 dump_data 死了)

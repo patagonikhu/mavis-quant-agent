@@ -26,7 +26,6 @@ from tools.analysis.factor_history import extract_signals as _extract_signals
 
 logger = logging.getLogger(__name__)
 
-DUMP_DIR = Path("data/dump")
 WATCHLIST_PATH = Path("data/watchlist.json")
 WITH_VENV = Path("tools/with_venv.sh")
 
@@ -70,29 +69,28 @@ class StockBacktestEngine:
     def _dump_code(self, code: str) -> None:
         logger.info("强制重拉 dump: %s", code)
         subprocess.run(
-            ["bash", str(WITH_VENV), "python", "-m", "tools.dump_data", code],
+            ["bash", str(WITH_VENV), "python", "-m", "tools.sync_stock", code],
             check=True,
         )
 
-    def _load_dump(self, code: str) -> Optional[dict]:
-        path = DUMP_DIR / f"{code}.json"
-        if not path.exists():
-            logger.warning("dump 不存在: %s，跳过", path)
+    def _load_dump(self, code: str) -> Optional["RawContext"]:
+        from tools.data_store import DataStore
+        ctx = DataStore.get_ctx(code)
+        if not ctx.kline:
+            logger.warning("DataStore 无K线: %s，跳过", code)
             return None
-        with open(path) as f:
-            return json.load(f)
+        return ctx
 
     # ── 核心：单只股票回测 ────────────────────────────────────────────────
 
     def _run_one(self, code: str, name: str) -> list[StockSignalRecord]:
-        from tools.analysis.analysis_engine import RawContext
         from tools.analysis.factor_history import compute_factor_history, diff_rows
 
-        dump = self._load_dump(code)
-        if dump is None:
+        ctx = self._load_dump(code)
+        if ctx is None:
             return []
 
-        kline = dump.get("kline", [])
+        kline = ctx.kline
         if len(kline) < 40:
             logger.warning("%s kline 不足 40 条，跳过", code)
             return []
@@ -101,7 +99,6 @@ class StockBacktestEngine:
         date_to_idx = {bar["trade_date"]: i for i, bar in enumerate(kline)}
 
         try:
-            ctx  = RawContext.from_dump(dump)
             rows = compute_factor_history(ctx, step=1, lookback=self.lookback_days)
         except Exception as e:
             logger.error("%s compute_factor_history 失败: %s", code, e)

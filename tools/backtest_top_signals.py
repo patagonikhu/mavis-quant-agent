@@ -19,8 +19,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-DUMP_DIR = ROOT / "data" / "dump"
-
 
 def utad_signal(row: dict) -> bool:
     sub = row.get("sub_event_daily") or ""
