@@ -1,7 +1,7 @@
 """
 chan/buy_sell.py - 缠论 4 级别买卖点因子 (Day G, 2026-07-27)
 
-把 dump_data.calc_buy_sell_points (原 line 382-528, 128 行) 提炼成独立 factor
+把 原 dump_data.calc_buy_sell_points (原 line 382-528, 128 行) 提炼成独立 factor
 
 4 级别: weekly / daily / 60min / 30min
 9 个买卖点: 🟢0买/🟢1买/🟢1买⭐/🟢2买/🟢3买/🔴1卖/🔴1卖⭐/🔴2卖/🔴3卖
@@ -10,7 +10,7 @@ chan/buy_sell.py - 缠论 4 级别买卖点因子 (Day G, 2026-07-27)
 输入: res (dict, 含 hub/segs/p/seg_status), beichi_str (str), klines (list, 该级别 K 线)
 输出: dict {points: {9个买卖点: 字符串或"—"}, action: 字符串}
 
-⚠️ 重要: 完全保留 dump_data 原算法 (分型确认 + 趋势/盘整 1买1卖 区分), regression test 验证
+⚠️ 重要: 完全保留 原 dump_data 原算法 (分型确认 + 趋势/盘整 1买1卖 区分), regression test 验证
 """
 import pandas as pd
 from tools.factors.base import Factor
@@ -19,7 +19,7 @@ from tools.factors.base import Factor
 class BuySellPointsFactor(Factor):
     """缠论 4 级别买卖点因子
 
-    对应 dump_data.calc_buy_sell_points 单级别 (weekly/daily/60min/30min) 循环体
+    对应 原 dump_data.calc_buy_sell_points 单级别 (weekly/daily/60min/30min) 循环体
 
     输出字段 (dict):
       - points: dict {9个买卖点: 字符串或"—"}

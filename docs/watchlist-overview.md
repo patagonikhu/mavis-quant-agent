@@ -2,7 +2,7 @@
 
 > 自动生成: 2026-07-29 22:38 | 覆盖 57 只票 (其中 57 有完整 dump)
 
-走 t-pull 路径读 `data/dump/{code}.json`, 0 API 调用
+走 `DataStore.get_ctx()` 读 parquet, 0 API 调用
 
 ---
 

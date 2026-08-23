@@ -26,7 +26,7 @@
 - **工具**: `tools/check_deps.py` — 静默 import 检查 + 自动 pip install
 - **挂载点**:
   - `tools/ensure_fresh.py` 开头 (单只/批量刷新入口)
-  - `tools/dump_data.py` 开头 (直接 dump 入口)
+  - `tools/sync_stock.py` 开头 (单只同步入口, 原 dump_data.py 已废)
 - **效果**: 以后跑数据工具不再撞 "No module named 'tushare'"
 - **幂等**: 已装就跳过, 不刷屏; 装失败不阻塞主流程
 - **测试**: `python3 tools/check_deps.py` 输出 `READY` 或 `FAILED`
@@ -49,7 +49,7 @@
 - **接入计划** (用户决定时执行):
   1. `pip install tushare`
   2. `tools/fetch/tushare_fetcher.py` (9 个函数)
-  3. 集成 `dump_data.py` + `render_report.py`
+  3. 集成 `sync_stock.py` + `render_report.py` (注: dump_data.py 已废, sync_stock 替代)
   4. 跑阳光电源 + 京东方A 验证
 - **不要买**: A股分钟RT (¥1000/月太贵), 港股/美股/期货 (项目只做 A 股), 公告/新闻 (LLM WebSearch 替代)
 

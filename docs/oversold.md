@@ -31,7 +31,7 @@
 ## 🚀 下一步
 
 ```bash
-# 1. 拉完整 dump (走 dump_data.py 路径, fflow/eps/daily/60m)
+# 1. 拉完整 dump (走 sync_stock.py 路径, fflow/eps/daily/60m)
 bash tools/refresh_all.sh --watchlist data/watchlist_oversold.json --workers 4
 
 # 2. 看强信号汇总

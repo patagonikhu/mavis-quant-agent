@@ -8,7 +8,7 @@
 ## 数据源
 - `data/watchlist_oversold.json` (416 只) → B 筛选
 - `data/watchlist_oversold_B20.json` (20 只精简 watchlist)
-- `data/dump/{code}.json` (完整 dump_data, K线/财务/EPS/股本/fflow/5方法×3周期/估值)
+- `parquet (DataStore)` (完整 原 dump_data, K线/财务/EPS/股本/fflow/5方法×3周期/估值)
 - `data/dump_oversold/{code}.json` (lite dump, weekly + drop% + bounce% + big_bounce_count)
 
 ## 20 只清单
@@ -56,7 +56,7 @@
 - **超跌后必有反弹**: 跌 80%+ 的股票 100% 历史上有过 ≥30% 反弹
 
 ## 下一步
-1. dump_data 拉完整 20 只 (K线/财务/估值/fflow) — 跑中
+1. 原 dump_data 拉完整 20 只 (K线/财务/估值/fflow) — 跑中
 2. 看 5方法×3周期 信号矩阵 (缠论/威科夫/SMC/量价/多市场共振)
 3. 看 fflow 主力资金流 (5日净流入)
 4. 看 PEG/DCF 估值

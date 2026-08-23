@@ -171,7 +171,7 @@ def _unit_safe(value, field_name: str = "fflow") -> float:
 
 def _dict_to_rows(value) -> list:
     """
-    2026-07-25 加: dump_data 存的 north_flow 格式是 dict-of-lists
+    2026-07-25 加: 原 dump_data 存的 north_flow 格式是 dict-of-lists
     (e.g. {trade_date: [...], hgt: [...], ...}), 但 report_renderer 期望
     list[dict] (每条记录一个 dict). 自动转, 幂等.
     """
@@ -252,7 +252,7 @@ class KLineBar:
     high: float
     low: float
     volume: float
-    amount: float = 0.0  # 成交额 (元), 2026-07-24 加 (兼容 dump_data 字段)
+    amount: float = 0.0  # 成交额 (元), 2026-07-24 加 (兼容 原 dump_data 字段)
     pct_chg: float = 0.0  # 日涨幅 (%), 2026-07-28 加 (tushare 预计算, 跟 WyckoffTradingAgent 1:1)
 
 

@@ -6,7 +6,7 @@ Day 1 目标: 建空架子, 不动现有代码
   - 注册表 (FactorRegistry)
   - 注册几个示例因子 (价格衍生, 时序, 横截面)
 
-Day 2+: 把 dump_data._factor_chan_signals 等逻辑抽进来
+Day 2+: 把 原 dump_data._factor_chan_signals 等逻辑抽进来
 """
 from tools.factors.base import (
     Factor,

@@ -1,7 +1,7 @@
 """
 risk/exit_signals.py - 退出信号因子 (Day D3, 2026-07-27)
 
-把 dump_data.calc_exit_signals (原 line 540-612, 73 行) 提炼成独立 factor
+把 原 dump_data.calc_exit_signals (原 line 540-612, 73 行) 提炼成独立 factor
 
 5 类 14 子信号综合判定: 缠论 + 估值 + 主力 三维
 - 🟢 强烈进货: 60分底背 + 止跌 + PEG<1.5 + fflow 进货 (3+ 绿 + 0 红)

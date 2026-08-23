@@ -7,7 +7,7 @@ tools/batch/factor_history_export.py — 单只股票历史因子导出 (v1, 202
 - 一次生成单只股票的历史因子, 搞个 skill 出来
 
 **输出**: docs/factor-history-{code}-{name}-{years}year.md
-**数据**: data/dump/{code}.json → AnalysisData.from_raw → _section_factor_history(lookback=years*250)
+**数据**: parquet (DataStore.get_ctx) → AnalysisData.from_result → _section_factor_history(lookback=years*250)
 **复用**: 100% 复用 tools/render/report_renderer._section_factor_history, 0 重复代码
 
 **用法**:
@@ -69,7 +69,7 @@ def export_one(code: str, years: int, out_path: Path | None) -> tuple[str, Path,
     header = (
         f"# 📈 {code} {name} 因子历史走势 ({years}年: {lookback}交易日)\n\n"
         f"> 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-        f"数据: data/dump/{code}.json | 算: _section_factor_history (lookback={lookback}) | "
+        f"数据: parquet (DataStore.get_ctx) | 算: _section_factor_history (lookback={lookback}) | "
         f"耗时: {elapsed:.1f}s\n\n"
     )
     out_path.write_text(header + md, encoding="utf-8")

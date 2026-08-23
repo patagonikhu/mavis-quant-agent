@@ -175,7 +175,7 @@ def _append_records(records: list[dict]):
 
 
 # ============================================================
-# 3. 读取接口（供 dump_data 调用）
+# 3. 读取接口（供 sync_stock 调用）
 # ============================================================
 
 def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: int = 0) -> list[dict]:

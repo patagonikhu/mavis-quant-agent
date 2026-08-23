@@ -39,8 +39,8 @@
 ## 3. 完整流程 (3 段式)
 
 ### 阶段 1: 拉数据 (Python 工具, 自动)
-- `tools/refresh_all.sh` 或 `tools/dump_data.py`
-- 产 `data/dump/{code}.json` (30 个字段)
+- `tools/refresh_all.sh` 或 `tools/sync_stock.py`
+- 拉 parquet + 算 8 strategy, 写 `docs/analyze-{code}-{name}.md`
 - 包含: 缠论三要素 (周/日/60分中枢+背驰) + 缠论补充 4 方法 + 5方法×3周期 退出判定 + 3 层仓位 + 止盈止损 4 档
 
 ### 阶段 2: 套框架 (LLM, 必读本文件)
@@ -59,7 +59,7 @@
 ## 4. 数据流依赖图
 
 ```
-data/dump/{code}.json (Python 自动)
+data/history/daily/{year}.parquet (duckdb 读)
         │
         ▼
 5方法×3周期 综合矩阵 (本文件 §1)

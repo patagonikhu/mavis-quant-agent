@@ -1,7 +1,7 @@
 """
 chan/verdict.py - 缠论综合判定因子
 
-把 dump_data._factor_chan_signals 末段 (line 324-336) 缠论综合判定提炼成独立因子
+把 原 dump_data._factor_chan_signals 末段 (line 324-336) 缠论综合判定提炼成独立因子
 
 输入: bot_60, top_60, stop_signal, d_pos (4 个判定值)
 输出: dict {verdict: str} — 跟原 verdict 变量完全一致

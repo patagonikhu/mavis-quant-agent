@@ -233,7 +233,7 @@ def _section_t_frame(data: AnalysisData) -> str:
 - **阶段:** {phase}
 - **信号强度:** {strength}
 - **操作建议:** {action}"""
-    return "> **数据状态:** ⚠️ T 框架未生成，需在 data/events.json 添加事件后重新 dump_data\n"
+    return "> **数据状态:** ⚠️ T 框架未生成，需在 data/events.json 添加事件后重新 sync_stock\n"
 
 
 def _section_ga_factor(data: AnalysisData) -> str:
@@ -435,7 +435,7 @@ def _section_sector_overheat(data: AnalysisData) -> str:
 """
     if not data.can_calc_sector_overheat():
         return "> **数据状态:** ❌ 板块过热无法计算 (K线不足 90 天)\n"
-    return "> **数据状态:** ⚠️ 板块过热数据具备但未生成，需重新 dump_data\n"
+    return "> **数据状态:** ⚠️ 板块过热数据具备但未生成，需重新 sync_stock\n"
 
 
 def _section_take_profit(data: AnalysisData) -> str:
@@ -494,7 +494,7 @@ def _section_position_layer(data: AnalysisData) -> str:
                   f"- **波动仓 20-25%:** {wave}",
                   f"\n**综合:** {summary}"]
         return "\n".join(lines) + "\n"
-    return "> **数据状态:** ⚠️ 3 层仓位策略未生成，需重新 dump_data\n"
+    return "> **数据状态:** ⚠️ 3 层仓位策略未生成，需重新 sync_stock\n"
 
 
 def _fmt_date(d: str) -> str:
@@ -1223,7 +1223,7 @@ def _section_monitor(data: AnalysisData) -> str:
 - **清仓触发:** {clear}
 - **时间触发:** {time_t}
 """
-    return "> **数据状态:** ⚠️ 监控触发点未生成，需重新 dump_data\n"
+    return "> **数据状态:** ⚠️ 监控触发点未生成，需重新 sync_stock\n"
 
 
 def _section_four_q_short(data: AnalysisData) -> str:
@@ -1619,7 +1619,7 @@ def _section_buy_sell_points(data: AnalysisData) -> str:
     """🟢 三买三卖操作点 (来自 buy_sell_points)"""
     bsp = data.buy_sell_points
     if not bsp:
-        return "> **数据状态:** ⚠️ 买卖点数据未生成，需重新 dump_data\n"
+        return "> **数据状态:** ⚠️ 买卖点数据未生成，需重新 sync_stock\n"
 
     lines = ["| 周期 | 0买(逆势) | 1买 | 2买 | 3买 | 1卖 | 2卖 | 3卖 | 操作 |",
              "|---|---|---|---|---|---|---|---|---|"]
@@ -1686,7 +1686,7 @@ def _section_ts_basic(data: AnalysisData) -> str:
     float_sh = (sb.get("float_share") or 0) / 1e4
     market   = sb.get("market", "A股")
     if not sb:
-        return f"**代码:** {data.code}  **名称:** {name}  **数据源:** dump (tushare.stock_basic 未存入，需重新 dump_data)\n"
+        return f"**代码:** {data.code}  **名称:** {name}  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_stock)\n"
     return (f"**代码:** {data.code}  **名称:** {name}  "
             f"**行业:** {industry}  **上市日期:** {list_date}  "
             f"**总股本:** {total_sh:.2f}亿股  **流通股本:** {float_sh:.2f}亿股  **市场:** {market}\n\n"

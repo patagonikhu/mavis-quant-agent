@@ -364,8 +364,8 @@ def build_factor_matrix(
         name: 股票名称
         current_price: 当前价
         signals_5method: analysis dict (AnalysisEngine 输出, 跟 signals_5method 字段兼容)
-        chan_data: dump_data 中的 chan 字段 (含 weekly/daily/60min 各有 hub)
-        buy_sell_points: dump_data 中的 buy_sell_points 字段 (含 weekly/daily/60min 各有 0买/1买/...)
+        chan_data: 原 dump_data 中的 chan 字段 (含 weekly/daily/60min 各有 hub)
+        buy_sell_points: 原 dump_data 中的 buy_sell_points 字段 (含 weekly/daily/60min 各有 0买/1买/...)
 
     Returns:
         完整 因子矩阵 dict (可渲染报告, 也可被 watchlist/sector 调用)

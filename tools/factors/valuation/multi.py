@@ -1,7 +1,7 @@
 """
 valuation/multi.py - 估值 + 板块 + 5 类 14 子信号 因子 (Day D6, 2026-07-27)
 
-把 dump_data 4 个子计算函数提炼成 4 个独立 factor:
+把 原 dump_data 4 个子计算函数提炼成 4 个独立 factor:
 - _calc_peg (line 592-610, 19 行) → PegFactor
 - _calc_dcf (line 613-628, 16 行) → DcfFactor
 - _calc_sector_overheat (line 631-643, 13 行) → SectorOverheatFactor
@@ -15,7 +15,7 @@ from tools.factors.base import Factor
 # === 项目级配置加载 (2026-07-27 集中管理) ===
 def _load_config() -> dict:
     # v5.10.34 修: 之前是 .parent.parent.parent (→ tools/), 实际是 .parent.parent.parent.parent (→ 项目根/)
-    # bug 导致 17 baseline peg/dcf 全是 "数据不足", 现在按 dump_data / report_renderer 一样走 with_venv.sh 兼容
+    # bug 导致 17 baseline peg/dcf 全是 "数据不足", 现在按 原 dump_data / report_renderer 一样走 with_venv.sh 兼容
     config_path = Path(__file__).parent.parent.parent.parent / "config" / "project.yaml"
     if not config_path.exists():
         raise FileNotFoundError(

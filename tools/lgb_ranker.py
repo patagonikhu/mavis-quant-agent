@@ -3,7 +3,7 @@ lgb_ranker.py - LightGBM 多因子打分骨架 (Day 11, 2026-07-27)
 
 目的: 用 8 个基础特征 + 17 只 baseline 票训练 LightGBM, 给全 57 只票打分排序
 
-输入: data/dump/{code}.json (用 baseline 17 只训练, 全 watchlist 预测)
+输入: parquet via DataStore (用 baseline 17 只训练, 全 watchlist 预测)
 输出: docs/lgb_ranking_{date}.md (排序表 + Top10 + 验证指标)
 
 骨架特点:

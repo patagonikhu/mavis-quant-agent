@@ -1,7 +1,7 @@
 """
 risk/stop_profit_loss.py - 止盈 3 层 + 止损 4 档 因子 (Day D4, 2026-07-27)
 
-把 dump_data.calc_stop_profit_loss (原 line 557-603, 47 行) 提炼成独立 factor
+把 原 dump_data.calc_stop_profit_loss (原 line 557-603, 47 行) 提炼成独立 factor
 
 3 层止盈: +2% 中枢上沿 / +50% / +100%
 4 档止损: -2% 中枢下沿 (或 -10%) / -15% / -25% / -35%

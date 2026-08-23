@@ -32,7 +32,7 @@ import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
-# Tushare 走 dump_data.py / tushare_fetcher.py 同套 token 加载
+# Tushare 走 sync_stock.py / tushare_fetcher.py 同套 token 加载
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from tools.fetch.tushare_fetcher import _PRO, _load_dotenv  # noqa: E402
 
@@ -226,7 +226,7 @@ def build_watchlist(picks: List[Dict[str, Any]], drop_threshold: float,
         "description": (
             f"Auto-generated 超跌股 watchlist (merge). 跌幅 ≥ {drop_threshold*100:.0f}% from "
             f"{WEEKLY_LIMIT} 根 weekly high ({WEEKLY_START} 至今). 跟 watchlist.json 同结构, "
-            f"复用 refresh_all.sh / dump_data.py 走完整分析. 多次跑 picks 累加. "
+            f"复用 refresh_all.sh / sync_stock.py 走完整分析. 多次跑 picks 累加. "
             f"来源: tools/oversold/build_oversold_watchlist.py"
         ),
         "stocks": stocks,
@@ -279,7 +279,7 @@ def render_md(results: List[Dict[str, Any]], watchlist: Dict[str, Any], stats: D
         f"## 🚀 下一步",
         "",
         f"```bash",
-        f"# 1. 拉完整 dump (走 dump_data.py 路径, fflow/eps/daily/60m)",
+        f"# 1. 拉完整 dump (走 sync_stock.py 路径, fflow/eps/daily/60m)",
         f"bash tools/refresh_all.sh --watchlist {WATCHLIST_OUT} --workers 4",
         f"",
         f"# 2. 看强信号汇总",

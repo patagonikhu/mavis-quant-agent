@@ -1,7 +1,7 @@
 """
 risk/monitor_triggers.py - 监控触发点因子 (Day D5, 2026-07-27)
 
-把 dump_data.calc_monitor_triggers (原 line 568-634, 67 行) 提炼成独立 factor
+把 原 dump_data.calc_monitor_triggers (原 line 568-634, 67 行) 提炼成独立 factor
 
 监控 6 个触发: 缠论 60分底背/止跌/60分顶背/综合 + fflow 5日出货/今日进货 + 中枢突破/跌破
 + 时间触发 (从 events.json)
