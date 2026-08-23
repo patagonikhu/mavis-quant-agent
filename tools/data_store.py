@@ -82,7 +82,11 @@ class DataStore:
 
     @classmethod
     def get_stock_basic(cls, code: str) -> dict:
-        """行业/名称/上市日期等静态信息（每月更新）。"""
+        """行业/名称/上市日期等静态信息。优先全市场缓存，fallback watchlist JSON。"""
+        from tools.history_sync import read_stock_basic
+        result = read_stock_basic(code)
+        if result:
+            return result
         from tools.static_cache import get_stock_basic
         return get_stock_basic(code)
 

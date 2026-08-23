@@ -1,11 +1,14 @@
 """
-tools/static_cache.py — 低频数据本地缓存
+tools/static_cache.py — 低频数据本地缓存（watchlist 兜底层）
 
-管理三类低频数据，按 mtime 判断是否需要重拉：
+主路径已迁移到 history_sync parquet：
+  daily_basic  → data/history/daily_basic/YYYYQN.parquet  (全市场，DataStore 优先读)
+  stock_basic  → data/cache/stock_basic_all.json           (全市场，DataStore 优先读)
+  eps          → data/cache/eps/{code}.json                (每月刷，仅 watchlist)
 
-  daily_basic  → data/cache/daily_basic.json   每周刷一次 (7天)
-  stock_basic  → data/cache/stock_basic.json   每月刷一次 (30天)
-  eps          → data/cache/eps/{code}.json    每月刷一次 (30天)
+本文件仅作 fallback（parquet 没有时兜底）：
+  daily_basic.json  → watchlist 快照，DataStore fallback 用
+  stock_basic.json  → watchlist 快照，DataStore fallback 用
 
 对外接口:
   get_daily_basic(code)  → {"total_mv": ..., "pe_ttm": ..., "pb": ..., "circ_mv": ...}
@@ -28,9 +31,10 @@ DAILY_BASIC_PATH = CACHE_DIR / "daily_basic.json"
 STOCK_BASIC_PATH = CACHE_DIR / "stock_basic.json"
 
 # 过期阈值（秒）
-_TTL_DAILY_BASIC = 90 * 24 * 3600   # 90天（一季度）
-_TTL_STOCK_BASIC = 30 * 24 * 3600   # 30天
-_TTL_EPS         = 30 * 24 * 3600   # 30天
+# daily_basic/stock_basic 主路径已迁移到 parquet，JSON 仅作 fallback，设超长 TTL 避免触发网络
+_TTL_DAILY_BASIC = 365 * 24 * 3600  # 1年（fallback 用，实际由 parquet 接管）
+_TTL_STOCK_BASIC = 365 * 24 * 3600  # 1年（fallback 用，实际由 stock_basic_all.json 接管）
+_TTL_EPS         = 30  * 24 * 3600  # 30天（机构预期每月更新）
 
 
 def _watchlist_codes() -> set:

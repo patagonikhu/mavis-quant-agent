@@ -328,6 +328,9 @@ def sync_incremental(target_date: str | None = None) -> int:
     # 同步 daily_basic（PE/PB/市值）
     sync_daily_basic(target_date)
 
+    # 同步 stock_basic（名称/行业，30天内不重拉）
+    sync_stock_basic()
+
     return total
 
 
@@ -518,8 +521,70 @@ def read_daily_basic(ts_code: str) -> dict:
 
 
 # ============================================================
-# 6. CLI
+# 6. stock_basic 全市场缓存（名称/行业，一次拉全市场）
 # ============================================================
+
+STOCK_BASIC_CACHE = Path("data/cache/stock_basic_all.json")
+
+
+def sync_stock_basic() -> int:
+    """一次拉全市场 stock_basic，存 data/cache/stock_basic_all.json。
+
+    stock_basic 变动极低频（上市/退市），每月跑一次即可。
+    Returns: 股票数量
+    """
+    import json
+    from tools.fetch.tushare_fetcher import _safe_call
+
+    # 检查是否需要更新（30天内不重拉）
+    if STOCK_BASIC_CACHE.exists():
+        age = time.time() - STOCK_BASIC_CACHE.stat().st_mtime
+        if age < 30 * 24 * 3600:
+            print(f"  ✅ stock_basic 已是最新 (上次更新 {age/86400:.0f} 天前)")
+            return 0
+
+    print("  📥 stock_basic 全市场建档...")
+    data, status = _safe_call(
+        "stock_basic", exchange="", list_status="L",
+        fields="ts_code,name,industry,list_date,market,total_share,float_share",
+    )
+    if not data:
+        print(f"  ⚠️ stock_basic 拉取失败: {status}")
+        return 0
+
+    # 转成 {code: {...}} 格式，方便按代码查
+    result = {}
+    for row in data:
+        code = row["ts_code"].split(".")[0]
+        result[code] = {
+            "name":        row.get("name", ""),
+            "industry":    row.get("industry", ""),
+            "list_date":   row.get("list_date", ""),
+            "market":      row.get("market", ""),
+            "total_share": row.get("total_share", 0),
+            "float_share": row.get("float_share", 0),
+        }
+
+    STOCK_BASIC_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    STOCK_BASIC_CACHE.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"  ✅ stock_basic 建档完成: {len(result)} 只 → {STOCK_BASIC_CACHE}")
+    return len(result)
+
+
+def read_stock_basic(code: str) -> dict:
+    """读取单只股票的 stock_basic，优先全市场缓存，fallback 旧 watchlist JSON。"""
+    import json
+    try:
+        if STOCK_BASIC_CACHE.exists():
+            data = json.loads(STOCK_BASIC_CACHE.read_text(encoding="utf-8"))
+            entry = data.get(code)
+            if entry:
+                return entry
+    except Exception:
+        pass
+    return {}
 
 def main():
     parser = argparse.ArgumentParser(description="K线历史库增量同步")
