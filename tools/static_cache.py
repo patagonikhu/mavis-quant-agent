@@ -31,10 +31,8 @@ DAILY_BASIC_PATH = CACHE_DIR / "daily_basic.json"
 STOCK_BASIC_PATH = CACHE_DIR / "stock_basic.json"
 
 # 过期阈值（秒）
-# daily_basic/stock_basic 主路径已迁移到 parquet，JSON 仅作 fallback，设超长 TTL 避免触发网络
-_TTL_DAILY_BASIC = 365 * 24 * 3600  # 1年（fallback 用，实际由 parquet 接管）
-_TTL_STOCK_BASIC = 365 * 24 * 3600  # 1年（fallback 用，实际由 stock_basic_all.json 接管）
-_TTL_EPS         = 30  * 24 * 3600  # 30天（机构预期每月更新）
+# daily_basic/stock_basic 主路径已迁移到 parquet，JSON 仅作 fallback，不设 TTL
+_TTL_EPS = 30 * 24 * 3600  # 30天（机构预期每月更新）
 
 
 def _watchlist_codes() -> set:

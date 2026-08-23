@@ -521,29 +521,29 @@ def read_daily_basic(ts_code: str) -> dict:
 
 
 # ============================================================
-# 6. stock_basic 全市场缓存（名称/行业，一次拉全市场）
+# 6. stock_basic 全市场缓存（名称/行业，一次拉全市场，存 parquet）
 # ============================================================
 
-STOCK_BASIC_CACHE = Path("data/cache/stock_basic_all.json")
+STOCK_BASIC_DIR = Path("data/history/stock_basic")
+STOCK_BASIC_DIR.mkdir(parents=True, exist_ok=True)
+STOCK_BASIC_PARQUET = STOCK_BASIC_DIR / "stock_basic.parquet"
 
 
 def sync_stock_basic() -> int:
-    """一次拉全市场 stock_basic，存 data/cache/stock_basic_all.json。
+    """一次拉全市场 stock_basic，存 parquet。30天内不重拉。
 
-    stock_basic 变动极低频（上市/退市），每月跑一次即可。
     Returns: 股票数量
     """
-    import json
-    from tools.fetch.tushare_fetcher import _safe_call
+    import pandas as pd
 
-    # 检查是否需要更新（30天内不重拉）
-    if STOCK_BASIC_CACHE.exists():
-        age = time.time() - STOCK_BASIC_CACHE.stat().st_mtime
+    if STOCK_BASIC_PARQUET.exists():
+        age = time.time() - STOCK_BASIC_PARQUET.stat().st_mtime
         if age < 30 * 24 * 3600:
             print(f"  ✅ stock_basic 已是最新 (上次更新 {age/86400:.0f} 天前)")
             return 0
 
     print("  📥 stock_basic 全市场建档...")
+    from tools.fetch.tushare_fetcher import _safe_call
     data, status = _safe_call(
         "stock_basic", exchange="", list_status="L",
         fields="ts_code,name,industry,list_date,market,total_share,float_share",
@@ -552,39 +552,38 @@ def sync_stock_basic() -> int:
         print(f"  ⚠️ stock_basic 拉取失败: {status}")
         return 0
 
-    # 转成 {code: {...}} 格式，方便按代码查
-    result = {}
-    for row in data:
-        code = row["ts_code"].split(".")[0]
-        result[code] = {
+    df = pd.DataFrame(data)
+    df["code"] = df["ts_code"].str.split(".").str[0]
+    import duckdb
+    duckdb.execute(f"COPY (SELECT * FROM df) TO '{STOCK_BASIC_PARQUET}' (FORMAT PARQUET)")
+    print(f"  ✅ stock_basic 建档完成: {len(df)} 只 → {STOCK_BASIC_PARQUET}")
+    return len(df)
+
+
+def read_stock_basic(code: str) -> dict:
+    """读取单只股票的 stock_basic（从 parquet）。"""
+    try:
+        import duckdb
+        if not STOCK_BASIC_PARQUET.exists():
+            return {}
+        result = duckdb.execute(f"""
+            SELECT * FROM read_parquet('{STOCK_BASIC_PARQUET}')
+            WHERE code = '{code}'
+            LIMIT 1
+        """).fetchdf()
+        if result.empty:
+            return {}
+        row = result.iloc[0].to_dict()
+        return {
             "name":        row.get("name", ""),
             "industry":    row.get("industry", ""),
-            "list_date":   row.get("list_date", ""),
+            "list_date":   str(row.get("list_date", "")),
             "market":      row.get("market", ""),
             "total_share": row.get("total_share", 0),
             "float_share": row.get("float_share", 0),
         }
-
-    STOCK_BASIC_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    STOCK_BASIC_CACHE.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"  ✅ stock_basic 建档完成: {len(result)} 只 → {STOCK_BASIC_CACHE}")
-    return len(result)
-
-
-def read_stock_basic(code: str) -> dict:
-    """读取单只股票的 stock_basic，优先全市场缓存，fallback 旧 watchlist JSON。"""
-    import json
-    try:
-        if STOCK_BASIC_CACHE.exists():
-            data = json.loads(STOCK_BASIC_CACHE.read_text(encoding="utf-8"))
-            entry = data.get(code)
-            if entry:
-                return entry
     except Exception:
-        pass
-    return {}
+        return {}
 
 def main():
     parser = argparse.ArgumentParser(description="K线历史库增量同步")
