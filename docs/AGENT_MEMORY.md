@@ -1,9 +1,7 @@
-# AGENT_MEMORY.md — mavis-quant-agent 项目 memory (真源, 8-24 重建)
+# AGENT_MEMORY.md — mavis-quant-agent 项目 memory (8-24)
 
 > 📍 **位置**: 项目根 `docs/AGENT_MEMORY.md` (git 跟踪)
 > 🔄 **Mirror**: `~/.minimax/agents/mavis/memory/MEMORY.md` (agent 启动用)
-> 📦 **历史 archive**: `docs/archive/AGENT_MEMORY.md.before-8-24-rebuild` (522 行)
-> 📦 **历史 mirror archive**: `~/.minimax/agents/mavis/memory/archive/MEMORY.md.before-8-24-rebuild` (697 行)
 
 ---
 
@@ -132,11 +130,3 @@ DataStore.watchlist_codes()               # watchlist.json
 - 20+ 因子文件 docstring 改 "原 dump_data"
 
 ---
-
-## 📚 8-24 之前的旧 memory (已 archive)
-
-`docs/archive/AGENT_MEMORY.md.before-8-24-rebuild` (522 行)
-`~/.minimax/agents/mavis/memory/archive/MEMORY.md.before-8-24-rebuild` (697 行)
-
-**不要再读老 memory** — 老规则 / 老胜率 / 老 dump_data 描述都已过时, 跟新架构不符。
-如果老 memory 跟当前代码有冲突, **以当前代码为准** (grep 验证)。
