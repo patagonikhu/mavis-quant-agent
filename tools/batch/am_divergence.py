@@ -45,7 +45,7 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
         if len(ctx.kline) < 60:
             return None
 
-        lookback = window + 50  # 多加 20 天给"前10天无 Markup"检查用
+        lookback = window + 60  # 2天切换窗口 + 30天无Markup检查 + 30天MACD回溯
         rows = compute_factor_history(ctx, step=1, lookback=lookback,
                                       strategies=strategies)
         if not rows:
@@ -64,9 +64,9 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
                 switch_idx_local = next((j for j, r in enumerate(rows) if r["date"] == row["date"]), None)
                 if switch_idx_local is None:
                     continue
-                pre20 = rows[max(0, switch_idx_local - 20): switch_idx_local]
+                pre20 = rows[max(0, switch_idx_local - 30): switch_idx_local]
                 if any("Markup" in str(r.get("wyckoff_daily", "")) for r in pre20):
-                    continue  # 前 20 天有 Markup，是短暂中断，跳过
+                    continue  # 前 30 天有 Markup，是短暂中断，跳过
                 am_switch_row = row
                 break
 
