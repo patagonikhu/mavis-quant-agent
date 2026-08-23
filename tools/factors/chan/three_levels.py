@@ -74,6 +74,9 @@ def build_chan_levels(code, name, get_day, get_60m=None):
                  'bc_type': 'normal', 'ratio': 0, 'a1': 0, 'a2': 0, 's1_hub': -1, 's2_hub': -1}
     hubs_w = find_all_hubs(res_w.get('segs', []), p_w) if len(c_w) >= 30 else []
     hubs_d = find_all_hubs(res_d.get('segs', []), p_d)
+    # 把中枢列表写回 res，供 ChanStrategy 读取
+    res_w['hubs'] = hubs_w
+    res_d['hubs'] = hubs_d
     bc_w = beichi_from_segs(res_w.get('segs', []), c_w, d_w, hubs_w) \
            if len(c_w) >= 30 else _bc_empty
     bc_d = beichi_from_segs(res_d.get('segs', []), c_d, d_d, hubs_d)
