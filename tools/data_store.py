@@ -47,12 +47,19 @@ class DataStore:
 
     @classmethod
     def get_kline(cls, code: str, limit: int = 0) -> list[dict]:
-        """日线 K线，升序。limit=0 表示全量（默认取 config 里的 kline_days）。"""
+        """日线 K线，升序。limit=0 表示全量（默认取 config 里的 kline_days）。
+        统一字段名：vol → volume（parquet 存的是 Tushare 原始 vol，计算层期望 volume）。
+        """
         from tools.history_sync import read_kline
         if limit == 0:
             limit = _PROJECT_CFG.get("data", {}).get("kline_days", 1250)
         ts_code = _to_ts_code(code)
-        return read_kline(ts_code, limit=limit)
+        rows = read_kline(ts_code, limit=limit)
+        # 统一 vol → volume，保留 vol 做兼容
+        for r in rows:
+            if 'vol' in r and 'volume' not in r:
+                r['volume'] = r['vol']
+        return rows
 
     @classmethod
     def get_weekly(cls, code: str, limit: int = 0) -> list[dict]:

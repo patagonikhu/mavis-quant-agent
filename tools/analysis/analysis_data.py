@@ -517,8 +517,7 @@ class AnalysisData:
             current_price=ctx.current_price,
             price_status=DataStatus(name="price", status="OK" if ctx.current_price else "EMPTY"),
             pe_ttm=None,
-            kline=[KLineBar(**{k: bar.get(k, bar.get('vol', 0) if k == 'volume' else 0)
-                              for k in KLineBar.__dataclass_fields__})
+            kline=[KLineBar(**{k: bar.get(k, 0) for k in KLineBar.__dataclass_fields__})
                    for bar in kline_raw],
             kline_status=DataStatus(name="kline", status="OK" if kline_raw else "EMPTY"),
             ma_table=ma_table,

@@ -20,7 +20,7 @@ def _open(b): return b['open'] if isinstance(b, dict) else b[1]
 def _close(b): return b['close'] if isinstance(b, dict) else b[2]
 def _high(b): return b['high'] if isinstance(b, dict) else b[3]
 def _low(b): return b['low'] if isinstance(b, dict) else b[4]
-def _vol(b): return b['volume'] if isinstance(b, dict) else b[5]
+def _vol(b): return b.get('volume', b.get('vol', 0)) if isinstance(b, dict) else b[5]
 
 
 def build_chan_levels(code, name, get_day, get_60m=None):

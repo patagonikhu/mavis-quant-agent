@@ -1414,7 +1414,7 @@ def _has_signal(row: dict) -> bool:
 
 
 def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
-    """因子历史走势 — 每天算，只显示有变化或有信号的行
+    """因子历史走势 — 每天一行，全部显示
 
     Args:
         lookback: 回看交易日数 (默认 120 ≈ 6 个月, t-history skill 用 1250=5年)
@@ -1437,9 +1437,6 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
 
     for i, row in enumerate(rows):
         changes = diff_rows(rows[i-1], row) if i > 0 else {}
-        if not changes and i < len(rows) - 1:
-            # 跳过无变化的日子, 但强制保留最后一行 (今天)
-            continue
 
         wy  = f"{row['wyckoff_daily'][0]}/{row['wyckoff_weekly'][0]}"
         def se_short(s):
