@@ -70,25 +70,15 @@ class DataStore:
 
     @classmethod
     def get_daily_basic(cls, code: str) -> dict:
-        """PE/PB/市值等估值快照。优先从 parquet 读（无需网络），fallback JSON cache。"""
+        """PE/PB/市值等估值快照，从 parquet 读（全市场，近1年）。"""
         from tools.history_sync import read_daily_basic
-        ts_code = _to_ts_code(code)
-        result = read_daily_basic(ts_code)
-        if result:
-            return result
-        # fallback: 旧 JSON cache（watchlist 股票有）
-        from tools.static_cache import get_daily_basic
-        return get_daily_basic(code)
+        return read_daily_basic(_to_ts_code(code))
 
     @classmethod
     def get_stock_basic(cls, code: str) -> dict:
-        """行业/名称/上市日期等静态信息。优先全市场缓存，fallback watchlist JSON。"""
+        """行业/名称/上市日期等静态信息，从 parquet 读（全市场）。"""
         from tools.history_sync import read_stock_basic
-        result = read_stock_basic(code)
-        if result:
-            return result
-        from tools.static_cache import get_stock_basic
-        return get_stock_basic(code)
+        return read_stock_basic(code)
 
     @classmethod
     def get_eps(cls, code: str) -> list[dict]:
