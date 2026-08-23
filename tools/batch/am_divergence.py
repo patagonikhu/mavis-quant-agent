@@ -31,7 +31,7 @@ if str(ROOT) not in sys.path:
 # 单只扫描
 # ============================================================
 
-def scan_one(code: str, window: int, require_macd: bool, min_amount_yi: float = 1.0) -> dict | None:
+def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
     """扫描单只股票，找 A→M + 三重确认。返回命中信息或 None。"""
     try:
         from tools.data_store import DataStore
@@ -41,18 +41,9 @@ def scan_one(code: str, window: int, require_macd: bool, min_amount_yi: float = 
         from tools.analysis.factor_history import compute_factor_history
 
         strategies = [WyckoffStrategy, ChanStrategy, MacdDivergenceStrategy]
-        ctx = DataStore.get_ctx(code, kline_only=True)
+        ctx = DataStore.get_ctx(code, kline_only=True, limit=120)  # 只需近 window+30 天，120根足够
         if len(ctx.kline) < 60:
             return None
-
-        # 过滤低成交额：20日均成交额 < min_amount_yi 亿直接跳过
-        # amount 单位是千元，千元→亿元除以 1e5
-        if min_amount_yi > 0:
-            recent_kline = ctx.kline[-20:]
-            amounts = [b.get("amount", 0) or 0 for b in recent_kline]
-            avg_amount_yi = sum(amounts) / len(amounts) / 1e5 if amounts else 0
-            if avg_amount_yi < min_amount_yi:
-                return None
 
         lookback = window + 30
         rows = compute_factor_history(ctx, step=5, lookback=lookback,
@@ -138,7 +129,7 @@ def main():
     parser = argparse.ArgumentParser(description="全市场扫描 A→M + 三重确认")
     parser.add_argument("--window",       type=int,   default=5,   help="A→M 切换窗口天数（默认5）")
     parser.add_argument("--no-macd",      action="store_true",     help="只要 A→M + 缠论，不强求 MACD")
-    parser.add_argument("--workers",      type=int,   default=4,   help="并发数（默认4，建议不超过 CPU/2）")
+    parser.add_argument("--workers",      type=int,   default=2,   help="并发数（默认2，ProcessPool，建议不超过 CPU/4）")
     parser.add_argument("--write-md",     action="store_true",     help="写 docs/am-divergence-watchlist.md")
     parser.add_argument("--limit",        type=int,   default=0,   help="调试用：只扫前 N 只")
     parser.add_argument("--min-amount",   type=float, default=1.0, help="20日均成交额下限（亿元，默认1亿，0=不过滤）")
@@ -156,6 +147,28 @@ def main():
     codes = DataStore.list_codes()
     if args.limit:
         codes = codes[:args.limit]
+
+    # 主进程预筛：过滤低成交额小票（单线程读 parquet，比多进程重复读快）
+    if args.min_amount > 0:
+        before = len(codes)
+        def _check_amount(code):
+            try:
+                from tools.history_sync import read_kline
+                from tools.data_store import _to_ts_code
+                rows = read_kline(_to_ts_code(code), limit=20)
+                if len(rows) < 10:
+                    return True  # 数据不足保留
+                amounts = [b.get("amount", 0) or 0 for b in rows]
+                avg = sum(amounts) / len(amounts) / 1e5
+                return avg >= args.min_amount
+            except Exception:
+                return True
+        # 用线程池加速预筛（纯 IO，不受 GIL 影响）
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        with _TPE(max_workers=8) as ex:
+            keep = list(ex.map(_check_amount, codes))
+        codes = [c for c, ok in zip(codes, keep) if ok]
+        print(f"  过滤小票: {before} → {len(codes)} 只 (min_amount={args.min_amount}亿, 去掉 {before-len(codes)} 只)")
     print(f"📊 扫描 {len(codes)} 只股票 | window={args.window}d | macd={'是' if require_macd else '否'} | min_amount={args.min_amount}亿 | {args.workers} 并发")
 
     t0 = time.time()
@@ -163,7 +176,7 @@ def main():
     done = 0
 
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
-        futs = {ex.submit(scan_one, code, args.window, require_macd, args.min_amount): code
+        futs = {ex.submit(scan_one, code, args.window, require_macd): code
                 for code in codes}
         for fut in as_completed(futs):
             done += 1

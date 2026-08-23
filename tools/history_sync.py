@@ -180,10 +180,30 @@ def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: in
     """
     try:
         import duckdb
-        files = sorted(HISTORY_DIR.glob("*.parquet"))
-        if not files:
+        from datetime import datetime, timedelta
+
+        all_files = sorted(HISTORY_DIR.glob("*.parquet"))
+        if not all_files:
             return []
-        glob_pattern = str(HISTORY_DIR / "*.parquet")
+
+        # 按 limit 推算需要哪些年份文件（每年约 250 交易日）
+        # 避免全量扫描所有年份
+        if limit > 0 and not start_date:
+            need_years = max(1, (limit // 250) + 2)  # 多加 2 年保险
+            cur_year = datetime.now().year
+            min_year = cur_year - need_years + 1
+            files = [f for f in all_files if int(f.stem) >= min_year]
+            if not files:
+                files = all_files  # fallback
+        elif start_date:
+            min_year = int(start_date[:4])
+            files = [f for f in all_files if int(f.stem) >= min_year]
+            if not files:
+                files = all_files
+        else:
+            files = all_files
+
+        glob_pattern = "', '".join(str(f) for f in files)
         where = [f"ts_code = '{ts_code}'"]
         if start_date:
             where.append(f"trade_date >= '{start_date}'")
@@ -192,14 +212,13 @@ def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: in
         where_sql = " AND ".join(where)
         sql = f"""
             SELECT ts_code, trade_date, open, high, low, close, pre_close, vol, amount, pct_chg
-            FROM read_parquet('{glob_pattern}')
+            FROM read_parquet(['{glob_pattern}'])
             WHERE {where_sql}
             ORDER BY trade_date
         """
         if limit:
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date DESC LIMIT {limit}"
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date"
-        # 每线程复用连接（thread-local），避免每次 connect() 开销
         df = _conn().execute(sql).df()
         return df.to_dict("records")
     except Exception as e:

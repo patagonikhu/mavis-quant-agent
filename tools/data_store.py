@@ -80,16 +80,16 @@ class DataStore:
         return get_eps(code)
 
     @classmethod
-    def get_ctx(cls, code: str, kline_only: bool = False):
+    def get_ctx(cls, code: str, kline_only: bool = False, limit: int = 0):
         """返回 RawContext（L1 数据层唯一入口）。
 
-        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps 网络调用。
-        适合全市场扫描场景（am_divergence 等）。
+        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps。
+        limit: K线条数上限，0=使用 config 默认值（kline_days）。
         """
         from tools.analysis.analysis_engine import RawContext
         from tools.fetch.data_fetcher import _synthesize_weekly
 
-        kline  = cls.get_kline(code)
+        kline  = cls.get_kline(code, limit=limit)
         weekly = _synthesize_weekly(kline)
         close  = kline[-1]["close"] if kline else 0.0
 
