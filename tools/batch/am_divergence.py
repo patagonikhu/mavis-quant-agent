@@ -46,7 +46,7 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
             return None
 
         lookback = window + 30
-        rows = compute_factor_history(ctx, step=5, lookback=lookback,
+        rows = compute_factor_history(ctx, step=1, lookback=lookback,
                                       strategies=strategies)
         if not rows:
             return None
@@ -59,8 +59,7 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
             prev = recent[i - 1] if i > 0 else None
             prev_stage = (prev or {}).get("wyckoff_daily", "")
             curr_stage = row.get("wyckoff_daily", "")
-            if ("Accum" in str(prev_stage) or prev_stage == "Accumulation") and \
-               ("Markup" in str(curr_stage)):
+            if "Markup" not in str(prev_stage) and "Markup" in str(curr_stage):
                 am_switch_row = row
                 break
 
@@ -94,13 +93,19 @@ def scan_one(code: str, window: int, require_macd: bool) -> dict | None:
 
         has_chan = chan_date is not None
         has_macd = macd_date is not None
-        confirmed = (has_chan and has_macd) if require_macd else has_chan
+        # require_macd=True: A→M + 缠论 + MACD 三重
+        # require_macd=False (--no-macd): A→M + MACD 即可（缠论字段当前可能为空）
+        if require_macd:
+            confirmed = has_chan and has_macd
+        else:
+            confirmed = has_macd  # 只要 MACD 底背驰
         if not confirmed:
             return None
 
         # 计算距今天数
         try:
-            am_dt = datetime.strptime(am_date, "%Y-%m-%d")
+            fmt = "%Y%m%d" if len(am_date) == 8 else "%Y-%m-%d"
+            am_dt = datetime.strptime(am_date, fmt)
             days_ago = (datetime.now() - am_dt).days
         except Exception:
             days_ago = 99
