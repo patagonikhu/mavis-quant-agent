@@ -132,7 +132,7 @@ def main():
     parser.add_argument("--workers",      type=int,   default=2,   help="并发数（默认2，ProcessPool，建议不超过 CPU/4）")
     parser.add_argument("--write-md",     action="store_true",     help="写 docs/am-divergence-watchlist.md")
     parser.add_argument("--limit",        type=int,   default=0,   help="调试用：只扫前 N 只")
-    parser.add_argument("--min-amount",   type=float, default=1.0, help="20日均成交额下限（亿元，默认1亿，0=不过滤）")
+    parser.add_argument("--min-amount",   type=float, default=3.0, help="20日均成交额下限（亿元，默认3亿，0=不过滤）")
     args = parser.parse_args()
 
     require_macd = not args.no_macd
