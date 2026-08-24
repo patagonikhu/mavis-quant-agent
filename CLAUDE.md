@@ -17,7 +17,6 @@
 ```
 ✅ tools/sync_stock.py {code} [--render]                    # 单只拉
 ✅ tools/refresh_all.sh                                     # watchlist 全刷 (4 worker, 启动跑 4 核心模块 import smoke test)
-✅ tools/pull_all.sh                                        # 批量拉
 ✅ tools/with_venv.sh python -m tools.ensure_fresh --watchlist   # 检查新鲜度
 ✅ tools/fetch/data_source.py 统一入口函数
 ❌ 任何 curl 直连 WAF 拒接域
@@ -89,7 +88,7 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 `RawContext.slice(as_of_date)` + `engine.analyze(ctx, as_of_date=...)` 切片, 三层 (dump/analysis/render) 统一走 `tools/factors/utils.py::normalize_asof` / `asof_slice`:
 - dump 层: `sync_stock.py` 写算子时传 asof
-- analysis 层: `price_fflow_factor(asof=...)` / `_obv_factor(asof=...)` / `VolumeOBVFactor.compute(asof_date=...)`
+- analysis 层: `fflow_factor(asof=...)` / `obv_factor(asof=...)` (`price_fflow_factor` 已于 2026-08-17 拆成两个独立函数)
 - factor_history 层: `compute_factor_history(ctx, step, lookback)` 每 step 天一个节点, 跑 `engine.analyze(ctx, as_of_date=as_of)`
 - render 层: 报告 header 显示当前 asof
 
@@ -107,18 +106,17 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 | 块 | 路径 | 是什么 | 备注 |
 |---|---|---|---|
-| **经典 OBV** | `tools/factors/volume/price_fflow.py::_obv_factor` | Granville 1963 经典累计 (价涨+vol/价跌-vol/平盘不动) + 5 类信号 + 60 日段背离多次确认 | v3.5 起在主路径**并联** fflow 算, 不再是 fallback |
-| **VolumeOBVFactor** | `tools/factors/volume/obv_factor.py` | 基于 Tushare `money_flow.main_yi` 主力净流入的 5 档判定 (强/弱/偏出货) | 名字沿用旧"量价 OBV 段"命名, **跟经典 OBV 无关** |
-| **因子历史 OBV 30d%** | `tools/analysis/factor_history.py::_compute_obv_30d` | 截至 asof 当天的 30 日 OBV 净增 / 30 日总成交, 供历史回测 | 替代了"价格位置"4 个静态字段, 走 `obv_30d_pct / obv_30d_strength / obv_30d_div` 3 字段 |
+| **经典 OBV** | `tools/factors/volume/price_fflow.py::obv_factor` | Granville 1963 经典累计 (价涨+vol/价跌-vol/平盘不动) + 5 类信号 + 60 日段背离多次确认 | v3.5 起在主路径**并联** fflow 算, 不再是 fallback |
+| **fflow_factor** (主力) | `tools/factors/volume/price_fflow.py::fflow_factor` | 基于 Tushare `money_flow` 大单+特大单净流入的 5 档判定 (强/弱/偏出货) | 真值, dump 预拉, **跟经典 OBV 无关** |
 
 **主路径调用链:**
 ```
 VolumePriceStrategy.analyze(ctx)
-  → price_fflow_factor(code, closes, vols, moneyflow, dates, asof)
-      ├─ fflow (moneyflow.main_yi) → 5档 verdict
-      ├─ _obv_factor(closes, vols, dates, asof)  ← 并联 (v3.5 起)
-      │    └─ _scan_obv_divergence_60d (60日内 4 个 15日窗口 数背离)
-      └─ 双判定同向 → "✅ fflow+OBV 同向" / 矛盾 → "⚠️ 数据冲突"
+  → fflow_factor(code, moneyflow, dates)              # 走 dump 预拉 main_yi
+      └─ 5档 verdict (强/弱/偏出货)
+  → obv_factor(closes, vols, dates, asof)              # 经典 Granville 1963
+      └─ _scan_obv_divergence_60d (60日内 4 个 15日窗口 数背离)
+  → 双判定同向 → "✅ fflow+OBV 同向" / 矛盾 → "⚠️ 数据冲突"
 ```
 
 **段背离阈值 (v3.5 放宽, 避免 0 触发):**
@@ -126,14 +124,9 @@ VolumePriceStrategy.analyze(ctx)
 - 顶背离: 价 `pct>+2%` 且 OBV 净增 `<-3%`
 - ≥2 窗口 = 强背离 (分数 ±2), =1 = 单次 (±1)
 
-**OBV 30d% 分子分母对齐 (v3.5 修):**
-- OBV 净增量 = `sum(wv[1..29])` (排除起点当天)
-- 分母 = `sum(wv[1:])` (同样排除起点)
-- 之前是 `sum(wv[0..29])` 分母, 多算了起点那天, bug 修了
-
 **报告展示:**
 - 5 方法矩阵新增 `**【量价 OBV 段背离】**` section (`report_renderer.py:1178`), 引用 Granville 1963 + Lee-Swaminathan 2000
-- 因子历史表格多了 `OBV(30d%)` 列 (`report_renderer.py:1533`)
+
 - linter 警告 fflow 段必须标 "Tushare.money_flow" 或 "OBV 派生" (`report_linter.py:218,288`)
 
 详见 `docs/AGENT_MEMORY.md` 296-330 行的 "OBV 段背离工程化" 备忘。
@@ -213,7 +206,7 @@ PEG = Forward PE / 稳态 EPS CAGR(%)
 
 #### DCF 隐含 L
 
-`tools/analysis/dcf_calc.py`, 三档 r=8/10/12%:
+`tools/analysis_evaluators.py::compute_dcf_l` + `tools/factors/valuation/multi.py::DcfFactor`, 三档 r=8/10/12%:
 
 ```
 Step1: L/E3 快筛: < 2 叙事未满 / 2-5 较高 / > 5 饱满警惕
@@ -247,14 +240,17 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 - ✅ 拉代码 (`git pull` 等) 通过 `git config http.proxy` 配 proxy
 - ✅ 推代码 (`git push`) 失败后重试非 proxy 路径
 
-**已知 WAF 拒接域名 (不要直连):** `push2.eastmoney.com` / `push2his.eastmoney.com` → 改走 `tools/sync_stock.py`
-
 **🟢 fflow (主力资金净额):**
 
 ```bash
-# 项目封装: bash tools/with_venv.sh python -c "from tools.tushare_fetcher import get_money_flow; print(get_money_flow('300274'))"
-# 字段: f51=日期, f52=主力净额, f53=小单, f54=中单, f55=大单, f56=超大单
-# 数据: 最近10-20日，5日主力净额=主指标
+# 项目封装: bash tools/with_venv.sh python -c "from tools.fetch.tushare_fetcher import get_money_flow; print(get_money_flow('300274'))"
+# 字段 (Tushare money_flow 真值, 单位 万元 → 内部转亿):
+#   buy_sm_vol/amount (小单买入手数/金额), sell_sm_* (小单卖出)
+#   buy_md_vol/amount (中单), sell_md_*
+#   buy_lg_vol/amount (大单), sell_lg_*
+#   buy_elg_vol/amount (特大单), sell_elg_*
+#   net_mf_vol / net_mf_amount (净流入)
+# 数据: 最近10-20日, 5日主力净额 (大单+特大单) = 主指标
 ```
 
 ---
@@ -339,7 +335,7 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 **理论:** 5 套方法 (缠论/威科夫/SMC/量价/多市场共振) × 3 周期 (周/日/60m) = 15 场景矩阵互补
 
 **5 重保险:**
-1. **模板层** (`tools/render/report_renderer.py`): `_section_5method_matrix()` 硬编码占位符
+1. **模板层** (`tools/render/report_renderer.py`): `_section_factor_matrix()` 硬编码占位符, 调 `render_factor_matrix_md`
 2. **Linter 层** (`tools/render/report_linter.py`): 4 个正则 (场景/共振数/行动/标题), 缺任一 → FAIL
 3. **Skill 层** (`.claude/skills/t-analyze/SKILL.md`): 必含 4 个固定标签
 4. **CLAUDE.md 铁律** (本节): 22 section 必填
@@ -347,13 +343,13 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 
 **输出格式 (缺则 Linter FAIL):**
 ```markdown
-## 🎯 5 方法 × 3 周期 矩阵
-【场景判定】: D (底部建仓)        ← 必须含 A-E 之一
-【共振数】: 3 重                   ← 必须含数字 + "重"
-【行动建议】: 🥈 标准建仓 (3 重共振)  ← 必须含 🥇/🥈/🥉/🟡/⬜/❌ 之一
+## 🎯 因子 × 3 周期 综合矩阵
+**场景**: C (震荡观望)            ← 必须含 A-E 之一
+**共振数**: 5 重                    ← 必须含数字 + "重"
+**行动**: ⬜ 震荡观望               ← 必须含 🥇/🥈/🥉/🟢/🟡/⬜/❌ 之一
 ```
 
-**实现:** `tools/signals_5method.py` (5 方法统一入口)
+**实现:** `tools/batch/batch_matrix.py` (5 方法 × 3 周期 矩阵批量入口, 走 `factor_matrix` 公开接口)
 
 ### 22 section 必填 + 三阶段工作流 + 工具
 
@@ -368,18 +364,17 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 
 | 数据 | 主源 → 备源 | 实装 |
 |---|---|---|
-| K线 (日/60m) | Tushare (主, **唯一** WAF 安全源) | `tools/tushare_fetcher.py` |
-| 周线 K | Tushare `weekly` (真实周线, 非日线合成) | `tools/tushare_fetcher.py` |
-| 财务三表 / EPS 历史 | Tushare `fina_indicator` / `income` | `tools/tushare_fetcher.py` |
+| K线 (日/60m) | Tushare (主, **唯一** WAF 安全源) | `tools/fetch/tushare_fetcher.py` |
+| 周线 K | Tushare `weekly` (真实周线, 非日线合成) | `tools/fetch/tushare_fetcher.py` |
+| 财务三表 / EPS 历史 | Tushare `fina_indicator` / `income` | `tools/fetch/tushare_fetcher.py` |
 | **EPS 机构一致预期 (E1/NTM)** | **datacenter.eastmoney.com** (主, 真机构预测) → Tushare 自建 NTM (备) | `tools/fetch/data_fetcher.py:392` (`datacenter_consensus` / `tushare_built_ntm` / `EMPTY` 三态) |
 | **fflow (主力资金流)** | **Tushare `money_flow`** (主, dump 预拉) → OBV 派生 (备, K线推算) | `tools/factors/volume/price_fflow.py` 走 `ctx.moneyflow` (dump 预拉字段) |
-| 股本 / 流通 | Tushare `daily_basic.total_share` / `circ_share` (主) | `tools/tushare_fetcher.py` |
-| 实时价 (当前) | Tushare `daily` 末根 (主) | `tools/tushare_fetcher.py` |
+| 股本 / 流通 | Tushare `daily_basic.total_share` / `circ_share` (主) | `tools/fetch/tushare_fetcher.py` |
+| 实时价 (当前) | Tushare `daily` 末根 (主) | `tools/fetch/tushare_fetcher.py` |
 
 **关键:**
-- **fflow 真实数据是 Tushare.money_flow** (不是 push2his!), v3.5 之前 `price_fflow_factor` 仅在 moneyflow 无数据时才走 OBV 派生, v3.5 起 fflow+OBV **并联双判定**
+- **fflow 真实数据是 Tushare.money_flow** (不是 push2his!), v3.5 之前 OBV 仅在 moneyflow 无数据时派生, v3.5 起 fflow+OBV **并联双判定**
 - **EPS 机构预期是 datacenter** (不是 push2his), 区分: EPS 历史 = Tushare, EPS 预期 = datacenter
-- 唯一真 WAF 拒接源: `push2 / push2his / push2delay / web.ifzq` (全部弃用, 见数据拉取铁律)
 - API 限流时该 section 显示 ❌, 不影响其他 section (data_fetcher 隔离 try-except)
 
 ### 6. 报告大小预期
@@ -467,7 +462,7 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 
 ### 六、规则应用声明
 
-任何 `/t-analyze` / `/t-watchlist` 报告必须包含退出信号检查：v11 score / PEG_真实 / L/E3 / vs MA120 / **板块MA20偏离** / OBV顶背离板块适用性 / MACD死叉板块适用性 → 综合判定
+任何 `/t-analyze` / `/t-watchlist` 报告必须包含退出信号检查：factor_scores.total_score / PEG_真实 / L/E3 / vs MA120 / **板块MA20偏离** / OBV顶背离板块适用性 / MACD死叉板块适用性 → 综合判定
 
 ---
 
@@ -475,7 +470,7 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 
 | 命令 | 用途 |
 |---|---|
-| `/t-analyze <code> [name] [--no-news]` | 单标的完整分析 (curl数据 + DCF L + PEG + T框架, 60 行报告) |
+| `/t-analyze <code> [name] [--no-news]` | 单标的完整分析 (拉数据 + DCF L + PEG + T框架, 60 行报告) |
 | `/t-watchlist [--no-news]` | 批量分析 watchlist.json |
 | `/t-monitor [--window N] [--no-news]` | 跨扫 events.json + watchlist.json，高亮建仓/减仓窗口 |
 | `/t-sector <name> [--no-news]` | 板块批量分析 |
