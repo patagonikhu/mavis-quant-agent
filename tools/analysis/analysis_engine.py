@@ -210,6 +210,7 @@ class WyckoffStrategy(AnalysisStrategy):
                     _make_df(bars), period_label=label,
                     window=min(250, len(bars)),
                     market_cap_yi=ctx.market_cap_yi,
+                    code=ctx.code,
                 )
                 sub_events_by_period[level] = out.get("sub_events", [])
                 wyckoff_3period[level] = out
@@ -460,21 +461,80 @@ class ChanStrategy(AnalysisStrategy):
     weight = 0.20
 
     def analyze(self, ctx: RawContext) -> FactorScore:
-        from tools.factors.chan.three_levels import build_chan_levels
+        from tools.factors.chan.czsc_adapter import analyze_hub_v2_czsc
+        from tools.factors.chan.czsc_signals import compute_buy_sell_signals
 
         kline = ctx.kline
 
         chan = {}
         try:
-            result = build_chan_levels(
-                ctx.code, ctx.name,
-                lambda c: kline,
-            )
-            if result:
-                res_w, res_d, bc_w, bc_d = result
+            # 用 czsc 算周/日 二级别 (替代原 build_chan_levels)
+            kd_day = kline
+            if not kd_day or len(kd_day) < 30:
+                pass  # 数据不足, chan 留空
+            else:
+                # 周线：5 根日线合成 1 根
+                week = []
+                for i in range(0, len(kd_day) - 4, 5):
+                    chunk = kd_day[i:i + 5]
+                    if len(chunk) < 5:
+                        break
+                    week.append({
+                        'trade_date': chunk[0].get('trade_date', ''),
+                        'open':  chunk[0].get('open', 0),
+                        'close': chunk[-1].get('close', 0),
+                        'high':  max(c.get('high', 0) for c in chunk),
+                        'low':   min(c.get('low', 0) for c in chunk),
+                        'volume': sum(c.get('volume', c.get('vol', 0)) for c in chunk),
+                    })
+                d_w = [b['trade_date'] for b in week]
+                c_w = [b['close'] for b in week]
+                h_w = [b['high'] for b in week]
+                l_w = [b['low'] for b in week]
+                d_d = [k.get('trade_date', '') for k in kd_day]
+                c_d = [k.get('close', 0) for k in kd_day]
+                h_d = [k.get('high', 0) for k in kd_day]
+                l_d = [k.get('low', 0) for k in kd_day]
+
+                res_w = analyze_hub_v2_czsc(d_w, c_w, h_w, l_w, '周线', code=ctx.code)
+                res_d = analyze_hub_v2_czsc(d_d, c_d, h_d, l_d, '日线', code=ctx.code)
+
+                # 背驰: 从 analyze_hub_v2_czsc 读 (bi.power 比较, 替代 MACD 面积)
+                _bc_empty = {'display': '数据不足', 'direction': 'none', 'strength': 'none',
+                             'bc_type': 'normal', 'ratio': 0, 'a1': 0, 'a2': 0,
+                             's1_hub': -1, 's2_hub': -1}
+                # 买卖点: 用 czsc_signals (1买/3买/MACD底背 等)
+                bsp_d = compute_buy_sell_signals(
+                    [{'date': d, 'open': c, 'close': c, 'high': h, 'low': l, 'vol': 0, 'amount': 0}
+                     for d, c, h, l in zip(d_d, c_d, h_d, l_d)],
+                    ctx.code
+                )
+                # 周线买卖点暂空 (czsc_signals 只算日线)
+                bsp_w = {'points': {}}
+
+                # 把买卖点 + 背驰写到 daily/weekly 字段
+                daily_with_bsp = {**(res_d or {}),
+                                   "beichi": (res_d or {}).get('beichi', _bc_empty),
+                                   "buy_sell_points": bsp_d.get('points', {})}
+                weekly_with_bsp = {**(res_w or {}),
+                                    "beichi": (res_w or {}).get('beichi', _bc_empty),
+                                    "buy_sell_points": bsp_w.get('points', {})}
                 chan = {
-                    "weekly": {**(res_w or {}), "beichi": bc_w},
-                    "daily":  {**(res_d or {}), "beichi": bc_d},
+                    "weekly": weekly_with_bsp,
+                    "daily":  daily_with_bsp,
+                    "buy_sell_points": {
+                        "weekly": bsp_w.get('points', {}),
+                        "daily":  bsp_d.get('points', {}),
+                        "60min":  {},
+                        "30min":  {},
+                    },
+                }
+                # 同时把 bsp 写进 ctx, 让 AnalysisData 能读
+                ctx._bsp_for_data = {
+                    "weekly": bsp_w.get('points', {}),
+                    "daily":  bsp_d.get('points', {}),
+                    "60min":  {},
+                    "30min":  {},
                 }
         except Exception:
             pass
@@ -510,9 +570,12 @@ class ChanStrategy(AnalysisStrategy):
                 cnt += 1
 
         avg = score_total / cnt if cnt > 0 else 0.0
+        # 买卖点 (从 ctx.chan_buy_sell 拿, czsc_signals 算的)
+        bsp = getattr(ctx, "chan_buy_sell", None) or {}
         return FactorScore(
             name=self.name, score=avg, weight=self.weight,
-            signals=signals, summary=f"缠论 {cnt}/3 级别", raw=chan,
+            signals=signals, summary=f"缠论 {cnt}/3 级别",
+            raw={**chan, "buy_sell_points": bsp},
         )
 
 
@@ -700,26 +763,32 @@ class BuySellPointsStrategy(AnalysisStrategy):
     weight = 0.0  # 缠论买卖点参考, 不计入加权 (跟 chan factor 重复)
 
     def analyze(self, ctx: RawContext) -> FactorScore:
-        from tools.factors.registry import FactorRegistry
-        reg = FactorRegistry()
-        bsp_factor = reg.get("buy_sell_points")
-        if bsp_factor is None:
-            return FactorScore(name=self.name, score=0.0, weight=self.weight,
-                               signals=["BuySellPointsFactor 未注册"], summary="—", raw={})
-
-        # 读 ctx.chan_result（由 ChanStrategy Phase1 算好写入）
-        chan = ctx.chan_result
+        # v3.0 改动: 不再调 buy_sell_factor (老 Python 判定), 直接读 ctx.chan_result 里的 buy_sell_points
+        # (由 ChanStrategy 算好后写入, 基于 czsc generate_czsc_signals)
+        chan = ctx.chan_result or {}
+        bsp_raw = chan.get("buy_sell_points", {})
         bsp = {}
         for level_key in ["weekly", "daily"]:
-            res = chan.get(level_key) or {}
-            beichi_str = res.get("beichi", "")
-            klines = ctx.kline if level_key == "daily" else None
-            try:
-                out = bsp_factor(df=None, res=res, beichi_str=beichi_str,
-                                 klines=klines, level_key=level_key)
-                bsp[level_key] = out.get("points", {}) if isinstance(out, dict) else {}
-            except Exception as e:
-                bsp[level_key] = {"error": str(e)}
+            points = bsp_raw.get(level_key, {})
+            if isinstance(points, dict) and "error" not in points:
+                bsp[level_key] = points
+            else:
+                bsp[level_key] = {}
+        # 兜底: 跑老的 (兼容, 不存在 factor 就跳过)
+        try:
+            from tools.factors.registry import FactorRegistry
+            reg = FactorRegistry()
+            bsp_factor = reg.get("buy_sell_points")
+            if bsp_factor and not any(bsp.values()):
+                for level_key in ["weekly", "daily"]:
+                    res = chan.get(level_key) or {}
+                    beichi_str = res.get("beichi", "")
+                    klines = ctx.kline if level_key == "daily" else None
+                    out = bsp_factor(df=None, res=res, beichi_str=beichi_str,
+                                     klines=klines, level_key=level_key)
+                    bsp[level_key] = out.get("points", {}) if isinstance(out, dict) else {}
+        except Exception:
+            pass
 
         # 简化 score: 1买=+0.5, 1卖=-0.5
         score = 0.0

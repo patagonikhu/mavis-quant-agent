@@ -52,9 +52,31 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         k_slice = [b for b in ctx.kline  if b["trade_date"].replace("-","")[:8] <= as_of_clean]
         w_slice = [b for b in ctx.weekly if b["trade_date"].replace("-","")[:8] <= as_of_clean]
 
+        def _boll(bars: list, n: int = 20, k: float = 2.0) -> dict | None:
+            if not bars or len(bars) < n:
+                return None
+            import math
+            closes = [b["close"] for b in bars[-n:]]
+            mid = sum(closes) / n
+            std = math.sqrt(sum((c - mid) ** 2 for c in closes) / n)
+            upper = mid + k * std
+            lower = mid - k * std
+            c = bars[-1]["close"]
+            bpct = round((c - lower) / (upper - lower) * 100, 1) if upper > lower else 50.0
+            return {
+                "upper": round(upper, 1), "lower": round(lower, 1),
+                "mid": round(mid, 1), "bpct": bpct,
+            }
+
+        boll_d = _boll(k_slice)
         ma_devs = {
-            "ma_dev_daily":  _ma_dev(k_slice, 20),
-            "ma_dev_weekly": _ma_dev(w_slice, 20),
+            "ma_dev_daily":   _ma_dev(k_slice, 20),
+            "ma_dev_weekly":  _ma_dev(w_slice, 20),
+            "ma120_dev":      _ma_dev(k_slice, 120),
+            "boll_upper":     boll_d["upper"]  if boll_d else None,
+            "boll_lower":     boll_d["lower"]  if boll_d else None,
+            "boll_mid":       boll_d["mid"]    if boll_d else None,
+            "boll_pct":       boll_d["bpct"]   if boll_d else None,
         }
 
         rows.append({**_extract_row(result, as_of, close, ctx), **ma_devs})
@@ -78,7 +100,7 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 
 def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     """从 AnalysisResult 提取单行因子快照"""
-    from tools.factors.chan import find_all_hubs, classify_beichi
+    from tools.factors.chan import classify_beichi
     fs = result.factor_scores
     chan_fs  = fs.get("chan")
     bsp_fs   = fs.get("buy_sell_points")
@@ -100,12 +122,7 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         bc = (chan_raw.get(level) or {}).get("beichi", {})
         if not bc:
             return "无"
-        if isinstance(bc, dict) and "direction" in bc:
-            return classify_beichi(bc)
-        # 旧字符串兼容
-        segs = (chan_raw.get(level) or {}).get("segs", [])
-        hubs = find_all_hubs(segs, close)
-        return classify_beichi(bc, hubs, close, segs)
+        return classify_beichi(bc)
 
     pos_fs = result.factor_scores.get("position")
     pos_raw = (pos_fs.raw if pos_fs else {}) or {}

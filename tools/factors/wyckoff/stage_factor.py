@@ -177,7 +177,8 @@ class WyckoffStageFactor(Factor):
             sub_events_raw = scan_sub_events(c, h, l, v, rng, o=o, pct_chg=pc,
                                               market_cap_yi=market_cap_yi,
                                               period_label=period_label,
-                                              as_of_idx=as_of_idx, dates=dt)
+                                              as_of_idx=as_of_idx, dates=dt,
+                                              code=kwargs.get('code'))
             # v5.10.42: judge 用名字 set, sub_events 字段保留完整 list[dict]
             sub_events = sorted({e["name"] for e in sub_events_raw})
 

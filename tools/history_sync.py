@@ -44,11 +44,19 @@ def _conn():
 # 1. 工具函数
 # ============================================================
 
+_INDEX_SUFFIX = {
+    "000001": "SH", "000300": "SH", "000905": "SH", "000016": "SH",
+    "399001": "SZ", "399006": "SZ", "399808": "SZ",
+}
+
+
 def _to_ts_code(code: str) -> str:
-    """000725 → 000725.SZ / 600000 → 600000.SH"""
+    """000725 → 000725.SZ / 600000 → 600000.SH / 000300 → 000300.SH (指数优先)"""
     if "." in code:
         return code
     c = code.strip()
+    if c in _INDEX_SUFFIX:
+        return f"{c}.{_INDEX_SUFFIX[c]}"
     if c.startswith(("0", "3")):
         return f"{c}.SZ"
     if c.startswith(("6", "9")):
@@ -66,6 +74,22 @@ def _quarter_of(trade_date: str) -> str:
 def _parquet_path(year_or_quarter) -> Path:
     """支持 year（int，向后兼容）或 quarter（str，如 '2026Q3'）"""
     return HISTORY_DIR / f"{year_or_quarter}.parquet"
+
+
+def _get_local_min_date() -> str | None:
+    """返回本地所有 parquet 里最早的 trade_date (YYYYMMDD)，没有数据返回 None。"""
+    try:
+        import duckdb
+        files = sorted(HISTORY_DIR.glob("*.parquet"))
+        if not files:
+            return None
+        glob_expr = str(HISTORY_DIR / "*.parquet")
+        result = duckdb.execute(
+            f"SELECT MIN(trade_date) FROM read_parquet('{glob_expr}')"
+        ).fetchone()
+        return result[0] if result else None
+    except Exception:
+        return None
 
 
 def _get_local_max_date() -> str | None:
@@ -275,12 +299,32 @@ def has_data_for_date(trade_date: str) -> bool:
 # 4. 增量同步
 # ============================================================
 
+INDEX_CODES = ["000001.SH", "000300.SH", "000688.SH", "399001.SZ", "399006.SZ"]
+
+
+def _get_index_max_date() -> str | None:
+    """查4个指数在 parquet 里的最新 trade_date。"""
+    import duckdb
+    glob_expr = str(HISTORY_DIR / "*.parquet")
+    files = sorted(HISTORY_DIR.glob("*.parquet"))
+    if not files:
+        return None
+    codes = ", ".join(f"'{c}'" for c in INDEX_CODES)
+    try:
+        result = duckdb.execute(
+            f"SELECT MAX(trade_date) FROM read_parquet('{glob_expr}') WHERE ts_code IN ({codes})"
+        ).fetchone()
+        return result[0] if result and result[0] else None
+    except Exception:
+        return None
+
+
 def sync_incremental(target_date: str | None = None) -> int:
     """增量同步：只拉本地缺失的交易日。
 
     Returns: 新增的 bar 数量
     """
-    from tools.fetch.tushare_fetcher import get_daily_by_date
+    from tools.fetch.tushare_fetcher import get_daily_by_date, get_index_daily
 
     today = target_date or _today()
     max_local = _get_local_max_date()
@@ -291,39 +335,50 @@ def sync_incremental(target_date: str | None = None) -> int:
 
     if max_local >= today:
         print(f"  ✅ 已是最新 (本地最新: {max_local})")
-        return 0
-
-    # 找缺失的交易日
-    next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
-    missing = _get_trading_dates(next_date, today)
-    # 过滤掉已有的
-    missing = [d for d in missing if not has_data_for_date(d)]
-
-    if not missing:
-        print(f"  ✅ 无缺失数据 (本地最新: {max_local})")
-        return 0
-
-    print(f"  📥 需补 {len(missing)} 个交易日: {missing[0]} ~ {missing[-1]}")
-    all_records = []
-    for date in missing:
-        records, status = get_daily_by_date(date)
-        if not records:
-            if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
-                if all_records:
-                    _append_records(all_records)
-                print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘")
-                sys.exit(0)
-            print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
-            continue
-        all_records.extend(records)
-        print(f"    ✅ {date}: {len(records)} 只")
-        time.sleep(0.3)
-
-    # 所有缺失天收集完后一次性写入，避免每天读写一次文件
-    if all_records:
-        total = _append_records(all_records)
     else:
-        total = 0
+        # 找缺失的交易日
+        next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+        missing = _get_trading_dates(next_date, today)
+        # 过滤掉已有的
+        missing = [d for d in missing if not has_data_for_date(d)]
+
+        if not missing:
+            print(f"  ✅ 无缺失数据 (本地最新: {max_local})")
+        else:
+            print(f"  📥 需补 {len(missing)} 个交易日: {missing[0]} ~ {missing[-1]}")
+            all_records = []
+            for date in missing:
+                records, status = get_daily_by_date(date)
+                if not records:
+                    if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
+                        if all_records:
+                            _append_records(all_records)
+                        print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘")
+                        sys.exit(0)
+                    print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
+                    continue
+                all_records.extend(records)
+                print(f"    ✅ {date}: {len(records)} 只")
+                time.sleep(0.3)
+
+            # 所有缺失天收集完后一次性写入，避免每天读写一次文件
+            if all_records:
+                _append_records(all_records)
+
+    # 指数独立补齐（与个股是否有缺口无关，每次都检查）
+    # None = 指数从未入库，从个股最早日期开始补全历史
+    idx_max = _get_index_max_date() or _get_local_min_date() or "20200101"
+    if idx_max < today:
+        next_idx = (datetime.strptime(idx_max, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+        print(f"  📥 补指数 {next_idx} ~ {today}")
+        for idx_code in INDEX_CODES:
+            idx_records, status = get_index_daily(idx_code, start_date=next_idx, end_date=today)
+            if idx_records:
+                _append_records(idx_records)
+                print(f"    ✅ {idx_code}: {len(idx_records)} 根")
+            else:
+                print(f"    ⚠️ {idx_code} 无数据 ({status})")
+            time.sleep(0.3)
 
     # 同步 daily_basic（PE/PB/市值）
     sync_daily_basic(target_date)
@@ -331,7 +386,7 @@ def sync_incremental(target_date: str | None = None) -> int:
     # 同步 stock_basic（名称/行业，30天内不重拉）
     sync_stock_basic()
 
-    return total
+    return 0
 
 
 def sync_init(start_year: int = 2020) -> int:

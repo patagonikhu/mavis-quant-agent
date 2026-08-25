@@ -29,6 +29,7 @@ except FileNotFoundError:
     )
 
 _DET = _CFG.get("wyckoff_detectors", {}) or {}
+_CODE_OVERRIDES = _CFG.get("code_overrides", {}) or {}
 
 
 def _lookup(cfg_section: dict, key: str, period_label: str, default, style: str = None):
@@ -53,10 +54,30 @@ def _lookup(cfg_section: dict, key: str, period_label: str, default, style: str 
     return val
 
 
+def _det_cfg(detector: str, code: str | None = None) -> dict:
+    """返回 detector 的配置，code_overrides 优先于全局 wyckoff_detectors。"""
+    global_cfg = _DET.get(detector, {}) or {}
+    if not code:
+        return global_cfg
+    override = (_CODE_OVERRIDES.get(code, {}) or {}).get("wyckoff_detectors", {}) or {}
+    det_override = override.get(detector, {}) or {}
+    if not det_override:
+        return global_cfg
+    # 深度合并: override 覆盖 global_cfg，未覆盖的 key 保留 global_cfg
+    merged = dict(global_cfg)
+    for k, v in det_override.items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = {**merged[k], **v}
+        else:
+            merged[k] = v
+    return merged
+
+
 def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
                     market_cap_yi=0.0, period_label="daily",
                     as_of_idx: int | None = None,
-                    dates: list | None = None) -> list:
+                    dates: list | None = None,
+                    code: str | None = None) -> list:
     """扫整段 K 线, 返回触发的 sub_events (带时间戳 list)
 
     9 sub_event (跟 WyckoffTradingAgent L4 1:1):
@@ -87,14 +108,14 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
         o = [c[i-1] if i > 0 else c[0] for i in range(len(c))]
 
     # ===== 周期自适应参数 (2026-07-29 v5.7 加, 从 config 读) =====
-    sos_cfg = _DET.get("sos", {}) or {}
-    spring_cfg = _DET.get("spring", {}) or {}
-    evr_cfg = _DET.get("evr", {}) or {}
-    tp_cfg = _DET.get("trend_pullback", {}) or {}
-    lps_cfg = _DET.get("lps", {}) or {}
-    cmp_cfg = _DET.get("compression", {}) or {}
-    utad_cfg = _DET.get("utad", {}) or {}
-    ds_cfg = _DET.get("distribution_start", {}) or {}
+    sos_cfg = _det_cfg("sos", code)
+    spring_cfg = _det_cfg("spring", code)
+    evr_cfg = _det_cfg("evr", code)
+    tp_cfg = _det_cfg("trend_pullback", code)
+    lps_cfg = _det_cfg("lps", code)
+    cmp_cfg = _det_cfg("compression", code)
+    utad_cfg = _det_cfg("utad", code)
+    ds_cfg = _det_cfg("distribution_start", code)
 
     # 外层 max_bias (40=科创/35=趋势/25=默认) 翻译成 style key
     _style = "star" if max_bias >= 40 else ("trending" if max_bias >= 35 else "default")
@@ -121,6 +142,7 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
     tp_min_pullback    = _lookup(tp_cfg, "min_pullback", period_label, 5.0)
     tp_max_pullback    = _lookup(tp_cfg, "max_pullback", period_label, 20.0)
     lps_max_bias       = _lookup(lps_cfg, "max_bias", period_label, max_bias, _style)
+    lps_vol_dry_ratio  = _lookup(lps_cfg, "vol_dry_ratio", period_label, 0.50)
     cmp_max_bias       = _lookup(cmp_cfg, "max_bias", period_label, 25.0)
 
     # DistributionStart (顶部信号) 2 阈值
@@ -155,7 +177,8 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
         c_at_i = c[i] if i < len(c) else 0
         if detect_spring(c, h, l, v, o, i, max_bias=spring_max_bias, vol_ratio=spring_vol_ratio):
             events.append({"name": "Spring", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
-        if detect_lps(c, h, l, v, o, i, max_bias=lps_max_bias, pct_chg=pct_chg):
+        if detect_lps(c, h, l, v, o, i, max_bias=lps_max_bias, pct_chg=pct_chg,
+                      vol_dry_ratio=lps_vol_dry_ratio):
             events.append({"name": "LPS", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_evr(c, h, l, v, o, i, vol_window=evr_vol_window, vol_ratio=evr_vol_ratio,
                       max_bias=evr_max_bias, max_drop=evr_max_drop, max_rise=evr_max_rise,

@@ -1176,6 +1176,78 @@ def _section_daily(data: AnalysisData) -> str:
     return _section_period(data, "daily", "日线", "1.0x", ("5d", "10d", "20d"))
 
 
+_INDEX_CODES = {
+    '399006', '399001', '399300', '399905', '399673',   # 深交所指数
+    '000001', '000300', '000016', '000905', '000688', '000852',  # 上交所指数
+}
+
+
+def _is_index(code: str) -> bool:
+    c = (code or '').replace('.SZ', '').replace('.SH', '')
+    return c.startswith('399') or c in _INDEX_CODES
+
+
+def _section_index_boll_history(data: AnalysisData) -> str:
+    """📊 指数布林历史表 — 仅针对指数，展示每日布林位置% + MA120偏离"""
+    if not _is_index(data.code or ''):
+        return ''
+    if not data.ctx:
+        return ''
+
+    try:
+        from tools.analysis.factor_history import compute_factor_history
+        rows = compute_factor_history(data.ctx, step=1, lookback=120)
+    except Exception as e:
+        return f'> ❌ 布林历史计算失败: {e}\n'
+
+    if not rows:
+        return ''
+
+    # 过滤出有布林数据的行
+    valid = [r for r in rows if r.get('boll_pct') is not None]
+    if not valid:
+        return ''
+
+    def _boll_tag(pct: float) -> str:
+        if pct >= 90: return '🔴上轨'
+        if pct >= 70: return '🟠偏上'
+        if pct >= 30: return '⬜中性'
+        if pct >= 10: return '🟡偏下'
+        return '🟢下轨'
+
+    def _ma120_tag(dev) -> str:
+        if dev is None: return '—'
+        if dev <= -25: return f'{dev:+.1f}% 🟢超跌'
+        if dev <= -15: return f'{dev:+.1f}% 🟡冷场'
+        if dev <= 10:  return f'{dev:+.1f}% ⬜中性'
+        if dev <= 20:  return f'{dev:+.1f}% 🟠偏热'
+        return f'{dev:+.1f}% 🔴过热'
+
+    hdr = '| 日期 | 收盘 | 布林% | 下轨 | 中轨 | 上轨 | MA120偏离 | 位置 |'
+    sep = '|---|---|---|---|---|---|---|---|'
+    lines = [
+        '## 📊 指数布林历史 (布林位置% + MA120偏离)',
+        '',
+        '> 布林%: 0%=下轨 / 50%=中轨 / 100%=上轨  买点关注 <15% / 卖点关注 >85%',
+        '',
+        hdr, sep,
+    ]
+    for r in valid:
+        pct = r['boll_pct']
+        tag = _boll_tag(pct)
+        lines.append(
+            f"| {r['date']} | ¥{r['close']:.1f}"
+            f" | {pct:.0f}%"
+            f" | ¥{r['boll_lower']:.0f}"
+            f" | ¥{r['boll_mid']:.0f}"
+            f" | ¥{r['boll_upper']:.0f}"
+            f" | {_ma120_tag(r.get('ma120_dev'))}"
+            f" | {tag} |"
+        )
+
+    return '\n'.join(lines) + '\n'
+
+
 def _section_factor_matrix(data: AnalysisData) -> str:
     """
     🎯 因子 × 3周期 综合矩阵 (2026-07-25 重构: 用 factor_matrix 模块, 2026-08-17 改名)
@@ -1432,7 +1504,9 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
 
     HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | 背驰(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | 日分(顶/底) | A天(日/周) | OBV |"
     SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
-    HEADER_N = HEADER.count("|") - 1  # 15
+    HEADER += " 布林% | MA120偏离 |"
+    SEP    += "---|---|"
+    HEADER_N = HEADER.count("|") - 1
     lines = [HEADER, SEP]
 
     for i, row in enumerate(rows):
@@ -1498,6 +1572,11 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
             f"| {b3} | {chg_str} | {day_score} | {accum_str} "
             f"| {obv_label(row)} |"
         )
+        bpct = row.get('boll_pct')
+        ma120 = row.get('ma120_dev')
+        bpct_s  = f"{bpct:.0f}%" if bpct is not None else "—"
+        ma120_s = f"{ma120:+.1f}%" if ma120 is not None else "—"
+        line = line.rstrip(" |") + f" | {bpct_s} | {ma120_s} |"
         # 2026-08-01: markdown 表格 cell 错位防护
         # cell 计数必须 == 表头 cell 数, 否则下游 batch_summary 解析会错位
         n_cells = line.count("|") - 1

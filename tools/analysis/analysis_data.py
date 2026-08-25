@@ -339,7 +339,17 @@ class AnalysisData:
 
     @property
     def buy_sell_points(self) -> Optional[dict]:
-        return (self.analysis or {}).get("buy_sell_points")
+        # 多源合并: 1) analysis.buy_sell_points, 2) factor_scores.buy_sell_points.raw
+        bsp = (self.analysis or {}).get("buy_sell_points")
+        if bsp:
+            return bsp
+        # 兜底: 从 factor_scores.buy_sell_points 拿
+        fs = (self.analysis or {}).get("factor_scores") or {}
+        bsp_fc = fs.get("buy_sell_points") or {}
+        raw = bsp_fc.get("raw") if isinstance(bsp_fc, dict) else None
+        if raw and isinstance(raw, dict):
+            return raw
+        return None
 
     # 移植因子 (WyckoffTradingAgent → mavis, 2026-08)
     # 走 factor_scores 路径, to_dict() 已自动提升 raw 到顶层
@@ -428,9 +438,6 @@ class AnalysisData:
     exit_signals: Optional[dict] = None
     position_layer: Optional[dict] = None
     monitor_triggers: Optional[dict] = None
-
-    # ===== 买卖点 (dump 里的 buy_sell_points, 三买三卖) =====
-    buy_sell_points: Optional[dict] = None  # {weekly, daily, 60min, 30min} 各含 0买/1买/2买/3买/1卖/2卖/3卖/action
 
     # ===== Tushare 扩展数据 (幂等性: 存入 dump，不在 renderer 实时拉) =====
     ts_weekly: list = field(default_factory=list)       # 周线 K

@@ -157,8 +157,8 @@ def _period_detail(
         'hub': {
             'low': prices['hub_low'],
             'high': prices['hub_high'],
-            'pos': chan_data.get('pos', '—') if chan_data else '—',
-            'valid': chan_data.get('valid', False) if chan_data else False,
+            'pos': (chan_data.get('hub', {}) or {}).get('pos', '—') if chan_data else '—',
+            'valid': prices['hub_low'] is not None and prices['hub_high'] is not None,
         },
         'buy_sell_points': {
             '0buy': bsp.get('🟢0买', '—') if bsp else '—',
@@ -170,6 +170,10 @@ def _period_detail(
             '1sell_trend': bsp.get('🔴1卖⭐', '—') if bsp else '—',
             '2sell': bsp.get('🔴2卖', '—') if bsp else '—',
             '3sell': bsp.get('🔴3卖', '—') if bsp else '—',
+            # v3.0 新增: czsc signals 出的 emoji key
+            'double_zs': bsp.get('🟢双中枢', '—') if bsp else '—',
+            'bi_end': bsp.get('🟢笔结束', '—') if bsp else '—',
+            'macd_bc_bot': bsp.get('🟢MACD底背', '—') if bsp else '—',
             'action': bsp.get('action', '—') if bsp else '—',
         },
         'target_buy_price': prices['target_buy'],
@@ -558,9 +562,15 @@ def _md_chan(chan: dict) -> str:
     action = bsp.get('action', '—')
     hub = chan.get('hub', {})
     hub_str = f"中枢¥{hub.get('low', 0):.0f}-¥{hub.get('high', 0):.0f}" if hub.get('valid') else "无中枢"
-    # 简化: 找 123 买卖点中第一个触发的
+    # 兼容老 key (1buy/2buy/0buy) 和新 emoji key (🟢1买/🟢3买/🟢双中枢/🟢笔结束)
+    # 优先显示新 key (双中枢/笔结束/3买) 在前
     triggered = []
-    for k in ['1buy_trend', '1buy', '2buy', '0buy', '1sell_trend', '1sell', '2sell']:
+    for k in ['double_zs', 'bi_end', 'macd_bc_bot',  # 新 (czsc)
+              '3buy', '1buy_trend', '1buy', '2buy', '0buy',
+              '1sell_trend', '1sell', '2sell', '3sell',
+              '🟢双中枢', '🟢笔结束', '🟢MACD底背', '🟢3买',
+              '🟢1买', '🟢1买⭐', '🟢2买', '🟢0买',
+              '🔴1卖', '🔴1卖⭐', '🔴2卖', '🔴3卖']:
         v = bsp.get(k, '—')
         if v != '—' and isinstance(v, str) and '¥' in v:
             triggered.append(f"{k}={v.split(' ')[0]}")

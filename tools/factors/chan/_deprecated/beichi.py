@@ -1,8 +1,8 @@
 """
-chan/beichi.py - 背驰 (缠论, 正式段算法 + 趋势/盘整/普通分类)
+chan/beichi.py - 背驰 (缠论, 段算法 + 趋势/盘整/普通分类)
 
-算法: 取正式缠论段 (笔→段流水线输出的 segs), 用段的起止日期切 MACD 面积.
-     对比段选取规则:
+输入: segs/hubs (由 czsc_adapter.analyze_hub_v2_czsc 算的)
+算法: 用段的起止日期切 MACD 面积, 对比段选取规则:
        趋势背驰: 两个中枢各自的"离开段"（中枢结束后第一个同向段）
        盘整/普通背驰: 最近两个同向段（无法找到两中枢离开段时的降级）
 
@@ -12,8 +12,10 @@ chan/beichi.py - 背驰 (缠论, 正式段算法 + 趋势/盘整/普通分类)
   beichi_from_segs(segs, closes, dates, hubs) — 结构体背驰结果 (主入口)
   beichi_str_from_segs(...)           — 向后兼容, 返回 display 字符串
   classify_beichi(bc, ...)            — 分类: ⭐趋势/🟡盘整/🔵普通/无
+
+注: find_all_hubs 已在 _deprecated/hub.py (v1 老的), 新版用 czsc_adapter.czsc_zss_to_hub_format
+     这里不依赖, 只需 hubs 字段 (leaving_up/left)
 """
-from .hub import find_all_hubs
 
 
 def _build_dt2i(dates):
@@ -183,6 +185,8 @@ def beichi_from_segs(segs, closes, dates, hubs=None):
             else:
                 disp = f"✅无背驰({ratio:.0%}) 段1={a1:.1f} 段2={a2:.1f}"
 
+        trigger_date = str(s2['edt'])[:10].replace('/', '-')
+        disp_with_date = f"{disp} @{trigger_date}"
         results.append({
             'direction': direction,
             'strength': strength,
@@ -192,7 +196,8 @@ def beichi_from_segs(segs, closes, dates, hubs=None):
             'a2': a2,
             's1_hub': h1_idx,
             's2_hub': h2_idx,
-            'display': disp,
+            'trigger_date': trigger_date,
+            'display': disp_with_date,
             '_edt': s2['edt'],  # 用于选最新的
         })
 

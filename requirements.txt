@@ -17,3 +17,6 @@ pyyaml>=6.0
 # 因子挖掘 (可选)
 gplearn>=0.4
 lightgbm>=4.0
+
+# 缠论核心 (czsc 1.0+)
+czsc>=1.0.1

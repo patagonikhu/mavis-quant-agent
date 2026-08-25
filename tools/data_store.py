@@ -31,10 +31,30 @@ def _load_project_cfg() -> dict:
 _PROJECT_CFG = _load_project_cfg()
 
 
+_INDEX_SUFFIX = {
+    "000001": "SH", "000300": "SH", "000905": "SH", "000016": "SH",
+    "000688": "SH",
+    "399001": "SZ", "399006": "SZ", "399808": "SZ",
+}
+
+_INDEX_NAMES = {
+    "000001": "上证指数",
+    "000300": "沪深300",
+    "000905": "中证500",
+    "000016": "上证50",
+    "000688": "科创50",
+    "399001": "深证成指",
+    "399006": "创业板指",
+    "399808": "中证新能源",
+}
+
+
 def _to_ts_code(code: str) -> str:
     if "." in code:
         return code
     c = code.strip()
+    if c in _INDEX_SUFFIX:
+        return f"{c}.{_INDEX_SUFFIX[c]}"
     if c.startswith(("0", "3")):
         return f"{c}.SZ"
     if c.startswith(("6", "9")):
@@ -118,7 +138,7 @@ class DataStore:
             current_price=db.get("close") or close,
             market_cap_yi=db.get("total_mv") or 0.0,
             industry=sb.get("industry", ""),
-            code=code, name=sb.get("name", ""),
+            code=code, name=_INDEX_NAMES.get(code) or sb.get("name", ""),
         )
 
     @classmethod
