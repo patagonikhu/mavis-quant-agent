@@ -16,8 +16,6 @@ chan/__init__.py - 缠论算法库 (v4.1, 100% czsc)
 """
 from .czsc_adapter import (
     analyze_hub_v2_czsc,
-    beichi_from_czsc_bis,
-    classify_beichi,
 )
 from .czsc_wrapper import (
     compute_chan_czsc,
@@ -30,8 +28,6 @@ from .czsc_signals import compute_buy_sell_signals
 __all__ = [
     # czsc 集成
     'analyze_hub_v2_czsc',
-    'beichi_from_czsc_bis',
-    'classify_beichi',
     'compute_chan_czsc',
     'has_recent_confirmed_fenxing',
     'recent_confirmed_fenxing_from_czsc',

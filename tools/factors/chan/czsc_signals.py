@@ -105,7 +105,7 @@ def compute_buy_sell_signals(klines: List[Dict], code: str = "TEMP") -> Dict[str
         raise RuntimeError(f"czsc 未安装: {_IMPORT_ERROR}")
 
     if len(klines) < 60:
-        return {'points': {}, 'beichi': _bc_empty()}
+        return {'points': {}}
 
     from .czsc_wrapper import klines_to_raw_bars
     bars = klines_to_raw_bars(klines, code)
@@ -116,11 +116,9 @@ def compute_buy_sell_signals(klines: List[Dict], code: str = "TEMP") -> Dict[str
         cfg = get_signals_config(signals_seq)
         sigs = generate_czsc_signals(bars, cfg, sdt='20200101', df=False)
     except Exception as e:
-        return {'points': {}, 'beichi': _bc_empty(),
-                'error': f'czsc signals 失败: {e}'}
+        return {'points': {}, 'error': f'czsc signals 失败: {e}'}
 
     points = {}
-    beichi = _bc_empty()
     last_date = ''
     last_close = 0
 
@@ -149,20 +147,6 @@ def compute_buy_sell_signals(klines: List[Dict], code: str = "TEMP") -> Dict[str
                         points[label] = f"¥{last_close:.2f} @ {last_date}"
                     break
 
-            # 背驰特殊处理
-            if '底背' in sig_val and 'MACD' in sig_name:
-                beichi = {'display': f'✅底背驰 @ {last_date}', 'direction': 'bot',
-                          'strength': 'normal', 'ratio': 0, 'a1': 0, 'a2': 0,
-                          's1_hub': -1, 's2_hub': -1}
-            elif '顶背' in sig_val and 'MACD' in sig_name:
-                beichi = {'display': f'⚠️顶背驰 @ {last_date}', 'direction': 'top',
-                          'strength': 'normal', 'ratio': 0, 'a1': 0, 'a2': 0,
-                          's1_hub': -1, 's2_hub': -1}
-
-    return {'points': points, 'beichi': beichi, 'raw_signals': sigs}
+    return {'points': points, 'raw_signals': sigs}
 
 
-def _bc_empty():
-    return {'display': '数据不足', 'direction': 'none', 'strength': 'none',
-            'bc_type': 'normal', 'ratio': 0, 'a1': 0, 'a2': 0,
-            's1_hub': -1, 's2_hub': -1}

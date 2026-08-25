@@ -100,7 +100,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 
 def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     """从 AnalysisResult 提取单行因子快照"""
-    from tools.factors.chan import classify_beichi
     fs = result.factor_scores
     chan_fs  = fs.get("chan")
     bsp_fs   = fs.get("buy_sell_points")
@@ -116,13 +115,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     fflow_raw = (fflow_fs.raw if fflow_fs else {}) or {}
     obv_raw   = (obv_fs.raw   if obv_fs  else {}) or {}
     p3        = wy_raw.get("3period") or {}
-
-    def _bc_class(level: str) -> str:
-        """背驰分类: ⭐趋势顶背/底背  🟡盘整顶背/底背  🔵普通顶背/底背  无"""
-        bc = (chan_raw.get(level) or {}).get("beichi", {})
-        if not bc:
-            return "无"
-        return classify_beichi(bc)
 
     pos_fs = result.factor_scores.get("position")
     pos_raw = (pos_fs.raw if pos_fs else {}) or {}
@@ -148,14 +140,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         # 威科夫 sub_event 当天新触发（顶/底都显示）
         "sub_event_daily":  _today_sub_events(wy_raw, "daily",  date),
         "sub_event_weekly": _today_sub_events(wy_raw, "weekly", date),
-
-        # 缠论背驰二周期（原始字符串）
-        "daily_beichi":   (chan_raw.get("daily")  or {}).get("beichi", ""),
-        "weekly_beichi":  (chan_raw.get("weekly") or {}).get("beichi", ""),
-
-        # 背驰分类（含中枢上下文）⭐趋势 / 🟡盘整 / 🔵普通 / 无
-        "bc_class_daily":   _bc_class("daily"),
-        "bc_class_weekly":  _bc_class("weekly"),
 
         # 中枢二周期（含价格）
         "hub_daily":  _extract_hub(chan_raw, "daily"),
@@ -304,21 +288,6 @@ def diff_rows(prev: dict, curr: dict) -> dict:
         if c != "—" and c != p:
             changes[field] = c
 
-    def _valid_bc(b: str) -> bool:
-        """面积为0的背驰无效，过滤掉"""
-        if not b: return False
-        if "(0%)" in b or "段1=0.0" in b: return False
-        if any(x in b for x in ("波段不足", "面积不足", "数据不足")): return False
-        return any(x in b for x in ("顶背", "底背", "弱背"))
-
-    # 背驰：只在有效背驰出现/消失时才记录
-    for field in ("daily_beichi", "weekly_beichi"):
-        p, c = prev.get(field, ""), curr.get(field, "")
-        p_valid = _valid_bc(p)
-        c_valid = _valid_bc(c)
-        if p_valid != c_valid:  # 有效状态发生了变化
-            changes[field] = f"{p or '无'}→{c or '无'}"
-
     # 买卖点：新出现的点
     for level in ("bsp_daily", "bsp_weekly"):
         prev_pts = prev.get(level) or {}
@@ -396,13 +365,6 @@ def _bsp_direction(label: str):
     return None
 
 
-def _beichi_direction(text: str):
-    if "顶背" in text: return "sell"
-    if "底背" in text: return "buy"
-    if "弱背" in text: return "sell"
-    return None
-
-
 def _scene_direction(val: str):
     s = val.split("→")[-1].strip() if "→" in val else val
     s = s[0] if s else ""
@@ -421,7 +383,7 @@ def _hub_direction(val: str):
 def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
     """diff_rows 输出 → [(signal_type, detail, direction), ...]
 
-    signal_type: beichi_new / beichi_gone / bsp_new / bsp_gone /
+    signal_type: bsp_new / bsp_gone /
                  wyckoff_event_top / wyckoff_event_bot /
                  scene_change / hub_pos_change
     direction:   "buy" | "sell"
@@ -429,36 +391,6 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
     render 和 backtest 都调这个函数，保持一致。
     """
     signals = []
-
-    # 背驰（新出现 / 消失）— 附加 bc_class 趋势/普通/盘整分类
-    _bc_field_to_class = {
-        "daily_beichi":   "bc_class_daily",
-        "weekly_beichi":  "bc_class_weekly",
-    }
-    for field in ("daily_beichi", "weekly_beichi"):
-        if field not in changes:
-            continue
-        old_val, new_val = changes[field].split("→", 1)
-        old_val, new_val = old_val.strip(), new_val.strip()
-        period = field.split("_")[0]
-        # 读对应的 bc_class 变化，提取新分类 (⭐趋势/🔵普通/🟡盘整)
-        class_field = _bc_field_to_class[field]
-        bc_class_new = ""
-        if class_field in changes:
-            _, cls_new = changes[class_field].split("→", 1)
-            cls_new = cls_new.strip()
-            if "⭐趋势" in cls_new:   bc_class_new = "⭐趋势"
-            elif "🔵普通" in cls_new: bc_class_new = "🔵普通"
-            elif "🟡盘整" in cls_new: bc_class_new = "🟡盘整"
-        if new_val and new_val != "无":
-            d = _beichi_direction(new_val)
-            label = f"{bc_class_new}{new_val}({period})" if bc_class_new else f"{new_val}({period})"
-            if d: signals.append(("beichi_new", label, d))
-        elif old_val and old_val != "无":
-            orig = _beichi_direction(old_val)
-            if orig:
-                signals.append(("beichi_gone", f"{old_val}消失({period})",
-                                 "sell" if orig == "buy" else "buy"))
 
     # 买卖点（新出现 / 消失）
     for level in ("bsp_daily", "bsp_weekly"):
@@ -525,11 +457,7 @@ def format_signals_for_render(changes: dict) -> list[str]:
     parts = []
     for sig_type, detail, direction in extract_signals(changes):
         icon = "🟢" if direction == "buy" else "🔴"
-        if sig_type == "beichi_new":
-            parts.append(f"🆕背驰{icon}{detail}")
-        elif sig_type == "beichi_gone":
-            parts.append(f"❌背驰消失{detail}")
-        elif sig_type == "bsp_new":
+        if sig_type == "bsp_new":
             parts.append(f"🆕{detail}")
         elif sig_type == "bsp_gone":
             parts.append(f"❌{detail}")
@@ -567,13 +495,6 @@ TOP_SIGNAL_WEIGHTS: dict[str, int] = {
     "wy_EVR":                  6,   # 2026-08-21: 1→6, user 拍板"调回去", 长期 85% 极强 (跟 Spring 持平)
     "wy_LPSY":                 2,   # 2026-08-20: 4→2, 8-19 没单测
     "wy_SOW":                  2,   # 2026-08-20: 4→2, 8-19 没单测
-    # 背驰 (2026-08-21 调: 周线普通顶背 3→1, 按 10% 阈值 47% 接近失效)
-    "bc_日线趋势顶背":          5,   # 6→5
-    "bc_日线普通顶背":          3,   # 4→3
-    "bc_日线盘整顶背":          1,   # 2→1
-    "bc_周线趋势顶背":          8,   # 2026-08-20: 6→8, 8-19 14:40 ⭐trend 顶 胜率 86.9% (551 触发)
-    "bc_周线普通顶背":          1,   # 2026-08-21: 3→1, 10% 阈值 胜率 46.9% (<60% 调低)
-    "bc_周线盘整顶背":          4,   # 2026-08-20: 1→4, 8-19 14:40 consolidation 顶 胜率 84.2% 严重低估
     # 中枢
     "hub_跌进中枢":             3,
     "hub_跌出中枢":             7,   # 5→7, 中枢真破位最强信号
@@ -629,24 +550,6 @@ def score_top_signals(
             for ev in curr_ev.split():
                 if ev in _WY_TOP:
                     add(f"wy_{ev}", ev)
-
-    # 3. 背驰分类 (按等级)
-    _bc_level_map = {
-        "bc_class_daily":   ("bc_日线趋势顶背",  "bc_日线普通顶背",  "bc_日线盘整顶背"),
-        "bc_class_weekly":  ("bc_周线趋势顶背",  "bc_周线普通顶背",  "bc_周线盘整顶背"),
-    }
-    for field, (trend_key, normal_key, consol_key) in _bc_level_map.items():
-        curr_cls = row.get(field, "无") or "无"
-        prev_cls = (prev_row or {}).get(field, "无") or "无"
-        curr_is_top = "顶背" in curr_cls
-        prev_is_top = "顶背" in prev_cls
-        if curr_is_top and (not prev_is_top or curr_cls != prev_cls):
-            if "⭐趋势" in curr_cls:
-                add(trend_key, curr_cls)
-            elif "🔵普通" in curr_cls:
-                add(normal_key, curr_cls)
-            elif "🟡盘整" in curr_cls:
-                add(consol_key, curr_cls)
 
     # 4. 中枢位置变化 (3 周期都算, 同类只算最高分)
     hub_seen = set()
@@ -707,13 +610,6 @@ BOTTOM_SIGNAL_WEIGHTS: dict[str, int] = {
     "wy_SC":                  2,   # 2026-08-20: 4→2, 8-19 没单测
     "wy_AR":                  3,
     "wy_Compression":         1,   # 2026-08-20: 2→1, 8-19 没单测
-    # 背驰 (2026-08-20 调: 周线普通底背 4→6, 周线盘整底背 1→5)
-    "bc_日线趋势底背":         5,   # 6→5
-    "bc_日线普通底背":         3,   # 4→3
-    "bc_日线盘整底背":         1,   # 2→1
-    "bc_周线趋势底背":         6,   # 8→6
-    "bc_周线普通底背":         6,   # 2026-08-20: 4→6, 8-19 14:40 bt_top.log 胜率 87.8% (1222 触发)
-    "bc_周线盘整底背":         5,   # 2026-08-20: 1→5, 8-19 14:40 consolidation 底 胜率 89.8% (1129 触发) 最严重低估
     # 中枢
     "hub_涨出中枢":            7,   # 5→7
     "hub_涨进中枢":            3,
@@ -766,24 +662,6 @@ def score_bottom_signals(
             for ev in curr_ev.split():
                 if ev in _WY_BOT:
                     add(f"wy_{ev}", ev)
-
-    # 3. 背驰 (按等级, 底背)
-    _bc_level_map = {
-        "bc_class_daily":   ("bc_日线趋势底背",  "bc_日线普通底背",  "bc_日线盘整底背"),
-        "bc_class_weekly":  ("bc_周线趋势底背",  "bc_周线普通底背",  "bc_周线盘整底背"),
-    }
-    for field, (trend_key, normal_key, consol_key) in _bc_level_map.items():
-        curr_cls = row.get(field, "无") or "无"
-        prev_cls = (prev_row or {}).get(field, "无") or "无"
-        curr_is_bot = "底背" in curr_cls
-        prev_is_bot = "底背" in prev_cls
-        if curr_is_bot and (not prev_is_bot or curr_cls != prev_cls):
-            if "⭐趋势" in curr_cls:
-                add(trend_key, curr_cls)
-            elif "🔵普通" in curr_cls:
-                add(normal_key, curr_cls)
-            elif "🟡盘整" in curr_cls:
-                add(consol_key, curr_cls)
 
     # 4. 中枢位置变化 (3 周期都算, 底方向: 止跌 / 反弹)
     hub_seen = set()

@@ -110,117 +110,6 @@ def bis_to_segs_format(bis, dates):
     return segs
 
 
-def beichi_from_czsc_bis(bis, zss):
-    """
-    用 czsc BI + ZS 对象计算背驰 (替代 _deprecated/beichi.py MACD 面积比较)
-
-    算法: 找最近两个 ZS 各自的"离开笔" (ZS 结束后第一根突破 ZS 边界的 BI),
-          用 bi.power (价格振幅) 比较强度。ratio = bi2.power / bi1.power。
-
-    返回格式与旧 beichi_from_segs 兼容: direction/strength/bc_type/ratio/a1/a2/display
-    """
-    _NONE = {
-        'direction': 'none', 'strength': 'none', 'bc_type': 'normal',
-        'ratio': 0.0, 'a1': 0.0, 'a2': 0.0,
-        's1_hub': -1, 's2_hub': -1,
-        'trigger_date': '', 'display': '波段不足',
-    }
-    if not zss or len(zss) < 2 or not bis:
-        return _NONE
-
-    def _leaving_bi(zs, bi_list, go_up):
-        for bi in bi_list:
-            if bi.edt <= zs.edt:
-                continue
-            if go_up and bi.direction.name == 'Up' and float(bi.high) > float(zs.zg):
-                return bi
-            if not go_up and bi.direction.name == 'Down' and float(bi.low) < float(zs.zd):
-                return bi
-        return None
-
-    results = []
-    for direction, go_up, stronger_fn in [
-        ('top', True,  lambda b1, b2: float(b2.high) > float(b1.high)),
-        ('bot', False, lambda b1, b2: float(b2.low)  < float(b1.low)),
-    ]:
-        # 从最新 ZS 往前找两个有离开笔的
-        pairs = []
-        for i in range(len(zss) - 1, -1, -1):
-            lb = _leaving_bi(zss[i], bis, go_up)
-            if lb is not None:
-                pairs.append((i, lb))
-                if len(pairs) == 2:
-                    break
-        if len(pairs) < 2:
-            continue
-
-        i2, bi2 = pairs[0]
-        i1, bi1 = pairs[1]
-
-        if not stronger_fn(bi1, bi2):
-            continue
-
-        p1 = max(float(getattr(bi1, 'power', 0) or abs(bi1.high - bi1.low)), 1e-6)
-        p2 = float(getattr(bi2, 'power', 0) or abs(bi2.high - bi2.low))
-        ratio = p2 / p1
-
-        bc_type = 'trend' if i1 != i2 else 'consolidation'
-        strength = 'strong' if ratio < 0.5 else ('weak' if ratio < 0.8 else 'none')
-        trigger_date = to_date_str(bi2.edt)
-
-        if direction == 'top':
-            if strength == 'strong':
-                disp = f"⚠️顶背驰({ratio:.0%}) 笔1={p1:.1f} 笔2={p2:.1f} @{trigger_date}"
-            elif strength == 'weak':
-                disp = f"🟡弱背驰({ratio:.0%}) 笔1={p1:.1f} 笔2={p2:.1f} @{trigger_date}"
-            else:
-                disp = f"⬜正常({ratio:.0%}) @{trigger_date}"
-        else:
-            if strength == 'strong':
-                disp = f"✅底背驰({ratio:.0%}) 笔1={p1:.1f} 笔2={p2:.1f} @{trigger_date}"
-            elif strength == 'weak':
-                disp = f"📉回调中({ratio:.0%}) 笔1={p1:.1f} 笔2={p2:.1f} @{trigger_date}"
-            else:
-                disp = f"⬜正常({ratio:.0%}) @{trigger_date}"
-
-        results.append({
-            'direction': direction,
-            'strength': strength,
-            'bc_type': bc_type,
-            'ratio': ratio,
-            'a1': p1,
-            'a2': p2,
-            's1_hub': i1,
-            's2_hub': i2,
-            'trigger_date': trigger_date,
-            'display': disp,
-            '_edt': bi2.edt,
-        })
-
-    if not results:
-        return {**_NONE, 'display': '无背驰'}
-
-    best = max(results, key=lambda r: r['_edt'])
-    best.pop('_edt')
-    return best
-
-
-def classify_beichi(bc):
-    """背驰分类字符串: ⭐趋势底背 / 🟡盘整底背 / 🔵普通底背 / 对应顶背 / 无"""
-    if not isinstance(bc, dict):
-        return "无"
-    direction = bc.get('direction', 'none')
-    strength  = bc.get('strength',  'none')
-    if direction == 'none' or strength == 'none':
-        return "无"
-    suffix  = "顶背" if direction == 'top' else "底背"
-    bc_type = bc.get('bc_type', 'normal')
-    if bc_type == 'trend':
-        return f"⭐趋势{suffix}"
-    if bc_type == 'consolidation':
-        return f"🟡盘整{suffix}"
-    return f"🔵普通{suffix}"
-
 
 def czsc_zss_to_hub_format(zs_list, all_segs=None):
     """czsc 中枢 (ZS) 列表 → 项目 hubs 格式 (跟 find_all_hubs 一致)
@@ -299,10 +188,7 @@ def analyze_hub_v2_czsc(dates, closes, highs, lows, label='日线', code='TEMP',
     zss = get_zs_seq(bis)
     hubs = czsc_zss_to_hub_format(zss, all_segs=segs)
 
-    # 5. 背驰 (czsc bi.power 比较, 替代 MACD 面积)
-    beichi = beichi_from_czsc_bis(bis, zss)
-
-    # 6. 当前中枢 (跟 analyze_hub_v2 一样)
+    # 5. 当前中枢 (跟 analyze_hub_v2 一样)
     if hubs:
         h = hubs[-1]
         hl, hh = h['low'], h['high']
@@ -348,7 +234,6 @@ def analyze_hub_v2_czsc(dates, closes, highs, lows, label='日线', code='TEMP',
         'label': label,
         'hubs': hubs,
         'bis': bis,
-        'beichi': beichi,
     }
 
 

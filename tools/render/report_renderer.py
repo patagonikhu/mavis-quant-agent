@@ -159,7 +159,6 @@ def _section_chan_full(data: AnalysisData) -> str:
     if data.chan_data:
         weekly = data.chan_data.get("weekly", {})
         daily = data.chan_data.get("daily", {})
-        beichi = data.chan_data.get("beichi", {})
 
         def _hub_str(hub):
             if not hub or not hub.get("valid"):
@@ -189,19 +188,17 @@ def _section_chan_full(data: AnalysisData) -> str:
             "",
             "**中枢构成 (日线最近 8 段):**",
             _segs_table(daily) or "_无段数据_",
-            "",
-            "**背驰信号:** " + (beichi.get('summary', '—') or '—'),
         ]
         return "\n".join(out)
 
     return """> **数据状态:** ⚠️ 缠论 4 级别表未传入
 > **说明:** 完整缠论数据由 `/t-trigger` 计算, 见 `docs/analyze-{code}.md` 后续 section
-> **占位:** 周/日 中枢列表 + 段列表 + 背驰信号 — 由 t-trigger 注入
+> **占位:** 周/日 中枢列表 + 段列表 — 由 t-trigger 注入
 
-| 级别 | 中枢数 | 段数 | 顶背驰 | 底背驰 |
-|---|---|---|---|---|
-| 周 | — | — | — | — |
-| 日 | — | — | — | — |
+| 级别 | 中枢数 | 段数 |
+|---|---|---|
+| 周 | — | — |
+| 日 | — | — |
 """
 
 
@@ -513,11 +510,9 @@ def _parse_pct(v) -> float:
 
 def _chan_level_detail(chan_data: dict, level: str) -> dict:
     """从 chan_data 提取单个周期的缠论详细数据"""
-    lv = chan_data.get(level) or {}  # 2026-07-27 兜底: chan.weekly/daily/60min 可能为 None
+    lv = chan_data.get(level) or {}
     hub = lv.get("hub") or {}
     segs = lv.get("segs") or []
-    bc_raw = lv.get("beichi") or (chan_data.get("beichi") or {}).get(level)
-    beichi_str = bc_raw.get("display", "—") if isinstance(bc_raw, dict) else (bc_raw or "—")
     seg_idx = hub.get("seg_idx", [])
     # 中枢构成段：用 seg_idx 找到对应段的价格范围
     hub_segs = [segs[i] for i in seg_idx if 0 <= i < len(segs)]
@@ -529,7 +524,6 @@ def _chan_level_detail(chan_data: dict, level: str) -> dict:
         "seg_count": len(segs),
         "all_segs": segs,
         "hub_segs": hub_segs,
-        "beichi": beichi_str,
         "seg_idx": seg_idx,
     }
 
@@ -876,10 +870,6 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
     else:
         hub_dist = "需形成中枢后判断"
 
-    chan_level = (s5.get("chan") or {}).get(level, {})
-    _bc_raw = chan_level.get("beichi", "暂无信号") if isinstance(chan_level, dict) else "暂无信号"
-    chan_signal = _bc_raw.get("display", "暂无信号") if isinstance(_bc_raw, dict) else str(_bc_raw)
-
     # 中枢构成段（展开价格）
     # 2026-07-25 修复: 标题与表格间空行 (让所有 markdown viewer 都能识别表格)
     # 不加表格前空行 — 上方已有 {hub_str} (位置说明) 自然隔开
@@ -1080,7 +1070,7 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
                   if k != "action" and v and v != "无" and v != "—"]
     bsp_str = " / ".join(f"{k}={v}" for k, v in bsp_active) if bsp_active else "无有效买卖点"
 
-    return f"""> 权重 **{weight}** | 中枢: {hub_str} ({pos_e}{hub_pos_str}, {hub_dist}) | 段数: {cd['seg_count']} | 背驰: {chan_signal}
+    return f"""> 权重 **{weight}** | 中枢: {hub_str} ({pos_e}{hub_pos_str}, {hub_dist}) | 段数: {cd['seg_count']}
 
 **【缠论详情】**
 
@@ -1088,7 +1078,6 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
 |---|---|
 | 中枢区间 | {hub_str} |
 | 价格位置 | {pos_e} {hub_pos_str} ({hub_dist}) |
-| 背驰信号 | {cd['beichi']} |
 | 止跌信号 | {stop_signal} |
 | 总段数 | {cd['seg_count']} 段 |
 | **买卖点** | **{bsp_action}** — {bsp_str} |
@@ -1317,29 +1306,6 @@ def _section_four_q_short(data: AnalysisData) -> str:
 # Tushare 补充段 + 缠论三要素 (历史从 enhance_report 迁移, 2026-07-25 enhance_report.py 已删)
 # ============================================================
 
-def _bc_short(b) -> str:
-    """背驰简化: ⚠️顶 / ✅底 / 🟡弱 / — (接受结构体或字符串)"""
-    if not b:
-        return "—"
-    if isinstance(b, dict):
-        if b.get("strength") == "none" or b.get("direction") == "none":
-            return "—"
-        if b.get("a1", 0) == 0:
-            return "—"
-        d, s = b.get("direction"), b.get("strength")
-        if d == "top" and s == "strong": return "⚠️顶"
-        if d == "top" and s == "weak":   return "🟡弱"
-        if d == "bot" and s == "strong": return "✅底"
-        if d == "bot" and s == "weak":   return "🟡弱"
-        return "—"
-    # 字符串兼容
-    if "(0%)" in b or "段1=0.0" in b: return "—"
-    if "顶背" in b: return "⚠️顶"
-    if "底背" in b: return "✅底"
-    if "弱背" in b: return "🟡弱"
-    return "—"
-
-
 def _hub_str(h: dict) -> str:
     """中枢字符串: ¥low~high{✅/⚠️/⬜}, 上方✅/下方⚠️/内部⬜
     2026-07-31 提到模块级
@@ -1469,16 +1435,8 @@ def _has_signal(row: dict) -> bool:
     """行是否有信号 (用于 _section_factor_history 过滤 '无变化也无信号' 的行)
     2026-07-31 提到模块级
     """
-    def valid_bc(b):
-        if not b: return False
-        if "(0%)" in b or "段1=0.0" in b: return False
-        return True
-    b   = row.get("daily_beichi")  or ""
-    bw  = row.get("weekly_beichi") or ""
     se_d  = row.get("sub_event_daily", "—")
     return (
-        (valid_bc(b)   and any(x in b   for x in ("顶背","底背","弱背"))) or
-        (valid_bc(bw)  and any(x in bw  for x in ("顶背","底背"))) or
         bool(row.get("bsp_daily")) or bool(row.get("bsp_weekly")) or
         se_d != "—" or
         bool(row.get("smc_sweeps_today"))
@@ -1502,8 +1460,8 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
     if not rows:
         return "> 数据不足\n"
 
-    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | 背驰(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | 日分(顶/底) | A天(日/周) | OBV |"
-    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | 日分(顶/底) | A天(日/周) | OBV |"
+    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|"
     HEADER += " 布林% | MA120偏离 |"
     SEP    += "---|---|"
     HEADER_N = HEADER.count("|") - 1
@@ -1517,21 +1475,6 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
             if not s or s == "—": return "—"
             return s.split(" (")[0]
         se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
-        def _bc_with_class(bc, bc_class):
-            short = _bc_short(bc)
-            if short == "—":
-                return "—"
-            # strength 后缀: 强=无标记(已够明显), 弱=加(弱)
-            strength = bc.get("strength", "") if isinstance(bc, dict) else ""
-            s_suffix = "(弱)" if strength == "weak" else ""
-            # bc_type 后缀
-            if "⭐趋势" in (bc_class or ""):
-                return f"{short}⭐{s_suffix}"
-            if "🟡盘整" in (bc_class or ""):
-                return f"{short}🟡{s_suffix}"
-            return f"{short}{s_suffix}"
-        bc3 = (f"{_bc_with_class(row['daily_beichi'], row.get('bc_class_daily'))}/"
-               f"{_bc_with_class(row['weekly_beichi'], row.get('bc_class_weekly'))}")
         # bsp: 2 개 주기 (daily/weekly)
         bsp_parts = []
         for k, lbl in (("bsp_daily", "日"), ("bsp_weekly", "周")):
@@ -1566,7 +1509,7 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
 
         line = (
             f"| {row['date']} | ¥{row['close']:.1f} "
-            f"| {wy} | {se} | {bc3} "
+            f"| {wy} | {se} "
             f"| {_ma_str(row)} "
             f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
             f"| {b3} | {chg_str} | {day_score} | {accum_str} "
@@ -1614,7 +1557,6 @@ def _section_chan_three_elements(data: AnalysisData) -> str:
     chan = data.chan_data
     daily = chan.get("daily", {})
     hub = daily.get("hub", {})
-    beichi = chan.get("beichi", {})
     hub_low = hub.get("low", 0)
     hub_high = hub.get("high", 0)
     raw_pos = hub.get("pos", "—")
@@ -1646,15 +1588,13 @@ def _section_chan_three_elements(data: AnalysisData) -> str:
 | 要素 | 状态 | 说明 |
 |---|---|---|
 | **中枢位置** | {calc_pos} | {extra} |
-| **背驰信号** | {beichi.get('daily') or beichi.get('weekly') or '尚无背驰信号'} | 段面积比较 (日/周) |
-| **止跌信号** | {beichi.get('止跌') or beichi.get('stop_loss_signal') or ('✅ 出现' if beichi.get('bottom') else '⚠️ 未出现')} | 缩量+长下影+次日不新低 |
 
 **操作建议:** {action}
 """
 
 
 def _section_chan_signals(data: AnalysisData) -> str:
-    """📊 缠论信号汇总 (中枢+背驰+买卖点)"""
+    """📊 缠论信号汇总 (中枢+买卖点)"""
     if not data.chan_data:
         return "> **数据状态:** ⚠️ 缠论信号未生成\n"
     chan = data.chan_data
@@ -1683,7 +1623,7 @@ def _section_chan_signals(data: AnalysisData) -> str:
         if found: return f"📈 关注卖出"
         return "持续观察"
 
-    return f"""**2 级别中枢/段/背驰汇总 (周/日):**
+    return f"""**2 级别中枢/段汇总 (周/日):**
 
 | 级别 | 中枢 | 段数 | 末段方向 | 潜在信号 |
 |---|---|---|---|---|

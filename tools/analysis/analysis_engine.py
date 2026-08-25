@@ -499,10 +499,6 @@ class ChanStrategy(AnalysisStrategy):
                 res_w = analyze_hub_v2_czsc(d_w, c_w, h_w, l_w, '周线', code=ctx.code)
                 res_d = analyze_hub_v2_czsc(d_d, c_d, h_d, l_d, '日线', code=ctx.code)
 
-                # 背驰: 从 analyze_hub_v2_czsc 读 (bi.power 比较, 替代 MACD 面积)
-                _bc_empty = {'display': '数据不足', 'direction': 'none', 'strength': 'none',
-                             'bc_type': 'normal', 'ratio': 0, 'a1': 0, 'a2': 0,
-                             's1_hub': -1, 's2_hub': -1}
                 # 买卖点: 用 czsc_signals (1买/3买/MACD底背 等)
                 bsp_d = compute_buy_sell_signals(
                     [{'date': d, 'open': c, 'close': c, 'high': h, 'low': l, 'vol': 0, 'amount': 0}
@@ -512,12 +508,10 @@ class ChanStrategy(AnalysisStrategy):
                 # 周线买卖点暂空 (czsc_signals 只算日线)
                 bsp_w = {'points': {}}
 
-                # 把买卖点 + 背驰写到 daily/weekly 字段
+                # 把买卖点写到 daily/weekly 字段
                 daily_with_bsp = {**(res_d or {}),
-                                   "beichi": (res_d or {}).get('beichi', _bc_empty),
                                    "buy_sell_points": bsp_d.get('points', {})}
                 weekly_with_bsp = {**(res_w or {}),
-                                    "beichi": (res_w or {}).get('beichi', _bc_empty),
                                     "buy_sell_points": bsp_w.get('points', {})}
                 chan = {
                     "weekly": weekly_with_bsp,
@@ -546,23 +540,7 @@ class ChanStrategy(AnalysisStrategy):
         for level in ["weekly", "daily"]:
             d   = chan.get(level, {}) or {}
             pos = d.get("pos", "—") or (d.get("hub", {}) or {}).get("pos", "—")
-            beichi = d.get("beichi", {})
-            bc_dir = beichi.get("direction", "none") if isinstance(beichi, dict) else (
-                "bot" if "底背" in str(beichi) else ("top" if "顶背" in str(beichi) else "none")
-            )
-            bc_str = beichi.get("strength", "none") if isinstance(beichi, dict) else (
-                "strong" if any(x in str(beichi) for x in ["底背驰", "顶背驰"]) else
-                "weak" if "弱背驰" in str(beichi) else "none"
-            )
-            if bc_dir == "bot" and bc_str in ("strong", "weak"):
-                score_total += 1.0
-                signals.append(f"{level} 底背")
-                cnt += 1
-            elif bc_dir == "top" and bc_str in ("strong", "weak"):
-                score_total -= 1.0
-                signals.append(f"{level} 顶背")
-                cnt += 1
-            elif "下方" in str(pos):
+            if "下方" in str(pos):
                 score_total -= 0.3
                 cnt += 1
             elif "上方" in str(pos):
@@ -782,9 +760,8 @@ class BuySellPointsStrategy(AnalysisStrategy):
             if bsp_factor and not any(bsp.values()):
                 for level_key in ["weekly", "daily"]:
                     res = chan.get(level_key) or {}
-                    beichi_str = res.get("beichi", "")
                     klines = ctx.kline if level_key == "daily" else None
-                    out = bsp_factor(df=None, res=res, beichi_str=beichi_str,
+                    out = bsp_factor(df=None, res=res,
                                      klines=klines, level_key=level_key)
                     bsp[level_key] = out.get("points", {}) if isinstance(out, dict) else {}
         except Exception:
@@ -1117,15 +1094,12 @@ class AnalysisEngine:
         if stage == "Accumulation":
             ma60_dev = self._calc_ma60_dev(ctx)
             chan_res  = ctx.chan_result
-            bc_d = (chan_res.get("daily") or {}).get("beichi", {})
-            bot_d = (bc_d.get("direction") == "bot" and bc_d.get("strength") in ("strong", "weak")) \
-                     if isinstance(bc_d, dict) else "底背" in str(bc_d)
             daily_pos = str((chan_res.get("daily") or {}).get("hub", {}).get("pos", "") or "")
             hub_below = any(t in daily_pos for t in ["下方", "跌穿"])
             # 共振 1d 从 ctx.resonance_result 读
             res_1d_positive = (ctx.resonance_result.get("1d") or {}).get("score", 0) > 0
 
-            if ma60_dev < -0.05 and (bot_d or hub_below) and res_1d_positive:
+            if ma60_dev < -0.05 and hub_below and res_1d_positive:
                 return ("D", "底部建仓", signals)
 
         chan_score = chan.score if chan else 0.0
