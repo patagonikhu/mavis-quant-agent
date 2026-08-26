@@ -1278,10 +1278,9 @@ def _bsp_str(pts: dict) -> str:
         elif "2卖" in k:   _add("2卖")
         elif "3卖" in k:   _add("3卖")
         # 2026-08-26 改: 其他 czsc BSP 类型 (抄底/逃顶/形态/笔信号)
+        # DIF走平/MACD开仓 是连续状态信号，不在买卖点列显示（在"变化"列显示）
         elif "MACD底背" in k:    _add("底背")
         elif "MACD顶背" in k:    _add("顶背")
-        elif "DIF走平" in k:     _add("DIF走平")
-        elif "MACD开仓" in k:    _add("MACD开仓")
         elif "笔结束" in k:      _add("笔结束")
         elif "双中枢" in k:      _add("双中枢")
         elif "吞没" in k:        _add("吞没")
