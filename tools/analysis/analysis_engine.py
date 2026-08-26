@@ -841,13 +841,16 @@ class AnalysisEngine:
             action=action,
         )
 
-    def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
+    def analyze_history(self, ctx: "RawContext", dates: list,
+                       skip_phase2: bool = False) -> "dict[str, AnalysisResult]":
         """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
 
         Args:
-            ctx:   全量 RawContext（不切片）
-            dates: 日期列表，格式 'YYYYMMDD'
-
+            ctx:         全量 RawContext（不切片）
+            dates:       日期列表，格式 'YYYYMMDD'
+            skip_phase2: True 时跳过 Phase2 派生函数（DCF/板块/五档等），
+                         回测场景专用，scene/action 判定仍保留（只用 Phase1 数据）。
+                         默认 False（兼容现有调用）。
         Returns:
             dict[date_str, AnalysisResult]
         """
@@ -879,13 +882,14 @@ class AnalysisEngine:
             # _derive_buy_sell_points 读 ctx._bsp_for_data，从 chan 结果补填
             chan_bsp = raw.get('chan', {}).get('buy_sell_points') or {}
             sliced._bsp_for_data = chan_bsp
-            # Phase2
-            for fn in self._phase2_fns:
-                key = fn.__name__.replace("_derive_", "")
-                try:
-                    raw[key] = fn(sliced, raw)
-                except Exception:
-                    pass
+            # Phase2 (skip_phase2=True 时跳过，回测专用)
+            if not skip_phase2:
+                for fn in self._phase2_fns:
+                    key = fn.__name__.replace("_derive_", "")
+                    try:
+                        raw[key] = fn(sliced, raw)
+                    except Exception:
+                        pass
             scene, scene_name, signals_active = self._decide_scene(raw, sliced)
             resonance_count = self._count_resonance(raw, scene)
             action = self._decide_action(scene, 0.0, resonance_count, 0, len(self._phase1))
