@@ -1428,10 +1428,12 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
             if not s or s == "—": return "—"
             return s.split(" (")[0]
         se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
-        # bsp: 2 개 주기 (daily/weekly)
+        # 买卖点列只显示当天首次出现的信号 (new_bsp_daily/weekly = diff 新出现)
+        # 持续状态信号（3买持续5天）只在触发当天显示，后续在变化列的 🆕 已有记录
         bsp_parts = []
-        for k, lbl in (("bsp_daily", "日"), ("bsp_weekly", "周")):
-            for l in _bsp_str(row.get(k)).split():
+        for k, lbl in (("new_bsp_daily", "日"), ("new_bsp_weekly", "周")):
+            new_pts = changes.get(k, {})
+            for l in _bsp_str(new_pts).split():
                 if l and l != "—":
                     bsp_parts.append(f"{l}({lbl})")
         b3 = " ".join(bsp_parts) if bsp_parts else "—"
