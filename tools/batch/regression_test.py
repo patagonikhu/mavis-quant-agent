@@ -200,8 +200,10 @@ def extract_fields(code: str) -> dict:
 
 # === 4. 提取 5方法矩阵 (从 report 文件) ===
 def extract_5method_from_report(code: str) -> dict:
-    """从 docs/analyze-{code}-{name}.md 提取 5方法场景"""
-    pattern = Path("docs").glob(f"analyze-{code}-*.md")
+    """从 docs/portfolio/analyze-{code}-{name}.md 或 docs/watchlist/ 提取 5方法场景"""
+    matches = list((Path("docs") / "portfolio").glob(f"analyze-{code}-*.md"))
+    if not matches:
+        matches = list((Path("docs") / "watchlist").glob(f"analyze-{code}-*.md"))
     matches = list(pattern)
     if not matches:
         return {}

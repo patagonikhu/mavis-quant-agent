@@ -129,13 +129,15 @@ watchlist_codes = {s['code']: s['name'] for s in wl}
 today = datetime.date.today().isoformat()  # 2026-08-25
 threshold = datetime.datetime(2026, 8, 25, 0, 0)
 
-# 检查 1: watchlist 内的所有 code 都有 analyze-*.md
+# 检查 1: watchlist 内的所有 code 都有 md 文件 (portfolio/ 或 watchlist/)
 analyzed = set()
-for f in os.listdir('docs'):
-    if f.startswith('analyze-') and f.endswith('.md'):
-        m = re.match(r'analyze-(\d+)-(.+)\.md', f)
-        if m:
-            analyzed.add(m.group(1))
+for subdir in ('docs/portfolio', 'docs/watchlist'):
+    if os.path.isdir(subdir):
+        for f in os.listdir(subdir):
+            if f.startswith('analyze-') and f.endswith('.md'):
+                m = re.match(r'analyze-(\d+)-(.+)\.md', f)
+                if m:
+                    analyzed.add(m.group(1))
 
 missing = set(watchlist_codes.keys()) - analyzed
 if missing:
@@ -144,14 +146,16 @@ if missing:
 
 # 检查 2: 全部 watchlist 文件都是 8/25 后新数据
 old_files = []
-for f in os.listdir('docs'):
-    if f.startswith('analyze-') and f.endswith('.md'):
-        m = re.match(r'analyze-(\d+)-(.+)\.md', f)
-        if m and m.group(1) in watchlist_codes:
-            mtime = os.path.getmtime(f'docs/{f}')
-            dt = datetime.datetime.fromtimestamp(mtime)
-            if dt < threshold:
-                old_files.append((dt, f))
+for subdir in ('docs/portfolio', 'docs/watchlist'):
+    if os.path.isdir(subdir):
+        for f in os.listdir(subdir):
+            if f.startswith('analyze-') and f.endswith('.md'):
+                m = re.match(r'analyze-(\d+)-(.+)\.md', f)
+                if m and m.group(1) in watchlist_codes:
+                    mtime = os.path.getmtime(f'{subdir}/{f}')
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    if dt < threshold:
+                        old_files.append((dt, f))
 
 if old_files:
     print(f'❌ watchlist 内 {len(old_files)} 个文件还是 8/25 之前的旧数据:')
@@ -169,6 +173,6 @@ echo "✅ 全部完成 (5 步全跑, 无跳)"
 echo "=================================================="
 echo ""
 echo "📄 主报告: docs/signal-watchlist.md"
-echo "📄 个股报告: docs/analyze-{code}-{name}.md (61 个, 全部 8/25 新数据)"
+echo "📄 个股报告: docs/portfolio/ + docs/watchlist/ (61 只, 全部分流)"
 echo ""
 echo "运行时间: $(date '+%Y-%m-%d %H:%M:%S')"

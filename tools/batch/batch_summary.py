@@ -335,7 +335,10 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
     n_ok = 0
     n_skip = 0
     for code, name in codes_names:
-        md_path = DOCS_DIR / f"analyze-{code}-{name}.md"
+        # 从 portfolio/ 或 watchlist/ 找 md 文件
+        md_path = (DOCS_DIR / "portfolio" / f"analyze-{code}-{name}.md")
+        if not md_path.exists():
+            md_path = (DOCS_DIR / "watchlist" / f"analyze-{code}-{name}.md")
         if not md_path.exists():
             n_skip += 1
             continue
@@ -413,7 +416,7 @@ def _render_md(buy_rows, sell_rows, all_table_rows, total_watchlist: int,
 
     lines = [
         f"# 全量扫描 {today}\n",
-        f"> {total_watchlist} 只票 | 数据来自 docs/analyze-*.md (refresh_all 阶段已生成) | 0 重算, 0 from_raw, 0 compute_factor_history\n",
+        f"> {total_watchlist} 只票 | 数据来自 docs/portfolio/*.md + docs/watchlist/*.md (refresh_all 阶段已生成) | 0 重算, 0 from_raw, 0 compute_factor_history\n",
         state_line,
     ]
 

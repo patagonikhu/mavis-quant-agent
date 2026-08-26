@@ -269,12 +269,18 @@ result = out.get(last_date) or (out[max(out)] if out else None)
 if result is None:
     print('ERROR: 无分析结果'); exit(1)
 
+# 按 list_type 分流: 持仓→docs/portfolio/, 自选→docs/watchlist/
+import json
+wl = json.load(open('data/watchlist.json'))['stocks']
+list_type = next((s.get('list_type','自选') for s in wl if s['code'] == code), '自选')
+subdir = 'portfolio' if list_type == '持仓' else 'watchlist'
+
 # L4: 渲染（读缓存，不重算）
 data = AnalysisData.from_result(ctx, result)
 data.factor_history_rows = rows
 md = render_report(data)
 name = ctx.name or code
-out_path = Path('docs') / f'analyze-{code}-{name}.md'
+out_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
 out_path.parent.mkdir(parents=True, exist_ok=True)
 out_path.write_text(md, encoding='utf-8')
 print(f'REPORT: {out_path}')
@@ -292,16 +298,16 @@ if len(rows) >= 2:
 PYEOF
 
 # Step C: 读 MD 报告
-# 生成路径: docs/analyze-{code}-{name}.md
+# 生成路径: docs/portfolio/analyze-{code}-{name}.md 或 docs/watchlist/analyze-{code}-{name}.md (按 list_type)
 # 关键 section:
 #   ## 📊 技术指标 (8 种) ⭐  → MACD/RSI/KDJ/BOLL/ATR/量比/OBV/EMA/ADX
 #   ## 📈 因子历史走势（最近3个月） → 每日状态表，最后一行 = 今日
 #   ## 🎯 5 方法 × 3 周期 综合矩阵 → 场景/共振数/行动建议
-# 用 Read 工具读 docs/analyze-{code}-{name}.md 即可获取所有技术信号
+# 用 Read 工具读 docs/portfolio/analyze-{code}-{name}.md 或 docs/watchlist/analyze-{code}-{name}.md 即可获取所有技术信号
 ```
 
 > **🚨 读 MD 而非手算（v3.4 新规）**
-> `Step B` 生成的 `docs/analyze-{code}-{name}.md` 已包含完整技术指标（MA/EMA/ADX/RSI/BB/OBV/ATR/量比）。
+> `Step B` 生成的 `docs/portfolio/` 或 `docs/watchlist/` 下的 `analyze-{code}-{name}.md` 已包含完整技术指标（MA/EMA/ADX/RSI/BB/OBV/ATR/量比）。
 > **禁止在 skill 里重复手算这些指标**。直接用 Read 工具读 MD 报告对应 section 即可。
 
 **为什么需要实际季报：**
@@ -493,7 +499,7 @@ DCF 隐含 L (市值=XXX亿):
 > **🚨 v3.4 新规：MA 均线数据直接读 MD 报告，禁止手算**
 > `--render` 生成的 MD 中 `## 📊 技术指标 (8 种) ⭐` section 已包含 MA5/MA20/MA60/MA120 偏离、BOLL、ATR 等。
 > `## 📈 因子历史走势` 最后一行包含今日的 `ma_dev_daily` / `ma_dev_weekly` / `ma_dev_60m`。
-> 用 Read 工具读 `docs/analyze-{code}-{name}.md` 对应行即可，无需重复 bash 计算。
+> 用 Read 工具读 `docs/portfolio/` 或 `docs/watchlist/` 下的对应文件即可，无需重复 bash 计算。
 
 ####
 状态 1: 多头排列 (强势上升通道)
@@ -572,7 +578,7 @@ MA 混乱/无明确信号 + 任意    → 🥈 标准 (按估值决策, MA 不�
 
 > **🚨 v3.4 新规：以下 EMA / ADX / RSI / BB / 量价 / OBV 手算块已废弃**
 >
-> `--render` 生成的 MD 报告（`docs/analyze-{code}-{name}.md`）中 **`## 📊 技术指标 (8 种) ⭐`** section
+> `--render` 生成的 MD 报告（`docs/portfolio/` 或 `docs/watchlist/` 下的 `analyze-{code}-{name}.md`）中 **`## 📊 技术指标 (8 种) ⭐`** section
 > 已经由 `tools/render/report_renderer.py` 计算并写入，包含：
 > - MACD (DIF/DEA/BAR + 金叉/死叉判定)
 > - RSI (6/12/24 三周期)
@@ -673,7 +679,7 @@ vol_ratio 中等           → 0 中性
 
 #
 > **v7 框架原理（参考）:** EMA 方向 + ADX 强度 + RSI 超买超卖 + BB 位置 + 量价配合，五维交叉验证。
-> 数值已在 `docs/analyze-{code}-{name}.md` 的 `## 📊 技术指标 (8 种) ⭐` section 中计算完毕。
+> 数值已在 `docs/portfolio/` 或 `docs/watchlist/` 下的 `## 📊 技术指标 (8 种) ⭐` section 中计算完毕。
 > 🚨 **禁止在 skill 里重复手算任何技术指标** — 直接 Read MD 报告对应 section 即可。
 
 ##
@@ -695,7 +701,7 @@ BB        BOLL上下轨位置              跌破下轨+1 / 突破上轨-1 / 中
 ```
 
 > **v7 数据来源声明:**
-> - 🟢 所有技术指标: 读 `docs/analyze-{code}-{name}.md` 中 `## 📊 技术指标 (8 种)` section（由 render_report 写入）
+> - 🟢 所有技术指标: 读 `docs/portfolio/` 或 `docs/watchlist/` 下的 `## 📊 技术指标 (8 种)` section（由 render_report 写入）
 > - ⚪ EMA/ADX/RSI/BB/OBV: Wilder 1978 / Granville 1963 标准公式，已在 render 阶段计算完毕
 > - 🟡 评分阈值: 行业约定 (vol_ratio 0.7/1.5, RSI 30/70, ADX 25)
 
@@ -722,7 +728,7 @@ BB        BOLL上下轨位置              跌破下轨+1 / 突破上轨-1 / 中
 -3 ~ -5  强空 ❌        不买
 ```
 
-> 🚨 **用法**: 从 `docs/analyze-{code}-{name}.md` 的 `## 📊 技术指标 (8 种)` section 读各指标值，套用上表得总分。禁止手算。
+> 🚨 **用法**: 从 `docs/portfolio/` 或 `docs/watchlist/` 下对应文件的 `## 📊 技术指标 (8 种)` section 读各指标值，套用上表得总分。禁止手算。
 
 ---
 
@@ -1568,7 +1574,7 @@ DCF 隐含 L (市值=1805亿, 净利率5.6%):
 ##
 **⚠️ 强制步骤:** 跑完必须先写 MD，然后才在 chat 输出响应。
 
-**文件命名:** `docs/analyze-{code}-{name}.md` (无日期, 累积同一文件)
+**文件命名:** `docs/portfolio/analyze-{code}-{name}.md` (持仓) 或 `docs/watchlist/analyze-{code}-{name}.md` (自选)，按 list_type 分流
 
 每次跑追加 `v{N+1}` 版本，**只保留最近 2 版**。
 
@@ -1596,7 +1602,7 @@ M. 元数据 (含 EPS 快照)
 4. **读 dump['kline'] 计算 MA5/20/60/120** (step 2f) — 禁止 curl K线接口
 4. **Bash 计算 PEG 四件套 + DCF L + 5维技术指标** (step 2d/2e/2f.1)
 5. WebSearch (默认开启)
-6. **写入 docs/analyze-{code}-{name}.md** (实战行动信号写在 "🎯 5 方法 × 3 周期" 矩阵的"行动"字段: 🥇 大底建仓 / 🟢 主升持有 / ⬜ 震荡观望 / 🔴 减仓回避)
+6. **写入 docs/portfolio/ 或 docs/watchlist/** (实战行动信号写在 "🎯 5 方法 × 3 周期" 矩阵的"行动"字段: 🥇 大底建仓 / 🟢 主升持有 / ⬜ 震荡观望 / 🔴 减仓回避)
 7. **更新 data/watchlist.json** (notes, 可选追加本次分析摘要)
 8. 在 chat 输出响应 (60 行内)
 

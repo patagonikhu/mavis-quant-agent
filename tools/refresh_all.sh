@@ -1,5 +1,9 @@
 #!/bin/bash
-# tools/refresh_all.sh — 一键全刷 watchlist + 渲染报告 (v2, 2026-07-22 加速)
+# tools/refresh_all.sh — 一键全刷 watchlist + 渲染报告 (v3, 2026-08-27 list_type 分流)
+#
+# v3 更新:
+#   - 按 list_type 分流输出: 持仓→docs/portfolio/, 自选→docs/watchlist/
+#   - 一次 compute_factor_history, 结果复用 (render + out_results 不重复)
 #
 # 性能优化 (v2):
 #   - dump 阶段: 4 进程并发 (Tushare 全接口 80/分 内, 实际跑 6-7 段/秒)
@@ -74,12 +78,26 @@ while [ $# -gt 0 ]; do
 done
 CODES=$(echo $CODES | xargs)  # trim
 
-# 拿 codes
+# 拿 codes + list_type map
+LIST_TYPE_MAP=$(mktemp)
 if [ -z "$CODES" ]; then
+    python3 -c "
+import json, sys
+wl = json.load(open('data/watchlist.json'))['stocks']
+print(' '.join(s['code'] for s in wl))
+map_d = {s['code']: s.get('list_type', '自选') for s in wl}
+json.dump(map_d, open('$LIST_TYPE_MAP', 'w'), ensure_ascii=False)
+"
     CODES=$(python3 -c "
 import json
-print(' '.join(s['code'] for s in json.load(open('data/watchlist.json'))['stocks']))
+wl = json.load(open('data/watchlist.json'))['stocks']
+print(' '.join(s['code'] for s in wl))
 ")
+else
+    # 指定 code 时, list_type 默认为自选
+    for c in $CODES; do
+        python3 -c "import json; wl=json.load(open('data/watchlist.json'))['stocks']; m={s['code']:s.get('list_type','自选') for s in wl}; print(m.get('$c','自选'))" >> "$LIST_TYPE_MAP"
+    done
 fi
 
 TOTAL=$(echo $CODES | wc -w | xargs)
@@ -89,20 +107,26 @@ echo "🔄 全刷 $TOTAL 只票, $WORKERS 并发"
 echo "开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=================================================="
 
+# 预建输出目录
+mkdir -p docs/portfolio docs/watchlist
+
 # 阶段 0: 预同步 (CLAUDE.md 铁律: sync_incremental 单线程先跑, 4 worker 再各取所需)
-# 之前漏这步 → 4 worker 各自跑全市场 sync_incremental, Tushare 限流 + 重复拉数据
 echo ""
 echo "🔄 预同步: sync_incremental (单线程, 全市场增量补齐)..."
 bash tools/with_venv.sh python3 -c "from tools.history_sync import sync_incremental; sync_incremental()" 2>&1 | tail -3
 echo ""
 
-# 阶段 1: dump (4 并发)
+# 阶段 1: dump + render (4 并发)
 DUMP_DIR=$(mktemp -d)
-DUMP_OK=()
-DUMP_FAIL=()
 
 process_one() {
     local code=$1
+    # 从 LIST_TYPE_MAP 读 list_type
+    local list_type
+    list_type=$(python3 -c "import json; m=json.load(open('$LIST_TYPE_MAP')); print(m.get('$code','自选'))")
+    local subdir
+    [ "$list_type" = "持仓" ] && subdir="portfolio" || subdir="watchlist"
+
     # analyze + render 合一，阶段 0 已做 sync_incremental，这里 0 网络
     if bash tools/with_venv.sh python3 -c "
 from tools.data_store import DataStore
@@ -111,12 +135,13 @@ from tools.analysis.factor_history import compute_factor_history
 from tools.render.report_renderer import render_report
 from pathlib import Path
 code = '$code'
+subdir = '$subdir'
 ctx = DataStore.get_ctx(code)
 if not ctx.kline:
     print(f'⚠️ {code} 无K线')
     exit(1)
 print(f'  - K线: {len(ctx.kline)} 根')
-# L2+L3 合并：一次 analyze_history，out 存最后 AnalysisResult
+# 一次 compute_factor_history，结果存 out_results（render + 信号提取共享）
 out = {}
 rows = compute_factor_history(ctx, step=1, lookback=120, out_results=out)
 last_date = ctx.kline[-1]['trade_date'].replace('-', '')[:8]
@@ -129,10 +154,10 @@ if '$NO_RENDER' != '1':
     data.factor_history_rows = rows
     md = render_report(data)
     name = ctx.name or code
-    p = Path('docs') / f'analyze-{code}-{name}.md'
+    p = Path('docs') / subdir / f'analyze-{code}-{name}.md'
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(md, encoding='utf-8')
-    print(f'  - 报告: {len(md)} chars')
+    print(f'  - 报告: {len(md)} chars → {p}')
 " >"$DUMP_DIR/${code}.log" 2>&1; then
         if grep -q "K线: " "$DUMP_DIR/${code}.log" 2>/dev/null; then
             echo "DUMP_OK:$code"
@@ -144,7 +169,7 @@ if '$NO_RENDER' != '1':
     fi
 }
 export -f process_one
-export DUMP_DIR NO_RENDER ROOT
+export DUMP_DIR NO_RENDER LIST_TYPE_MAP ROOT
 
 # xargs -P N 并发
 printf '%s\n' $CODES | xargs -I{} -P "$WORKERS" -n 1 bash -c 'process_one "$@"' _ {} > "$DUMP_DIR/results.txt" 2>&1 || true
@@ -169,15 +194,20 @@ echo "=================================================="
 echo "完成: dump ✅ $OK_COUNT / ❌ $FAIL_COUNT"
 [ -z "$NO_RENDER" ] && echo "      render ✅ $RENDER_OK / ❌ $RENDER_FAIL"
 echo "      总耗时: $((END-START)) 秒 (vs v1 串行约 $((TOTAL*10)) 秒)"
+echo ""
+echo "📁 报告目录:"
+echo "  持仓: docs/portfolio/  ($(find docs/portfolio -name 'analyze-*.md' 2>/dev/null | wc -l | xargs) 只)"
+echo "  自选: docs/watchlist/  ($(find docs/watchlist -name 'analyze-*.md' 2>/dev/null | wc -l | xargs) 只)"
 SPEEDUP=$((TOTAL*10*100/(END-START+1)))
 echo "      加速: ~${SPEEDUP}x"
 echo "结束时间: $(date '+%Y-%m-%d %H:%M:%S')"
 
-# 2026-07-31: 阶段 3 - batch md (直接读 docs/analyze-*.md 最后一行, 0 重算)
+# batch md (读 docs/portfolio/ 和 docs/watchlist/ 的 md 文件, 0 重算)
 if [ -z "$NO_RENDER" ] && [ "$RENDER_OK" -gt 0 ]; then
     echo ""
-    echo "📋 生成 batch md (直接读 57 份 analyze md 文件, 0 重算)..."
+    echo "📋 生成 batch md..."
     bash tools/with_venv.sh python3 -m tools.batch.batch_summary 2>&1 | tail -5
 fi
 
+rm -f "$LIST_TYPE_MAP"
 rm -rf "$DUMP_DIR"

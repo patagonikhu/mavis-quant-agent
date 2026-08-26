@@ -37,8 +37,8 @@ def _lookup(cfg_section: dict, key: str, period_label: str, default, style: str 
 
     支持三种结构:
       1. 标量: {key: 6.0}              → 任何周期都返 6.0
-      2. 按周期: {key: {daily: 6.0, 60m: 2.0}} → 按 period_label 选
-      3. 按周期×风格: {key: {daily: {default: 25, star: 40}, 60m: {default: 40, star: 60}}}
+      2. 按周期: {key: {daily: 6.0, weekly: 8.0}} → 按 period_label 选
+      3. 按周期×风格: {key: {daily: {default: 25, star: 40}}}
          → 按 period_label + style (可空) 选
     """
     val = cfg_section.get(key, default)
@@ -96,7 +96,7 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
         o, pct_chg: open + 涨跌幅 (v5.1 真字段)
         max_bias: bias_200 上限 (科创 40 / 主板 25 / 趋势 35, 也可按风格传)
         market_cap_yi: 总市值 (亿) — TrendPullback 量阈值缩放
-        period_label: "日线" / "周线" / "60分" — v5.7 加, 决定 SOS/Spring/EVR 阈值
+        period_label: "daily" / "weekly" — 决定子事件阈值 (默认走日线参数)
         as_of_idx: 截至索引 (None=扫整段, int=扫到 i <= as_of_idx, 用于回测)
         dates: 日期 list (跟 c 等长, 触发时记 date, dump kline['date'])
 
@@ -156,12 +156,10 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
     utad_vol_ratio_thr    = _lookup(utad_cfg, "vol_ratio_thr", period_label, 1.5)
 
     # 周期自适应 MA 长窗口 + bias 门槛 + lookback（DistributionStart / UTAD 用）
-    # daily: MA200 ≈ 1年，bias_min=15%，lookback=60交易日
-    # 60m: MA60 ≈ 2个月，bias_min=20%，lookback=120根（≈24个交易日，平衡覆盖与数据量）
+    # daily:  MA200 ≈ 1年，bias_min=15%，lookback=60交易日
     # weekly: MA50 ≈ 1年，bias_min=30%，lookback=60周
     _period_cfg = {
-        "daily": (200, 15.0, 60),
-        "60m":   (60,  20.0, 120),
+        "daily":  (200, 15.0, 60),
         "weekly": (50,  30.0, 60),
     }
     ma_long_w, dist_min_bias, upthrust_lookback = _period_cfg.get(period_label, (200, 15.0, 60))
