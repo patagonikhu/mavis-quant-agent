@@ -318,6 +318,9 @@ class AnalysisData:
     # ===== 5 方法 × 3 周期 矩阵 (2026-07-24 固化) =====
     analysis: Optional[dict] = None  # v5.10.26+: 替代 signals_5method, AnalysisEngine 输出 dict
 
+    # 因子历史缓存 — 计算一次后由 render/_section_factor_history 复用，避免重复 analyze_history
+    factor_history_rows: Optional[list] = field(default=None, repr=False)
+
     # v5.10.35: 9 个派生字段兼容层 (peg/dcf/exit_signals/...) — render 读 data.<字段> 现在自动从 analysis 拿
     # 之前 v5.10.34 前: 这 9 个字段从 dump 顶层读; 现在挪到 analysis 层
     # render 改读 data.analysis.<字段> 太散, 加 property 兼容老代码

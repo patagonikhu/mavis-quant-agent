@@ -13,15 +13,17 @@ from typing import Callable
 
 
 def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
-                           strategies=None) -> list[dict]:
+                           strategies=None,
+                           out_results: dict | None = None) -> list[dict]:
     """计算最近 lookback 天的因子历史，每 step 天一个节点。
 
     Args:
-        ctx:        RawContext，含完整 K 线
-        step:       采样间隔（render 用 5，回测用 1）
-        lookback:   回看天数（默认 60 = 3个月）
-        strategies: 传入 strategy 类列表（如 [WyckoffStrategy, ChanStrategy]），
-                    None 表示跑全部。按需传入可大幅提速。
+        ctx:         RawContext，含完整 K 线
+        step:        采样间隔（render 用 5，回测用 1）
+        lookback:    回看天数（默认 60 = 3个月）
+        strategies:  传入 strategy 类列表，None 表示跑全部
+        out_results: 可选 dict，函数会把 {date_str: AnalysisResult} 写入，
+                     调用方可从中取最后一个 AnalysisResult 避免重复 analyze()
 
     Returns:
         list[dict]，按日期升序
@@ -41,6 +43,8 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         result = history.get(date.replace("-", "")[:8])
         if result is None:
             continue
+        if out_results is not None:
+            out_results[date.replace("-", "")[:8]] = result
         close = next((k["close"] for k in kline if k["trade_date"].replace("-","")[:8] == date.replace("-","")[:8]), 0)
 
         # MA/BOLL 需要切片后的 K 线（取索引直接切，不用 list comprehension 过滤）
@@ -140,7 +144,7 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
 
         # 买卖点二周期（含价格字符串）
         "bsp_daily":  _active_bsp(bsp_raw, "daily"),
-        "bsp_weekly": _active_bsp(bsp_raw, "weekly"),
+        "bsp_weekly": _active_bsp(bsp_raw, "weekly", date.replace("-", "")[:8]),
 
         # SMC 日线/周线 OB/FVG/Sweep
         "smc_bull_ob":       (smc_raw.get("nearest_bull_ob")  or {}).get("bottom"),
@@ -185,20 +189,14 @@ def _today_sweeps(smc_raw: dict, date: str) -> list:
 
 
 def _today_sub_events(wy_raw: dict, level: str, date: str) -> str:
-    """返回当天新触发的 sub_events（去重，不重复显示）"""
+    """返回当天新触发的 sub_events (去重)"""
     evs = (wy_raw.get("sub_events_by_period") or {}).get(level, [])
     if not evs:
         return "—"
     date_clean = date.replace("-", "")[:8]
-    seen = set()
-    today = []
-    for e in evs:
-        if str(e.get("date", "")).replace("-", "")[:8] == date_clean:
-            name = e["name"]
-            if name not in seen:
-                seen.add(name)
-                today.append(name)
-    return " ".join(today) if today else "—"
+    names = sorted({e["name"] for e in evs
+                    if str(e.get("date", "")).replace("-", "")[:8] == date_clean})
+    return " ".join(names) if names else "—"
 
 
 def _extract_hub(chan_raw: dict, level: str) -> dict:
@@ -211,7 +209,7 @@ def _extract_hub(chan_raw: dict, level: str) -> dict:
     }
 
 
-def _active_bsp(bsp_raw: dict, level: str) -> dict:
+def _active_bsp(bsp_raw: dict, level: str, as_of: str = "") -> dict:
     """返回有触发的买卖点（过滤掉 '—'）"""
     pts = bsp_raw.get(level) or {}
     return {k: v for k, v in pts.items()

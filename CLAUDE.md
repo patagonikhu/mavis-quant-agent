@@ -15,7 +15,7 @@
 > **唯一入口**: `tools/sync_stock.py` (走 sync 路径), 所有网络调用必须经 sync 层
 
 ```
-✅ tools/sync_stock.py {code} [--render]                    # 单只拉
+✅ tools/sync_stock.py {code}                                # 单只拉数据 (只 sync, 不计算)
 ✅ tools/refresh_all.sh                                     # watchlist 全刷 (4 worker, 启动跑 4 核心模块 import smoke test)
 ✅ tools/with_venv.sh python -m tools.ensure_fresh --watchlist   # 检查新鲜度
 ✅ tools/fetch/data_source.py 统一入口函数

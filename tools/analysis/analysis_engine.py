@@ -178,11 +178,15 @@ class WyckoffStrategy:
             ("weekly", ctx.weekly, "weekly"),
         ]:
             if bars and len(bars) >= 30:
+                # 2026-08-26 改: 传 as_of_idx 让 sub_events 只扫到 bars 末尾 (factor_history 用)
+                # bars 已被 ctx.slice(as_of_date) 切到该时间点, 末尾就是当前
+                as_of_idx = len(bars) - 1
                 out = WyckoffStageFactor().compute(
                     _make_df(bars), period_label=label,
                     window=min(250, len(bars)),
                     market_cap_yi=ctx.market_cap_yi,
                     code=ctx.code,
+                    as_of_idx=as_of_idx,
                 )
                 sub_events_by_period[level] = out.get("sub_events", [])
                 wyckoff_3period[level] = out
@@ -436,7 +440,7 @@ class ChanStrategy:
         wk_czsc  = kas.get('周线')
         res_d = ChanStrategy._hub_result(day_czsc, p_now, '日线', d_d) if day_czsc else {}
         res_w = ChanStrategy._hub_result(wk_czsc,  p_now, '周线', []) if wk_czsc else {}
-        bsp_d = extract_points_from_sigs(sigs_win, bar_dt)
+        bsp_d = extract_points_from_sigs(sigs_win, bar_dt, days=1)
         return {
             "daily":  {**res_d, "buy_sell_points": bsp_d.get('points', {})},
             "weekly": {**res_w, "buy_sell_points": {}},

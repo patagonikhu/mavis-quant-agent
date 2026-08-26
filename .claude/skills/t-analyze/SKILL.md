@@ -71,9 +71,18 @@ print(codes)
 # 全量刷（推荐，4 worker 并行）
 bash tools/refresh_all.sh
 
-# 或逐只
-for code in {codes}:
-    bash tools/with_venv.sh python -m tools.sync_stock {code} --render
+# ✅ 子集批量：传 codes (1 次 sync + 4 worker 并发, 0 网络, CLAUDE.md 铁律)
+bash tools/refresh_all.sh 002531 300699 600515 688522 000858
+
+# ✅ 子集批量：自定义并发
+bash tools/refresh_all.sh 002531 300699 --workers 2
+
+# ❌ 禁止: 单只 sync_stock 串行 N 次 (每次都跑 sync_incremental, N 次锁等待)
+for code in 002531 300699; do
+    bash tools/with_venv.sh python -m tools.sync_stock $code
+done
+# 上面的写法会让 sync_incremental 跑 N 次 (锁保护下实际只跑 1 次, 但每次 ~0.5s 锁开销, N 只浪费 N*0.5s)
+# 多只 (>1 只) 永远走 refresh_all.sh 批量入口
 ```
 
 ### Step 3: 提取每只股票今日状态，写入 md 文件
@@ -233,76 +242,66 @@ PYEOF
 
 ###
 ```bash
-# Step A: 拉数据 + 渲染完整 MD 报告（含因子历史走势 + 技术指标）
-bash tools/with_venv.sh python -m tools.sync_stock {code} --render
+# Step A: 拉数据（sync only，不计算）
+bash tools/with_venv.sh python -m tools.sync_stock {code}
 
-# Step B: 读 MD 报告（含所有技术指标，无需重复手算）
+# Step B: 分析 + 因子历史 + 渲染 MD（一次性，ChanStrategy 只遍历 bars 一次）
+bash tools/with_venv.sh python3 << 'PYEOF'
+import sys
+sys.path.insert(0, '.')
+from tools.data_store import DataStore
+from tools.analysis.analysis_engine import AnalysisEngine
+from tools.analysis.analysis_data import AnalysisData
+from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals
+from tools.render.report_renderer import render_report
+from pathlib import Path
+
+code = '{code}'
+ctx  = DataStore.get_ctx(code)
+if not ctx.kline:
+    print('ERROR: 无K线数据'); exit(1)
+
+# L2+L3 合并：compute_factor_history 一次遍历，out_results 存最后一个 AnalysisResult
+out = {}
+rows = compute_factor_history(ctx, step=1, lookback=120, out_results=out)
+last_date = ctx.kline[-1]['trade_date'].replace('-', '')[:8]
+result = out.get(last_date) or (out[max(out)] if out else None)
+if result is None:
+    print('ERROR: 无分析结果'); exit(1)
+
+# L4: 渲染（读缓存，不重算）
+data = AnalysisData.from_result(ctx, result)
+data.factor_history_rows = rows
+md = render_report(data)
+name = ctx.name or code
+out_path = Path('docs') / f'analyze-{code}-{name}.md'
+out_path.parent.mkdir(parents=True, exist_ok=True)
+out_path.write_text(md, encoding='utf-8')
+print(f'REPORT: {out_path}')
+
+# 今日信号摘要
+if len(rows) >= 2:
+    changes = diff_rows(rows[-2], rows[-1])
+    sigs    = extract_signals(changes)
+    r       = rows[-1]
+    print(f'场景: {r["scene"]}  威科夫日: {r["wyckoff_daily"]}  MA偏离: 日{r.get("ma_dev_daily") or 0:+.1f}%')
+    for sig_type, detail, direction in sigs:
+        print(f'{"⬆️买" if direction=="buy" else "⬇️卖"} | {sig_type:<20} | {detail}')
+    if not sigs:
+        print('无新信号（今日延续昨日状态）')
+PYEOF
+
+# Step C: 读 MD 报告
 # 生成路径: docs/analyze-{code}-{name}.md
 # 关键 section:
 #   ## 📊 技术指标 (8 种) ⭐  → MACD/RSI/KDJ/BOLL/ATR/量比/OBV/EMA/ADX
 #   ## 📈 因子历史走势（最近3个月） → 每日状态表，最后一行 = 今日
 #   ## 🎯 5 方法 × 3 周期 综合矩阵 → 场景/共振数/行动建议
 # 用 Read 工具读 docs/analyze-{code}-{name}.md 即可获取所有技术信号
-
-# Step C: 提取今日触发信号（结构化）
-bash tools/with_venv.sh python3 -c "
-import json, sys
-sys.path.insert(0, '.')
-from tools.analysis.analysis_engine import RawContext
-from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals
-
-ctx = DataStore.get_ctx('{code}')
-rows = compute_factor_history(ctx, step=1, lookback=5)
-if len(rows) >= 2:
-    changes = diff_rows(rows[-2], rows[-1])
-    sigs = extract_signals(changes)
-    r = rows[-1]
-    print('=== 今日状态 ===')
-    print(f'场景: {r[\"scene\"]}  威科夫日: {r[\"wyckoff_daily\"]}  威科夫周: {r[\"wyckoff_weekly\"]}')
-    print(f'MA偏离: 日{r[\"ma_dev_daily\"]:+.1f}% 周{r[\"ma_dev_weekly\"]:+.1f}% 60m{r[\"ma_dev_60m\"]:+.1f}%')
-    print(f'日背驰: {r[\"daily_beichi\"]}  周背驰: {r[\"weekly_beichi\"]}  60m背驰: {r[\"60m_beichi\"]}')
-    h = r.get('hub_daily') or {}
-    h60 = r.get('hub_60m') or {}
-    print(f'日中枢: {h.get(\"low\",\"—\")}~{h.get(\"high\",\"—\")}  位置: {h.get(\"pos\",\"—\")}')
-    print(f'60m中枢: {h60.get(\"low\",\"—\")}~{h60.get(\"high\",\"—\")}  位置: {h60.get(\"pos\",\"—\")}')
-    print()
-    print('=== 今日触发信号 ===')
-    for sig_type, detail, direction in sigs:
-        arrow = '⬆️买' if direction == 'buy' else '⬇️卖'
-        print(f'{arrow} | {sig_type:<20} | {detail}')
-    if not sigs:
-        print('无新信号（今日延续昨日状态）')
-elif rows:
-    r = rows[-1]
-    print('=== 当前状态（仅1行数据）===')
-    print(f'场景: {r[\"scene\"]}  收盘: {r[\"close\"]}')
-    print('（数据行数不足，无法计算 diff）')
-else:
-    print('ERROR: factor_history 返回空，请检查 dump 数据完整性')
-"
-
-# Step D: 读 dump 中的财务数据（不在因子历史里）
-bash tools/with_venv.sh python3 -c "
-from tools.data_store import DataStore
-from tools.analysis.analysis_data import AnalysisData
-
-ctx = DataStore.get_ctx('{code}')
-ad = AnalysisData.from_result(ctx, __import__('tools.analysis.analysis_engine', fromlist=['AnalysisEngine']).AnalysisEngine().analyze(ctx))
-
-print('=== EPS 预测 ===')
-eps = ctx.eps_table
-for row in eps[-4:]:
-    print(row)
-
-print('=== 财务指标 ===')
-fina = (dump.get('tushare') or {}).get('fina_rows', [])
-for row in fina[:2]:
-    print(row)
-"
 ```
 
 > **🚨 读 MD 而非手算（v3.4 新规）**
-> `--render` 生成的 `docs/analyze-{code}-{name}.md` 已包含完整技术指标（MA/EMA/ADX/RSI/BB/OBV/ATR/量比）。
+> `Step B` 生成的 `docs/analyze-{code}-{name}.md` 已包含完整技术指标（MA/EMA/ADX/RSI/BB/OBV/ATR/量比）。
 > **禁止在 skill 里重复手算这些指标**。直接用 Read 工具读 MD 报告对应 section 即可。
 
 **为什么需要实际季报：**

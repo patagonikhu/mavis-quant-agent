@@ -67,8 +67,8 @@ KEY_DATA_PATTERNS = {
     "止盈价": r"\+20%\s*\|\s*¥[\d.]+|当前\s*→\s*\+20%.*¥[\d.]+",
     "止损价": r"-10%.*¥[\d.]+",
     "评级": r"(🥇|🥈|🥉|⚠️|❌).*[重仓|标准|轻仓|观察|不买]",
-    # ===== 因子 × 3 周期 矩阵 必填 (匹配 render_factor_matrix_md 真实输出, 2026-08-17 改名) =====
-    "因子矩阵标题": r"##\s*🎯\s*因子\s*×\s*3\s*周期",
+    # ===== 5 方法 × 3 周期 矩阵 必填 (匹配 schema 真源: tools/render/report_schema.py, id=method_matrix) =====
+    "因子矩阵标题": r"##\s*🎯\s*5\s*方法\s*×\s*3\s*周期",
     # render 真实输出: `**场景**: C (震荡观望) | **共振数**: 5 重 | **行动**: ⬜ 震荡观望`
     "5方法场景": r"\*\*场景\*\*[：:]\s*[ABCDEabcde]\s*[\(\uff08]",
     "5方法共振数": r"\*\*共振数\*\*[：:]\s*\d+\s*重",
@@ -195,7 +195,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
         except Exception:
             pass
     # ===== 2026-07-24 新增: 5 方法矩阵 必填校验 (硬保证稳定显示) =====
-    if not key_data["5方法矩阵标题"]:
+    if not key_data["因子矩阵标题"]:
         warnings.append("🔴 缺 '5 方法 × 3 周期 矩阵' section 标题 (硬保证失败)")
     if not key_data["5方法场景"]:
         warnings.append("🔴 缺 '场景' (A-E) (5 方法矩阵必填)")
@@ -351,8 +351,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
             warnings.append(
                 f"🔴 顺序违反铁律: PEG (第{peg_idx+1}个) 在 5方法详情 (第{supp_idx+1}个) 之前 — CLAUDE.md 5️⃣ 必须在 2️⃣ 之后"
             )
-        if supp_idx < 0:
-            warnings.append("🔴 5 方法详情 section 缺失 (id:chan_supplement)")
+        # 2026-08-26: 删 "5 方法详情 section 缺失" 硬保证 (schema 已删 chan_supplement, 详情段非必填)
         if matrix_idx < 0:
             warnings.append("🔴 5 方法 × 3 周期 矩阵 section 缺失 (id:method_matrix)")
     except ImportError:

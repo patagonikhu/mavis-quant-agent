@@ -1165,78 +1165,6 @@ def _section_daily(data: AnalysisData) -> str:
     return _section_period(data, "daily", "日线", "1.0x", ("5d", "10d", "20d"))
 
 
-_INDEX_CODES = {
-    '399006', '399001', '399300', '399905', '399673',   # 深交所指数
-    '000001', '000300', '000016', '000905', '000688', '000852',  # 上交所指数
-}
-
-
-def _is_index(code: str) -> bool:
-    c = (code or '').replace('.SZ', '').replace('.SH', '')
-    return c.startswith('399') or c in _INDEX_CODES
-
-
-def _section_index_boll_history(data: AnalysisData) -> str:
-    """📊 指数布林历史表 — 仅针对指数，展示每日布林位置% + MA120偏离"""
-    if not _is_index(data.code or ''):
-        return ''
-    if not data.ctx:
-        return ''
-
-    try:
-        from tools.analysis.factor_history import compute_factor_history
-        rows = compute_factor_history(data.ctx, step=1, lookback=120)
-    except Exception as e:
-        return f'> ❌ 布林历史计算失败: {e}\n'
-
-    if not rows:
-        return ''
-
-    # 过滤出有布林数据的行
-    valid = [r for r in rows if r.get('boll_pct') is not None]
-    if not valid:
-        return ''
-
-    def _boll_tag(pct: float) -> str:
-        if pct >= 90: return '🔴上轨'
-        if pct >= 70: return '🟠偏上'
-        if pct >= 30: return '⬜中性'
-        if pct >= 10: return '🟡偏下'
-        return '🟢下轨'
-
-    def _ma120_tag(dev) -> str:
-        if dev is None: return '—'
-        if dev <= -25: return f'{dev:+.1f}% 🟢超跌'
-        if dev <= -15: return f'{dev:+.1f}% 🟡冷场'
-        if dev <= 10:  return f'{dev:+.1f}% ⬜中性'
-        if dev <= 20:  return f'{dev:+.1f}% 🟠偏热'
-        return f'{dev:+.1f}% 🔴过热'
-
-    hdr = '| 日期 | 收盘 | 布林% | 下轨 | 中轨 | 上轨 | MA120偏离 | 位置 |'
-    sep = '|---|---|---|---|---|---|---|---|'
-    lines = [
-        '## 📊 指数布林历史 (布林位置% + MA120偏离)',
-        '',
-        '> 布林%: 0%=下轨 / 50%=中轨 / 100%=上轨  买点关注 <15% / 卖点关注 >85%',
-        '',
-        hdr, sep,
-    ]
-    for r in valid:
-        pct = r['boll_pct']
-        tag = _boll_tag(pct)
-        lines.append(
-            f"| {r['date']} | ¥{r['close']:.1f}"
-            f" | {pct:.0f}%"
-            f" | ¥{r['boll_lower']:.0f}"
-            f" | ¥{r['boll_mid']:.0f}"
-            f" | ¥{r['boll_upper']:.0f}"
-            f" | {_ma120_tag(r.get('ma120_dev'))}"
-            f" | {tag} |"
-        )
-
-    return '\n'.join(lines) + '\n'
-
-
 def _section_factor_matrix(data: AnalysisData) -> str:
     """
     🎯 因子 × 3周期 综合矩阵 (2026-07-25 重构: 用 factor_matrix 模块, 2026-08-17 改名)
@@ -1307,12 +1235,19 @@ def _section_four_q_short(data: AnalysisData) -> str:
 # ============================================================
 
 def _hub_str(h: dict) -> str:
-    """中枢字符串: ¥low~high{✅/⚠️/⬜}, 上方✅/下方⚠️/内部⬜
-    2026-07-31 提到模块级
+    """中枢字符串: ¥low~high{✅/⚠️/🔴/⬜}, 上方✅/下方⚠️/跌穿🔴/内部⬜
+    2026-08-26 改: 加 "跌穿🔴" 映射, 之前落 "⬜" 是 bug
     """
     if h and h.get("valid") and h.get("low") and h.get("high"):
         pos = h.get("pos", "")
-        icon = "✅" if "上方" in pos else ("⚠️" if "下方" in pos else "⬜")
+        if "上方" in pos:
+            icon = "✅"
+        elif "跌穿" in pos:
+            icon = "🔴"
+        elif "下方" in pos:
+            icon = "⚠️"
+        else:
+            icon = "⬜"
         return f"¥{h['low']:.0f}~{h['high']:.0f}{icon}"
     return "—"
 
@@ -1320,21 +1255,36 @@ def _hub_str(h: dict) -> str:
 def _bsp_str(pts: dict) -> str:
     """买卖点字符串: "0买 1买⭐ 2买" (按级别排, 不带 timeframe label)
     2026-07-31 提到模块级
+    2026-08-26 改: 加上其他 czsc BSP 类型 (吞没/MACD底背/双中枢/笔结束 等)
 
     2026-08-01: 硬 assert 禁 '|' — markdown 表格里 | 是 cell 分隔符, 用 | join 必错位
     """
     if not pts: return "—"
     out = []
+    seen = set()
+    def _add(label):
+        if label not in seen:
+            seen.add(label)
+            out.append(label)
     for k in pts:
-        if "1买⭐" in k:   out.append("1买⭐")
-        elif "1买" in k:   out.append("1买")
-        elif "2买" in k:   out.append("2买")
-        elif "3买" in k:   out.append("3买")
-        elif "0买" in k:   out.append("0买")
-        elif "1卖⭐" in k:  out.append("1卖⭐")
-        elif "1卖" in k:   out.append("1卖")
-        elif "2卖" in k:   out.append("2卖")
-        elif "3卖" in k:   out.append("3卖")
+        # 1买/2买/3买/1卖/2卖/3卖 (123 买卖点, 优先识别)
+        if "1买⭐" in k:   _add("1买⭐")
+        elif "1买" in k:   _add("1买")
+        elif "2买" in k:   _add("2买")
+        elif "3买" in k:   _add("3买")
+        elif "0买" in k:   _add("0买")
+        elif "1卖⭐" in k:  _add("1卖⭐")
+        elif "1卖" in k:   _add("1卖")
+        elif "2卖" in k:   _add("2卖")
+        elif "3卖" in k:   _add("3卖")
+        # 2026-08-26 改: 其他 czsc BSP 类型 (抄底/逃顶/形态/笔信号)
+        elif "MACD底背" in k:    _add("底背")
+        elif "MACD顶背" in k:    _add("顶背")
+        elif "DIF走平" in k:     _add("DIF走平")
+        elif "MACD开仓" in k:    _add("MACD开仓")
+        elif "笔结束" in k:      _add("笔结束")
+        elif "双中枢" in k:      _add("双中枢")
+        elif "吞没" in k:        _add("吞没")
     result = " ".join(out) if out else "—"
     assert "|" not in result, f"_bsp_str 禁 '|' 字符 (markdown cell 分隔符), got: {result!r}"
     return result
@@ -1453,7 +1403,11 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
         return "> ⚠️ ctx 未设置，无法计算历史\n"
     try:
         from tools.analysis.factor_history import compute_factor_history, diff_rows
-        rows = compute_factor_history(data.ctx, step=1, lookback=lookback)
+        if data.factor_history_rows is not None:
+            rows = data.factor_history_rows
+        else:
+            rows = compute_factor_history(data.ctx, step=1, lookback=lookback)
+            data.factor_history_rows = rows
     except Exception as e:
         return f"> ❌ 历史计算失败: {e}\n"
 
@@ -1658,34 +1612,43 @@ def _section_buy_sell_points(data: AnalysisData) -> str:
 
 
 def _section_market_context(data: AnalysisData) -> str:
-    """🌍 大盘 + 美股背景"""
+    """🌍 大盘 + 美股背景 (2026-08-26: 内联 fetch_index_quote, 删 data_source 间接层)"""
     try:
-        from tools.fetch.data_source import fetch_index_quote
+        from tools.fetch.tushare_fetcher import _safe_call
     except Exception:
-        return "> **数据状态:** ⚠️ data_source 模块不可用\n"
+        return "> **数据状态:** ⚠️ tushare_fetcher 不可用\n"
     indices = [("000001.SH", "上证指数"), ("000300.SH", "沪深300"),
                ("399006.SZ", "创业板指"), ("399001.SZ", "深证成指")]
     rows = ["| 指数 | 价格 | 涨跌幅 | 状态 |", "|---|---|---|---|"]
     for tc, iname in indices:
-        d, st = fetch_index_quote(tc)
-        if d:
-            pct = d.get("change_pct", 0)
-            emoji = "🟢" if pct > 0 else "🔴" if pct < 0 else "⬜"
-            rows.append(f"| {iname} | {d['price']:.2f} | {pct:+.2f}% | {emoji} |")
-        else:
-            rows.append(f"| {iname} | — | — | ❌ {st} |")
+        try:
+            rows_data, st = _safe_call("index_daily", ts_code=tc, limit=2)
+            if rows_data and len(rows_data) >= 1:
+                cur = rows_data[0]
+                prev = rows_data[1] if len(rows_data) > 1 else {}
+                cur_close = float(cur.get("close", 0) or 0)
+                prev_close = float(prev.get("close", 0) or cur.get("pre_close", 0) or 0)
+                pct = ((cur_close / prev_close - 1) * 100) if prev_close else 0
+                emoji = "🟢" if pct > 0 else "🔴" if pct < 0 else "⬜"
+                rows.append(f"| {iname} | {cur_close:.2f} | {pct:+.2f}% | {emoji} |")
+            else:
+                rows.append(f"| {iname} | — | — | ❌ {st or 'EMPTY'} |")
+        except Exception as e:
+            rows.append(f"| {iname} | — | — | ❌ EXC |")
     rows += ["\n**美股:** | 指数 | 状态 |", "|---|---|",
              "| 纳斯达克 | ⚠️ 需 Yahoo Finance |", "| 标普500 | ⚠️ 需 Yahoo Finance |"]
     return "\n".join(rows) + "\n"
 
 
 def _section_data_sources(data: AnalysisData) -> str:
-    """📡 数据源矩阵"""
+    """📡 数据源矩阵 (2026-08-26: 内联 _load_config, 删 data_source 间接层)"""
     try:
-        from tools.fetch.data_source import _load_config
-        cfg = _load_config()
+        import yaml
+        from pathlib import Path
+        yaml_path = Path(__file__).parent.parent.parent / "data" / "sources.yaml"
+        cfg = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) if yaml_path.exists() else {}
     except Exception:
-        return "> **数据状态:** ⚠️ data_source 模块不可用\n"
+        return "> **数据状态:** ⚠️ sources.yaml 不可用\n"
     lines = ["| 数据 | 主源 | 备源 | 单位 | 说明 |", "|---|---|---|---|---|"]
     for name, sec in (cfg or {}).items():
         if name == "banned":
@@ -1823,12 +1786,11 @@ def render_report(data: AnalysisData, sector: str = "—") -> str:
 
 ---
 
-## 🎯 因子 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警, 2026-08-17 改名为 factor_matrix)
+## 🎯 5 方法 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警)
 {_section_factor_matrix(data)}
 
 ---
 
-<!-- id:chan_supplement -->
 ## 🔍 5 方法详情 — 周期独立展开 (2026-07-29 简版: 矩阵 + 详情并存, 矩阵简版/详情展开)
 
 > 📌 **结构说明**: 上面矩阵是 1 眼总览 (5 方法 × 3 周期各 1 行概要), 下面是每个周期的详情 (段表 / 9 子事件 / OB 列表等矩阵没包含的独有信息)

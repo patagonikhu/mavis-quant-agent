@@ -16,7 +16,7 @@ from .trend_pullback import detect_trend_pullback
 from .markup_entry import detect_markup_entry
 from .distribution_start import detect_distribution_start
 from .upthrust import detect_upthrust
-from .scanner import scan_sub_events
+from .sub_event_scanner import scan_sub_events
 
 
 # 9 sub_event 中文名 + 含义 + 阶段 (从 wyckoff.py 155 行搬过来, 跟 WyckoffTradingAgent 1:1)

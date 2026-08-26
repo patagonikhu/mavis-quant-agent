@@ -67,8 +67,51 @@ Loaded: 416, Skipped: 0
 简洁报告:
 - 清单表格 (8 列: 代码/名称/现价/上周/5y低/5y最大回撤/今gap/反弹/2025净利/今年)
 - 行业分布
-- 业绩状态: 0 只同比正增长 = 全部业绩下行, 反弹策略不是价值投资
+- 反弹策略说明: 距 5y 低 < 3% 的超跌股多为业绩下行/亏损, 反弹策略 (涨 10-20% 跑 / 跌破谷底 10% 砍 / 持有 1-3 个月 / 5-10 只分散), 跟价值投资无关
 - 实战建议: 反弹策略 (涨 10-20% 跑 / 跌破谷底 10% 砍 / 持有 1-3 个月 / 5-10 只分散)
+
+## Step 4: 深挖 (清单出来后,挑出 3-5 只做完整分析)
+
+清单给出 8-13 只候选后,挑出值得深挖的 3-5 只,用 `/t-analyze` skill 跑完整 22 section 报告。
+
+**✅ 正确做法 (批量入口, 0 重复)**:
+
+```bash
+# 多只 (>1 只) 永远走 refresh_all.sh 批量入口
+# 1 次 sync_incremental (单线程) + 4 worker 并发 analyze+render
+bash tools/refresh_all.sh 002531 300699 600515 688522 000858 --workers 5
+```
+
+**❌ 错误做法** (N 只单跑,每次重复 sync):
+
+```bash
+# 不要这样 — 每次都跑 sync_incremental, 5 次锁等待
+for code in 002531 300699 600515 688522 000858; do
+    bash tools/with_venv.sh python -m tools.sync_stock $code
+done
+```
+
+**单只深挖** (用户说"就分析 002531"):
+
+```bash
+bash tools/with_venv.sh python -m tools.sync_stock 002531
+bash tools/with_venv.sh python3 -c "
+import sys; sys.path.insert(0, '.')
+from tools.data_store import DataStore
+from tools.analysis.analysis_engine import AnalysisEngine
+from tools.analysis.analysis_data import AnalysisData
+from tools.analysis.factor_history import compute_factor_history
+from tools.render.report_renderer import render_report
+from pathlib import Path
+ctx = DataStore.get_ctx('002531')
+data = AnalysisData.from_result(ctx, AnalysisEngine().analyze(ctx))
+data.factor_history_rows = compute_factor_history(ctx, step=1, lookback=120)
+md = render_report(data)
+p = Path('docs') / f'analyze-002531-{ctx.name or \"002531\"}.md'
+p.write_text(md, encoding='utf-8'); print(p)
+"
+# 输出: docs/analyze-002531-天顺风能.md (完整 22 section)
+```
 
 ## 每周自动跑 (cron)
 

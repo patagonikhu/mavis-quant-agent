@@ -73,30 +73,54 @@ SIGNAL_TEMPLATES = {
 }
 
 
-# 信号 value 模式 → 项目命名 + 方向 (抄底/逃顶)
+# cs.s key (czsc 1.0.1 实测) → (label, direction | None=从sig_val判断)
+# direction=None 表示需要看 sig_val 内容来决定方向
+CS_KEY_LABEL_MAP = {
+    "日线_D1B_BUY1":               ("🟢1买",       "buy"),
+    "日线_D1B_SELL1":              ("🔴1卖",       "sell"),
+    "日线_D1_三买辅助V230228":      ("🟢3买",       "buy"),
+    "日线_D1双中枢_BS1辅助V230311": ("🟢双中枢",    "buy"),
+    "日线_D1MACD背驰_BS辅助V230804": None,   # 底背→buy, 顶背→sell, 看 sig_val
+    "日线_D1DIF走平_BS辅助V230516":  None,   # 看多→buy, 看空→sell
+    "日线_D1MACD开仓_BS辅助V230517": None,   # 看多→buy, 看空→sell
+    "日线_D1_吞没形态":             None,    # 看涨→buy, 看跌→sell
+    "日线_D1_孕线":                 None,    # 看涨→buy, 看跌→sell
+    "日线_D1K_三法":                None,    # 看涨→buy, 看跌→sell
+    "日线_D1_反击线":               None,    # 看涨→buy, 看跌→sell
+    "日线_D1B_山川形态":            ("🟢山川",     "buy"),
+    "日线_D1K_分手线":              None,    # 看涨→buy, 看跌→sell
+    "日线_D1_三只乌鸦":             ("🔴三只乌鸦", "sell"),
+    "日线_D1K_两只乌鸦":            ("🔴两只乌鸦", "sell"),
+    "日线_D1K_塔形":                ("🔴塔形",     "sell"),
+    "日线_快速突破_BE辅助V230815":   ("🟢笔结束",   "buy"),
+    "日线_趋势跟随_BS辅助V240527":   None,   # 趋势跟随→buy, 其他→skip
+}
+
+# sig_val 方向判断: 含这些词→buy 或 sell
+_VAL_BUY_TOKENS  = ("看多", "看涨", "底背", "买入", "趋势跟随")
+_VAL_SELL_TOKENS = ("看空", "看跌", "顶背", "卖出")
+
+# key→label (方向未知时) 用 sig_val 的词汇推断标签
+_KEY_LABEL_FROM_VAL = {
+    "日线_D1MACD背驰_BS辅助V230804":  {"多头": "🟢MACD底背", "空头": "🔴MACD顶背"},
+    "日线_D1DIF走平_BS辅助V230516":   {"看多": "🟢DIF走平",  "看空": "🔴DIF走平"},
+    "日线_D1MACD开仓_BS辅助V230517":  {"看多": "🟢MACD开仓", "看空": "🔴MACD开仓"},
+    "日线_D1_吞没形态":               {"看涨": "🟢吞没",    "看跌": "🔴吞没"},
+    "日线_D1_孕线":                   {"看涨": "🟢孕线",    "看跌": "🔴孕线"},
+    "日线_D1K_三法":                  {"看涨": "🟢三法",    "看跌": "🔴三法"},
+    "日线_D1_反击线":                 {"看涨": "🟢反击线",  "看跌": "🔴反击线"},
+    "日线_D1K_分手线":                {"看涨": "🟢分手线",  "看跌": "🔴分手线"},
+    "日线_趋势跟随_BS辅助V240527":    {"趋势跟随": "🟢趋势跟随"},
+}
+
+# 保留旧名兼容 (外部可能直接 import SIGNAL_VALUE_MAP)
 SIGNAL_VALUE_MAP = {
-    # 抄底 (绿)
-    "看涨_吞没": ("🟢吞没", "buy"),
-    "看涨_孕线": ("🟢孕线", "buy"),
-    "看涨_三法": ("🟢三法", "buy"),
-    "看涨_反击线": ("🟢反击线", "buy"),
-    "看涨_山川": ("🟢山川", "buy"),
-    "看涨_分手线": ("🟢分手线", "buy"),
     "买入_一买": ("🟢1买", "buy"),
     "买入_三买": ("🟢3买", "buy"),
-    "买入_双中枢": ("🟢双中枢", "buy"),
-    "买入_底背": ("🟢MACD底背", "buy"),
-    "买入_走平": ("🟢DIF走平", "buy"),
-    "买入_开仓": ("🟢MACD开仓", "buy"),
-    "买入_快速突破": ("🟢笔结束", "buy"),
-
-    # 逃顶 (红)
-    "看跌_三只乌鸦": ("🔴三只乌鸦", "sell"),
-    "看跌_两只乌鸦": ("🔴两只乌鸦", "sell"),
-    "看跌_塔形": ("🔴塔形", "sell"),
-    "卖出_一卖": ("🔴1卖", "sell"),
-    "卖出_顶背": ("🔴MACD顶背", "sell"),
 }
+
+_CS_META_KEYS = frozenset({"id", "dt", "symbol", "high", "low", "open", "close",
+                            "vol", "amount", "freq", "cache"})
 
 
 def precompute_signals(klines: List[Dict], code: str = "TEMP") -> list:
@@ -147,14 +171,18 @@ def build_incremental_signals(klines: List[Dict], code: str = "TEMP",
     return cs, bars, cfg, []
 
 
-def extract_points_from_sigs(sigs: list, as_of_date: str = "") -> Dict[str, Any]:
-    """从预计算的 sigs 里，按截止日期提取最近 30 天内触发的买卖点。"""
+def extract_points_from_sigs(sigs: list, as_of_date: str = "",
+                              days: int = 30) -> Dict[str, Any]:
+    """从预计算的 sigs 里，按截止日期提取买卖点。
+
+    Args:
+        days: 回看天数。30=最近30天（主报告）; 1=仅当天（factor_history 每行）
+    """
     if not sigs:
         return {'points': {}}
 
     as_of_clean = as_of_date.replace("-", "")[:8] if as_of_date else ""
 
-    # 确定截止基准：as_of_date 或最后一根 bar
     if as_of_clean:
         filtered = [s for s in sigs if str(s.get('dt', ''))[:10].replace('-', '') <= as_of_clean]
     else:
@@ -164,14 +192,24 @@ def extract_points_from_sigs(sigs: list, as_of_date: str = "") -> Dict[str, Any]
         return {'points': {}}
 
     last_date_str = str(filtered[-1].get('dt', ''))[:10]
-    try:
-        from datetime import datetime, timedelta
-        cutoff_dt = datetime.strptime(last_date_str, '%Y-%m-%d') - timedelta(days=30)
-    except Exception:
+
+    if days == 1:
+        # 只取当天（as_of_clean 那一天）
+        exact = as_of_clean or last_date_str.replace('-', '')
+        day_sigs = [s for s in filtered
+                    if str(s.get('dt', ''))[:10].replace('-', '')[:8] == exact[:8]]
         cutoff_dt = None
+        scan_sigs = day_sigs
+    else:
+        try:
+            from datetime import datetime, timedelta
+            cutoff_dt = datetime.strptime(last_date_str, '%Y-%m-%d') - timedelta(days=days)
+        except Exception:
+            cutoff_dt = None
+        scan_sigs = list(reversed(filtered))
 
     points = {}
-    for s in reversed(filtered):
+    for s in (scan_sigs if days == 1 else scan_sigs):
         if not isinstance(s, dict):
             continue
         bar_date_str = str(s.get('dt', ''))[:10]
@@ -188,16 +226,24 @@ def extract_points_from_sigs(sigs: list, as_of_date: str = "") -> Dict[str, Any]
         except (TypeError, ValueError):
             pass
         for sig_name, sig_val in s.items():
-            if not isinstance(sig_val, str):
+            if sig_name in _CS_META_KEYS:
                 continue
-            if not sig_val or sig_val == '其他_其他_任意_0':
+            if not isinstance(sig_val, str) or not sig_val:
                 continue
-            prefix = '_'.join(sig_val.split('_')[:2])
-            for key, (label, _direction) in SIGNAL_VALUE_MAP.items():
-                if key in sig_val or prefix in sig_val:
-                    if label not in points:
-                        points[label] = f"¥{close:.2f} @ {bar_date_str}"
-                    break
+            if sig_val.startswith('其他'):
+                continue
+            if sig_name not in CS_KEY_LABEL_MAP:
+                continue
+            entry = CS_KEY_LABEL_MAP[sig_name]
+            if entry is not None:
+                label, _dir = entry
+            else:
+                val_map = _KEY_LABEL_FROM_VAL.get(sig_name, {})
+                label = next((lbl for tok, lbl in val_map.items() if tok in sig_val), None)
+                if label is None:
+                    continue
+            if label not in points:
+                points[label] = f"¥{close:.2f}"
 
     return {'points': points}
 
@@ -221,50 +267,9 @@ def compute_buy_sell_signals(klines: List[Dict], code: str = "TEMP") -> Dict[str
     except Exception as e:
         return {'points': {}, 'error': f'czsc signals 失败: {e}'}
 
-    points = {}
-
     if not sigs:
         return {'points': {}}
 
-    # 最新 K 线日期作截止基准
-    last_bar = sigs[-1]
-    last_date_str = str(last_bar.get('dt', ''))[:10]
-    try:
-        from datetime import datetime, timedelta
-        cutoff_dt = datetime.strptime(last_date_str, '%Y-%m-%d') - timedelta(days=30)
-    except Exception:
-        cutoff_dt = None
-
-    # 反向遍历 (最新 → 最旧), 同 label 保留最近触发, 超 30 天截止
-    for s in reversed(sigs):
-        if not isinstance(s, dict):
-            continue
-        bar_date_str = str(s.get('dt', ''))[:10]
-        if cutoff_dt:
-            try:
-                from datetime import datetime as _dt
-                if _dt.strptime(bar_date_str, '%Y-%m-%d') < cutoff_dt:
-                    break
-            except Exception:
-                pass
-        close = 0
-        try:
-            close = float(s.get('close', 0))
-        except (TypeError, ValueError):
-            pass
-
-        for sig_name, sig_val in s.items():
-            if not isinstance(sig_val, str):
-                continue
-            if not sig_val or sig_val == '其他_其他_任意_0':
-                continue
-            prefix = '_'.join(sig_val.split('_')[:2])
-            for key, (label, _direction) in SIGNAL_VALUE_MAP.items():
-                if key in sig_val or prefix in sig_val:
-                    if label not in points:
-                        points[label] = f"¥{close:.2f} @ {bar_date_str}"
-                    break
-
-    return {'points': points, 'raw_signals': sigs}
-
+    result = extract_points_from_sigs(sigs, days=1)
+    return {**result, 'raw_signals': sigs}
 
