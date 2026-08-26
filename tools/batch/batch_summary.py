@@ -48,7 +48,8 @@ def _filter_by_sector(stocks: list[dict], sector: str) -> list[dict]:
 
 def _parse_md_last_row(md_path: Path) -> dict | None:
     """从 docs/analyze-{code}-{name}.md 读 "## 📈 因子历史走势" section 最后一行
-    返 dict 含 13 列: date/close/wyckoff/sub_event/beichi/ma/hub_daily/hub_weekly/hub_60m/bsp/smc/chg/day_score
+    当前 header (report_renderer.py:1463):
+      日期|收盘|威科夫(日/周)|子事件(日/周)|MA(日/周)|日中枢|周中枢|买卖点|变化|日分(顶/底)|A天(日/周)|OBV|布林%|MA120偏离
     返 None 表示文件不存在或 section 没数据
     """
     if not md_path.exists():
@@ -75,22 +76,21 @@ def _parse_md_last_row(md_path: Path) -> dict | None:
     # 第一个 data 行 (逆序后最新日期在最上面)
     last = data_lines[0]
     cells = [c.strip() for c in last.strip("|").split("|")]
-    if len(cells) < 12:
+    if len(cells) < 9:
         return None
-    day_score_raw = cells[11].strip() if len(cells) > 11 else "—"
+    day_score_raw = cells[9].strip() if len(cells) > 9 else "—"
     day_top, day_bot = _parse_day_score(day_score_raw)
     return {
         "date": cells[0],
         "close": cells[1],
         "wyckoff": cells[2],
         "sub_event": cells[3],
-        "beichi": cells[4],
-        "ma": cells[5],
-        "hub_daily": cells[6],
-        "hub_weekly": cells[7],
-        "hub_60m": cells[8],
-        "bsp": cells[9],
-        "chg": cells[10],
+        "ma": cells[4],
+        "hub_daily": cells[5],
+        "hub_weekly": cells[6],
+        "bsp": cells[7],
+        "chg": cells[8],
+        "accum_days": cells[10].strip() if len(cells) > 10 else "—",
         "day_top": day_top,
         "day_bot": day_bot,
         "day_score": max(day_top, day_bot),
@@ -450,8 +450,8 @@ def _render_md(buy_rows, sell_rows, all_table_rows, total_watchlist: int,
     # 完整状态表 (含日分顶/底)
     lines += [
         "\n---\n\n## 完整状态表 (含今日信号分, 跟单只 md 因子历史走势最后一行对齐)\n\n",
-        "| 代码 | 名称 | 场景 | 收盘 | 威科夫(日/周/60) | 子事件(日/60) | 背驰(日/周/60) | MA(日/周/60) | 日中枢 | 周中枢 | 60分中枢 | 买卖点 | 信号 | 日分(顶/底) | A天(日/周/60) |\n",
-        "|------|------|------|------|----------------|--------------|--------------|-------------|--------|--------|----------|--------|------|-------------|---------------|\n",
+        "| 代码 | 名称 | 场景 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 信号 | 日分(顶/底) | A天(日/周) |\n",
+        "|------|------|------|------|--------------|-------------|-----------|--------|--------|--------|------|-------------|------------|\n",
     ]
     all_table_rows.sort(key=lambda x: (0 if x[-1] == "⭐" else 1, x[0]))
     for code, name, scene, last, has_sig in all_table_rows:
@@ -463,8 +463,8 @@ def _render_md(buy_rows, sell_rows, all_table_rows, total_watchlist: int,
             ds_str = "—"
         lines.append(
             f"| {code} | {name} | {has_sig}{scene} | {last['close']} | "
-            f"{last['wyckoff']} | {last['sub_event']} | {last['beichi']} | {last['ma']} | "
-            f"{last['hub_daily']} | {last['hub_weekly']} | {last['hub_60m']} | "
+            f"{last['wyckoff']} | {last['sub_event']} | {last['ma']} | "
+            f"{last['hub_daily']} | {last['hub_weekly']} | "
             f"{last['bsp']} | {last['chg']} | {ds_str} | {last.get('accum_days','—')} |\n"
         )
 

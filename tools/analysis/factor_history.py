@@ -100,31 +100,22 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 
 def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     """从 AnalysisResult 提取单行因子快照"""
-    fs = result.factor_scores
-    chan_fs  = fs.get("chan")
-    bsp_fs   = fs.get("buy_sell_points")
-    wy_fs    = fs.get("wyckoff")
-    smc_fs   = fs.get("smc")
-    fflow_fs = fs.get("fflow")
-    obv_fs   = fs.get("obv")
+    raw       = result.raw
+    chan_raw   = raw.get("chan",             {}) or {}
+    bsp_raw    = raw.get("buy_sell_points", {}) or {}
+    wy_raw     = raw.get("wyckoff",         {}) or {}
+    smc_raw    = raw.get("smc",             {}) or {}
+    fflow_raw  = raw.get("fflow",           {}) or {}
+    obv_raw    = raw.get("obv",             {}) or {}
+    p3         = wy_raw.get("3period") or {}
 
-    chan_raw  = (chan_fs.raw  if chan_fs  else {}) or {}
-    bsp_raw   = (bsp_fs.raw  if bsp_fs  else {}) or {}
-    wy_raw    = (wy_fs.raw   if wy_fs   else {}) or {}
-    smc_raw   = (smc_fs.raw  if smc_fs  else {}) or {}
-    fflow_raw = (fflow_fs.raw if fflow_fs else {}) or {}
-    obv_raw   = (obv_fs.raw   if obv_fs  else {}) or {}
-    p3        = wy_raw.get("3period") or {}
-
-    pos_fs = result.factor_scores.get("position")
-    pos_raw = (pos_fs.raw if pos_fs else {}) or {}
+    pos_raw = raw.get("position", {}) or {}
 
     return {
         # 基础
         "date":       date,
         "close":      close,
         "scene":      result.scene,
-        "score":      round(result.total_score, 2),
         "resonance":  result.resonance_count,
 
         # 移植因子: 价格位置 (WyckoffTradingAgent → mavis, 2026-08)
@@ -173,10 +164,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "obv_strategy_score": obv_raw.get("score", 0),
         "obv_div_bot_60d":    obv_raw.get("obv_div_bot_60d", 0),
         "obv_div_top_60d":    obv_raw.get("obv_div_top_60d", 0),
-
-        # MACD 底背驰
-        "macd_div_bot": (result.factor_scores.get("macd_div").raw or {}).get("has_bot_div", False)
-                        if result.factor_scores.get("macd_div") else False,
     }
 
 

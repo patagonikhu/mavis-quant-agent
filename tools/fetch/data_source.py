@@ -97,10 +97,7 @@ class _TushareAdapter:
 
 
 class _Sina60mAdapter:
-    """Sina 60分 K线 (内部 _sina_60m_fallback, 用于备源)"""
-    def fetch(self, code: str) -> tuple[Any, str]:
-        from tools.fetch.data_source import _sina_60m_fallback
-        return _sina_60m_fallback(code, 400)
+    pass  # 已废弃，保留占位避免 import 报错
 
 
 # Registry: source_name → adapter (类), 每个 source 是统一的 fetch(code) 接口
@@ -123,7 +120,6 @@ def _build_source_registry() -> dict[str, Any]:
         "Tushare.index_daily":    None,  # 特殊: 用 _safe_call, 在 fetch_index_quote 里手写
         "Tushare.pro_bar":        None,  # 暂不开放 (需要 freq/asset 参数)
         "Tushare.stk_mins":       None,  # 2026-07-24 决定不用, 单接口频控 4s/次 (57 只 watchlist × 4s = 228s)
-        "Sina.60m":              _Sina60mAdapter(),
     }
 
 
@@ -345,50 +341,6 @@ def fetch_stock_info(code: str) -> tuple[dict | None, str]:
     except Exception as e:
         ms = int((time.time() - t0) * 1000)
         _log_fetch("Tushare.stock_basic", code, f"EXC_{type(e).__name__}", ms, str(e))
-        return None, f"EXC_{type(e).__name__}"
-
-
-def fetch_kline_60m(code: str, n: int = 400) -> tuple[list[dict] | None, str]:
-    """60 分 K 线 (Sina 60分, 2026-07-24 改单一源)
-    ⚠️ 2026-07-24 决定: Tushare.stk_mins 单接口频控 1次/分钟 (2000 积分档), 57 只 watchlist 跑要 57 分钟
-    改用 Sina 公网 (无单接口频控, 但 79 字段可能变化)
-    """
-    t0 = time.time()
-    rows, status = _sina_60m_fallback(code, n)
-    ms = int((time.time() - t0) * 1000)
-    if rows:
-        _log_fetch("Sina.60m", code, "OK", ms)
-        return rows, "OK"
-    _log_fetch("Sina.60m", code, status or "EMPTY", ms)
-    return None, status or "EMPTY"
-
-
-def _sina_60m_fallback(code: str, n: int = 400) -> tuple[list[dict] | None, str]:
-    """Sina 60分 K线备源 (Tushare.stk_mins 频控时 fallback) — 内部用, 不在白名单外暴露"""
-    import subprocess as _sp
-    import json as _j
-    p = "sh" if code.startswith("6") else "sz"
-    try:
-        r = _sp.run([
-            "curl", "-sL", "--max-time", "12",
-            f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-            f"CN_MarketData.getKLineData?symbol={p}{code}&scale=60&ma=no&datalen={n}",
-        ], capture_output=True, timeout=15)
-        raw = _j.loads(r.stdout.decode("utf-8", "ignore"))
-        if not raw:
-            return None, "EMPTY"
-        return [
-            {
-                "date": x["day"],
-                "open": float(x.get("open", 0) or 0),
-                "high": float(x["high"]),
-                "low": float(x["low"]),
-                "close": float(x["close"]),
-                "vol": float(x.get("volume", 0) or 0),
-            }
-            for x in raw
-        ], "OK"
-    except Exception as e:
         return None, f"EXC_{type(e).__name__}"
 
 

@@ -340,7 +340,7 @@ def _section_fundamental(data: AnalysisData) -> str:
         return "> **数据状态:** ❌ 基本面未计算 (财务数据不足)\n> **降级:** 用 EPS 一致预期 + PE_TTM 间接算\n"
     f = data.fundamental
     parts = [
-        f"**综合评分:** {f['total_score']}/100 — {f['summary']}\n",
+        f"**综合评分:** {f.get('summary', '—')}\n",
         "| 维度 | 评分 | 说明 |",
         "|---|---|---|",
     ]

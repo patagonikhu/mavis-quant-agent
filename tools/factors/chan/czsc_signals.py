@@ -119,32 +119,47 @@ def compute_buy_sell_signals(klines: List[Dict], code: str = "TEMP") -> Dict[str
         return {'points': {}, 'error': f'czsc signals 失败: {e}'}
 
     points = {}
-    last_date = ''
-    last_close = 0
 
-    # 找最近的触发信号
-    for s in sigs:
+    if not sigs:
+        return {'points': {}}
+
+    # 最新 K 线日期作截止基准
+    last_bar = sigs[-1]
+    last_date_str = str(last_bar.get('dt', ''))[:10]
+    try:
+        from datetime import datetime, timedelta
+        cutoff_dt = datetime.strptime(last_date_str, '%Y-%m-%d') - timedelta(days=30)
+    except Exception:
+        cutoff_dt = None
+
+    # 反向遍历 (最新 → 最旧), 同 label 保留最近触发, 超 30 天截止
+    for s in reversed(sigs):
         if not isinstance(s, dict):
             continue
-        last_date = str(s.get('dt', ''))[:10]
+        bar_date_str = str(s.get('dt', ''))[:10]
+        if cutoff_dt:
+            try:
+                from datetime import datetime as _dt
+                if _dt.strptime(bar_date_str, '%Y-%m-%d') < cutoff_dt:
+                    break
+            except Exception:
+                pass
+        close = 0
         try:
-            last_close = float(s.get('close', 0))
+            close = float(s.get('close', 0))
         except (TypeError, ValueError):
-            last_close = 0
+            pass
 
         for sig_name, sig_val in s.items():
             if not isinstance(sig_val, str):
                 continue
             if not sig_val or sig_val == '其他_其他_任意_0':
                 continue
-            # 按 value 头 4 个字匹配 (e.g. "看涨_吞没_任意_任意_0")
             prefix = '_'.join(sig_val.split('_')[:2])
-            # 看是否在映射里
             for key, (label, _direction) in SIGNAL_VALUE_MAP.items():
                 if key in sig_val or prefix in sig_val:
-                    # 如果同 key 已有 (说明今天有多个信号), 保留
                     if label not in points:
-                        points[label] = f"¥{last_close:.2f} @ {last_date}"
+                        points[label] = f"¥{close:.2f} @ {bar_date_str}"
                     break
 
     return {'points': points, 'raw_signals': sigs}

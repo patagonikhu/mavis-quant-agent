@@ -37,10 +37,10 @@ def scan_one(code: str, window: int, require_macd: bool,
     """扫描单只股票，找布林%触底 + 确认信号。返回命中信息或 None。"""
     try:
         from tools.data_store import DataStore
-        from tools.analysis.analysis_engine import ChanStrategy, MacdDivergenceStrategy
+        from tools.analysis.analysis_engine import ChanStrategy
         from tools.analysis.factor_history import compute_factor_history
 
-        strategies = [ChanStrategy, MacdDivergenceStrategy]
+        strategies = [ChanStrategy]
         ctx = DataStore.get_ctx(code, kline_only=True, limit=250)
         if len(ctx.kline) < 60:
             return None
@@ -78,30 +78,17 @@ def scan_one(code: str, window: int, require_macd: bool,
 
         lookback_rows = rows[max(0, trigger_idx - 30): trigger_idx + 1]
 
-        # 缠论底背驰（30天内）
+        # 缠论买卖点（30天内 czsc 信号）
         chan_date = None
         for r in reversed(lookback_rows):
-            bc        = r.get("daily_beichi") or {}
-            direction = bc.get("direction", "") if isinstance(bc, dict) else ""
-            strength  = bc.get("strength",  "") if isinstance(bc, dict) else ""
-            if direction == "bot" and strength in ("strong", "weak"):
+            sigs = r.get("czsc_signals") or {}
+            if sigs.get("1买") or sigs.get("3买") or sigs.get("MACD底背"):
                 chan_date = r["date"]
                 break
-            if isinstance(bc, str) and "底背" in bc:
-                chan_date = r["date"]
-                break
-
-        # MACD 底背驰（5天内）
-        macd_lookback = rows[max(0, trigger_idx - 5): trigger_idx + 1]
-        macd_date = next(
-            (r["date"] for r in reversed(macd_lookback) if r.get("macd_div_bot")), None
-        )
 
         has_chan = chan_date is not None
-        has_macd = macd_date is not None
-        confirmed = has_macd if require_macd else True
-        if not confirmed:
-            return None
+        has_macd = False  # MacdDivergenceStrategy 已移除，改用 czsc 信号
+        confirmed = True
 
         try:
             fmt = "%Y%m%d" if len(trigger_date) == 8 else "%Y-%m-%d"

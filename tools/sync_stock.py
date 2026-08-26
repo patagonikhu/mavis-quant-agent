@@ -38,7 +38,7 @@ def main():
     # L2: 跑分析
     engine = AnalysisEngine()
     result = engine.analyze(ctx)
-    print(f"  - 场景: {result.scene} | 总分: {result.total_score:+.2f}")
+    print(f"  - 场景: {result.scene}")
 
     # L3: 渲染报告（可选）
     if args.render:

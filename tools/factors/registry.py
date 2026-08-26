@@ -166,7 +166,7 @@ class StandardFactorSets:
         """5方法核心因子 (跟 report 一致)"""
         return [
             # 缠论 3 要素
-            "beichi_day", "beichi_60m", "hub_distance",
+            "beichi_day", "hub_distance",
             # 威科夫 3 阶段
             "wyckoff_stage", "wyckoff_confidence",
             # SMC 核心
