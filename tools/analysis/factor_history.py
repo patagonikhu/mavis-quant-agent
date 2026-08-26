@@ -28,29 +28,33 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     """
     from tools.analysis.analysis_engine import AnalysisEngine
     engine = AnalysisEngine(strategies=strategies)
-    engine.analyze(ctx)   # 热身，消除冷启动开销
 
     kline = ctx.kline
     start = max(0, len(kline) - lookback)
-    rows  = []
+    dates = [kline[i]["trade_date"] for i in range(start, len(kline), step)]
 
-    for i in range(start, len(kline), step):
-        as_of  = kline[i]["trade_date"]
-        close  = kline[i]["close"]
-        result = engine.analyze(ctx, as_of_date=as_of)
+    # 批量历史计算：每个 strategy 自己决定怎么遍历，不在外部切片
+    history = engine.analyze_history(ctx, dates)
 
-        # MA20 偏离：在 AnalysisEngine 层用切片后的 K 线计算，不存 dump
+    rows = []
+    for date in dates:
+        result = history.get(date.replace("-", "")[:8])
+        if result is None:
+            continue
+        close = next((k["close"] for k in kline if k["trade_date"].replace("-","")[:8] == date.replace("-","")[:8]), 0)
+
+        # MA/BOLL 需要切片后的 K 线（取索引直接切，不用 list comprehension 过滤）
+        date_clean = date.replace("-", "")[:8]
+        ki = next((i for i, k in enumerate(kline) if k["trade_date"].replace("-","")[:8] == date_clean), len(kline))
+        k_slice = kline[:ki+1]
+        w_slice = [b for b in ctx.weekly if b["trade_date"].replace("-","")[:8] <= date_clean]
+
         def _ma_dev(bars: list, n: int = 20) -> float | None:
             if not bars or len(bars) < n:
                 return None
             closes = [b["close"] for b in bars[-n:]]
             ma = sum(closes) / len(closes)
             return round((bars[-1]["close"] / ma - 1) * 100, 1) if ma > 0 else None
-
-        # 用切片到 as_of 的 K 线（engine.analyze 内部已切片，但 ctx 原始未变）
-        as_of_clean = as_of.replace("-", "")[:8]
-        k_slice = [b for b in ctx.kline  if b["trade_date"].replace("-","")[:8] <= as_of_clean]
-        w_slice = [b for b in ctx.weekly if b["trade_date"].replace("-","")[:8] <= as_of_clean]
 
         def _boll(bars: list, n: int = 20, k: float = 2.0) -> dict | None:
             if not bars or len(bars) < n:
@@ -63,23 +67,21 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
             lower = mid - k * std
             c = bars[-1]["close"]
             bpct = round((c - lower) / (upper - lower) * 100, 1) if upper > lower else 50.0
-            return {
-                "upper": round(upper, 1), "lower": round(lower, 1),
-                "mid": round(mid, 1), "bpct": bpct,
-            }
+            return {"upper": round(upper, 1), "lower": round(lower, 1),
+                    "mid": round(mid, 1), "bpct": bpct}
 
         boll_d = _boll(k_slice)
         ma_devs = {
-            "ma_dev_daily":   _ma_dev(k_slice, 20),
-            "ma_dev_weekly":  _ma_dev(w_slice, 20),
-            "ma120_dev":      _ma_dev(k_slice, 120),
-            "boll_upper":     boll_d["upper"]  if boll_d else None,
-            "boll_lower":     boll_d["lower"]  if boll_d else None,
-            "boll_mid":       boll_d["mid"]    if boll_d else None,
-            "boll_pct":       boll_d["bpct"]   if boll_d else None,
+            "ma_dev_daily":  _ma_dev(k_slice, 20),
+            "ma_dev_weekly": _ma_dev(w_slice, 20),
+            "ma120_dev":     _ma_dev(k_slice, 120),
+            "boll_upper":    boll_d["upper"] if boll_d else None,
+            "boll_lower":    boll_d["lower"] if boll_d else None,
+            "boll_mid":      boll_d["mid"]   if boll_d else None,
+            "boll_pct":      boll_d["bpct"]  if boll_d else None,
         }
 
-        rows.append({**_extract_row(result, as_of, close, ctx), **ma_devs})
+        rows.append({**_extract_row(result, date, close, ctx), **ma_devs})
 
     # post-process: 计算三周期连续 Accum 天数（升序扫，遇非Accum重置）
     for field, out_key in [

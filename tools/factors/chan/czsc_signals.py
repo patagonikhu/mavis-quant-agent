@@ -99,6 +99,109 @@ SIGNAL_VALUE_MAP = {
 }
 
 
+def precompute_signals(klines: List[Dict], code: str = "TEMP") -> list:
+    """预计算全量信号序列，供 factor_history 复用（避免逐节点重算）。
+
+    返回 generate_czsc_signals 的原始 list，调用方用 extract_points_from_sigs 按日期提取。
+    """
+    if not CZSC_AVAILABLE or len(klines) < 60:
+        return []
+    from .czsc_wrapper import klines_to_raw_bars
+    bars = klines_to_raw_bars(klines, code)
+    try:
+        cfg = get_signals_config(list(SIGNAL_TEMPLATES.values()))
+        return generate_czsc_signals(bars, cfg, sdt='20200101', df=False) or []
+    except Exception:
+        return []
+
+
+def build_incremental_signals(klines: List[Dict], code: str = "TEMP",
+                              warmup_to: int = -1,
+                              weekly_bars=None):
+    """建 CzscSignals 对象并预热到指定 bar 索引。
+
+    Args:
+        klines:      全量日线 K 线
+        code:        股票代码
+        warmup_to:   预热到第几根 bar（不含），-1 表示全量预热
+        weekly_bars: 可选，周线 RawBar 列表；传入后 kas 同时包含周线
+
+    Returns:
+        (cs, bars, cfg, [])
+    """
+    if not CZSC_AVAILABLE or len(klines) < 60:
+        return None, [], None, []
+    import czsc as _czsc
+    from .czsc_wrapper import klines_to_raw_bars
+    bars = klines_to_raw_bars(klines, code)
+    cfg = get_signals_config(list(SIGNAL_TEMPLATES.values()))
+    n = warmup_to if warmup_to >= 0 else len(bars)
+
+    extra_freqs = [_czsc.Freq.W] if weekly_bars else []
+    bg = _czsc.BarGenerator(bars[0].freq, extra_freqs, 1000)
+    if weekly_bars:
+        bg.init_freq_bars(_czsc.Freq.W, weekly_bars)
+    cs = _czsc.CzscSignals(bg, cfg)
+    for bar in bars[:n]:
+        cs.update_signals(bar)
+    return cs, bars, cfg, []
+
+
+def extract_points_from_sigs(sigs: list, as_of_date: str = "") -> Dict[str, Any]:
+    """从预计算的 sigs 里，按截止日期提取最近 30 天内触发的买卖点。"""
+    if not sigs:
+        return {'points': {}}
+
+    as_of_clean = as_of_date.replace("-", "")[:8] if as_of_date else ""
+
+    # 确定截止基准：as_of_date 或最后一根 bar
+    if as_of_clean:
+        filtered = [s for s in sigs if str(s.get('dt', ''))[:10].replace('-', '') <= as_of_clean]
+    else:
+        filtered = sigs
+
+    if not filtered:
+        return {'points': {}}
+
+    last_date_str = str(filtered[-1].get('dt', ''))[:10]
+    try:
+        from datetime import datetime, timedelta
+        cutoff_dt = datetime.strptime(last_date_str, '%Y-%m-%d') - timedelta(days=30)
+    except Exception:
+        cutoff_dt = None
+
+    points = {}
+    for s in reversed(filtered):
+        if not isinstance(s, dict):
+            continue
+        bar_date_str = str(s.get('dt', ''))[:10]
+        if cutoff_dt:
+            try:
+                from datetime import datetime as _dt
+                if _dt.strptime(bar_date_str, '%Y-%m-%d') < cutoff_dt:
+                    break
+            except Exception:
+                pass
+        close = 0
+        try:
+            close = float(s.get('close', 0))
+        except (TypeError, ValueError):
+            pass
+        for sig_name, sig_val in s.items():
+            if not isinstance(sig_val, str):
+                continue
+            if not sig_val or sig_val == '其他_其他_任意_0':
+                continue
+            prefix = '_'.join(sig_val.split('_')[:2])
+            for key, (label, _direction) in SIGNAL_VALUE_MAP.items():
+                if key in sig_val or prefix in sig_val:
+                    if label not in points:
+                        points[label] = f"¥{close:.2f} @ {bar_date_str}"
+                    break
+
+    return {'points': points}
+
+
 def compute_buy_sell_signals(klines: List[Dict], code: str = "TEMP") -> Dict[str, Any]:
     """用 czsc 算抄底/逃顶/买卖点 等信号"""
     if not CZSC_AVAILABLE:

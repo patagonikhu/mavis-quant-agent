@@ -166,6 +166,20 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
     }
     ma_long_w, dist_min_bias, upthrust_lookback = _period_cfg.get(period_label, (200, 15.0, 60))
 
+    # 预算 ATR 数组，O(n) 一次，避免每根 bar 内 _is_trading_range_context 重算 O(n)
+    # atr_arr[i] = 以第 i 根 bar 结尾的 20 日 ATR
+    _ATR_WIN = 20
+    atr_arr = [0.0] * len(c)
+    if len(c) > _ATR_WIN:
+        trs = []
+        for j in range(len(c)):
+            tr1 = h[j] - l[j]
+            tr2 = abs(h[j] - (c[j-1] if j > 0 else c[j]))
+            tr3 = abs(l[j] - (c[j-1] if j > 0 else c[j]))
+            trs.append(max(tr1, tr2, tr3))
+        for j in range(_ATR_WIN - 1, len(c)):
+            atr_arr[j] = sum(trs[j - _ATR_WIN + 1:j + 1]) / _ATR_WIN
+
     events = []
     n = len(c)
     # v5.10.42: as_of_idx 限制扫到 i <= as_of_idx (None=扫整段)
@@ -175,10 +189,11 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
         d_str = dates[i] if dates and i < len(dates) else None
         v_at_i = v[i] if i < len(v) else 0
         c_at_i = c[i] if i < len(c) else 0
-        if detect_spring(c, h, l, v, o, i, max_bias=spring_max_bias, vol_ratio=spring_vol_ratio):
+        if detect_spring(c, h, l, v, o, i, max_bias=spring_max_bias, vol_ratio=spring_vol_ratio,
+                         precomputed_atr=atr_arr[i]):
             events.append({"name": "Spring", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_lps(c, h, l, v, o, i, max_bias=lps_max_bias, pct_chg=pct_chg,
-                      vol_dry_ratio=lps_vol_dry_ratio):
+                      vol_dry_ratio=lps_vol_dry_ratio, precomputed_atr=atr_arr[i]):
             events.append({"name": "LPS", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_evr(c, h, l, v, o, i, vol_window=evr_vol_window, vol_ratio=evr_vol_ratio,
                       max_bias=evr_max_bias, max_drop=evr_max_drop, max_rise=evr_max_rise,

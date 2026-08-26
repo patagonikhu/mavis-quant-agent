@@ -7,7 +7,8 @@ detectors/spring.py - Spring 终极震仓 (跟 WyckoffTradingAgent 1093 行 1:1)
 from ..helpers import _is_trading_range_context, _spring_support_level, _bias_200_exceeds_limit, _is_frozen_board_day
 
 
-def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=15.0) -> bool:
+def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=15.0,
+                  precomputed_atr=None) -> bool:
     """Spring 检测 (1:1 搬运 WyckoffTradingAgent 1093 行)"""
     n = len(c)
     if i < support_window + 2:
@@ -24,7 +25,8 @@ def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=1
     full_h = h[:i]
     full_l = l[:i]
     full_c = c[:i]
-    if not _is_trading_range_context(zone_h, zone_l, zone_c, full_h, full_l, full_c):
+    if not _is_trading_range_context(zone_h, zone_l, zone_c, full_h, full_l, full_c,
+                                     precomputed_atr=precomputed_atr):
         return False
     support_level = _spring_support_level(zone_l, zone_c)
     if support_level <= 0:

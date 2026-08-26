@@ -168,10 +168,12 @@ def _is_trading_range_context(zone_h, zone_l, zone_c, full_h, full_l, full_c,
                               max_range_pct: float = 30.0,
                               max_drift_pct: float = 12.0,
                               atr_window: int = 20,
-                              atr_multiple: float = 4.0) -> bool:
+                              atr_multiple: float = 4.0,
+                              precomputed_atr: float | None = None) -> bool:
     """(WyckoffTradingAgent 989 行) Spring 必须先发生在可接受的 TR 内
 
     动态 ATR 计算最大允许 range_pct (atr_pct × 4, 范围 [30, 60])
+    precomputed_atr: 外部预算的 ATR 值（float），有则跳过内部 O(n) ATR 计算
     """
     if not zone_h or not zone_l or not zone_c:
         return False
@@ -182,7 +184,13 @@ def _is_trading_range_context(zone_h, zone_l, zone_c, full_h, full_l, full_c,
     range_pct = (high_max - low_min) / low_min * 100.0
 
     max_allowed_range_pct = max_range_pct
-    if full_h and len(full_h) > atr_window:
+    if precomputed_atr is not None:
+        atr = precomputed_atr
+        if atr > 0 and full_c and full_c[-1] > 0:
+            atr_pct = (atr / full_c[-1]) * 100.0
+            max_allowed_range_pct = atr_pct * atr_multiple
+            max_allowed_range_pct = min(max(max_allowed_range_pct, max_range_pct), 60.0)
+    elif full_h and len(full_h) > atr_window:
         # True Range 序列
         trs = []
         for j in range(len(full_h)):

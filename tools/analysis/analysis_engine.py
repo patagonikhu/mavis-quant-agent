@@ -66,7 +66,7 @@ class RawContext:
             f"周线切片错误: 最后一根 {date_clean(w[-1])} > {as_of_clean}"
 
         price = k[-1]["close"] if k else self.current_price
-        return RawContext(
+        sliced = RawContext(
             kline=k, weekly=w,
             eps_table=self.eps_table,
             fflow=self.fflow,
@@ -76,6 +76,13 @@ class RawContext:
             code=self.code,
             name=self.name,
         )
+        # 透传预计算缓存（factor_history 优化：全量信号预算一次，切片节点直接查表）
+        for _attr in ('_precomputed_signals', '_czsc_signals_obj',
+                      '_czsc_signals_bars', '_czsc_signals_pos',
+                      '_czsc_signals_start', '_czsc_sigs_window'):
+            if hasattr(self, _attr):
+                setattr(sliced, _attr, getattr(self, _attr))
+        return sliced
 
 
 @dataclass
@@ -203,6 +210,15 @@ class WyckoffStrategy:
             "sub_events_by_period": sub_events_by_period,
             "3period": wyckoff_3period,
         }
+
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """批量历史：逐节点切片，复用 analyze。Wyckoff 无状态，切片后全量扫。"""
+        results = {}
+        for date in dates:
+            date_clean = date.replace("-", "")[:8]
+            sliced = ctx.slice(date_clean)
+            results[date_clean] = self.analyze(sliced)
+        return results
 
 
 class SmcStrategy:
@@ -347,102 +363,149 @@ class ObvStrategy:
 
 
 class ChanStrategy:
-    """缠论三级别 (中枢+背驰) → 分数，从 ctx.kline 直接计算"""
+    """缠论 (中枢+背驰+买卖点)，日线+周线统一用一个 CzscSignals 对象。"""
     name = "chan"
 
-    def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.chan.czsc_adapter import analyze_hub_v2_czsc
-        from tools.factors.chan.czsc_signals import compute_buy_sell_signals
+    # ── 共享工具 ──────────────────────────────────────────────
 
-        kline = ctx.kline
+    @staticmethod
+    def _build_cs(ctx: RawContext, warmup_to: int = 0):
+        """建含日线+周线的 CzscSignals，返回 (cs, bars_d)。"""
+        from tools.factors.chan.czsc_signals import build_incremental_signals
+        from tools.factors.chan.czsc_adapter import dates_closes_to_raw_bars
+        import czsc as _czsc
+
+        week = ctx.weekly if ctx.weekly else []
+        weekly_bars = None
+        if len(week) >= 30:
+            d_w = [w.get('trade_date', '') for w in week]
+            c_w = [w.get('close', 0)       for w in week]
+            h_w = [w.get('high', 0)         for w in week]
+            l_w = [w.get('low', 0)          for w in week]
+            weekly_bars = dates_closes_to_raw_bars(d_w, c_w, h_w, l_w, symbol=ctx.code)
+
+        ks = [{'date': k['trade_date'], 'open': k['open'], 'close': k['close'],
+               'high': k['high'], 'low': k['low'],
+               'vol': k.get('vol', 0), 'amount': k.get('amount', 0)}
+              for k in ctx.kline]
+        cs, bars, _, _ = build_incremental_signals(ks, ctx.code,
+                                                    warmup_to=warmup_to,
+                                                    weekly_bars=weekly_bars)
+        return cs, bars
+
+    @staticmethod
+    def _hub_result(czsc_obj, p_now, label, dates):
+        """从 CZSC/kas 对象提取中枢+笔+段，统一格式。"""
+        from tools.factors.chan.czsc_adapter import bis_to_segs_format, czsc_zss_to_hub_format
+        from czsc import get_zs_seq
+        bis  = czsc_obj.bi_list
+        zss  = get_zs_seq(bis)
+        segs = bis_to_segs_format(bis, dates)
+        hubs = czsc_zss_to_hub_format(zss)
+        if hubs:
+            h = hubs[-1]
+            hl, hh = h['low'], h['high']
+            if p_now > hh:            h['pos'] = "上方✅"
+            elif p_now < hl * 0.95:   h['pos'] = "跌穿🔴"
+            elif p_now < hl:           h['pos'] = "下方⚠️"
+            else:                      h['pos'] = "内部⬜"
+        seg_status = '未知'
+        if segs:
+            last = segs[-1]
+            if last['sst'] == 'T' and p_now < last['ep']:
+                seg_status = f"下跌段延伸中（¥{last['sp']:.0f}→¥{p_now:.0f}，未结束）"
+            elif last['sst'] == 'B' and p_now > last['ep']:
+                seg_status = f"上涨段延伸中（¥{last['sp']:.0f}→¥{p_now:.0f}，未结束）"
+            else:
+                seg_status = f"最后段结束¥{last['ep']:.0f}，当前¥{p_now:.0f}震荡"
+        supports = sorted([s['lo'] for s in segs[-8:] if s['lo'] < p_now], reverse=True)[:3]
+        return {
+            'hub': hubs[-1] if hubs else {'valid': False},
+            'hubs': hubs, 'segs': segs,
+            'n_strokes': len(bis), 'n_segs': len(segs),
+            'seg_status': seg_status, 'supports': supports,
+            'p': p_now, 'label': label, 'bis': bis,
+        }
+
+    @staticmethod
+    def _read_node(cs, sigs_win, p_now, d_d, bar_dt):
+        """从当前 cs 状态读日线+周线中枢和买卖点，返回 chan dict。"""
+        from tools.factors.chan.czsc_signals import extract_points_from_sigs
+        kas = cs.kas or {}
+        day_czsc = kas.get('日线')
+        wk_czsc  = kas.get('周线')
+        res_d = ChanStrategy._hub_result(day_czsc, p_now, '日线', d_d) if day_czsc else {}
+        res_w = ChanStrategy._hub_result(wk_czsc,  p_now, '周线', []) if wk_czsc else {}
+        bsp_d = extract_points_from_sigs(sigs_win, bar_dt)
+        return {
+            "daily":  {**res_d, "buy_sell_points": bsp_d.get('points', {})},
+            "weekly": {**res_w, "buy_sell_points": {}},
+            "buy_sell_points": {
+                "daily": bsp_d.get('points', {}), "weekly": {}, "60min": {}, "30min": {},
+            },
+        }
+
+    # ── 单次分析 ─────────────────────────────────────────────
+
+    def analyze(self, ctx: RawContext) -> dict:
         chan = {}
         try:
-            kd_day = kline
-            if kd_day and len(kd_day) >= 30:
-                # 周线：5 根日线合成 1 根
-                week = []
-                for i in range(0, len(kd_day) - 4, 5):
-                    chunk = kd_day[i:i + 5]
-                    if len(chunk) < 5:
-                        break
-                    week.append({
-                        'trade_date': chunk[0].get('trade_date', ''),
-                        'open':  chunk[0].get('open', 0),
-                        'close': chunk[-1].get('close', 0),
-                        'high':  max(c.get('high', 0) for c in chunk),
-                        'low':   min(c.get('low', 0) for c in chunk),
-                        'volume': sum(c.get('volume', c.get('vol', 0)) for c in chunk),
-                    })
-                d_w = [b['trade_date'] for b in week]
-                c_w = [b['close'] for b in week]
-                h_w = [b['high'] for b in week]
-                l_w = [b['low'] for b in week]
-                d_d = [k.get('trade_date', '') for k in kd_day]
-                c_d = [k.get('close', 0) for k in kd_day]
-                h_d = [k.get('high', 0) for k in kd_day]
-                l_d = [k.get('low', 0) for k in kd_day]
-
-                res_w = analyze_hub_v2_czsc(d_w, c_w, h_w, l_w, '周线', code=ctx.code)
-                res_d = analyze_hub_v2_czsc(d_d, c_d, h_d, l_d, '日线', code=ctx.code)
-
-                # 买卖点: 用 czsc_signals (1买/3买/MACD底背 等)
-                bsp_d = compute_buy_sell_signals(
-                    [{'date': d, 'open': c, 'close': c, 'high': h, 'low': l, 'vol': 0, 'amount': 0}
-                     for d, c, h, l in zip(d_d, c_d, h_d, l_d)],
-                    ctx.code
-                )
-                # 周线买卖点暂空 (czsc_signals 只算日线)
-                bsp_w = {'points': {}}
-
-                # 把买卖点写到 daily/weekly 字段
-                daily_with_bsp = {**(res_d or {}),
-                                   "buy_sell_points": bsp_d.get('points', {})}
-                weekly_with_bsp = {**(res_w or {}),
-                                    "buy_sell_points": bsp_w.get('points', {})}
-                chan = {
-                    "weekly": weekly_with_bsp,
-                    "daily":  daily_with_bsp,
-                    "buy_sell_points": {
-                        "weekly": bsp_w.get('points', {}),
-                        "daily":  bsp_d.get('points', {}),
-                        "60min":  {},
-                        "30min":  {},
-                    },
-                }
-                # 同时把 bsp 写进 ctx, 让 AnalysisData 能读
-                ctx._bsp_for_data = {
-                    "weekly": bsp_w.get('points', {}),
-                    "daily":  bsp_d.get('points', {}),
-                    "60min":  {},
-                    "30min":  {},
-                }
+            if ctx.kline and len(ctx.kline) >= 30:
+                last_date = ctx.kline[-1]['trade_date'].replace("-", "")[:8]
+                results = self.analyze_history(ctx, [last_date])
+                chan = results.get(last_date, {})
+                ctx._bsp_for_data = chan.get("buy_sell_points", {})
         except Exception:
             pass
         ctx.chan_result = chan
 
-        signals = []
-        score_total = 0.0
-        cnt = 0
+        score_total, cnt = 0.0, 0
         for level in ["weekly", "daily"]:
-            d   = chan.get(level, {}) or {}
-            pos = d.get("pos", "—") or (d.get("hub", {}) or {}).get("pos", "—")
-            if "下方" in str(pos):
-                score_total -= 0.3
-                cnt += 1
-            elif "上方" in str(pos):
-                score_total += 0.3
-                cnt += 1
+            pos = (chan.get(level, {}).get("hub") or {}).get("pos", "—")
+            if "下方" in str(pos):   score_total -= 0.3; cnt += 1
+            elif "上方" in str(pos): score_total += 0.3; cnt += 1
 
-        avg = score_total / cnt if cnt > 0 else 0.0
-        # 买卖点 (从 ctx._bsp_for_data 拿, czsc_signals 算的)
         bsp = getattr(ctx, "_bsp_for_data", {})
         return {
-            "score":           avg,
-            "signals":         signals,
-            "summary":         f"缠论 {cnt}/3 级别",
+            "score":   score_total / cnt if cnt > 0 else 0.0,
+            "signals": [],
+            "summary": f"缠论 {cnt}/2 级别",
             **chan,
             "buy_sell_points": bsp,
         }
+
+    # ── 批量历史 ─────────────────────────────────────────────
+
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """一次遍历全量 bars，在每个 date 节点记录中枢+买卖点。"""
+        from tools.factors.chan.czsc_signals import extract_points_from_sigs  # noqa
+        dates_set = set(d.replace("-", "")[:8] for d in dates)
+        if not ctx.kline or len(ctx.kline) < 30:
+            return {}
+
+        cs, bars = self._build_cs(ctx, warmup_to=0)
+        if cs is None:
+            return {}
+
+        d_d = [k.get('trade_date', '') for k in ctx.kline]
+        sigs_win = []
+        results  = {}
+
+        for bar in bars:
+            bar_dt = str(bar.dt)[:10].replace("-", "")[:8]
+            cs.update_signals(bar)
+            snap = dict(cs.s); snap['dt'] = bar_dt
+            sigs_win.append(snap)
+            if len(sigs_win) > 60: sigs_win.pop(0)
+
+            if bar_dt not in dates_set:
+                continue
+
+            p_now = float(snap.get('close') or 0) or ctx.current_price
+            node  = self._read_node(cs, sigs_win, p_now, d_d, bar_dt)
+            results[bar_dt] = {**node, "score": 0.0, "signals": [], "summary": "缠论历史"}
+
+        return results
 
 
 class PegStrategy:
@@ -534,25 +597,33 @@ def _derive_five_categories(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
-    """缠论 1买/1卖/2买/3买 (3 级别)"""
-    from tools.factors.registry import FactorRegistry
-    reg = FactorRegistry()
-    bsp_factor = reg.get("buy_sell_points")
-    if bsp_factor is None:
+    """缠论 1买/1卖/2买/3买 + 双中枢/笔结束 (3 级别)
+
+    v3.0: 直接读 ChanStrategy 算的 ctx._bsp_for_data (czsc_signals 输出, 100% czsc)
+    不再调老的 BuySellPointsFactor (tools/factors/chan/_deprecated/buy_sell.py)
+    """
+    bsp = getattr(ctx, "_bsp_for_data", None) or {}
+    if not bsp:
         return {}
-    chan = ctx.chan_result
-    bsp = {}
-    for level_key in ["weekly", "daily"]:
-        res = chan.get(level_key) or {}
-        beichi_str = res.get("beichi", "")
-        klines = ctx.kline if level_key == "daily" else None
-        try:
-            out = bsp_factor(df=None, res=res, beichi_str=beichi_str,
-                             klines=klines, level_key=level_key)
-            bsp[level_key] = out.get("points", {}) if isinstance(out, dict) else {}
-        except Exception as e:
-            bsp[level_key] = {"error": str(e)}
-    return bsp
+    # 补一个 action 字段 (取最强信号), 保持 flat dict 格式 (跟 czsc_signals 一致)
+    def _action(points):
+        if not isinstance(points, dict):
+            return "—"
+        for k in ['🟢1买⭐', '🟢1买', '🟢3买', '🟢双中枢', '🟢笔结束',
+                  '🔴1卖⭐', '🔴1卖', '🔴2卖', '🔴3卖',
+                  '🟢吞没', '🔴三只乌鸦']:
+            if k in points and points[k] not in (None, '—', ''):
+                return k
+        return "—"
+    out = {}
+    for level in ['weekly', 'daily']:
+        pts = bsp.get(level, {})
+        if pts and isinstance(pts, dict):
+            out[level] = dict(pts)  # flat dict (跟 bsp 一样的 emoji keys)
+            out[level]['action'] = _action(pts)
+        else:
+            out[level] = {}
+    return out
 
 
 def _derive_exit_signals(ctx: RawContext, raw: dict) -> dict:
@@ -735,8 +806,15 @@ class AnalysisEngine:
 
         # 加权聚合 total (Phase1 only, 不存入 AnalysisResult)
         total = 0.0
+        n_effective = 0
         for k, w in _STRATEGY_WEIGHTS.items():
-            total += float((raw.get(k) or {}).get("score", 0) or 0) * w
+            d = raw.get(k) or {}
+            sc = d.get("score")
+            # v3.6.1 改: score > 0 才算 effective, score=0 (默认 0) 视为缺失
+            if sc is not None and float(sc) > 0:
+                n_effective += 1
+            total += float(sc or 0) * w
+        n_total = len(_STRATEGY_WEIGHTS)
 
         # 场景判定
         scene, scene_name, signals_active = self._decide_scene(raw, ctx)
@@ -744,8 +822,8 @@ class AnalysisEngine:
         # 共振数
         resonance_count = self._count_resonance(raw, scene)
 
-        # 行动建议
-        action = self._decide_action(scene, total, resonance_count)
+        # 行动建议 (v3.6.1: data_completeness < 50% 时显示"数据不足", 不显示假分数)
+        action = self._decide_action(scene, total, resonance_count, n_effective, n_total)
 
         return AnalysisResult(
             code=code,
@@ -758,6 +836,63 @@ class AnalysisEngine:
             signals_active=signals_active,
             action=action,
         )
+
+    def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
+        """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
+
+        Args:
+            ctx:   全量 RawContext（不切片）
+            dates: 日期列表，格式 'YYYYMMDD'
+
+        Returns:
+            dict[date_str, AnalysisResult]
+        """
+        dates_clean = [d.replace("-", "")[:8] for d in dates]
+
+        # 每个 strategy 各自批量计算
+        # 有 analyze_history 的用批量版，否则降级逐节点切片
+        strategy_results: dict[str, dict[str, dict]] = {}
+        for inst in self._phase1:
+            if hasattr(inst, 'analyze_history'):
+                strategy_results[inst.name] = inst.analyze_history(ctx, dates_clean)
+            else:
+                per_date = {}
+                for date in dates_clean:
+                    sliced = ctx.slice(date)
+                    try:
+                        per_date[date] = inst.analyze(sliced)
+                    except Exception as e:
+                        per_date[date] = {"score": 0.0, "signals": [], "summary": str(e)}
+                strategy_results[inst.name] = per_date
+
+        # 合并每个节点的所有 strategy 结果 → AnalysisResult
+        results = {}
+        for date in dates_clean:
+            sliced = ctx.slice(date)
+            raw: Dict[str, Any] = {}
+            for inst in self._phase1:
+                raw[inst.name] = (strategy_results.get(inst.name) or {}).get(date, {})
+            # _derive_buy_sell_points 读 ctx._bsp_for_data，从 chan 结果补填
+            chan_bsp = raw.get('chan', {}).get('buy_sell_points') or {}
+            sliced._bsp_for_data = chan_bsp
+            # Phase2
+            for fn in self._phase2_fns:
+                key = fn.__name__.replace("_derive_", "")
+                try:
+                    raw[key] = fn(sliced, raw)
+                except Exception:
+                    pass
+            scene, scene_name, signals_active = self._decide_scene(raw, sliced)
+            resonance_count = self._count_resonance(raw, scene)
+            action = self._decide_action(scene, 0.0, resonance_count, 0, len(self._phase1))
+            results[date] = AnalysisResult(
+                code=ctx.code, name=ctx.name,
+                current_price=sliced.current_price,
+                raw=raw, scene=scene, scene_name=scene_name,
+                resonance_count=resonance_count,
+                signals_active=signals_active, action=action,
+            )
+        return results
 
     # --- 内部: 场景判定 / 共振 / 行动 ---
 
@@ -821,16 +956,22 @@ class AnalysisEngine:
                 count += 1
         return count
 
-    def _decide_action(self, scene: str, total: float, resonance_count: int) -> str:
-        """根据场景 + 总分 + 共振数, 输出行动建议"""
+    def _decide_action(self, scene: str, total: float, resonance_count: int, n_effective: int = 0, n_total: int = 1) -> str:
+        """根据场景 + 总分 + 共振数, 输出行动建议
+
+        v3.6.1 改: 不显示 total_score 数字 (fallback 0.2 误导, dump 缺失时总分无效)
+        改显示 data_completeness (多少 strategy 跑成功, 0-100%)
+        """
+        if n_total > 0 and n_effective / n_total < 0.5:
+            return f"⬜ 数据不足 (仅 {n_effective}/{n_total} 方法有效), 震荡观望"
         scene_actions = {
-            "A": f"🟢 主升持有 (总分 {total:+.1f}, {resonance_count} 重共振)",
-            "B": f"🔴 派发减仓 (总分 {total:+.1f}, {resonance_count} 重共振)",
-            "C": f"⬜ 震荡观望 (总分 {total:+.1f}, {resonance_count} 重共振)",
-            "D": f"🥇 大底建仓 (总分 {total:+.1f}, {resonance_count} 重共振)",
-            "E": f"⚠️ 弱势规避 (总分 {total:+.1f}, {resonance_count} 重共振)",
+            "A": f"🟢 主升持有 ({resonance_count} 重共振)",
+            "B": f"🔴 派发减仓 ({resonance_count} 重共振)",
+            "C": f"⬜ 震荡观望 ({resonance_count} 重共振)",
+            "D": f"🥇 大底建仓 ({resonance_count} 重共振)",
+            "E": f"⚠️ 弱势规避 ({resonance_count} 重共振)",
         }
-        return scene_actions.get(scene, f"未知 (总分 {total:+.1f})")
+        return scene_actions.get(scene, f"未知 ({resonance_count} 重共振)")
 
 
 # ============================================================

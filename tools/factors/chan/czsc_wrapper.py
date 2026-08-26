@@ -65,8 +65,23 @@ def kline_to_raw_bar(kline: Dict, code: str, idx: int) -> "RawBar":
 
 
 def klines_to_raw_bars(klines: List[Dict], code: str) -> List["RawBar"]:
-    """批量转换"""
-    return [kline_to_raw_bar(k, code, i) for i, k in enumerate(klines)]
+    """批量转换，批量 parse 日期避免逐行 pd.to_datetime"""
+    dates = pd.to_datetime([k['date'] for k in klines])
+    return [
+        RawBar(
+            symbol=code,
+            dt=dates[i],
+            id=i,
+            freq=Freq.D,
+            open=float(k['open']),
+            close=float(k['close']),
+            high=float(k['high']),
+            low=float(k['low']),
+            vol=int(k.get('vol', 0) * 100),
+            amount=int(k.get('amount', 0) * 1000),
+        )
+        for i, k in enumerate(klines)
+    ]
 
 
 def fx_to_dict(fx) -> Dict[str, Any]:

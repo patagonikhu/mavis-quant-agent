@@ -89,16 +89,44 @@ echo "🔄 全刷 $TOTAL 只票, $WORKERS 并发"
 echo "开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=================================================="
 
+# 阶段 0: 预同步 (CLAUDE.md 铁律: sync_incremental 单线程先跑, 4 worker 再各取所需)
+# 之前漏这步 → 4 worker 各自跑全市场 sync_incremental, Tushare 限流 + 重复拉数据
+echo ""
+echo "🔄 预同步: sync_incremental (单线程, 全市场增量补齐)..."
+bash tools/with_venv.sh python3 -c "from tools.history_sync import sync_incremental; sync_incremental()" 2>&1 | tail -3
+echo ""
+
 # 阶段 1: dump (4 并发)
 DUMP_DIR=$(mktemp -d)
 DUMP_OK=()
 DUMP_FAIL=()
 
-dump_one() {
+process_one() {
     local code=$1
-    # 8-22 重写: sync_stock.py 走 DataStore + parquet, 不写 data/_old_d/{code}.json
-    # 判定成功 = 命令退出码 0 + 输出含 "K线: N 根"
-    if bash tools/with_venv.sh python3 -m tools.sync_stock "$code" >"$DUMP_DIR/${code}.log" 2>&1; then
+    # analyze + render 合一，阶段 0 已做 sync_incremental，这里 0 网络
+    if bash tools/with_venv.sh python3 -c "
+from tools.data_store import DataStore
+from tools.analysis.analysis_engine import AnalysisEngine
+from tools.analysis.analysis_data import AnalysisData
+from tools.render.report_renderer import render_report
+from pathlib import Path
+code = '$code'
+ctx = DataStore.get_ctx(code)
+if not ctx.kline:
+    print(f'⚠️ {code} 无K线')
+    exit(1)
+print(f'  - K线: {len(ctx.kline)} 根')
+result = AnalysisEngine().analyze(ctx)
+print(f'  - 场景: {result.scene}')
+if '$NO_RENDER' != '1':
+    data = AnalysisData.from_result(ctx, result)
+    md = render_report(data)
+    name = ctx.name or code
+    p = Path('docs') / f'analyze-{code}-{name}.md'
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(md, encoding='utf-8')
+    print(f'  - 报告: {len(md)} chars')
+" >"$DUMP_DIR/${code}.log" 2>&1; then
         if grep -q "K线: " "$DUMP_DIR/${code}.log" 2>/dev/null; then
             echo "DUMP_OK:$code"
         else
@@ -108,12 +136,11 @@ dump_one() {
         echo "DUMP_FAIL:$code $(tail -1 "$DUMP_DIR/${code}.log" 2>/dev/null)"
     fi
 }
-export -f dump_one
-export DUMP_DIR
-export ROOT
+export -f process_one
+export DUMP_DIR NO_RENDER ROOT
 
 # xargs -P N 并发
-printf '%s\n' $CODES | xargs -I{} -P "$WORKERS" -n 1 bash -c 'dump_one "$@"' _ {} > "$DUMP_DIR/results.txt" 2>&1 || true
+printf '%s\n' $CODES | xargs -I{} -P "$WORKERS" -n 1 bash -c 'process_one "$@"' _ {} > "$DUMP_DIR/results.txt" 2>&1 || true
 
 # 统计
 OK_COUNT=$(grep -c "^DUMP_OK:" "$DUMP_DIR/results.txt" 2>/dev/null | head -1 || echo 0)
@@ -122,48 +149,13 @@ FAIL_COUNT=$(grep -c "^DUMP_FAIL:" "$DUMP_DIR/results.txt" 2>/dev/null | head -1
 FAIL_COUNT=${FAIL_COUNT:-0}
 DUMP_END=$(date +%s)
 echo ""
-echo "📦 dump 阶段: ✅ $OK_COUNT / ❌ $FAIL_COUNT, 耗时 $((DUMP_END-START)) 秒"
-# 失败详情
+echo "📦 analyze+render: ✅ $OK_COUNT / ❌ $FAIL_COUNT, 耗时 $((DUMP_END-START)) 秒"
 if [ "$FAIL_COUNT" -gt 0 ]; then
     grep "^DUMP_FAIL:" "$DUMP_DIR/results.txt" | head -3 | sed 's/^/    /'
 fi
 
-# 阶段 2: render (4 并发, 只 render 成功的)
-if [ -z "$NO_RENDER" ] && [ "$OK_COUNT" -gt 0 ]; then
-    OK_CODES=$(grep "^DUMP_OK:" "$DUMP_DIR/results.txt" | cut -d: -f2)
-    
-    RENDER_DIR=$(mktemp -d)
-    RENDER_OK=0
-    RENDER_FAIL=0
-    
-    render_one() {
-        local code=$1
-        # 2026-07-25 收敛: 用 sync_stock.py --render (内部调新 renderer report_renderer.render_report)
-        if bash tools/with_venv.sh python3 -m tools.sync_stock "$code" --render >"$RENDER_DIR/${code}.log" 2>&1; then
-            echo "RENDER_OK:$code"
-        else
-            echo "RENDER_FAIL:$code"
-        fi
-    }
-    export -f render_one
-    export RENDER_DIR
-    export ROOT
-    
-    echo ""
-    echo "📖 渲染报告 (4 并发)..."
-    printf '%s\n' $OK_CODES | xargs -I{} -P "$WORKERS" -n 1 bash -c 'render_one "$@"' _ {} > "$RENDER_DIR/results.txt" 2>&1 || true
-
-    RENDER_OK=$(grep -c "^RENDER_OK:" "$RENDER_DIR/results.txt" 2>/dev/null | head -1 || echo 0)
-    RENDER_OK=${RENDER_OK:-0}
-    RENDER_FAIL=$(grep -c "^RENDER_FAIL:" "$RENDER_DIR/results.txt" 2>/dev/null | head -1 || echo 0)
-    RENDER_FAIL=${RENDER_FAIL:-0}
-    # render 失败详情
-    if [ "$RENDER_FAIL" -gt 0 ]; then
-        echo "    render 失败列表:"
-        grep "^RENDER_FAIL:" "$RENDER_DIR/results.txt" | sed 's/^/      /'
-    fi
-    rm -rf "$RENDER_DIR"
-fi
+RENDER_OK=$OK_COUNT
+RENDER_FAIL=$FAIL_COUNT
 
 END=$(date +%s)
 echo "=================================================="
