@@ -326,3 +326,53 @@ wyckoff_detectors:
     default: 25.0
     star: 40.0
     trending: 35.0
+
+# 个股/指数参数覆盖 (格式: code_overrides.{code}.wyckoff_detectors.{detector}.{key})
+# 优先级高于 wyckoff_detectors 全局配置，用于指数/特殊个股调参
+# 示例: 000300 指数放宽 LPS 缩量阈值 + SOS 涨幅阈值
+code_overrides:
+  "000001":  # 上证指数
+    wyckoff_detectors:
+      lps:
+        vol_dry_ratio:
+          daily: 0.70
+      sos:
+        pct_min:
+          daily: 3.0
+        vol_ratio: 1.5
+  "000300":  # 沪深300
+    wyckoff_detectors:
+      lps:
+        vol_dry_ratio:
+          daily: 0.70
+      sos:
+        pct_min:
+          daily: 3.0
+        vol_ratio: 1.5
+  "000688":  # 科创50
+    wyckoff_detectors:
+      lps:
+        vol_dry_ratio:
+          daily: 0.70
+      sos:
+        pct_min:
+          daily: 3.0
+        vol_ratio: 1.5
+  "399001":  # 深证成指
+    wyckoff_detectors:
+      lps:
+        vol_dry_ratio:
+          daily: 0.70
+      sos:
+        pct_min:
+          daily: 3.0
+        vol_ratio: 1.5
+  "399006":  # 创业板指
+    wyckoff_detectors:
+      lps:
+        vol_dry_ratio:
+          daily: 0.70
+      sos:
+        pct_min:
+          daily: 3.0
+        vol_ratio: 1.5

@@ -896,12 +896,12 @@ def compute_sector_overheat(sector: str, kline_fetcher=None) -> dict:
     def _fetch_closes(symbol: str) -> list[float]:
         if kline_fetcher:
             return kline_fetcher(symbol)
-        # 2026-07-24: 改走 data_source.fetch_kline_daily (替代 ifzq WAF)
+        # 2026-08-26: 删 data_source 间接层, 走 tushare_fetcher.get_daily 直连
         try:
-            from tools.fetch.data_source import fetch_kline_daily
-            bars, st = fetch_kline_daily(symbol, days=120)
+            from tools.fetch.tushare_fetcher import get_daily
+            bars, st = get_daily(symbol, limit=120)
             if st == "OK" and bars:
-                return [b["close"] for b in bars]
+                return [float(b.get("close", 0) or 0) for b in bars]
         except Exception:
             pass
         return []

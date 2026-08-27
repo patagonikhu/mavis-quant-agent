@@ -16,77 +16,6 @@ sys.path.insert(0, ".")
 WATCHLIST = Path("data/watchlist_oversold.json")
 
 
-def get_tushare_daily_close(code: str):
-    """tushare 拉 daily 最新价 (今天 8-19/8-20)"""
-    try:
-        from tools.fetch.tushare_fetcher import get_daily
-
-        data, _ = get_daily(code, limit=1)
-        if data and len(data) > 0:
-            row = data[0]
-            return float(row.get("close", 0)), row.get("trade_date", "?")
-    except Exception as e:
-        return None, str(e)
-    return None, "empty"
-
-
-def get_year_profit(code: str):
-    """tushare 拉 2025A 和 2024A 净利, 判断今年 vs 去年
-    返回 (status, profit_25, profit_24, change_pct)
-    status: 'ok' / 'fail'
-    """
-    try:
-        from tools.fetch.tushare_fetcher import get_income
-
-        # 2025A (2025 年报)
-        inc_25, _ = get_income(code, period="20251231")
-        # 2024A
-        inc_24, _ = get_income(code, period="20241231")
-        if not inc_25 or not inc_24:
-            return "fail", None, None, None
-        np_25 = float(inc_25.get("n_income", 0) or 0)
-        np_24 = float(inc_24.get("n_income", 0) or 0)
-        if np_24 <= 0:
-            change_pct = None  # 去年亏/0, 没法算同比
-        else:
-            change_pct = (np_25 - np_24) / abs(np_24) * 100
-        return "ok", np_25, np_24, change_pct
-    except Exception as e:
-        return "fail", None, None, str(e)
-
-
-def fetch_daily_concurrent(codes, max_workers=8):
-    """并发拉 daily 最新价. 返回 {code: (price, date) or (None, 'error')}"""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    results = {}
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(get_tushare_daily_close, code): code for code in codes}
-        for fut in as_completed(futures):
-            code = futures[fut]
-            try:
-                results[code] = fut.result()
-            except Exception as e:
-                results[code] = (None, str(e))
-    return results
-
-
-def fetch_profit_concurrent(codes, max_workers=8):
-    """并发拉 2025A/2024A 净利. 返回 {code: (status, np_25, np_24, change_pct)}"""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    results = {}
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(get_year_profit, code): code for code in codes}
-        for fut in as_completed(futures):
-            code = futures[fut]
-            try:
-                results[code] = fut.result()
-            except Exception as e:
-                results[code] = ("fail", None, None, str(e))
-    return results
-
-
 def find_max_drawdown(closes, weekly_bars):
     """5y 最大回撤 (high -> low) 严格按 weekly K 线算.
     返回 max_dd (负数, 如 -0.83 = 跌 83%)"""
@@ -143,12 +72,25 @@ def count_bounces(closes, threshold=0.30, window=3):
     return n
 
 
-def load_weekly(code: str) -> list[dict]:
-    """从本地历史库读日线并聚合成周线。"""
-    from tools.data_store import DataStore
-    from tools.fetch.data_fetcher import _synthesize_weekly
-    kline = DataStore.get_kline(code, limit=1300)  # ~5年
-    return _synthesize_weekly(kline)
+def load_all_kline_5y() -> dict[str, list[dict]]:
+    """1 次 SQL 拉全市场 daily K线 (动态 5.5y cutoff, 不 hardcode)。
+    替代每只股票单独 read_kline (5783 次 query → 1 次 query)。
+    """
+    import duckdb
+    df = duckdb.execute("""
+        WITH max_d AS (
+            SELECT MAX(STRPTIME(trade_date, '%Y%m%d')) AS d
+            FROM read_parquet('data/history/daily/*.parquet')
+        )
+        SELECT d.ts_code, d.trade_date, d.open, d.high, d.low, d.close
+        FROM read_parquet('data/history/daily/*.parquet') d, max_d m
+        WHERE STRPTIME(d.trade_date, '%Y%m%d') >= m.d - INTERVAL '5.5 year'
+        ORDER BY d.ts_code, d.trade_date
+    """).df()
+    return {
+        code: g[["trade_date", "open", "high", "low", "close"]].to_dict("records")
+        for code, g in df.groupby("ts_code")
+    }
 
 
 def main():
@@ -157,9 +99,8 @@ def main():
     ap.add_argument("--weekly-gap", type=float, default=10.0, help="粗筛 weekly 末根距 5y 低阈值 (默认 10)")
     ap.add_argument("--drop", type=float, default=70.0, help="跌幅阈值 %% 下限 (默认 70)")
     ap.add_argument("--drop-max", type=float, default=80.0, help="跌幅阈值 %% 上限 (默认 80, 排除 80%+ 异常)")
-    ap.add_argument("--lookback-years", type=int, default=5, help="max_drop 计算窗口 (默认 5, 可选 3)")
+    ap.add_argument("--lookback-years", type=int, default=5, help="max_dd (5y 内最深回撤) 计算窗口 (默认 5, 可选 3)")
     ap.add_argument("--min-bounces", type=int, default=0, help="最少反弹次数 (默认 0)")
-    ap.add_argument("--skip-tushare", action="store_true", help="跳过 tushare 拉 daily (只用 weekly 末根)")
     args = ap.parse_args()
 
     if not WATCHLIST.exists():
@@ -174,11 +115,16 @@ def main():
     drop_max_th = args.drop_max / 100.0
     lookback_weeks = args.lookback_years * 52  # 5y=260 周
 
-    from tools.data_store import DataStore
+    from tools.data_store import DataStore, _to_ts_code
     from tools.history_sync import sync_incremental
+    from tools.fetch.data_fetcher import _synthesize_weekly
     sync_incremental()
     all_codes = DataStore.list_codes()
     print(f"Loaded: {len(all_codes)} 只股票 (本地历史库)")
+
+    # 1 次 SQL 拉全市场 daily close (替代 5783 次 read_kline)
+    all_daily = load_all_kline_5y()
+    print(f"Bulk loaded: {len(all_daily)} 只 daily K线 (1 次 SQL)")
 
     rough_pool = []
     n_loaded = 0
@@ -188,35 +134,44 @@ def main():
         if code.startswith(("920", "830", "8")) and len(code) == 6:
             n_skipped += 1
             continue
-        weekly = load_weekly(code)
-        if len(weekly) < 60:
+        # dict lookup (带后缀的 ts_code)
+        daily = all_daily.get(_to_ts_code(code), [])
+        if len(daily) < 250:  # 至少 1 年
             n_skipped += 1
             continue
         n_loaded += 1
+        # 合成 weekly (供 count_bounces / find_max_drawdown 用)
+        weekly = _synthesize_weekly(daily)
+        if len(weekly) < 60:
+            continue
 
         # 5y high/low + 最大回撤 用 weekly
         weekly_closes = [float(w["close"]) for w in weekly]
         lo_5y = min(weekly_closes)
         hi_5y = max(weekly_closes)
 
-        # 用 lookback 窗口算 max_drop (5y 或 3y)
+        # 用 lookback 窗口算 max_dd (5y 或 3y 内最深 high→low)
         lb_weekly = weekly[-lookback_weeks:] if len(weekly) >= lookback_weeks else weekly
         lb_closes = [float(w["close"]) for w in lb_weekly]
         lb_lo = min(lb_closes)
         lb_hi = max(lb_closes)
-        # lookback 窗口最大回撤
+        # lookback 窗口最大回撤 (5y 内最深 high→low)
         max_dd_lb, _, _ = find_max_drawdown(lb_closes, lb_weekly)
         if max_dd_lb is None:
             continue
 
-        # 跌 70%-80% 用 lookback 窗口
+        # 跌 70%-80% 用 lookback 窗口最大回撤 (5y 内最深, 不是末根距高点)
+        # 2026-08-26 改: 粗筛用 max_dd_lb (5y 内最深回撤), 不用 current_drop (末根距 5y 高)
+        # 反弹策略在乎 "5y 内曾跌 70-80%", 不在乎"现在距 5y 高点多少"
+        if max_dd_lb > -drop_th:    # 不够跌 (5y 内最深回撤不到 70%)
+            continue
+        if max_dd_lb < -drop_max_th:  # 跌过头 (5y 内最深回撤超 80%)
+            continue
+
         weekly_cur = float(weekly[-1]["close"])
-        # 用 weekly_cur vs lb_hi (lookback 窗口高) 算当前跌幅
-        max_drop = (weekly_cur - lb_hi) / lb_hi
-        if max_drop > -drop_th:  # 不够跌
-            continue
-        if max_drop < -drop_max_th:  # 跌过头 (超 80%)
-            continue
+        # current_drop: 末根距 5y 高点的当前跌幅 (反弹策略 "反弹空间" 参考)
+        # 跟 max_dd_5y (5y 内最深) 互补: 前者看现在, 后者看历史最深
+        current_drop = (weekly_cur - lb_hi) / lb_hi
 
         # 粗筛: weekly 末根距 5y 低 < 10%
         if weekly_cur <= lo_5y:
@@ -232,13 +187,11 @@ def main():
 
         rough_pool.append({
             "code": code,
-            "name": code,
-            "sector": "—",
             "weekly_cur": weekly_cur,
             "weekly_gap": weekly_gap,
             "lo_5y": lo_5y,
             "hi_5y": hi_5y,
-            "max_drop": max_drop,
+            "current_drop": current_drop,  # 末根距 5y 高 (反弹空间)
             "max_dd_5y": max_dd_lb,
             "n_b": n_b,
         })
@@ -249,16 +202,16 @@ def main():
     if not rough_pool:
         return
 
-    # 第二步: tushare 并发拉 daily 价 + income 净利
+    # 第二步: daily 最新价从 DataStore.get_daily_basic (本地 parquet) 读, 0 网络
     rough_codes = [r["code"] for r in rough_pool]
-    if args.skip_tushare:
-        daily_map = {c: (None, "?") for c in rough_codes}
-        profit_map = {c: ("fail", None, None, "skip") for c in rough_codes}
-    else:
-        print(f"并发拉 tushare daily ({len(rough_codes)} 只, 8 worker)...")
-        daily_map = fetch_daily_concurrent(rough_codes, max_workers=8)
-        print(f"并发拉 tushare income (2025A + 2024A, 8 worker)...")
-        profit_map = fetch_profit_concurrent(rough_codes, max_workers=8)
+    print(f"读本地 daily_basic parquet ({len(rough_codes)} 只, 0 网络)...")
+    daily_map = {}
+    for code in rough_codes:
+        try:
+            db = DataStore.get_daily_basic(code)
+            daily_map[code] = (db.get("close"), db.get("trade_date", "?"))
+        except Exception as e:
+            daily_map[code] = (None, str(e))
 
     candidates = []
     for r in rough_pool:
@@ -272,7 +225,7 @@ def main():
         else:
             cur = cur_today
             cur_date = today_date
-            price_source = "daily (tushare)"
+            price_source = "daily (parquet)"
 
         if cur <= lo_5y:
             continue
@@ -280,48 +233,31 @@ def main():
         if daily_gap >= gap_th:
             continue
 
-        # 今年亏赚 (2025A 净利 vs 2024A) - 用 profit_map 缓存
-        profit_status, np_25, np_24, profit_chg = profit_map.get(code, ("fail", None, None, None))
-        if profit_status == "ok":
-            if np_25 is None or np_25 == 0:
-                profit_label = "—"
-            elif np_25 < 0:
-                profit_label = "亏"
-            elif np_24 is not None and np_24 > 0 and profit_chg is not None:
-                if profit_chg > 0:
-                    profit_label = f"+{profit_chg:.0f}%"
-                else:
-                    profit_label = f"{profit_chg:.0f}%"
-            elif np_24 is not None and np_24 <= 0:
-                profit_label = "扭亏"
-            else:
-                profit_label = "赚"
-        else:
-            profit_label = "?"
+        # 名称/行业从 stock_basic parquet 读 (本地)
+        sb = DataStore.get_stock_basic(code)
+        name = sb.get("name") or code
+        sector = sb.get("industry") or "—"
 
         candidates.append({
             "code": code,
-            "name": r["name"],
-            "sector": r["sector"],
+            "name": name,
+            "sector": sector,
             "cur": cur,
             "lo_5y": lo_5y,
             "weekly_cur": r["weekly_cur"],
             "weekly_gap": r["weekly_gap"],
             "daily_gap": daily_gap,
-            "max_drop": r["max_drop"],
             "max_dd_5y": r["max_dd_5y"],
+            "current_drop": r["current_drop"],
             "n_b": r["n_b"],
             "cur_date": cur_date,
             "price_source": price_source,
-            "profit_label": profit_label,
-            "np_25": np_25,
-            "np_24": np_24,
         })
 
     candidates.sort(key=lambda r: r["daily_gap"])
 
     print(
-        f"精筛: daily 价 (tushare) 距 5y 低 < {args.gap:.0f}% = {len(candidates)} 只"
+        f"精筛: daily 价 (parquet) 距 5y 低 < {args.gap:.0f}% = {len(candidates)} 只"
     )
     if candidates:
         as_of = candidates[0]["cur_date"]
@@ -332,16 +268,16 @@ def main():
 
     print(
         f"{'代码':<8} {'名称':<10} {'行业':<12} {'现价':>7} {'上周':>7} {'5y低':>7} "
-        f"{'5y最大回撤':>10} {'今gap':>6} {'反弹':>5} {'2025净利':>10} {'今年':>6}"
+        f"{'5y最大回撤':>10} {'距5y高':>8} {'今gap':>6} {'反弹':>5}"
     )
-    print("-" * 110)
+    print("-" * 100)
     for r in candidates:
-        np_str = f"{r['np_25']/1e8:.1f}亿" if r['np_25'] else "?"
         print(
             f"{r['code']:<8} {r['name']:<10} {r['sector'][:10]:<12} "
             f"{r['cur']:>7.2f} {r['weekly_cur']:>7.2f} {r['lo_5y']:>7.2f} "
             f"{r['max_dd_5y'] * 100:>+9.1f}% "
-            f"{r['daily_gap'] * 100:>+5.2f}% {r['n_b']:>4d}次 {np_str:>10} {r['profit_label']:>6}"
+            f"{r['current_drop'] * 100:>+7.1f}% "
+            f"{r['daily_gap'] * 100:>+5.2f}% {r['n_b']:>4d}次"
         )
 
 

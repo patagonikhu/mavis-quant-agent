@@ -1,10 +1,11 @@
 """
-check_data_sources.py — 扫全项目找野 fetch 调用 (2026-07-24 固化)
+check_data_sources.py — 扫全项目找野 fetch 调用 (2026-08-26 更新)
 
 规则:
-  - 所有 fetch 必须走 tools/fetch/data_source.py
-  - 直接调 tushare_fetcher / requests.get / subprocess.run(curl) / push2* / ifzq / qtimg 视为违规
-  - 输出违规位置 + 建议改法
+  - 所有 fetch 必须走 tools/fetch/tushare_fetcher.py (Tushare 唯一入口)
+  - data_source.py 已在 2026-08-26 删 (其 5 个 fetch_* 函数内联到调用方)
+  - DataStore (parquet 缓存) 是主路径, 不算野 fetch
+  - 直接调 requests.get / subprocess.run(curl) / push2* / ifzq / qtimg 视为违规
 
 用法:
     PYTHONPATH=. python3 tools/fetch/check_data_sources.py          # 扫全项目
@@ -14,12 +15,13 @@ import re
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent  # tools/fetch/ → 项目根
 
 # 合法的 fetch 入口 (白名单)
 WHITELIST = {
-    "tools/fetch/data_source.py",  # 单一权威
-    "tools/fetch/tushare_fetcher.py",  # 底层 (但只能从 data_source.py 调)
+    "tools/fetch/tushare_fetcher.py",  # 单一权威 (Tushare 直连入口)
+    "tools/data_store.py",  # parquet 缓存主路径
+    "tools/history_sync.py",  # parquet 读写 (sync_incremental)
     "tools/fetch/data_fetcher.py",  # 旧入口, 已 deprecate, 仅保留兼容
     "tools/fetch/check_data_sources.py",  # 本检查脚本
     "tools/ensure_fresh.py",  # 缓存检查
@@ -56,7 +58,7 @@ def _is_whitelisted_url(line: str) -> bool:
 def scan():
     violations = []
     for py in PROJECT_ROOT.rglob("*.py"):
-        if "node_modules" in str(py) or ".venv" in str(py):
+        if "node_modules" in str(py) or ".venv" in str(py) or ".claude/worktrees" in str(py):
             continue
         rel = str(py.relative_to(PROJECT_ROOT))
         if rel in WHITELIST:
@@ -120,5 +122,5 @@ if __name__ == "__main__":
         print(f"  {file}:{line}")
         print(f"    违规: {desc}")
         print(f"    代码: {text}")
-        print(f"    改法: 改用 tools.data_source.fetch_*()\n")
+        print(f"    改法: 改用 tools.fetch.tushare_fetcher.get_*() 或 DataStore\n")
     sys.exit(1)

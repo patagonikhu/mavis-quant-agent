@@ -30,6 +30,13 @@ from pathlib import Path
 HISTORY_DIR = Path("data/history/daily")
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
+# 2026-08-26: 进程内 sync_incremental 单次保护
+# refresh_all.sh 4 worker 各自调 sync_stock → 各自调 sync_incremental → 全市场补齐跑 4 次
+# 用 _synced_in_process 标志, 第一次跑后同进程内直接跳过 (parquet 已经是最新)
+import threading as _threading
+_sync_lock = _threading.Lock()
+_synced_in_process: bool = False
+
 _tl = threading.local()  # thread-local duckdb 连接
 
 def _conn():
@@ -323,7 +330,55 @@ def sync_incremental(target_date: str | None = None) -> int:
     """增量同步：只拉本地缺失的交易日。
 
     Returns: 新增的 bar 数量
+
+    2026-08-26: 加跨进程单次保护 (文件锁), 避免 4 worker 各跑 1 次全市场补齐
+    之前 bug: refresh_all.sh 4 worker → 4 次 sync_incremental → Tushare 限流 + 重复拉数据
+    修法: flock 跨进程互斥 + 进程内标志, 重复调用秒返回
     """
+    from tools.fetch.tushare_fetcher import get_daily_by_date, get_index_daily
+
+    # 进程内单次保护 (同进程内多次调)
+    global _synced_in_process
+    with _sync_lock:
+        if _synced_in_process and target_date is None:
+            return 0
+
+    # 跨进程保护 (文件锁, fcntl) — 4 worker 各自独立 Python 进程
+    if target_date is None:
+        lock_path = Path("/tmp/sync_incremental.lock")
+        try:
+            import fcntl
+            lock_fd = open(lock_path, "w")
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (IOError, OSError):
+                # 其它 worker 正在跑, 等 0.5s 后让它结束, 再走进程内单次保护
+                lock_fd.close()
+                import time as _time
+                _time.sleep(0.5)
+                with _sync_lock:
+                    _synced_in_process = True
+                return 0
+            # 拿到锁, 标记进程内标志
+            with _sync_lock:
+                _synced_in_process = True
+            # 注意: 锁在函数末尾释放
+            try:
+                return _do_sync_incremental(target_date)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+        except ImportError:
+            # fcntl 不可用 (Windows 等), 退回到无锁模式
+            with _sync_lock:
+                _synced_in_process = True
+            return _do_sync_incremental(target_date)
+    else:
+        return _do_sync_incremental(target_date)
+
+
+def _do_sync_incremental(target_date: str | None = None) -> int:
+    """实际 sync 逻辑 (被 sync_incremental 调用)"""
     from tools.fetch.tushare_fetcher import get_daily_by_date, get_index_daily
 
     today = target_date or _today()
@@ -335,35 +390,35 @@ def sync_incremental(target_date: str | None = None) -> int:
 
     if max_local >= today:
         print(f"  ✅ 已是最新 (本地最新: {max_local})")
+        return 0
+    # 找缺失的交易日
+    next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+    missing = _get_trading_dates(next_date, today)
+    # 过滤掉已有的
+    missing = [d for d in missing if not has_data_for_date(d)]
+
+    if not missing:
+        print(f"  ✅ 无缺失数据 (本地最新: {max_local})")
     else:
-        # 找缺失的交易日
-        next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
-        missing = _get_trading_dates(next_date, today)
-        # 过滤掉已有的
-        missing = [d for d in missing if not has_data_for_date(d)]
+        print(f"  📥 需补 {len(missing)} 个交易日: {missing[0]} ~ {missing[-1]}")
+        all_records = []
+        for date in missing:
+            records, status = get_daily_by_date(date)
+            if not records:
+                if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
+                    if all_records:
+                        _append_records(all_records)
+                    print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘")
+                    sys.exit(0)
+                print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
+                continue
+            all_records.extend(records)
+            print(f"    ✅ {date}: {len(records)} 只")
+            time.sleep(0.3)
 
-        if not missing:
-            print(f"  ✅ 无缺失数据 (本地最新: {max_local})")
-        else:
-            print(f"  📥 需补 {len(missing)} 个交易日: {missing[0]} ~ {missing[-1]}")
-            all_records = []
-            for date in missing:
-                records, status = get_daily_by_date(date)
-                if not records:
-                    if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
-                        if all_records:
-                            _append_records(all_records)
-                        print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘")
-                        sys.exit(0)
-                    print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
-                    continue
-                all_records.extend(records)
-                print(f"    ✅ {date}: {len(records)} 只")
-                time.sleep(0.3)
-
-            # 所有缺失天收集完后一次性写入，避免每天读写一次文件
-            if all_records:
-                _append_records(all_records)
+        # 所有缺失天收集完后一次性写入，避免每天读写一次文件
+        if all_records:
+            _append_records(all_records)
 
     # 指数独立补齐（与个股是否有缺口无关，每次都检查）
     # None = 指数从未入库，从个股最早日期开始补全历史

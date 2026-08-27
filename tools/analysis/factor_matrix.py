@@ -161,19 +161,8 @@ def _period_detail(
             'valid': prices['hub_low'] is not None and prices['hub_high'] is not None,
         },
         'buy_sell_points': {
-            '0buy': bsp.get('🟢0买', '—') if bsp else '—',
-            '1buy': bsp.get('🟢1买', '—') if bsp else '—',
-            '1buy_trend': bsp.get('🟢1买⭐', '—') if bsp else '—',
-            '2buy': bsp.get('🟢2买', '—') if bsp else '—',
-            '3buy': bsp.get('🟢3买', '—') if bsp else '—',
-            '1sell': bsp.get('🔴1卖', '—') if bsp else '—',
-            '1sell_trend': bsp.get('🔴1卖⭐', '—') if bsp else '—',
-            '2sell': bsp.get('🔴2卖', '—') if bsp else '—',
-            '3sell': bsp.get('🔴3卖', '—') if bsp else '—',
-            # v3.0 新增: czsc signals 出的 emoji key
-            'double_zs': bsp.get('🟢双中枢', '—') if bsp else '—',
-            'bi_end': bsp.get('🟢笔结束', '—') if bsp else '—',
-            'macd_bc_bot': bsp.get('🟢MACD底背', '—') if bsp else '—',
+            # v3.0: bsp 直接 spread 保留所有 czsc_signals 出的 key (不再 strict 映射)
+            **({} if not bsp else {k: bsp.get(k, '—') for k in bsp}),
             'action': bsp.get('action', '—') if bsp else '—',
         },
         'target_buy_price': prices['target_buy'],
@@ -570,7 +559,11 @@ def _md_chan(chan: dict) -> str:
               '1sell_trend', '1sell', '2sell', '3sell',
               '🟢双中枢', '🟢笔结束', '🟢MACD底背', '🟢3买',
               '🟢1买', '🟢1买⭐', '🟢2买', '🟢0买',
-              '🔴1卖', '🔴1卖⭐', '🔴2卖', '🔴3卖']:
+              '🔴1卖', '🔴1卖⭐', '🔴2卖', '🔴3卖',
+              # czsc_signals.py 出的 K线形态
+              '🟢吞没', '🟢孕线', '🟢三法', '🟢反击线', '🟢山川', '🟢分手线',
+              '🟢DIF走平', '🟢MACD开仓',
+              '🔴三只乌鸦', '🔴两只乌鸦', '🔴塔形']:
         v = bsp.get(k, '—')
         if v != '—' and isinstance(v, str) and '¥' in v:
             triggered.append(f"{k}={v.split(' ')[0]}")

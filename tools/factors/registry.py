@@ -39,6 +39,9 @@ class FactorRegistry:
         for py_file in factors_dir.rglob("*.py"):
             if py_file.name in ("__init__.py", "base.py", "registry.py"):
                 continue
+            # 跳过废弃目录 (前导下划线, 如 _deprecated/)
+            if any(part.startswith('_') and part not in ('_native',) for part in py_file.relative_to(factors_dir).parts):
+                continue
 
             # 算 module path
             # 例: tools/factors/price/returns.py → tools.factors.price.returns

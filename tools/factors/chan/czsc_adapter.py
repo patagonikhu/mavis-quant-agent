@@ -112,46 +112,21 @@ def bis_to_segs_format(bis, dates):
 
 
 def czsc_zss_to_hub_format(zs_list, all_segs=None):
-    """czsc 中枢 (ZS) 列表 → 项目 hubs 格式 (跟 find_all_hubs 一致)
-
-    关键: 设置 leaving_up / leaving_down (找中枢之后的离开段),
-          beichi 算趋势背驰靠这两个字段
-    """
+    """czsc 中枢 (ZS) 列表 → 项目 hubs 格式 (字段映射, 不涉及算法)"""
     hubs = []
-    for i, zs in enumerate(zs_list):
+    for zs in zs_list:
         bis_in_zs = zs.bis if hasattr(zs, 'bis') else []
-        # 中枢区间
-        zd, zg = float(zs.zd), float(zs.zg)
-        sdt = to_date_str(zs.sdt) if hasattr(zs, 'sdt') else None
-        edt = to_date_str(zs.edt) if hasattr(zs, 'edt') else None
-        next_edt = to_date_str(zs_list[i + 1].edt) if i + 1 < len(zs_list) else None
-
-        # 找离开段 (跟原版 find_all_hubs 逻辑一致)
-        leaving_up = None
-        leaving_down = None
-        if all_segs:
-            for s in all_segs:
-                if s['sdt'] < edt:
-                    continue
-                if next_edt and s['sdt'] >= next_edt:
-                    break
-                if s['sst'] == 'B' and s['hi'] > zg:
-                    leaving_up = s
-                    break
-                if s['sst'] == 'T' and s['lo'] < zd:
-                    leaving_down = s
-                    break
+        # all_segs 参数保留兼容, 但不使用 (原版用 all_segs 算 leaving 段, 自写算法已删)
+        _ = all_segs
 
         hubs.append({
-            'low': zd,
-            'high': zg,
+            'low': float(zs.zd),
+            'high': float(zs.zg),
             'bis': bis_in_zs,
             'seg_idx': [],
             'valid': True,
-            'sdt': sdt,
-            'edt': edt,
-            'leaving_up': leaving_up,
-            'leaving_down': leaving_down,
+            'sdt': to_date_str(zs.sdt) if hasattr(zs, 'sdt') else None,
+            'edt': to_date_str(zs.edt) if hasattr(zs, 'edt') else None,
         })
     return hubs
 
@@ -186,7 +161,7 @@ def analyze_hub_v2_czsc(dates, closes, highs, lows, label='日线', code='TEMP',
 
     # 4. 中枢 (设 leaving_up/left 让 beichi 找趋势背驰)
     zss = get_zs_seq(bis)
-    hubs = czsc_zss_to_hub_format(zss, all_segs=segs)
+    hubs = czsc_zss_to_hub_format(zss)
 
     # 5. 当前中枢 (跟 analyze_hub_v2 一样)
     if hubs:

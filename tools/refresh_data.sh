@@ -15,10 +15,11 @@ PYTHONPATH=. python3 tools/fetch/check_data_sources.py 2>&1 | head -10
 # 3. 刷新 4 只关注标的 fflow
 for code in 300274 002475 000725 002273; do
     PYTHONPATH=. python3 -c "
-from tools.fetch.data_source import fetch_fund_flow
-ff, st = fetch_fund_flow('$code', days=5)
-if ff:
-    total = sum(r['main_net'] for r in ff)
+from tools.fetch.tushare_fetcher import get_money_flow
+rows, st = get_money_flow('$code', limit=5)
+if rows:
+    # 字段映射: net_mf_amount (万) = 主力净流入 (跟 data_source.fetch_fund_flow 一致)
+    total = sum(float(r.get('net_mf_amount', 0) or 0) for r in rows)
     print(f'$code: 5日 {total:+,.0f} 万 (≈ {total/10000:+.2f} 亿) status={st}')
 " 2>&1 | tail -1
 done

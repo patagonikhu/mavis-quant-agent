@@ -174,10 +174,13 @@ class WyckoffStageFactor(Factor):
             rng = _find_range(c, h, l, v, lookback=range_lookback)
 
             # 4. 扫 9 sub_event (v5.10.42: 输出 list[dict] 带时间戳, 不去重)
-            sub_events_raw = scan_sub_events(c, h, l, v, rng, o=o, pct_chg=pc,
+            # 2026-08-26 改: sub_events 扫整段 (c/h/l/v/o), 不被 window 限制
+            # 否则 250 根外的历史触发 (LPS 2023, EVR 2024) 看不到
+            sub_events_raw = scan_sub_events(closes, highs, lows, vols, rng, o=opens, pct_chg=pct_chgs,
                                               market_cap_yi=market_cap_yi,
                                               period_label=period_label,
-                                              as_of_idx=as_of_idx, dates=dt,
+                                              as_of_idx=as_of_idx,
+                                              dates=kwargs.get('dates') or (df['date'].tolist() if 'date' in df.columns else None),
                                               code=kwargs.get('code'))
             # v5.10.42: judge 用名字 set, sub_events 字段保留完整 list[dict]
             sub_events = sorted({e["name"] for e in sub_events_raw})
