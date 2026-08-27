@@ -167,7 +167,8 @@ def _main():
     if not ctx.kline:
         print(f"❌ {args.code} 本地无K线，请先运行 history_sync --init")
         sys.exit(1)
-    result = AnalysisEngine().analyze(ctx)
+    _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
+    result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
     data = AnalysisData.from_result(ctx, result)
     name = ctx.name or ""
 

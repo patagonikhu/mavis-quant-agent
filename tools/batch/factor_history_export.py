@@ -54,7 +54,8 @@ def export_one(code: str, years: int, out_path: Path | None) -> tuple[str, Path,
 
     ctx = DataStore.get_ctx(code)
     name = ctx.name or code
-    result = AnalysisEngine().analyze(ctx)
+    _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
+    result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
     data = AnalysisData.from_result(ctx, result)
 
     lookback = years * TRADING_DAYS_PER_YEAR

@@ -103,8 +103,8 @@ def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
         from tools.data_store import DataStore
         from tools.analysis.analysis_engine import AnalysisEngine
         ctx = DataStore.get_ctx(code)
-        result = AnalysisEngine().analyze(ctx)
-        elapsed = time.time() - start
+        _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
+        result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
         dump = {"code": code, "result": result, "elapsed": elapsed}
 
         if render:
@@ -169,7 +169,8 @@ def extract_fields(code: str) -> dict:
     from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.analysis_data import AnalysisData
     ctx = DataStore.get_ctx(code)
-    result = AnalysisEngine().analyze(ctx)
+    _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
+    result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
     ad = AnalysisData.from_result(ctx, result)
 
     factor = {}

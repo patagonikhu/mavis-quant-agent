@@ -1942,7 +1942,7 @@ if __name__ == "__main__":
     from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.analysis_data import AnalysisData
     ctx    = DataStore.get_ctx(test_code)
-    result = AnalysisEngine().analyze(ctx)
+    result = AnalysisEngine().analyze_history(ctx, [ctx.kline[-1]["trade_date"].replace("-","")[:8]]).get(ctx.kline[-1]["trade_date"].replace("-","")[:8]) if ctx.kline else None
     data   = AnalysisData.from_result(ctx, result)
     md = render_report(data)
     print(md[:2000])

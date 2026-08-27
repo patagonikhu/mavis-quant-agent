@@ -496,6 +496,17 @@ class AnalysisData:
         # analysis dict（L2 结果）
         signals_5 = result.to_dict(ctx)
 
+        # Phase 2 派生字段 (render 路径一次性运行，engine 不再负责)
+        from tools.analysis.analysis_engine import PHASE2_FUNCTIONS
+        _chan_bsp = (signals_5.get("chan") or {}).get("buy_sell_points") or {}
+        ctx._bsp_for_data = _chan_bsp  # _derive_buy_sell_points 需要
+        for _fn in PHASE2_FUNCTIONS:
+            _key = _fn.__name__.replace("_derive_", "")
+            try:
+                signals_5[_key] = _fn(ctx, signals_5)
+            except Exception:
+                pass
+
         # chan_data
         chan_raw = signals_5.get("chan", {})
         chan_data = None

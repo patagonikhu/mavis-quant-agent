@@ -759,98 +759,15 @@ class AnalysisEngine:
         else:
             self._phase1 = [s() for s in strategies
                             if s in PHASE1_STRATEGY_CLASSES]
-        self._phase2_fns = PHASE2_FUNCTIONS
-
-    def analyze(self, ctx: "RawContext", as_of_date: str | None = None) -> "AnalysisResult":
-        """核心入口: RawContext → AnalysisResult
-
-        Args:
-            ctx:         RawContext 实例
-            as_of_date:  "2026-07-01" 格式，传入时对 K 线做截断（回测用）
-        """
-        if as_of_date:
-            ctx = ctx.slice(as_of_date)
-
-        code  = ctx.code
-        name  = ctx.name
-        price = ctx.current_price
-
-        raw: Dict[str, Any] = {}
-
-        # Phase1: 基础因子，结果写回 ctx
-        for inst in self._phase1:
-            try:
-                raw[inst.name] = inst.analyze(ctx)
-            except Exception as e:
-                raw[inst.name] = {
-                    "score":   0.0,
-                    "signals": [f"❌ {type(e).__name__}: {str(e)[:80]}"],
-                    "summary": f"策略失败: {str(e)[:100]}",
-                }
-
-        # 价格位置因子 (WyckoffTradingAgent → mavis, 2026-08)
-        try:
-            from tools.factors.price.position import PricePositionFactor
-            pos_raw = PricePositionFactor()(ctx.kline)
-            raw["position"] = {
-                k: float(v.iloc[-1])
-                for k, v in pos_raw.items()
-                if hasattr(v, "iloc") and len(v) > 0
-            }
-        except Exception as e:
-            raw["position"] = {"error": str(e)[:100]}
-
-        # Phase2: 派生数据 (读 ctx 共享结果, weight=0)
-        for fn in self._phase2_fns:
-            key = fn.__name__.replace("_derive_", "")
-            try:
-                raw[key] = fn(ctx, raw)
-            except Exception as e:
-                raw[key] = {"error": f"❌ {type(e).__name__}: {str(e)[:80]}"}
-
-        # 加权聚合 total (Phase1 only, 不存入 AnalysisResult)
-        total = 0.0
-        n_effective = 0
-        for k, w in _STRATEGY_WEIGHTS.items():
-            d = raw.get(k) or {}
-            sc = d.get("score")
-            # v3.6.1 改: score > 0 才算 effective, score=0 (默认 0) 视为缺失
-            if sc is not None and float(sc) > 0:
-                n_effective += 1
-            total += float(sc or 0) * w
-        n_total = len(_STRATEGY_WEIGHTS)
-
-        # 场景判定
-        scene, scene_name, signals_active = self._decide_scene(raw, ctx)
-
-        # 共振数
-        resonance_count = self._count_resonance(raw, scene)
-
-        # 行动建议 (v3.6.1: data_completeness < 50% 时显示"数据不足", 不显示假分数)
-        action = self._decide_action(scene, total, resonance_count, n_effective, n_total)
-
-        return AnalysisResult(
-            code=code,
-            name=name,
-            current_price=price,
-            raw=raw,
-            scene=scene,
-            scene_name=scene_name,
-            resonance_count=resonance_count,
-            signals_active=signals_active,
-            action=action,
-        )
-
-    def analyze_history(self, ctx: "RawContext", dates: list,
-                       skip_phase2: bool = False) -> "dict[str, AnalysisResult]":
+    def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
         """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
 
+        Phase 2 (DCF/exit_signals/...) 不在此处运行 — 由 AnalysisData.from_result() 在
+        render 路径按需执行一次。
+
         Args:
-            ctx:         全量 RawContext（不切片）
-            dates:       日期列表，格式 'YYYYMMDD'
-            skip_phase2: True 时跳过 Phase2 派生函数（DCF/板块/五档等），
-                         回测场景专用，scene/action 判定仍保留（只用 Phase1 数据）。
-                         默认 False（兼容现有调用）。
+            ctx:   全量 RawContext（不切片）
+            dates: 日期列表，格式 'YYYYMMDD'
         Returns:
             dict[date_str, AnalysisResult]
         """
@@ -879,17 +796,10 @@ class AnalysisEngine:
             raw: Dict[str, Any] = {}
             for inst in self._phase1:
                 raw[inst.name] = (strategy_results.get(inst.name) or {}).get(date, {})
-            # _derive_buy_sell_points 读 ctx._bsp_for_data，从 chan 结果补填
-            chan_bsp = raw.get('chan', {}).get('buy_sell_points') or {}
+            # buy_sell_points: chan 结果轻量 reshape，factor_history._extract_row 需要
+            chan_bsp = (raw.get('chan') or {}).get('buy_sell_points') or {}
             sliced._bsp_for_data = chan_bsp
-            # Phase2 (skip_phase2=True 时跳过，回测专用)
-            if not skip_phase2:
-                for fn in self._phase2_fns:
-                    key = fn.__name__.replace("_derive_", "")
-                    try:
-                        raw[key] = fn(sliced, raw)
-                    except Exception:
-                        pass
+            raw["buy_sell_points"] = _derive_buy_sell_points(sliced, raw)
             scene, scene_name, signals_active = self._decide_scene(raw, sliced)
             resonance_count = self._count_resonance(raw, scene)
             action = self._decide_action(scene, 0.0, resonance_count, 0, len(self._phase1))
@@ -1002,7 +912,8 @@ if __name__ == "__main__":
     code = sys.argv[1]
     from tools.data_store import DataStore
     ctx = DataStore.get_ctx(code)
-    result = AnalysisEngine().analyze(ctx)
+    last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
+    result = AnalysisEngine().analyze_history(ctx, [last]).get(last)
 
     print(f"📊 {result.code} {result.name} (¥{result.current_price})")
     print(f"   场景: {result.scene} ({result.scene_name})")

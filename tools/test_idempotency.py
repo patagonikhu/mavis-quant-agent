@@ -15,7 +15,8 @@ def test(code: str = "300274", runs: int = 3) -> bool:
         return False
     hashes = set()
     for i in range(runs):
-        result = AnalysisEngine().analyze(ctx)
+        _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
+        result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
         data = AnalysisData.from_result(ctx, result)
         md = render_report(data)
         hashes.add(hashlib.md5(md.encode()).hexdigest())

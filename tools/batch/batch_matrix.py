@@ -77,7 +77,8 @@ def render_one_matrix(code: str) -> str:
 
     name = ctx.name or code
     current_price = ctx.current_price or 0
-    result = AnalysisEngine().analyze(ctx)
+    _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
+    result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
     s5 = result.to_dict(ctx)
     chan_data = s5.get("chan") or {}
     buy_sell_points = s5.get("buy_sell_points") or {}

@@ -104,7 +104,7 @@ def backtest_one(code):
 
     # ── 粗筛 step=5 ──────────────────────────────────────
     dates_coarse = dates[::5]
-    coarse_rows = engine.analyze_history(ctx, dates_coarse, skip_phase2=True)
+    coarse_rows = engine.analyze_history(ctx, dates_coarse)
 
     date_to_idx = {d: i for i, d in enumerate(dates)}
 
@@ -127,7 +127,7 @@ def backtest_one(code):
             if 0 <= i < n:
                 fine_dates.add(dates[i])
 
-    fine_rows = engine.analyze_history(ctx, sorted(fine_dates), skip_phase2=True)
+    fine_rows = engine.analyze_history(ctx, sorted(fine_dates))
 
     hits = []
     for d, r in fine_rows.items():
