@@ -1,19 +1,16 @@
 """
 signal_cache_warmup.py — 科技股信号缓存增量补全
 
-默认: 科技股（申万行业：半导体/软件/通信/电子/计算机/光学等），5年，step=1
-断点续跑: stale 检查，已缓存的直接跳过。每次跑 10 分钟，下次接着补。
-Phase1: 多 worker 并发算（只返回结果，不写 DB）
-Phase2: 主线程串行写（避免 SQLite 写锁竞争）
+策略: 全量5年K线都要覆盖，每次只补"最老的一段缺失"，最多250根（约1年）。
+      多次跑，每次从最老的缺口往前推，断点续跑，最终覆盖5年。
 
 用法:
-  python tools/batch/signal_cache_warmup.py                        # 科技股增量补缺，10分钟后自动退出
+  python tools/batch/signal_cache_warmup.py                        # 科技股，补最老缺口，10分钟后退出
   python tools/batch/signal_cache_warmup.py --timeout 1800         # 跑 30 分钟
   python tools/batch/signal_cache_warmup.py --all                  # 全市场
   python tools/batch/signal_cache_warmup.py --codes 300274 000858  # 指定
   python tools/batch/signal_cache_warmup.py --workers 8            # 8 并发
-  python tools/batch/signal_cache_warmup.py --lookback 1250        # 5年 (默认)
-  python tools/batch/signal_cache_warmup.py --full                 # 跳过 stale 检查，强制重算
+  python tools/batch/signal_cache_warmup.py --full                 # 强制重算所有（慎用）
 """
 import argparse
 import json
@@ -53,8 +50,14 @@ def _load_tech_codes() -> list[str]:
         return [s["code"] for s in wl]
 
 
-def calc_signals_for_code(code: str, full: bool, lookback: int, step: int):
-    """Phase1: 只算，返回 (code, to_write_dict, kline, skipped, elapsed)"""
+def calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
+    """Phase1: 找最老的缺失段（最多 batch_size 根），只算那一段。
+
+    策略：
+    - 扫全量 K 线（5年），找所有 stale 日期
+    - 取最老的连续缺失段，最多 batch_size 根
+    - 计算时往前加 120 根缠论上下文缓冲
+    """
     t0 = time.time()
     try:
         ctx = DataStore.get_ctx(code)
@@ -62,33 +65,37 @@ def calc_signals_for_code(code: str, full: bool, lookback: int, step: int):
             return code, None, None, 0, time.time() - t0
 
         kline = ctx.kline
-        # 取最近 lookback 条 K 线的日期
-        tail = kline[-lookback:]
-        dates = [k["trade_date"].replace("-", "")[:8] for k in tail]
+        all_dates = [k["trade_date"].replace("-", "")[:8] for k in kline]
 
         if full:
-            stale_dates = dates
+            # 强制重算：取最老的 batch_size 个日期
+            stale_dates = all_dates[:batch_size] if batch_size < len(all_dates) else all_dates
             skipped = 0
         else:
-            stale_map = check_stale_batch(code, dates, kline)
-            stale_dates = [d for d, s in stale_map.items() if s]
-            skipped = len(dates) - len(stale_dates)
+            # 增量：扫全量找 stale，取最老的连续缺口（最多 batch_size 根）
+            stale_map = check_stale_batch(code, all_dates, kline)
+            all_stale = [d for d in all_dates if stale_map.get(d, True)]  # 默认 stale
+            skipped = len(all_dates) - len(all_stale)
+
+            if not all_stale:
+                return code, {}, kline, skipped, time.time() - t0
+
+            # 取最老的 batch_size 个 stale 日期
+            stale_dates = all_stale[:batch_size]
 
         if not stale_dates:
             return code, {}, kline, skipped, time.time() - t0
 
-        # 从第一个 stale date 往前加 120 根作为缠论上下文缓冲
-        all_dates = [k["trade_date"].replace("-", "")[:8] for k in kline]
-        first_stale_idx = all_dates.index(stale_dates[0]) if stale_dates[0] in all_dates else len(all_dates) - lookback
-        buf_lookback = max(len(all_dates) - first_stale_idx + 120, 120)
+        # 从第一个 stale date 往前加 120 根缠论上下文缓冲
+        first_stale_idx = next((i for i, d in enumerate(all_dates) if d == stale_dates[0]), 0)
+        buf_start = max(0, first_stale_idx - 120)
+        compute_dates = all_dates[buf_start:]  # 从缓冲起点到末尾
 
-        # 直接调 analyze_history，逐个提取后立即释放，避免 AnalysisResult 大对象驻留内存
         from tools.analysis.analysis_engine import AnalysisEngine
-        tail_dates = all_dates[max(0, len(all_dates) - buf_lookback)::step]
-        history = AnalysisEngine().analyze_history(ctx, tail_dates)
+        history = AnalysisEngine().analyze_history(ctx, compute_dates)
         stale_set = set(stale_dates)
         to_write = {}
-        for d in tail_dates:
+        for d in compute_dates:
             result = history.pop(d, None)
             if d not in stale_set or result is None:
                 continue
@@ -105,10 +112,11 @@ def main():
     ap.add_argument("--all", action="store_true", help="全市场 (~5783只)")
     ap.add_argument("--portfolio", action="store_true", help="仅持仓")
     ap.add_argument("--workers", type=int, default=2, help="并发 worker 数")
-    ap.add_argument("--lookback", type=int, default=250, help="最近N根K线（默认250≈1年，多次跑完整5年）")
+    ap.add_argument("--batch-size", type=int, default=250, dest="batch_size",
+                    help="每次每只股票最多补多少根K线（默认250≈1年），多次跑逐步覆盖5年")
     ap.add_argument("--step", type=int, default=1,
                     help="计算间隔（默认1=每日；step=5每周快5x）")
-    ap.add_argument("--full", action="store_true", help="跳过 stale 检查，强制重算")
+    ap.add_argument("--full", action="store_true", help="强制重算最老的batch_size根（不判断stale）")
     ap.add_argument("--timeout", type=int, default=600, help="超时秒数（默认600=10分钟），到时间写已完成的结果退出")
     args = ap.parse_args()
 
@@ -126,17 +134,16 @@ def main():
         CODES = _load_tech_codes()
         print(f"科技股: {len(CODES)} 只 (申万行业筛选 ∩ 本地K线)")
 
-    mode = "全量重算" if args.full else "增量(stale跳过)"
-    est_rows = len(CODES) * (args.lookback // args.step)
-    print(f"预热 {len(CODES)} 只 | lookback={args.lookback}天 | step={args.step} | {args.workers}并发 | {mode} | timeout={args.timeout}s")
-    print(f"预计写入上限: ~{est_rows:,} 行 | 初始: {get_stats()}")
+    mode = "全量重算最老段" if args.full else "增量(从最老缺口补)"
+    print(f"预热 {len(CODES)} 只 | batch_size={args.batch_size}根/只 | step={args.step} | {args.workers}并发 | {mode} | timeout={args.timeout}s")
+    print(f"初始缓存: {get_stats()}")
     t0 = time.time()
 
     # ── Phase1: 并发算（不写 DB）────────────────────────────────────────
     results_map: dict[str, tuple] = {}  # code → (to_write, kline, skipped, elapsed)
     done = 0
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futs = {ex.submit(calc_signals_for_code, code, args.full, args.lookback, args.step): code
+        futs = {ex.submit(calc_signals_for_code, code, args.full, args.batch_size, args.step): code
                 for code in CODES}
         for fut in as_completed(futs):
             code = futs[fut]

@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     chan_1sell      INTEGER,
     chan_2sell      INTEGER,
     chan_3sell      INTEGER,
+    chan_bot_div    INTEGER,  -- MACD底背驰
+    chan_top_div    INTEGER,  -- MACD顶背驰
 
     -- MA
     ma5_dev         REAL,
@@ -84,6 +86,11 @@ def _conn() -> sqlite3.Connection:
 def _init():
     with _conn() as c:
         c.executescript(_SCHEMA)
+        # 自动迁移：加新列（若已存在则忽略）
+        existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
+        for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER")]:
+            if col not in existing:
+                c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
 
 
 def _kline_hash(kline: list[dict]) -> str:
@@ -146,17 +153,24 @@ def _result_to_row(code: str, date_str: str,
         "wy_utad":         "UTAD",
     }
 
-    # chan bsp → bool
-    bsp = chan.get("buy_sell_points", {}) or {}
-    if not isinstance(bsp, dict):
-        bsp = {}
-    bsp_keys = {
-        "chan_1buy":  "🟢1买",
-        "chan_2buy":  "🟢2买",
-        "chan_3buy":  "🟢3买",
-        "chan_1sell": "🔴1卖",
-        "chan_2sell": "🔴2卖",
-        "chan_3sell": "🔴3卖",
+    # chan bsp → bool（买卖点 key 包含关键字即触发）
+    bsp_daily = {}
+    bsp_src = chan.get("buy_sell_points", {}) or {}
+    if isinstance(bsp_src, dict):
+        bsp_daily = bsp_src.get("daily", {}) or {}
+        if not isinstance(bsp_daily, dict):
+            bsp_daily = {}
+
+    def _has_bsp(keyword: str) -> int | None:
+        return 1 if any(keyword in k for k in bsp_daily) else None
+
+    bsp_flags = {
+        "chan_1buy":  _has_bsp("1买"),
+        "chan_2buy":  _has_bsp("2买"),
+        "chan_3buy":  _has_bsp("3买"),
+        "chan_1sell": _has_bsp("1卖"),
+        "chan_2sell": _has_bsp("2卖"),
+        "chan_3sell": _has_bsp("3卖"),
     }
 
     # chan hub
@@ -187,8 +201,10 @@ def _result_to_row(code: str, date_str: str,
         "chan_daily_pos":  _hub_pos(chan.get("daily", {}).get("hub")),
         "chan_weekly_hub": _hub_str(chan.get("weekly", {}).get("hub")),
         "chan_weekly_pos": _hub_pos(chan.get("weekly", {}).get("hub")),
-        # chan 买卖点
-        **{col: 1 if bsp.get(k) else None for col, k in bsp_keys.items()},
+        # chan 买卖点 + 背驰
+        **bsp_flags,
+        "chan_bot_div": 1 if any('底背' in k for k in bsp_daily) else None,
+        "chan_top_div": 1 if any('顶背' in k for k in bsp_daily) else None,
         # MA
         "ma5_dev":  _ma_dev(kline, 5),
         "ma20_dev": _ma_dev(kline, 20),
