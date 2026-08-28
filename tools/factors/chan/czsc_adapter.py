@@ -83,28 +83,22 @@ def to_date_str(d):
 def bis_to_segs_format(bis, dates):
     """czsc 笔 (BI) 列表 → 项目 segs 格式 (用单笔当段)
 
-    我们的 segs 格式: {'sst', 'sdt', 'edt', 'sp', 'ep', 'lo', 'hi', 'nb', 'dir', 'est'}
-    sdt/edt 格式: '20260825' (8 字符, 无分隔, 跟 beichi dt2i 对齐)
+    segs 格式: {'sst', 'sdt', 'edt', 'sp', 'ep', 'lo', 'nb', 'dir'}
+    sdt/edt 格式: '20260825' (8 字符, 无分隔)
     """
     segs = []
     for bi in bis:
         sst = 'B' if bi.fx_a.mark.name == 'D' else 'T'
-        est = 'B' if bi.fx_b.mark.name == 'D' else 'T'
-        sdt = to_date_str(bi.fx_a.dt)
-        edt = to_date_str(bi.fx_b.dt)
-
-        sp = float(bi.fx_a.fx)
-        ep = float(bi.fx_b.fx)
+        sp  = float(bi.fx_a.fx)
+        ep  = float(bi.fx_b.fx)
         segs.append({
-            'sdt': sdt,
-            'edt': edt,
+            'sdt': to_date_str(bi.fx_a.dt),
+            'edt': to_date_str(bi.fx_b.dt),
             'sst': sst,
-            'est': est,
-            'sp': sp,
-            'ep': ep,
-            'lo': min(sp, ep),
-            'hi': max(sp, ep),
-            'nb': getattr(bi, 'length', 1),
+            'sp':  sp,
+            'ep':  ep,
+            'lo':  min(sp, ep),
+            'nb':  getattr(bi, 'length', 1),
             'dir': '↑' if sst == 'B' else '↓',
         })
     return segs
