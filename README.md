@@ -1,79 +1,78 @@
 # A股量化智能投顾 Agent (LLM-driven)
 
-> 8 个 Claude Code Skill + 1 个合并框架 doc = 你在终端的投资分析师。
-> 行情/新闻**不主动拉取**, 全靠 LLM 训练知识 + 你手维护的 watchlist。
+> 5 个 Claude Code Skill + 单次 O(n) 因子引擎 = 你在终端的投资分析师。
+> 数据走本地 parquet (Tushare 同步) + LLM 训练知识 + 你手维护的 watchlist。
 
 ---
 
-## 1. 9 个 Slash 命令
+## 1. 5 个 Slash 命令
 
 所有 skill 都在 `.claude/skills/` 下, 直接在终端敲命令触发。
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报, 套"投资四问 + T 框架 + PEG 双派 + 六关", v3.0 格式 | `/t-analyze 688017 绿的谐波` |
-| `/t-watchlist` | 批量分析 watchlist.json 全部 | `/t-watchlist` |
-| `/t-monitor` | 扫 events.json 所有 T 位置, 高亮建仓/减仓/跑路窗口 | `/t-monitor` |
-| `/t-sector <name>` | 板块批量详报 (枚举 10-15 只主要公司) | `/t-sector 机器人` |
-| `/t-etf <code> [name]` | ETF 持仓批量详报 | `/t-etf 510300 沪深300ETF` |
-| `/t-chain <industry>` | 产业链映射 — 行业 → 子板块 → 龙头股 | `/t-chain 半导体` |
-| `/t-checklist <code>` | 巴菲特六关 Checklist — 已整合到 t-analyze v3.0 (可独立用) | `/t-checklist 002371` |
-| `/t-bottleneck <趋势>` | 瓶颈猎手 — 产业链 Layer 2/3 被低估卡脖子公司 | `/t-bottleneck AI基础设施` |
+| `/t-analyze <code> [name]` | 单只详报 (22 section: 投资四问 + T 框架 + PEG + DCF + 缠论 4 级别) | `/t-analyze 688017 绿的谐波` |
+| `/t-analyze --all` | 批量扫 watchlist 全部 (71 只, 含 4 指数), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
+| `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
+| `/t-sync-cache` | 增量补全科技股 signal_cache.db (10分钟断点续跑) | `/t-sync-cache --portfolio` |
+| `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单 | `/t-near-low --gap 2` |
+| `/t-am-divergence` | 全市场扫最近 5d 内 A→M 切换 + 缠论/MACD 底背驰三重确认 | `/t-am-divergence --window 10` |
 
 ### 1.1 典型用法
 
 ```bash
-# 单只分析
-/t-analyze 600089            # 60 行四问详报
-/t-analyze 688017 绿的谐波   # PEG 冲突案例
+# 单只分析 (60 行 22 section 详报)
+/t-analyze 600089 特变电工
+/t-analyze 688017 绿的谐波    # PEG 冲突案例
 
-# 批量
-/t-watchlist                 # 你 watchlist.json 里的所有
-/t-monitor                   # 全部事件的 T 位置（含信号强度折扣）
+# 批量（后台跑 71 只约 90s）
+/t-analyze --all              # 全 watchlist + 写 docs/{portfolio,watchlist}/analyze-*.md
 
-# 板块 / ETF
-/t-sector 机器人
-/t-etf 510300
+# 信号回测（走 signal_cache 缓存，命中行 0.5s 出结果）
+/t-backtest --signal Spring --days 30 --threshold 10 --portfolio
+/t-backtest --signal Accumulation --signal fflow:强进货    # 组合信号 (AND)
 
-# 产业链
-/t-chain 半导体              # 半导体 → 设备/材料/晶圆/封测 → 龙头
+# 缓存预热（10 分钟断点续跑，多次跑逐步覆盖 5 年）
+/t-sync-cache --portfolio      # 仅持仓
+/t-sync-cache --codes 300274 002371
 
-# 质量复核（配合 /t-analyze 使用）
-/t-checklist 002371          # 北方华创六关评分 + 快速否决清单
-/t-checklist 002371 688012   # 多标的对比
+# 超跌清单（反弹策略，跟价值投资无关）
+/t-near-low --gap 2
 
-# 瓶颈猎手（找 Layer 2/3 低估标的）
-/t-bottleneck AI基础设施      # 拆解 AI 产业链，找激光器/InP衬底等
-/t-bottleneck 半导体国产替代
-/t-bottleneck 机器人
+# 全市场 A→M 三重确认扫描
+/t-am-divergence --window 10
 ```
 
 ### 1.2 推荐工作流
 
 ```
-/t-bottleneck AI基础设施      ← 1. 找产业链中被低估的卡脖子公司
-        ↓
-/t-analyze 002371             ← 2. 对候选标的做完整四问+T框架分析
-        ↓
-/t-checklist 002371           ← 3. 巴菲特六关质量复核（买入前最后把关）
-        ↓
-/t-monitor                    ← 4. 持续监控 T 位置变化，决定加减仓时机
+/t-am-divergence --window 10    ← 1. 找最近 5d 内 A→M + 缠论/MACD 底背驰三重确认
+              ↓
+/t-analyze {code}                ← 2. 对候选标的做完整 22 section 详报
+              ↓
+/t-backtest --signal Accumulation  ← 3. 验证信号历史胜率 (signal_cache 加速)
+              ↓
+/t-sync-cache                    ← 4. 持续预热缓存，让 /t-analyze --all 也能加速
 ```
 
 ### 1.3 输出格式
 
-每个 skill 都按 `CLAUDE.md` 里的固定格式输出, 关键字段:
+`/t-analyze` 报告关键字段（22 section）:
 
 ```
-**卡点:** ⭐⭐⭐⭐        ← 卡点强度 (1-5 星)
-**TAM:** $X亿 (Nx)       ← 5 年市场增长
-**龙头评分:** N/14        ← 0-14 分, ≥ 11 才是真龙头
-**PEG:** ~X.X             ← Forward PE / 增速 (< 1.0 低估, > 2.0 高估)
-**DCF L:** r=8%→X亿      ← 隐含终局利润 (L/可达利润 < 0.8 低估)
+**PEG 四件套** (v4 强制):
+  - PEG_真实 (稳态 CAGR): X.X ✅
+  - PEG_A (本财年, 后视镜): X.X
+  - PEG_C (下一财年, 前视镜): X.X
+  - PEG_表观 (NTM YoY): X.X
 
-**T 位置:** T-X.X         ← 距 T 点 (事件) 的月数
-**阶段:** 🟢 T-1 甜蜜窗口  ← 10 个标准阶段
-**信号强度:** 0.9×1.0     ← 事件原始置信度 × 时间衰减折扣
+**DCF 隐含 L** (r=8/10/12% 三档, 板块-aware 假设):
+  - r=10%  L=X亿  L/E3=X.Xx  L/可达利润=X.Xx
+
+**5 方法 × 3 周期 矩阵** (linter 必查):
+  - 场景: A/B/C/D/E
+  - 共振数: N 重
+  - 行动: 🥇/🥈/🥉/🟢/🟡/⬜/❌
 
 **综合:** 🥇 / 🥈 / 🥉 / ⚠️ / ❌
 ```
@@ -94,152 +93,138 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 
 > 完整框架见 [`docs/analysis-framework.md`](docs/analysis-framework.md)
 
-### 2.2 巴菲特六关 Checklist（`/t-checklist`）
-
-**目标：排除坏选择，不是找最好的。5句话说不完整 = 不买。**
-
-| 关卡 | 核心问题 |
-|--|--|
-| 一关：能力圈 | 能用一句话说清楚怎么赚钱？10年后大概率还在？ |
-| 二关：好生意 | ROE>15%？毛利率>40%？FCF持续正？轻资产？ |
-| 三关：护城河 | 有没有？在变宽还是变窄？ |
-| 四关：管理层 | 诚实？资本配置能力？持股？ |
-| 五关：安全边际 | PEG < 1.5 且 DCF L 合理？ |
-| 六关：纪律 | 停牌5年能接受？镜子测试5句话写完整？ |
-
-快速否决（任意一条触发 → 直接不买）：
-- 说不清楚怎么赚钱
-- 连续3年FCF为负
-- 管理层有诚信污点
-- 竞争优势正在被不可逆侵蚀
-- 主要买入理由是"别人在买"或"最近涨得好"
-
-### 2.3 瓶颈猎手（`/t-bottleneck`）
-
-**核心理念：不追 Layer 1 龙头（已充分定价），找 Layer 2/3 的卡脖子公司。**
-
-```
-Layer 1（已充分定价）：GPU/HBM/云厂商
-   ↓ alpha 集中区
-Layer 2（重点）：光模块激光器/InP衬底/CoWoS载板/特种气体
-Layer 3（重点）：MOCVD设备/高纯靶材/外延片
-```
-
-瓶颈判定6条标准：供给集中度 / 扩产周期 / 替代难度 / 产能利用率 / 需求增速 / 客户验证周期
-
-> 4条🔴 = S级瓶颈（单点故障，最高优先级）
-
-### 2.4 信号时间衰减（`/t-monitor` v2.4）
-
-事件发生后信号不再以原始强度触发：
-
-| T 位置 | 信号折扣 | 操作建议 |
-|--|--|--|
-| T < 0（事件未来）| ×1.0 | 正常建仓 |
-| T+0 ~ T+3 | ×0.7 | 持有，减少新买 |
-| T+3 ~ T+6 | ×0.4 | 减仓 |
-| T+6 ~ T+12 | ×0.15 | 清仓 |
-| T > T+12 | ×0.0 | 不作买入参考 |
-
 ---
 
 ## 3. 项目结构
 
 ```
 .
-├── CLAUDE.md                          # Agent 人设 + 决策框架 + 8个slash命令
+├── CLAUDE.md                              # Agent 人设 + 决策框架 + 铁律
 ├── docs/
-│   ├── analysis-framework.md          # 投资四问 + T框架 + PEG + Checklist + 瓶颈猎手
-│   └── analyze-*.md                   # 已完成的个股分析报告 (50+)
+│   ├── analysis-framework.md              # 投资四问 + T框架 + PEG + DCF
+│   ├── AGENT_MEMORY.md                    # 项目记忆 (活跃 skill 列表)
+│   ├── portfolio/analyze-*.md            # 持仓分析报告 (按 list_type 分流)
+│   ├── watchlist/analyze-*.md            # 自选分析报告
+│   ├── backtest-*.md                     # 回测报告
+│   └── signal-watchlist.md               # 全量扫描信号表
 │
-├── data/                              # 静态数据 (你/Claude 维护)
-│   ├── events.json                    # T 事件库（含信号强度衰减）
-│   ├── watchlist.json                 # 关注股 + 笔记
-│   └── sectors.json                   # 板块/ETF → 成分股
+├── data/                                  # 静态数据 (你/Claude 维护)
+│   ├── events.json                        # T 事件库
+│   ├── watchlist.json                     # 关注股 + 笔记 (71 只, 19 持仓)
+│   ├── sectors.json                       # 板块/ETF → 成分股
+│   ├── history/
+│   │   ├── daily/                         # 日 K 线 parquet (DataStore)
+│   │   ├── weekly/                        # 周 K 线 parquet
+│   │   └── stock_basic/                   # 股票基础信息
+│   └── analysis_cache.db                  # signal_cache (24 列 SQLite 缓存)
 │
-├── .claude/skills/                    # 8 个 slash 命令
-│   ├── t-analyze/SKILL.md
-│   ├── t-watchlist/SKILL.md
-│   ├── t-monitor/SKILL.md             # v2.4：T点信号强度折扣
-│   ├── t-sector/SKILL.md
-│   ├── t-etf/SKILL.md
-│   ├── t-chain/SKILL.md
-│   ├── t-checklist/SKILL.md           # 新：巴菲特六关 Checklist
-│   └── t-bottleneck/SKILL.md          # 新：瓶颈猎手
+├── tools/                                 # 核心引擎
+│   ├── sync_stock.py                      # 单只拉数据 (DataStore)
+│   ├── sync_watchlist_fresh.py            # 批量同步新鲜度
+│   ├── refresh_all.sh                     # 1 键刷 watchlist (sync + analyze + render)
+│   ├── kline_store.py                     # DataStore (parquet reader)
+│   ├── with_venv.sh                       # venv 包装 (必须走这个)
+│   │
+│   ├── analysis/                          # 分析引擎 (单次 O(n) 遍历)
+│   │   ├── analysis_engine.py             # AnalysisEngine.analyze_history()
+│   │   ├── analysis_result_signals.py      # compute_factor_history() 批量信号
+│   │   ├── signal_cache.py                # SQLite 缓存 (wyckoff 9 bool + chan 5 bool + hub)
+│   │   └── render_data.py                 # RenderData (9 派生字段)
+│   │
+│   ├── factors/                           # 7 strategy 算子
+│   │   ├── kline_arrays.py                # build_kline_features() O(n) 预算层
+│   │   ├── wyckoff/stage_factor.py
+│   │   ├── chan/czsc_signals.py
+│   │   ├── smc/                           # OB/FVG/Sweep
+│   │   ├── volume/price_fflow.py          # OBV + fflow
+│   │   └── valuation/multi.py             # PEG + DCF
+│   │
+│   ├── render/                            # 报告渲染 (22 section)
+│   │   └── report_renderer.py
+│   │
+│   └── batch/                             # 批量脚本
+│       ├── t_analyze_all.py               # /t-analyze --all (verbose + 异常立即抛)
+│       ├── batch_backtest.py              # /t-backtest (走 signal_cache)
+│       ├── signal_cache_warmup.py         # /t-sync-cache (增量断点续跑)
+│       ├── find_near_low.py               # /t-near-low
+│       └── am_divergence.py               # /t-am-divergence
 │
-└── app/                               # Python 信号引擎（FastAPI）
-    ├── signals/
-    │   ├── policy.py                  # 政策信号 + 时间衰减 (λ=0.05/0.15/0.30)
-    │   ├── sentiment.py               # 情绪信号 + 研报衰减 (λ=0.10)
-    │   ├── capital.py                 # 资金流信号
-    │   ├── leader.py                  # 龙头启动信号
-    │   ├── volume_price.py            # 量价信号
-    │   └── scorer.py                  # 多信号加权合成
-    ├── backtest/                      # 回测引擎 + 参数优化
-    ├── ml/                            # XGBoost 二次校准
-    └── agent/                         # LangGraph Agent
+└── .claude/skills/                        # 5 个 slash 命令
+    ├── t-analyze/SKILL.md
+    ├── t-backtest/SKILL.md
+    ├── t-sync-cache/SKILL.md
+    ├── t-near-low/SKILL.md
+    └── t-am-divergence/SKILL.md
 ```
 
 ---
 
-## 4. 因子历史计算架构（单次遍历设计）
+## 4. 因子历史计算架构（单次 O(n) 遍历，无 slice）
 
-### 4.0 核心思路
+### 4.0 核心设计
 
-所有因子/信号只需要遍历 K 线一遍。先把 MA、成交量均线、OBV 等基础数组批量算好，再用这些数组计算缠论/威科夫/SMC，每个日期节点只做 O(1) 索引查询。
+**v3.6 重构（2026-08-28 commit `7fd8e5d`）**：
+- ❌ **删除** `ctx.slice(as_of_date)` 切片逻辑 — Strategy 不再感知时间
+- ❌ **删除** `Strategy.analyze(ctx)` 单点路径 — 改用 `analyze_history(ctx, dates)` 批量
+- ✅ **统一**：`analyze_history(ctx, dates)` 全 strategy 实现，O(n) 一次遍历出全历史
+- ✅ **共享**：`build_kline_features()` 预算层（MA/vol/slope），O(n) 一次，所有 strategy 复用
 
-```
-kline → precompute() → arrs {ma20, ma60, vol20, slope_60, obv, ...}   O(n) 一次
-                              │
-              ┌───────────────┼──────────────────┐
-              ▼               ▼                  ▼
-        wyckoff_judge(i)  smc_filter(i)    obv_signals(i)
-        arrs['ma20'][i]   obs_all[<=i]     obv[i]
-             O(1)              O(1)            O(1)
-```
-
-### 4.1 原来的问题（O(n²)）
-
-`compute_factor_history(lookback=1250)` 要算 1250 个历史节点，原始实现每个节点都从头重算所有因子：
-
-```
-for each date:               ← 1250 次
-  ctx.slice(date)            # 切出 kline[:i]
-  WyckoffStrategy.analyze()
-    scan_sub_events()
-      for i in range(n):     ← n 次
-        sum(c[i-200:i])/200  # O(n) MA 重算
-        sum(v[i-20:i])/20    # O(n) 成交量均线重算
+**入口**：
+```python
+from tools.analysis.analysis_engine import AnalysisEngine
+history = AnalysisEngine().analyze_history(ctx, dates)  # dates: list[str YYYYMMDD]
+# 返回: dict[date_str, AnalysisResult]
+result = history[dates[-1]]  # 最新一个节点的完整结果
 ```
 
-1250 dates × O(n) per date = **O(n²)**。基线耗时 63s/只。
+**架构图**：
+```
+kline + dates
+  │
+  ▼
+build_kline_features()                       O(n) 一次（预算层，共享）
+  → arrs {ma20, ma60, vol20, slope_60, obv, ...}
+  │
+  ▼
+WyckoffStrategy.analyze_history(ctx, dates)  O(n) — 1次循环: 每根bar O(1) 索引
+ChanStrategy.analyze_history(ctx, dates)     O(n) — czsc 内部已 O(n) 优化
+SmcStrategy.analyze_history(ctx, dates)      O(n) — OB/FVG/Sweep 全量扫一次
+ObvStrategy.analyze_history(ctx, dates)      O(n) — OBV 数组预建
+FflowStrategy.analyze_history(ctx, dates)     O(n) — Tushare money_flow 预扫描
+PegStrategy.analyze_history(ctx, dates)       O(1) — 查表
+ResonanceStrategy.analyze_history(ctx, dates) O(n) — 1d/5d/20d 共振
+  │
+  ▼
+AnalysisResult 合并 (scene + resonance_count + action)
+```
 
-### 4.2 修复链
+### 4.1 修复链（O(n²) → O(n)）
 
-| 阶段 | 优化内容 | 耗时 |
-|------|---------|------|
-| 基线 | 无优化 | ~63s |
+| 阶段 | 优化内容 | 耗时/只 |
+|------|---------|---------|
+| 基线（v2.x） | `for date: ctx.slice; strategy.analyze; scan_sub_events 每节点重算 MA/vol` | ~63s |
 | +1 | `scan_sub_events` 预扫一次，per-date filter | ~6.6s |
 | +2 | `kline_arrays.precompute()` 共享预算层 | ~3.6s |
-| +3 | `WyckoffStrategy.analyze_history`：`wyckoff_judge(i, arrs)` O(1) | — |
-| +4 | `SmcStrategy.analyze_history`：OB/FVG/Sweep 全量扫一次 | — |
-| +5 | `ObvStrategy.analyze_history`：OBV 数组预建 O(n) | ~0.4s |
+| +3 | `WyckoffStrategy.analyze_history`: `wyckoff_judge(i, arrs)` O(1) per-bar | ~0.4s |
+| +4 | `SmcStrategy.analyze_history`: OB/FVG/Sweep 全量扫一次 | ~0.4s |
+| +5 | `ObvStrategy.analyze_history`: OBV 数组预建 O(n) | ~0.4s |
 | +6 | `analysis_result_signals.py` 内 3 处 O(n) 查找改预建 dict/bisect | ~0.4s |
 
 **总提升 ~150x**（63s → 0.4s，lookback=120 step=1）。
 
-### 4.3 关键文件
+### 4.2 关键文件
 
 | 文件 | 职责 |
 |------|------|
-| `tools/factors/kline_arrays.py` | 共享预算层：MA20/50/60/200、vol均线、rolling min/max、slope、trend，`precompute()` 返回 dict，O(n) 一次 |
-| `tools/factors/wyckoff/stage_factor.py::wyckoff_judge` | per-bar O(1)，用 `arrs[key][i]` 替代 `sum(c[i-n:i])/n` |
-| `tools/analysis/analysis_engine.py::WyckoffStrategy.analyze_history` | 预算 arrs + pre_scan sub_events，循环内 O(1) |
-| `tools/analysis/analysis_engine.py::SmcStrategy.analyze_history` | `find_order_blocks/fvg/sweeps` 全量跑一次，per-date 按 idx 过滤 |
-| `tools/analysis/analysis_engine.py::ObvStrategy.analyze_history` | OBV 数组 + MA 数组 O(n) 预建，per-date O(1) |
-| `tools/analysis/analysis_result_signals.py` | 外层用 `date_to_ki` dict + `bisect` 替代 O(n) 的 `next(k for k in kline if ...)` |
+| `tools/factors/kline_arrays.py::build_kline_features` | O(n) 预算层：MA/vol/slope/rolling min/max，返回 `arrs[key][i]` |
+| `tools/analysis/analysis_engine.py::AnalysisEngine.analyze_history` | 7 strategy 并行调用，合并 scene/resonance/action |
+| `tools/analysis/analysis_engine.py::WyckoffStrategy.analyze_history` | 用 `arrs` 预算层 + pre_scan sub_events，循环内 O(1) |
+| `tools/analysis/analysis_engine.py::ChanStrategy.analyze_history` | czsc 批量，内部已 O(n) |
+| `tools/analysis/analysis_engine.py::SmcStrategy.analyze_history` | OB/FVG/Sweep 全量跑一次，per-date 按 idx 过滤 |
+| `tools/analysis/analysis_engine.py::ObvStrategy.analyze_history` | OBV 数组 + MA 数组 O(n) 预建 |
+| `tools/analysis/analysis_result_signals.py` | 外层用 `date_to_ki` dict + `bisect` 替代 O(n) 查找 |
 
-### 4.4 并发铁律
+### 4.3 并发铁律
 
 ```
 1. sync_incremental()           # 单线程，先跑，补齐本地 parquet
@@ -295,172 +280,41 @@ T+0 之后信号自动折扣，T+12 之后不再作为买入参考。
 
 ## 5. 设计原则
 
-1. **零数据拉取（Claude Code 模式）** — Skill 层不调外部 API；估值硬数据通过 `tools/dump_data.py` (走 `data_source` 统一入口) 拉真实数据
-2. **Python 信号引擎（FastAPI 模式）** — `app/signals/` 用 akshare 实时数据 + 时间衰减逻辑
-3. **框架即 prompt** — `docs/analysis-framework.md` 直接作为分析框架
-4. **时间衰减** — 政策/研报/事件信号均有指数衰减，避免过时信号持续触发
-5. **用户维护成本低** — watchlist.json 1 周改 1 次（30 秒），其他 LLM 滚动更新
-
----
-
-## 5.5 数据源 (v5.11 — Tushare 2000 积分档统一入口)
-
-**所有估值硬数据 (股价 / EPS / 历史财务 / 业绩预告 / 资金流) 通过 `tools/dump_data.py` (走 `data_source` 统一入口, 唯一合法) 拉取, 100% 真实, 无 LLM 估算。**
-
-> **v3.0 历史**: 之前用 `tools/fetch_financial.py` (腾讯 qtimg + 东财 datacenter + 同花顺 F10), 7-24 改 WAF/GBK 拦截后, 7-30 物理删除, 全部走 dump_data。
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│  tools/dump_data.py {code}                                      │
-│  (走 data_source 统一入口, Tushare 2000 积分档 + Sina 60m)      │
-└─────────────────┬──────────────────────────────────────────────┘
-                  │
-                  ▼
-   ┌──────────────┼──────────────────────────┐
-   │              │                          │
-   ▼              ▼                          ▼
-Tushare.daily   Tushare.fina_indicator   Tushare.forecast
-日 K + 当前价    历史 EPS + 净利润         业绩预告
-(250 根, 实时)  (5 年年报实际)            (p_change_min/max 区间)
-```
-
-### 数据源详情 (5 段核心)
-
-| # | API | 走 data_source 函数 | 取什么 | 覆盖 |
-|---|---|---|---|---|
-| 1 | **Tushare.daily_basic** | `fetch_realtime` | **当前股价 + PE/PB/市值** (盘中 0 误差) | 沪深 A 股全 |
-| 2 | **Tushare.fina_indicator** | `fetch_eps_table` | **历史 EPS + 净利润** (5 年实际, 来自年报) | 沪深 A 股全 |
-| 3 | **Tushare.forecast** | `get_forecast` | **业绩预告** (p_change_min/max 区间) | 沪深 A 股全 |
-| 4 | **Tushare.moneyflow** | `get_fund_flow_combined` | **资金流** (60 天主力/特大单) | 沪深 A 股全 |
-| 5 | **dcf_implied.py** | 本地 Python (穿透叙事 skill 内置) | **DCF L 反算** (隐含终局利润, r=8/10/12%) | 任意 |
-
-### 调用方法 (C 方案 v5.11)
-
-```bash
-# 单只 (走 AgentData, max_age_min=60 默认)
-bash tools/with_venv.sh python -m tools.dump_data 600089 --render
-
-# 批量 (watchlist 全部, 4 worker, 3-4 分钟)
-bash tools/refresh_all.sh
-```
-
-### AgentData 自动 ensure fresh (C 方案核心)
-
-```python
-from tools.batch.agent_data import AgentData
-
-# 1 小时内免拉 (默认, CACHED 路径 0.003s)
-data = AgentData("600089")
-print(data.get("current_price"))     # ¥22.5
-print(data.get("eps_table"))         # 历史 EPS list
-
-# 强制重拉 (FRESH 路径 11s)
-data = AgentData("600089", force=True)
-
-# 永不重拉 (看历史 dump)
-data = AgentData("600089", max_age_min=999999)
-```
-
-### 输出格式 (JSON, dump 落盘)
-
-```json
-{
-  "code": "600089",
-  "name": "特变电工",
-  "current_price": 22.5,
-  "pe_ttm": 14.5,
-  "pb": 1.8,
-  "market_cap_yi": 1134.35,
-  "eps_table": [
-    {"end_date": "20251231", "eps": 1.161, "net_profit": 59.54e8},
-    ...
-  ],
-  "fflow": {"verdict": "🟡偏进货", "fflow_net_3d": 0.5e8, ...},
-  "chan_signals": {
-    "wyckoff": {"stage": "Accumulation", "sub_events": [...]},
-    "volume_price": {"verdict": "🟡偏进货", ...},
-    "smc": {"summary": "...", "total_fvgs": 3, ...},
-    "resonance": {"1d": {...}, "5d": {...}, "20d": {...}}
-  },
-  "_meta": {"pulled_at": 1722259200, "code": "600089"}
-}
-```
-
-### 缓存策略
-
-- 缓存位置: `data/dump/{code}.json` (项目内, 不是 ~/.cache)
-- TTL: max_age_min 控制 (默认 60 分钟, 盘中 5 分钟, 强制 0)
-- 失效后自动重拉
-
-### 单只输出示例
-
-```
-$ bash tools/with_venv.sh python -m tools.dump_data 600089 --analyze-only
-📥 拉数据: 600089 (max_age_min=999999)
-  - <AgentData 600089 CACHED, age=0.3min>
-  - 价: ¥22.5
-  - K线: 250 根
-  - 威科夫 stage: Accumulation
-  - 量价 verdict: 🟡偏进货
-  - 数据源矩阵: 20 段 (16 OK / 4 EMPTY)
-✅ 数据已存: data/dump/600089.json
-```
-
-### PEG 计算示例 (在 analyze-*.md 中显示)
-
-```
-P  = ¥22.5
-E1 = ¥1.433    (腾讯 + 同花顺)
-NP1 = 72.517 亿 (同花顺)
-NP0 = 59.54 亿  (东财)
-   ↓
-Forward PE = 22.5 / 1.433 = 15.70x
-g = (72.517 / 59.54 - 1) × 100% = 21.80%
-PEG = 15.70 / 21.80 = 0.720x  → 🥇 重仓
-```
-
-### 局限
-
-- **A 股全覆盖** (沪深主板/创业板/科创板)
-- **港股/美股/加密** 不覆盖 (需要其他数据源 — 未来扩展)
-- **实时行情** 来自腾讯 API, 延迟 < 1 分钟
-- **分析师一致预期** 仅覆盖有券商覆盖的股票; 小盘股可能数据缺失
+1. **数据本地化优先** — 所有 K 线/EPS 走 parquet (`DataStore` 读)，避免运行时网络调用
+2. **三层分离** — `tools/sync_stock.py` (数据) → `tools/analysis/` (引擎) → `tools/render/` (报告)
+3. **O(n) 单次遍历** — 7 strategy 共享 `build_kline_features()` 预算层，单次遍历出全历史（无需 slice / 切片）
+4. **缓存优先** — `signal_cache` SQLite 让回测/分析秒级返回；`t-sync-cache` 增量预热
+5. **异常立即抛** — 禁止 `except Exception` 吞错；渲染失败立即 raise 停下整批
 
 ---
 
 ## 6. 快速开始
 
-### 6.1 用 Skill（主推，无需配置）
-
 ```bash
-# 在 Claude Code terminal
-/t-analyze 600089 特变电工
-/t-checklist 002371 688012
-/t-bottleneck AI基础设施
-/t-monitor
-```
-
-### 6.2 用 FastAPI（含 Python 信号引擎）
-
-```bash
-# 0. 拉代码 + 自动建 .venv + 装依赖 (首次, 一键搞定)
+# 1. 拉代码
 git clone <repo> && cd mavis-quant-agent
-bash tools/with_venv.sh python3 -c "import tushare, pandas; print('OK')"   # 自动建 venv
 
-# 1. 配 .env
+# 2. 建 .venv (自动 uv sync)
+bash tools/with_venv.sh python3 -c "import tushare, pandas; print('OK')"
+
+# 3. 配 .env
 cp .env.example .env
-# 编辑 .env, 填 TUSHARE_TOKEN (https://tushare.pro 注册) + LLM_API_KEY (Qwen / DeepSeek)
+# 编辑 .env, 填 TUSHARE_TOKEN (https://tushare.pro 注册)
 
-# 2. 跑 FastAPI
-bash tools/with_venv.sh uvicorn app.main:app --reload
-# http://localhost:8000/health
+# 4. 拉数据 (单只 / 批量)
+bash tools/with_venv.sh python -m tools.sync_stock 600089
+bash tools/refresh_all.sh                # 全部 watchlist
+
+# 5. 跑 skill
+/t-analyze 600089 特变电工
+/t-analyze --all
 ```
 
 **所有 Python 命令必须走 `bash tools/with_venv.sh` 包装** (自动激活 .venv, 避免污染系统 Python + 错版本)
 
 > 📌 详见 CLAUDE.md "🐍 Python 环境固化" 段 — `.venv` + `uv` 永久固化, 任何机器一气呵成
 
-**数据源**：东方财富免费接口（无需账号）。可选：Tushare（免费额度）、问财（需 API key）。
+**数据源**：Tushare 2000 积分档（日线 + EPS + 资金流 + 业绩预告），写入 `data/history/` parquet。
 
 ---
 
@@ -468,8 +322,8 @@ bash tools/with_venv.sh uvicorn app.main:app --reload
 
 ```bash
 pytest tests/ -v
-ruff check app/ tests/
-black app/ tests/
+ruff check tools/ tests/
+black tools/ tests/
 ```
 
 ---
@@ -896,13 +750,13 @@ market_trend = (market[-1] / market[-6] - 1) * 100
 
 ---
 
-## 附录: 数据源图例 (v3.0)
+## 附录: 数据源图例 (v3.6)
 
 | 图例 | 含义 | 来源 |
 |---|---|---|
-| 🟢 | 实数据 (API) | 腾讯 qtimg / 东财 datacenter / 同花顺 F10 / dcf_implied.py |
+| 🟢 | 实数据 (parquet) | Tushare 同步 → `data/history/` → DataStore |
 | 🟡 | 硬编码 (LLM/STOCK_REGISTRY) | 卡点/leader/板块等元数据 |
-| ⚪ | 计算派生 | PEG / DCF L / 六关评估 |
+| ⚪ | 计算派生 | PEG / DCF L / MA / 5 方法×3 周期 |
 
 > 报告里每个数字都标来源, 用户一眼能看出真数据 vs 估算。
 
