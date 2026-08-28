@@ -12,7 +12,7 @@
 - **同步**: `tools/kline_history_backfill.py` `sync_incremental()` (幂等)
 - **单只**: `tools/sync_stock.py`
 - **分析引擎**: `tools/analysis/analysis_engine.py` 8 strategies
-- **5 个活 skill**: `.claude/skills/{t-am-divergence, t-analyze, t-backtest, t-near-low, t-sync-cache}/`
+- **5 个活 skill**: `.claude/skills/{t-bb-obv, t-analyze, t-backtest, t-near-low, t-sync-cache}/`
 
 ## 纪律 (8-24 固化)
 

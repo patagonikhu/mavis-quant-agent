@@ -16,7 +16,7 @@
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
 | `/t-sync-cache` | 增量补全科技股 signal_cache.db (10分钟断点续跑) | `/t-sync-cache --portfolio` |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单 | `/t-near-low --gap 2` |
-| `/t-am-divergence` | 全市场扫最近 5d 内 A→M 切换 + 缠论/MACD 底背驰三重确认 | `/t-am-divergence --window 10` |
+| `/t-bb-obv` | 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 三重确认 (每天 0-2 只) | `/t-bb-obv --window 5` |
 
 ### 1.1 典型用法
 
@@ -40,13 +40,13 @@
 /t-near-low --gap 2
 
 # 全市场 A→M 三重确认扫描
-/t-am-divergence --window 10
+/t-bb-obv --window 10
 ```
 
 ### 1.2 推荐工作流
 
 ```
-/t-am-divergence --window 10    ← 1. 找最近 5d 内 A→M + 缠论/MACD 底背驰三重确认
+/t-bb-obv                  ← 1. 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 (近 2 日, 0-2 只)
               ↓
 /t-analyze {code}                ← 2. 对候选标的做完整 22 section 详报
               ↓
@@ -147,14 +147,14 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │       ├── batch_backtest.py              # /t-backtest (走 signal_cache)
 │       ├── signal_cache_warmup.py         # /t-sync-cache (增量断点续跑)
 │       ├── find_near_low.py               # /t-near-low
-│       └── am_divergence.py               # /t-am-divergence
+│       └── bb_obv_scan.py               # /t-bb-obv
 │
 └── .claude/skills/                        # 5 个 slash 命令
     ├── t-analyze/SKILL.md
     ├── t-backtest/SKILL.md
     ├── t-sync-cache/SKILL.md
     ├── t-near-low/SKILL.md
-    └── t-am-divergence/SKILL.md
+    └── t-bb-obv/SKILL.md
 ```
 
 ---
