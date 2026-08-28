@@ -82,7 +82,7 @@ def compute_obv_per_date(closes, vols, win=WIN, lookback=60):
     return obv_arr, div_bot_arr, div_top_arr
 
 
-def backfill_one(code: str) -> int:
+def backfill_one(code: str, year_filter: str = None) -> int:
     try:
         ctx = ds.get_ctx(code)
         if not ctx.kline or len(ctx.kline) < 30:
@@ -99,14 +99,20 @@ def backfill_one(code: str) -> int:
         res = obv_factor(closes=closes, vols=vols, dates=dates)
         verdict = res.get('verdict', '')
 
-        # 批量 UPDATE
+        # 按年过滤 (例 year_filter='2021' 只 update 2021 年)
+        if year_filter:
+            updates = [(o, db, dt, v, code, ds) for o, db, dt, v, ds in
+                       zip(obv_arr, div_bot_arr, div_top_arr, [verdict]*n, dates)
+                       if ds.startswith(year_filter)]
+        else:
+            updates = list(zip(obv_arr, div_bot_arr, div_top_arr,
+                               [verdict] * n, [code] * n, dates))
+
+        if not updates:
+            return 0
+
         conn = sqlite3.connect(str(DB))
         cur = conn.cursor()
-        updates = list(zip(
-            obv_arr, div_bot_arr, div_top_arr,
-            [verdict] * n,
-            [code] * n, dates
-        ))
         cur.executemany(
             "UPDATE analysis_cache SET obv=?, obv_div_bot=?, obv_div_top=?, obv_verdict=? "
             "WHERE code=? AND date_str=?",
@@ -114,21 +120,31 @@ def backfill_one(code: str) -> int:
         )
         conn.commit()
         conn.close()
-        return n
+        return len(updates)
     except Exception as e:
         return 0
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--year", type=str, default=None,
+                    help="只 backfill 某一年 (e.g. 2021, 2022, 2023)")
+    ap.add_argument("--recent", type=int, default=None,
+                    help="只 backfill 最近 N 天")
+    ap.add_argument("--workers", type=int, default=4)
+    args = ap.parse_args()
+
     conn = sqlite3.connect(str(DB))
     codes = [r[0] for r in conn.execute("SELECT DISTINCT code FROM analysis_cache").fetchall()]
     conn.close()
-    print(f"=== Backfill OBV: {len(codes)} 只 ===")
+    scope = f"year={args.year}" if args.year else (f"recent {args.recent} days" if args.recent else "all dates")
+    print(f"=== Backfill OBV: {len(codes)} 只 | scope: {scope} ===")
     t0 = time.time()
     total = 0
     done = 0
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        futs = {ex.submit(backfill_one, code): code for code in codes}
+    with ThreadPoolExecutor(max_workers=args.workers) as ex:
+        futs = {ex.submit(backfill_one, code, args.year): code for code in codes}
         for fut in as_completed(futs):
             n = fut.result()
             total += n
@@ -137,7 +153,7 @@ def main():
                 elapsed = time.time() - t0
                 rate = done / elapsed
                 eta = (len(codes) - done) / rate
-                print(f"  [{done}/{len(codes)}] updated={total:,} | {elapsed:.0f}s, {rate:.0f}只/s, ETA={eta:.0f}s", flush=True)
+                print(f"  [{done}/{len(codes)}] +{total:,} | {elapsed:.0f}s, {rate:.0f}只/s, ETA={eta:.0f}s", flush=True)
     print(f"\n=== 完成 ({(time.time()-t0):.0f}s) ===")
     print(f"updated: {total:,} rows")
 

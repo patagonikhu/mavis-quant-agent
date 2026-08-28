@@ -624,6 +624,7 @@ class ObvStrategy:
 
             results[date_clean] = {
                 "score": score, "signals": signals, "summary": verdict, "verdict": verdict,
+                "obv": obv[i],  # OBV 累计值本身 (供 cache)
                 "obv_div_bot_60d": div_bot, "obv_div_top_60d": div_top,
                 "ma20_dev": ma20_dev, "ma120_dev": ma120_dev,
                 "source": "OBV 派生 (K线)",
