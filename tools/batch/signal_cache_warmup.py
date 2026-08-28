@@ -19,7 +19,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, _ROOT)
 
 from tools.kline_store import DataStore
@@ -80,16 +80,17 @@ def calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
             if not all_stale:
                 return code, {}, kline, skipped, time.time() - t0
 
-            # 取最老的 batch_size 个 stale 日期
-            stale_dates = all_stale[:batch_size]
+            # 取最近的 batch_size 个 stale 日期（从最新往回填）
+            stale_dates = all_stale[-batch_size:]
 
         if not stale_dates:
             return code, {}, kline, skipped, time.time() - t0
 
-        # 从第一个 stale date 往前加 120 根缠论上下文缓冲
-        first_stale_idx = next((i for i, d in enumerate(all_dates) if d == stale_dates[0]), 0)
-        buf_start = max(0, first_stale_idx - 120)
-        compute_dates = all_dates[buf_start:]  # 从缓冲起点到末尾
+        # 从最后一个 stale date 往前加 120 根缠论上下文缓冲
+        last_stale_idx = next((i for i, d in enumerate(all_dates) if d == stale_dates[-1]), len(all_dates) - 1)
+        # 缠论需要向后看，所以从 buf_start 到 last_stale_idx 全量算
+        buf_start = max(0, last_stale_idx - 120)
+        compute_dates = all_dates[buf_start:]  # 从缓冲起点到最新
 
         from tools.analysis.analysis_engine import AnalysisEngine
         history = AnalysisEngine().analyze_history(ctx, compute_dates)

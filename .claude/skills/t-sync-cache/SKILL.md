@@ -42,7 +42,7 @@ tools/with_venv.sh python -m tools.batch.signal_cache_warmup --full
 - **增量**: stale 检查，已缓存且 K 线未变的日期直接跳过，不重算
 - **断点续跑**: 每次 10 分钟到时间自动写已完成结果退出，下次接着补
 - **并发**: 默认 2 worker 并发算，主线程串行写（避免 SQLite 锁竞争）
-- **lookback**: 默认 1250 根（约 5 年），step=1（每日精度）
+- **lookback**: 默认 250 根（约 1 年），避免内存 OOM；完整 5 年用 `--lookback 1250`（慢，建议分多次）
 
 ## 输出示例
 
