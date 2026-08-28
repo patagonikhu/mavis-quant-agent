@@ -12,7 +12,6 @@
 | 命令 | 用途 | 示例 |
 |---|---|---|
 | `/t-analyze <code> [name]` | 单只详报, 套"投资四问 + T 框架 + PEG 双派 + 六关", v3.0 格式 | `/t-analyze 688017 绿的谐波` |
-| `/t-ranking [--top N] [--filter 板块名]` | **投资组合综合排序** — 扫描所有 analyze, 按评级 + PEG 排序, 输出 portfolio-summary.md | `/t-ranking --top 20` |
 | `/t-watchlist` | 批量分析 watchlist.json 全部 | `/t-watchlist` |
 | `/t-monitor` | 扫 events.json 所有 T 位置, 高亮建仓/减仓/跑路窗口 | `/t-monitor` |
 | `/t-sector <name>` | 板块批量详报 (枚举 10-15 只主要公司) | `/t-sector 机器人` |
