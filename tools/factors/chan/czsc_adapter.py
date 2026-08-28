@@ -115,8 +115,13 @@ def czsc_zss_to_hub_format(zs_list, all_segs=None):
     """czsc 中枢 (ZS) 列表 → 项目 hubs 格式 (字段映射, 不涉及算法)"""
     hubs = []
     for zs in zs_list:
-        bis_in_zs = zs.bis if hasattr(zs, 'bis') else []
-        # all_segs 参数保留兼容, 但不使用 (原版用 all_segs 算 leaving 段, 自写算法已删)
+        # bis 序列化为轻量 dict，不存 czsc BI 对象（BI.bars 包含完整K线，内存很大）
+        bis_in_zs = [
+            {'sdt': to_date_str(b.sdt), 'edt': to_date_str(b.edt),
+             'direction': b.direction.value if hasattr(b.direction, 'value') else str(b.direction),
+             'high': float(b.high), 'low': float(b.low)}
+            for b in (zs.bis if hasattr(zs, 'bis') else [])
+        ]
         _ = all_segs
 
         hubs.append({

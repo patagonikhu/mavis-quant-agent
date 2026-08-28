@@ -82,19 +82,17 @@ def calc_signals_for_code(code: str, full: bool, lookback: int, step: int):
         first_stale_idx = all_dates.index(stale_dates[0]) if stale_dates[0] in all_dates else len(all_dates) - lookback
         buf_lookback = max(len(all_dates) - first_stale_idx + 120, 120)
 
-        # 直接调 analyze_history，逐个提取后立即释放，避免 1250 个 AnalysisResult 同时驻留内存
+        # 直接调 analyze_history，逐个提取后立即释放，避免 AnalysisResult 大对象驻留内存
         from tools.analysis.analysis_engine import AnalysisEngine
         tail_dates = all_dates[max(0, len(all_dates) - buf_lookback)::step]
         history = AnalysisEngine().analyze_history(ctx, tail_dates)
         stale_set = set(stale_dates)
         to_write = {}
         for d in tail_dates:
-            if d not in stale_set:
-                history.pop(d, None)   # 不需要的立即释放
+            result = history.pop(d, None)
+            if d not in stale_set or result is None:
                 continue
-            result = history.pop(d, None)  # pop = 取出 + 从 dict 删除
-            if result is not None:
-                to_write[d] = result
+            to_write[d] = result
         return code, to_write, kline, skipped, time.time() - t0
 
     except Exception as e:
@@ -107,7 +105,7 @@ def main():
     ap.add_argument("--all", action="store_true", help="全市场 (~5783只)")
     ap.add_argument("--portfolio", action="store_true", help="仅持仓")
     ap.add_argument("--workers", type=int, default=2, help="并发 worker 数")
-    ap.add_argument("--lookback", type=int, default=1250, help="最近N根K线（默认1250≈5年）")
+    ap.add_argument("--lookback", type=int, default=250, help="最近N根K线（默认250≈1年，多次跑完整5年）")
     ap.add_argument("--step", type=int, default=1,
                     help="计算间隔（默认1=每日；step=5每周快5x）")
     ap.add_argument("--full", action="store_true", help="跳过 stale 检查，强制重算")
