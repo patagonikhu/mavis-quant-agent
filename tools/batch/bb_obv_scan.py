@@ -135,7 +135,7 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="科技股 BOLL+BBW+OBV 三重确认 (compute_factor_history 直算, 跳过 cache)")
+    parser = argparse.ArgumentParser(description="科技股 BOLL+BBW+OBV 三重确认 (cache 读, 含 obv5/obv_trend)")
     parser.add_argument("--window",          type=int,   default=2,    help="触底窗口天数（默认2）")
     parser.add_argument("--boll-threshold",  type=float, default=15.0, help="BOLL% 上限（默认15）")
     parser.add_argument("--bbw-threshold",   type=float, default=10.0, help="BBW 上限（默认10）")
@@ -166,7 +166,7 @@ def main():
         codes = codes[:args.limit]
 
     print(f"=== {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% {'AND OBV 底' if require_obv else ''} ===")
-    print(f"直算 (compute_factor_history, 只跑 WyckoffStrategy + ObvStrategy)")
+    print(f"读 cache (boll_bpct/boll_bwidth/obv5/obv_trend)")
     print(f"扫描 {len(codes)} 只 ({args.workers} workers)...")
 
     t0 = time.time()
