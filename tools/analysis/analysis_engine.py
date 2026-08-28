@@ -542,7 +542,6 @@ class ObvStrategy:
 
     def analyze_history(self, ctx: RawContext, dates: list) -> dict:
         """O(n): OBV 数组预建一次，per date O(1) 查信号。复用 ctx.kline_arrs（WyckoffStrategy 已算）。"""
-        from tools.factors.volume.price_fflow import _scan_obv_divergence_60d
         from tools.factors.kline_arrays import sliding_ma
 
         kline = ctx.kline or []
@@ -606,12 +605,8 @@ class ObvStrategy:
             elif m5 and m20 and m60 and m120 and p > m5 > m20 > m60 > m120:
                 signals.append("多头排列"); score += 1
 
-            # 段背离 O(60) — 有界常数
-            div_bot, div_top = _scan_obv_divergence_60d(closes[:i+1], vols[:i+1])
-            if div_bot >= 2:   signals.append(f"OBV 强底背离 ({div_bot}/4 窗口)"); score += 2
-            elif div_bot == 1: signals.append("OBV 单次底背离"); score += 1
-            if div_top >= 2:   signals.append(f"OBV 强顶背离 ({div_top}/4 窗口)"); score -= 2
-            elif div_top == 1: signals.append("OBV 单次顶背离"); score -= 1
+            # 段背离删除 (2026-08-29, 太滞后); 改用 obv5 (5日价跌+OBV涨) + obv_trend (OBV>MA20) 实战信号
+            # (在 obv5 / obv_trend 字段输出, 由 cache 消费)
 
             if score >= 3:    verdict = "🟢主力进货"
             elif score >= 1:  verdict = "🟡偏进货"

@@ -45,11 +45,12 @@ def _load_tech_codes() -> set:
 
 def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
              require_obv: bool, tech_codes: set) -> dict | None:
-    """单只扫描: 从 cache 读 BOLL/BBW/OBV (O(1) 命中)"""
+    """单只扫描: 直算 BOLL/BBW/OBV (不走 cache, cache 只给回测用)"""
     t0 = time.time()
     try:
         from tools.kline_store import DataStore
-        from tools.analysis.signal_cache import get_cached
+        from tools.analysis.analysis_engine import WyckoffStrategy, ObvStrategy
+        from tools.analysis.analysis_result_signals import compute_factor_history
 
         # 科技股过滤
         if tech_codes is not None and code not in tech_codes:
@@ -59,32 +60,35 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         if not ctx.kline or len(ctx.kline) < 20:
             return None
 
-        # 取最近 window 日
-        kline = ctx.kline[-window:]
-        dates = [k['trade_date'].replace('-','')[:8] for k in kline]
-        n = len(dates)
+        # 只需要算最近 window + 20 天 (OBV MA20 需要)
+        kline_window = ctx.kline[-(window + 20):]
+        all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+        dates_window = all_dates[-(window + 20):]
 
-        # 从 cache 读 boll_bpct / boll_bwidth / obv5 / obv_trend (O(1) 命中)
-        rows = get_cached(code, dates)
+        # 直算 (不走 cache): 只跑 WyckoffStrategy (BOLL/BBW) + ObvStrategy (obv5/obv_trend)
+        # 跳过 chan/smc/fflow/peg (省 70% 时间)
+        rows = compute_factor_history(ctx, step=1, lookback=len(dates_window),
+                                     strategies=[WyckoffStrategy, ObvStrategy])
+        history = {r.get('date', ''): r for r in rows if r.get('date')}
 
         # 找最近 window 日内 满足 BOLL AND BBW 条件
         trigger = None
-        for i in range(n - 1, -1, -1):
-            r = rows.get(dates[i])
-            if r is None: continue
-            bp = r.get('boll_bpct')
-            bw = r.get('boll_bwidth')
+        recent_dates = dates_window[-window:]
+        for d in reversed(recent_dates):
+            if d not in history: continue
+            row = history[d]
+            bp = row.get('boll_pct')
+            bw = row.get('boll_width')
             if bp is not None and bw is not None and bp < boll_th and bw < bbw_th:
-                trigger = (i, r)
+                trigger = (d, row)
                 break
         if trigger is None:
             return None
 
-        i_trig, r_trig = trigger
-        trigger_date = dates[i_trig]
-        trigger_bpct = r_trig.get('boll_bpct', 0)
-        trigger_bbw = r_trig.get('boll_bwidth', 0)
-        trigger_price = kline[i_trig].get('close', 0)
+        trigger_date, r_trig = trigger
+        trigger_bpct = r_trig.get('boll_pct', 0)
+        trigger_bbw = r_trig.get('boll_width', 0)
+        trigger_price = r_trig.get('close', 0)
 
         # OBV 实战信号: obv5 (5日价跌+OBV涨) OR obv_trend (OBV>MA20)
         has_obv = False
@@ -166,7 +170,7 @@ def main():
         codes = codes[:args.limit]
 
     print(f"=== {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% {'AND OBV 底' if require_obv else ''} ===")
-    print(f"读 cache (boll_bpct/boll_bwidth/obv5/obv_trend)")
+    print(f"直算 (compute_factor_history, strategies=[Wyckoff, Obv], 跳过 chan/smc/fflow/peg)")
     print(f"扫描 {len(codes)} 只 ({args.workers} workers)...")
 
     t0 = time.time()

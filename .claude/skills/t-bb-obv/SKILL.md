@@ -1,9 +1,22 @@
 ---
 name: t-bb-obv
-description: 每日扫科技股，找 BOLL<15% + BBW<10% + OBV 底背离 三重确认。信号极少（每天 0-2 只），实战"宁可错过不可做错"。
+description: 每日扫科技股，找 BOLL<15% + BBW<10% + OBV 5日价跌或OBV>MA20 三重确认。信号极少（每天 0-2 只），实战"宁可错过不可做错"。
 user-invocable: true
 allowed-tools:
   - Bash
+
+## ⚠️ 重要：不走 cache
+
+`t-bb-obv` **直接用 `compute_factor_history` 实时算**（不走 cache）。
+
+**为什么**：
+- cache 经常不完整（`t-sync-cache` 太慢，没人会等）
+- 直算 30 天 K 线 = 0.2s/只，比读 cache 还快
+- 数据一致性：直算永远跟 `t-analyze` 一致
+
+**Cache 的用途**：**只给回测用**（`/t-backtest`）
+- `/t-backtest` 跑历史 5 年全市场，cache 让 0.6s 出结果
+- `/t-bb-obv` 跑最近 5-10 天，每次 cache 都会被新数据 invalidate，直算更可靠
 
 ## 用法
 
@@ -11,7 +24,7 @@ allowed-tools:
 /t-bb-obv                              # 默认: 科技股, 最近 2 日
 /t-bb-obv --window 5                  # 5 日窗口
 /t-bb-obv --all                       # 全市场 (不只科技股)
-/t-bb-obv --no-obv                    # 不要 OBV 底背离 (只要 BOLL+BBW)
+/t-bb-obv --no-obv                    # 只要 BOLL+BBW 双确认
 /t-bb-obv --workers 8                 # 8 并发
 /t-bb-obv --write-md                  # 写 docs/bb-obv-watchlist.md
 /t-bb-obv --limit 100                 # 调试: 只扫前 100 只
@@ -23,11 +36,13 @@ allowed-tools:
 
 1. **BOLL% < 15%** — 接近下轨, 短期超卖
 2. **BBW < 10%** — 布林带收窄, 低波/蓄势
-3. **OBV 底背离** — 价跌但 OBV 上行, 机构吸筹
+3. **OBV 实战信号** (满足任一):
+   - `obv5`: 5 日价跌 + OBV 涨 (短期吸筹)
+   - `obv_trend`: OBV > MA20 (资金净流入)
 
 **实战理念**: 宁可错过不可做错. 每天 0-2 只命中, 不构成高频信号.
 
-## 执行
+## 执行 (走 compute_factor_history)
 
 ```bash
 # 后台跑（>30s 必须 background, 不用 timeout）
@@ -37,13 +52,32 @@ bash tools/with_venv.sh python -m tools.batch.bb_obv_scan
 bash tools/with_venv.sh python -m tools.batch.bb_obv_scan --window 5
 ```
 
+## 数据流
+
+```
+DataStore.get_ctx(code)  →  K线 (30 天)
+                              ↓
+compute_factor_history(ctx, lookback=30, 
+                       strategies=[WyckoffStrategy, ObvStrategy])
+                              ↓
+              (跳过 chan/smc/fflow/peg, 省 70% 时间)
+                              ↓
+history[date] = {boll_pct, boll_width, obv5, obv_trend}
+                              ↓
+                  检查 3 重条件, 命中即输出
+```
+
 ## 输出示例
 
 ```
-=== 科技股 | 最近 2 日 | BOLL<15% AND BBW<10% AND OBV 底背离 ===
-代码    名称        行业        触发日    价格   OBV底日    距今  状态
-688223  海光信息    AI 芯片    20260827  145.2  20260824   0d   ✅✅✅
-600362  江西铜业    有色金属    20260826   55.3  20260822   1d   ✅✅✅
+=== 科技股 (1203 只) | 最近 5 日 | BOLL<15% AND BBW<10% AND OBV 5日/趋势 ===
+读 cache (boll_bpct/boll_bwidth/obv5/obv_trend) ❌ ← 错误! 实际是直算
+扫描 1832 只 (4 workers)...
+
+代码    名称        行业        触发日    价格    BOLL%   BBW%   状态
+002111  威海广泰    航空        20260827  9.41    14.4    4.12   ✅✅✅
+600885  宝胜股份    电气设备    20260827  34.02   5.2     8.20   ✅✅✅
+300073  当升科技    电气设备    20260825  40.42   -6.1    5.61   ✅✅✅
 ```
 
 ## 频率参考
@@ -51,7 +85,7 @@ bash tools/with_venv.sh python -m tools.batch.bb_obv_scan --window 5
 | 条件 | 每天命中 | 备注 |
 |---|---|---|
 | 科技股 BOLL<15 AND BBW<10 | 1-30 只 | 每天波动大 |
-| **+ OBV 底背离 (3 重)** | **0-2 只** | 实战 0.1%/天 |
+| **+ OBV 实战信号 (3 重)** | **0-2 只** | 实战 0.1%/天 |
 | 放宽到 BBW<15 | 3 重 ≈ 0-5 只 | 信号更多但质量略降 |
 
 ## 参数
@@ -60,7 +94,7 @@ bash tools/with_venv.sh python -m tools.batch.bb_obv_scan --window 5
 |---|---|---|
 | `--window` | 2 | 触底窗口天数 |
 | `--all` | False | 全市场 (默认科技股 ≈ 1132 只) |
-| `--no-obv` | False | 不要 OBV 底背离 (只要 BOLL+BBW) |
+| `--no-obv` | False | 只要 BOLL+BBW 双确认 |
 | `--boll-threshold` | 15 | BOLL% 上限 (越小越严) |
 | `--bbw-threshold` | 10 | BBW 上限 (越小越严) |
 | `--workers` | 4 | 并发数 |
@@ -71,14 +105,13 @@ bash tools/with_venv.sh python -m tools.batch.bb_obv_scan --window 5
 
 | 数据 | 来源 |
 |---|---|
-| K线 + BOLL/BBW | `data/analysis_cache.db` (cache 命中) |
-| OBV 实时算 | K线 close + volume (无网络) |
+| K线 | `DataStore.get_ctx()` (parquet, 0 网络) |
+| BOLL%/BBW/OBV | **实时算** (`compute_factor_history` with [WyckoffStrategy, ObvStrategy]) |
 | 科技股过滤 | `data/history/stock_basic/stock_basic.parquet` (申万行业) |
-| 股票基础信息 | DataStore.get_stock_basic() |
+| 股票基础信息 | `DataStore.get_stock_basic()` |
 
 ## 相关
 
-- `tools/batch/bb_obv_scan.py` — 扫描脚本
-- `tools/analysis/signal_cache.py` — BOLL/BBW 缓存
-- `/t-sync-cache` — 补齐 cache (信号基础)
-- `/t-backtest --signal "boll:15" --signal "bbw:10"` — 历史胜率回测
+- `tools/batch/bb_obv_scan.py` — 扫描脚本 (compute_factor_history 直算)
+- `/t-sync-cache` — **回测用** (cache 5 年数据)
+- `/t-backtest --signal "boll:15" --signal "bbw:10"` — 历史胜率回测 (用 cache)
