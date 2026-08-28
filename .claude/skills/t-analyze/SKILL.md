@@ -4,6 +4,14 @@ description: 股票分析 + 批量扫描。单只：/t-analyze <code>；全量 w
 user-invocable: true
 allowed-tools:
 
+> 🚨 **禁用 timeout 铁律 (2026-08-28 固化)**
+>
+> **任何长跑命令（>30s）必须用 `run_in_background=true` 启动 + 任务完成自动通知 chat，禁止用 timeout=120/300 截断**:
+> - ✅ `run_in_background=true` → 进程跑完 chat 自动 resume，我再回报结果
+> - ❌ `timeout=120` / `timeout=300` / `timeout=600` → 命令被强制 kill，浪费时间
+> - 测试只需 1 只股票验证脚本正确，全量跑前确认 verbose 输出格式 OK
+> - 历史教训：今天跑 67 只 verbose 测试用 timeout=300 被杀，应该用 background
+
 > 🚨 **复用 Analysis 入口铁律 (2026-08-21 v3.5 固化)**
 >
 > **任何 backtest / 信号回测 / 胜率统计 必须复用 `AnalysisEngine.analyze()` 入口, 禁止自己写算法**:
@@ -87,106 +95,25 @@ done
 
 ### Step 3: 一次 pass 完成信号扫描 + 个股 MD 渲染（--all 合并版）
 
-> 单次 `compute_factor_history(lookback=120)` 同时输出信号表和个股 MD，避免重复计算。
+> 单次 `AnalysisEngine.analyze_history(120天)` 同时输出信号表和个股 MD，避免重复计算。
+> **正式脚本**: `tools/batch/t_analyze_all.py`（已含 verbose 进度输出 + 异常立即抛出）
+> **不要在内联 heredoc 里手写**（2026-08-28 教训：手写版用 `out_results=` 已删参数，66 只 render 全失败被 except 吞掉，浪费 20 分钟）
 
 ```bash
-bash tools/with_venv.sh python3 << 'PYEOF'
-import json, sys, datetime
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-sys.path.insert(0, '.')
-
-from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
-from tools.render.report_renderer import render_report
-
-skip = {'000001','000300','399001','399006'}
-wl = json.load(open('data/watchlist.json'))['stocks']
-stocks = [s for s in wl if s['code'] not in skip]
-today = datetime.date.today().isoformat()
-output_path = Path('docs/signal-watchlist.md')
-
-buy_rows, sell_rows, all_table_rows = [], [], []
-
-def _process_one(s):
-    code, name = s['code'], s['name']
-    subdir = 'portfolio' if s.get('list_type') == '持仓' else 'watchlist'
-    try:
-        from tools.kline_store import DataStore
-        from tools.analysis.render_data import RenderData
-        ctx = DataStore.get_ctx(code)
-        if not ctx.kline:
-            return None
-        # 单次 pass: lookback=120，out_results 拿最后结果
-        out = {}
-        rows = compute_factor_history(ctx, step=1, lookback=120)
-        if len(rows) < 2:
-            return None
-        # 渲染个股 MD
-        last_date = ctx.kline[-1]['trade_date'].replace('-','')[:8] if isinstance(ctx.kline[0], dict) else ctx.kline[-1][0]
-        result = out.get(last_date) or (out[max(out)] if out else None)
-        if result:
-            data = RenderData.from_result(ctx, result)
-            data.factor_history_rows = rows
-            md = render_report(data)
-            md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
-            md_path.parent.mkdir(parents=True, exist_ok=True)
-            md_path.write_text(md, encoding='utf-8')
-        # 信号表
-        r = rows[-1]
-        changes = diff_rows(rows[-2], rows[-1])
-        sigs = extract_signals(changes)
-        sig_fmtd = format_signals_for_render(changes)
-        hub_d = r.get('hub_daily') or {}
-        hub_str = f"¥{hub_d.get('low',0):.0f}~{hub_d.get('high',0):.0f}{hub_d.get('pos','')[:2]}" if hub_d.get('valid') else '—'
-        has_sig = '⭐' if sig_fmtd else ''
-        return {
-            'code': code, 'name': name, 'sigs': sigs, 'sig_fmtd': sig_fmtd,
-            'table_row': (code, name, r.get('scene','?'), (r.get('wyckoff_daily') or '?')[:10],
-                          f"{r.get('ma_dev_daily') or 0:+.1f}%", hub_str,
-                          ' '.join(sig_fmtd) if sig_fmtd else '—', has_sig),
-        }
-    except Exception as e:
-        return None
-
-print(f'开始处理 {len(stocks)} 只（信号扫描 + MD 渲染一次 pass）...')
-with ThreadPoolExecutor(max_workers=4) as ex:
-    futs = {ex.submit(_process_one, s): s for s in stocks}
-    done = 0
-    for fut in as_completed(futs):
-        done += 1
-        r = fut.result()
-        if not r:
-            continue
-        for _, detail, direction in r['sigs']:
-            if direction == 'buy': buy_rows.append((r['code'], r['name'], detail))
-            else:                   sell_rows.append((r['code'], r['name'], detail))
-        all_table_rows.append(r['table_row'])
-        if done % 10 == 0:
-            print(f'  [{done}/{len(stocks)}]')
-
-# 写 signal-watchlist.md
-lines = [f"# 全量扫描 {today}\n\n> {len(stocks)} 只 | DataStore | {datetime.datetime.now().strftime('%H:%M:%S')}\n\n"]
-lines.append("## 底部信号（buy）\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
-for code, name, detail in buy_rows: lines.append(f"| {code} | {name} | {detail} |\n")
-if not buy_rows: lines.append("| — | 无 | — |\n")
-lines.append("\n## 顶部/弱势信号（sell）\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
-for code, name, detail in sell_rows: lines.append(f"| {code} | {name} | {detail} |\n")
-if not sell_rows: lines.append("| — | 无 | — |\n")
-lines.append("\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n|------|------|------|---------|-------|--------|----------|\n")
-all_table_rows.sort(key=lambda x: (0 if x[7]=='⭐' else 1, x[0]))
-for code, name, scene, wy, ma, hub_str, sig_str, has_sig in all_table_rows:
-    lines.append(f"| {code} | {name} | {has_sig}{scene} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
-output_path.parent.mkdir(exist_ok=True)
-output_path.write_text(''.join(lines), encoding='utf-8')
-
-total = len(all_table_rows)
-with_sig = sum(1 for r in all_table_rows if r[7]=='⭐')
-sig_codes = [r[0] for r in all_table_rows if r[7]=='⭐']
-print(f'FILE: {output_path}')
-print(f'SUMMARY: 共 {total} 只, {with_sig} 只有今日信号')
-if sig_codes: print(f'SIG_CODES: {", ".join(sig_codes)}')
-PYEOF
+# 后台跑（>30s 必须 background，不用 timeout）
+bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py 2>&1
 ```
+
+**脚本行为**：
+- 71 只 watchlist 全部处理（含 4 个指数 000001/000300/399001/399006）
+- 串行逐只，verbose 输出每只进度：
+  - `[1/67] 000725 京东方A (持仓) START`
+  - `  [analysis] 000725: 6 strategies` (chan/wyckoff/smc/obv/fflow/peg)
+  - `  [render] 000725: building MD...`
+  - `  [section] 000725: ma / technical / factor·history / ...` (34 sections)
+  - `  [done] 000725 -> analyze-000725-京东方A.md (2.6s, 31,209chars)`
+- 异常立即抛（不吞）：`traceback.print_exc()` 输出，方便定位
+- 产物：`docs/{portfolio,watchlist}/analyze-{code}-{name}.md` + `docs/signal-watchlist.md`
 
 ### Step 4: chat 输出（只给文件路径 + 摘要）
 
@@ -248,11 +175,12 @@ ctx  = DataStore.get_ctx(code)
 if not ctx.kline:
     print('ERROR: 无K线数据'); exit(1)
 
-# L2+L3 合并：compute_factor_history 一次遍历，out_results 存最后一个 AnalysisResult
-out = {}
-rows = compute_factor_history(ctx, step=1, lookback=120)
-last_date = ctx.kline[-1]['trade_date'].replace('-', '')[:8]
-result = out.get(last_date) or (out[max(out)] if out else None)
+# L2+L3 合并: AnalysisEngine.analyze_history 一次遍历，Phase 2 在 RenderData 里按需跑
+all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+dates = all_dates[-120:]
+history = AnalysisEngine().analyze_history(ctx, dates)
+result = history[dates[-1]]
+rows = list(history.values())
 if result is None:
     print('ERROR: 无分析结果'); exit(1)
 
@@ -1810,7 +1738,9 @@ def format_chan_output(code, name, data):
         from tools.analysis.analysis_engine import AnalysisEngine
         from tools.analysis.render_data import RenderData
         ctx = DataStore.get_ctx(code)
-        result = AnalysisEngine().analyze(ctx)
+        all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+        history = AnalysisEngine().analyze_history(ctx, all_dates[-120:])
+        result = history[all_dates[-1]]
         data = RenderData.from_result(ctx, result)
         chan = data.analysis.get('chan', {})
 
@@ -1898,7 +1828,9 @@ def format_chan_output(code, name, data):
 # from tools.analysis.analysis_engine import AnalysisEngine
 # from tools.analysis.render_data import RenderData
 # ctx = DataStore.get_ctx(code)
-# data = RenderData.from_result(ctx, AnalysisEngine().analyze(ctx))
+# all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+# history = AnalysisEngine().analyze_history(ctx, all_dates[-120:])
+# data = RenderData.from_result(ctx, history[all_dates[-1]])
 # chan_section = format_chan_output(code, name, data)
 
 ```
