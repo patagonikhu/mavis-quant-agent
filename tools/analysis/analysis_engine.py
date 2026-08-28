@@ -48,6 +48,8 @@ class RawContext:
     obv_result:     dict = field(default_factory=dict)   # 经典 OBV (Granville 1963, K线累计)
     resonance_result: dict = field(default_factory=dict)
     _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
+    kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写，ObvStrategy 复用
+    kline_arrs_weekly:  dict = field(default_factory=dict)   # 周线 arrs，WyckoffStrategy 写，factor_history 读 ma_dev_weekly
 
     def slice(self, as_of_date: str) -> "RawContext":
         """按日期截断 K 线，返回新 RawContext，原对象不变"""
@@ -221,7 +223,7 @@ class WyckoffStrategy:
         import bisect
         from tools.factors.wyckoff.detectors.sub_event_scanner import scan_sub_events as _scan
         from tools.factors.wyckoff.stage_factor import wyckoff_judge
-        from tools.factors.kline_arrays import precompute as _precompute
+        from tools.factors.kline_arrays import build_kline_features as _build_kline_features
 
         score_map = {"Accumulation": 0.6, "Markup": 1.0, "Distribution": -0.6, "?": 0.0}
 
@@ -247,10 +249,13 @@ class WyckoffStrategy:
             highs  = [k["high"]  for k in bars]
             lows   = [k["low"]   for k in bars]
             vols   = [k.get("volume", 0) for k in bars]
-            return _precompute(closes, highs, lows, vols, window=min(250, len(bars)))
+            return _build_kline_features(closes, highs, lows, vols, window=min(250, len(bars)))
 
         arrs_daily  = _arrs_for(ctx.kline)
         arrs_weekly = _arrs_for(ctx.weekly) if ctx.weekly else None
+        # 写入 ctx 供 ObvStrategy 复用，避免重复计算 MA20/MA60
+        ctx.kline_arrs        = arrs_daily  or {}
+        ctx.kline_arrs_weekly = arrs_weekly or {}
 
         all_events = {
             "daily":  _pre_scan(ctx.kline,  "daily",  arrs_daily),
@@ -536,7 +541,7 @@ class ObvStrategy:
         }
 
     def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """O(n): OBV 数组预建一次，per date O(1) 查信号。"""
+        """O(n): OBV 数组预建一次，per date O(1) 查信号。复用 ctx.kline_arrs（WyckoffStrategy 已算）。"""
         from tools.factors.volume.price_fflow import _scan_obv_divergence_60d
         from tools.factors.kline_arrays import sliding_ma
 
@@ -557,10 +562,12 @@ class ObvStrategy:
             else:                          obv.append(obv[-1])
 
         obv_ma20_arr = sliding_ma(obv, 20)
-        ma5_arr   = sliding_ma(closes, 5)
-        ma20_arr  = sliding_ma(closes, 20)
-        ma60_arr  = sliding_ma(closes, 60)
-        ma120_arr = sliding_ma(closes, 120)
+        # 复用 WyckoffStrategy 已算的 arrs（ma20/ma60），只补 ma5/ma120
+        arrs = ctx.kline_arrs
+        ma5_arr   = arrs.get('ma5')   or sliding_ma(closes, 5)
+        ma20_arr  = arrs.get('ma20')  or sliding_ma(closes, 20)
+        ma60_arr  = arrs.get('ma60')  or sliding_ma(closes, 60)
+        ma120_arr = arrs.get('ma120') or sliding_ma(closes, 120)
 
         dates_clean = [d.replace("-","")[:8] for d in dates]
         results = {}
@@ -612,9 +619,13 @@ class ObvStrategy:
             elif score >= -2: verdict = "🟠偏出货"
             else:             verdict = "🔴主力出货"
 
+            ma20_dev  = round((closes[i] / m20  - 1) * 100, 1) if m20  else None
+            ma120_dev = round((closes[i] / m120 - 1) * 100, 1) if m120 else None
+
             results[date_clean] = {
                 "score": score, "signals": signals, "summary": verdict, "verdict": verdict,
                 "obv_div_bot_60d": div_bot, "obv_div_top_60d": div_top,
+                "ma20_dev": ma20_dev, "ma120_dev": ma120_dev,
                 "source": "OBV 派生 (K线)",
             }
         return results

@@ -1402,11 +1402,7 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
         return "> ⚠️ ctx 未设置，无法计算历史\n"
     try:
         from tools.analysis.factor_history import compute_factor_history, diff_rows
-        if data.factor_history_rows is not None:
-            rows = data.factor_history_rows
-        else:
-            rows = compute_factor_history(data.ctx, step=1, lookback=lookback)
-            data.factor_history_rows = rows
+        rows = compute_factor_history(data.ctx, step=1, lookback=lookback)
     except Exception as e:
         return f"> ❌ 历史计算失败: {e}\n"
 

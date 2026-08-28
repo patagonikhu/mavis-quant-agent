@@ -27,7 +27,6 @@ sys.path.insert(0, _ROOT)
 
 from tools.kline_store import DataStore
 from tools.analysis.signal_cache import write_batch, get_stats, check_stale_batch
-from tools.analysis.factor_history import compute_factor_history
 
 
 def _load_tech_codes() -> list[str]:
@@ -83,11 +82,19 @@ def calc_signals_for_code(code: str, full: bool, lookback: int, step: int):
         first_stale_idx = all_dates.index(stale_dates[0]) if stale_dates[0] in all_dates else len(all_dates) - lookback
         buf_lookback = max(len(all_dates) - first_stale_idx + 120, 120)
 
-        out = {}
-        compute_factor_history(ctx, step=step, lookback=buf_lookback, out_results=out)
-
+        # 直接调 analyze_history，逐个提取后立即释放，避免 1250 个 AnalysisResult 同时驻留内存
+        from tools.analysis.analysis_engine import AnalysisEngine
+        tail_dates = all_dates[max(0, len(all_dates) - buf_lookback)::step]
+        history = AnalysisEngine().analyze_history(ctx, tail_dates)
         stale_set = set(stale_dates)
-        to_write = {d: r for d, r in out.items() if d in stale_set}
+        to_write = {}
+        for d in tail_dates:
+            if d not in stale_set:
+                history.pop(d, None)   # 不需要的立即释放
+                continue
+            result = history.pop(d, None)  # pop = 取出 + 从 dict 删除
+            if result is not None:
+                to_write[d] = result
         return code, to_write, kline, skipped, time.time() - t0
 
     except Exception as e:

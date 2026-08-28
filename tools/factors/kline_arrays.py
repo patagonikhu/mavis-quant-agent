@@ -5,11 +5,12 @@ tools/factors/kline_arrays.py — 共享 K 线预计算数组
 O(n) 计算，O(1) 查询。
 
 使用方式:
-    arrs = precompute(closes, highs, lows, vols)
+    arrs = build_kline_features(closes, highs, lows, vols)
     ma20_today = arrs['ma20'][i]
     rmin_60    = arrs['rmin_l_pos'][i]
 """
 from collections import deque
+import math
 
 
 # ── 基础工具 ───────────────────────────────────────────────────────────────
@@ -54,7 +55,24 @@ def rolling_max(arr, n):
 
 # ── 核心预计算 ─────────────────────────────────────────────────────────────
 
-def precompute(closes, highs, lows, vols, window=250, pos_lookback=60):
+def _boll_arr(closes, n, k, field):
+    """O(n) Bollinger Band 数组。field: 'upper'|'lower'|'mid'|'pct'"""
+    result = []
+    for i in range(len(closes)):
+        w = closes[max(0, i-n+1):i+1]
+        mid = sum(w) / len(w)
+        std = math.sqrt(sum((c - mid) ** 2 for c in w) / len(w))
+        upper = mid + k * std
+        lower = mid - k * std
+        if field == 'upper':   result.append(round(upper, 2))
+        elif field == 'lower': result.append(round(lower, 2))
+        elif field == 'mid':   result.append(round(mid, 2))
+        else:  # pct
+            result.append(round((closes[i] - lower) / (upper - lower) * 100, 1) if upper > lower else 50.0)
+    return result
+
+
+def build_kline_features(closes, highs, lows, vols, window=250, pos_lookback=60):
     """K 线公共数组预计算，O(n) 一次，供所有 strategy 共用。
 
     Args:
@@ -107,9 +125,11 @@ def precompute(closes, highs, lows, vols, window=250, pos_lookback=60):
 
     return {
         # 收盘价均线
+        'ma5':       sliding_ma(closes, 5),
         'ma20':      sliding_ma(closes, 20),
         'ma50':      sliding_ma(closes, 50),
         'ma60':      ma60_arr,
+        'ma120':     sliding_ma(closes, 120),
         'ma200':     sliding_ma(closes, 200),
         'ma_window': sliding_ma(closes, window),   # Wyckoff "ma200" = window 日均
         'ma_long':   ma60_arr,                     # ma_long 默认 60，alias
@@ -134,6 +154,12 @@ def precompute(closes, highs, lows, vols, window=250, pos_lookback=60):
         # 量比参考（前缀和派生，O(1) 查询）
         'vol_ref_120_20': [_range_mean(i, 120, 20) for i in range(n)],
         'vol_ref_30_10':  [_range_mean(i, 30,  10) for i in range(n)],
+
+        # Bollinger Bands (20日, 2σ) — per bar
+        'boll_upper': _boll_arr(closes, 20, 2.0, 'upper'),
+        'boll_lower': _boll_arr(closes, 20, 2.0, 'lower'),
+        'boll_mid':   _boll_arr(closes, 20, 2.0, 'mid'),
+        'boll_pct':   _boll_arr(closes, 20, 2.0, 'pct'),
 
         # 原始数据引用
         'closes': closes, 'highs': highs, 'lows': lows, 'vols': vols,

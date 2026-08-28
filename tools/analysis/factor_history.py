@@ -44,54 +44,51 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     date_to_close = {k["trade_date"].replace("-","")[:8]: k["close"] for k in kline}
     weekly_dates_sorted = [b["trade_date"].replace("-","")[:8] for b in (ctx.weekly or [])]
 
+    # 从 ctx 预算数组里取各日期对应值（WyckoffStrategy 已算，O(1) 查询）
+    d_arrs = ctx.kline_arrs        # 日线 arrs
+    w_arrs = ctx.kline_arrs_weekly # 周线 arrs
+    weekly_date_to_ki = {b["trade_date"].replace("-","")[:8]: i for i, b in enumerate(ctx.weekly or [])}
+
     rows = []
     for date in dates:
-        result = history.get(date.replace("-", "")[:8])
+        date_clean = date.replace("-", "")[:8]
+        result = history.get(date_clean)
         if result is None:
             continue
         if out_results is not None:
-            out_results[date.replace("-", "")[:8]] = result
-        date_clean = date.replace("-", "")[:8]
+            out_results[date_clean] = result
         close = date_to_close.get(date_clean, 0)
 
         ki = date_to_ki.get(date_clean, len(kline))
-        k_slice = kline[:ki+1]
-        wi = bisect.bisect_right(weekly_dates_sorted, date_clean)
-        w_slice = (ctx.weekly or [])[:wi]
+        wi = bisect.bisect_right(weekly_dates_sorted, date_clean) - 1
 
-        def _ma_dev(bars: list, n: int = 20) -> float | None:
-            if not bars or len(bars) < n:
-                return None
-            closes = [b["close"] for b in bars[-n:]]
-            ma = sum(closes) / len(closes)
-            return round((bars[-1]["close"] / ma - 1) * 100, 1) if ma > 0 else None
+        # MA/Boll 从预算数组 O(1) 读，不重算
+        obv_raw = (result.raw if hasattr(result, 'raw') else {}).get("obv") or {}
+        ma20    = d_arrs.get('ma20',  [None] * (ki+2))
+        ma120   = d_arrs.get('ma120', [None] * (ki+2))
+        boll_upper = d_arrs.get('boll_upper', [None] * (ki+2))
+        boll_lower = d_arrs.get('boll_lower', [None] * (ki+2))
+        boll_mid   = d_arrs.get('boll_mid',   [None] * (ki+2))
+        boll_pct   = d_arrs.get('boll_pct',   [None] * (ki+2))
+        w_ma20  = w_arrs.get('ma20', [None] * (wi+2))
 
-        def _boll(bars: list, n: int = 20, k: float = 2.0) -> dict | None:
-            if not bars or len(bars) < n:
-                return None
-            import math
-            closes = [b["close"] for b in bars[-n:]]
-            mid = sum(closes) / n
-            std = math.sqrt(sum((c - mid) ** 2 for c in closes) / n)
-            upper = mid + k * std
-            lower = mid - k * std
-            c = bars[-1]["close"]
-            bpct = round((c - lower) / (upper - lower) * 100, 1) if upper > lower else 50.0
-            return {"upper": round(upper, 1), "lower": round(lower, 1),
-                    "mid": round(mid, 1), "bpct": bpct}
+        def _dev(price, ma):
+            return round((price / ma - 1) * 100, 1) if ma and ma > 0 else None
 
-        boll_d = _boll(k_slice)
         ma_devs = {
-            "ma_dev_daily":  _ma_dev(k_slice, 20),
-            "ma_dev_weekly": _ma_dev(w_slice, 20),
-            "ma120_dev":     _ma_dev(k_slice, 120),
-            "boll_upper":    boll_d["upper"] if boll_d else None,
-            "boll_lower":    boll_d["lower"] if boll_d else None,
-            "boll_mid":      boll_d["mid"]   if boll_d else None,
-            "boll_pct":      boll_d["bpct"]  if boll_d else None,
+            "ma_dev_daily":  obv_raw.get("ma20_dev")  or _dev(close, ma20[ki]  if ki < len(ma20)  else None),
+            "ma_dev_weekly": _dev(close, w_ma20[wi] if wi >= 0 and wi < len(w_ma20) else None),
+            "ma120_dev":     obv_raw.get("ma120_dev") or _dev(close, ma120[ki] if ki < len(ma120) else None),
+            "boll_upper":    boll_upper[ki] if ki < len(boll_upper) else None,
+            "boll_lower":    boll_lower[ki] if ki < len(boll_lower) else None,
+            "boll_mid":      boll_mid[ki]   if ki < len(boll_mid)   else None,
+            "boll_pct":      boll_pct[ki]   if ki < len(boll_pct)   else None,
         }
 
         rows.append({**_extract_row(result, date, close, ctx), **ma_devs})
+        # out_results 不需要时立即释放，避免 1250 个 AnalysisResult 同时驻留内存
+        if out_results is None:
+            del history[date_clean]
 
     # post-process: 计算三周期连续 Accum 天数（升序扫，遇非Accum重置）
     for field, out_key in [
