@@ -97,7 +97,7 @@ class AnalysisResult:
       raw["chan"]      = {"score": ..., "weekly": {...}, "daily": {...}}
       raw["smc"]       = {"score": ..., "ob": [...], "smc_weekly": {...}}
       raw["fflow"]     = {"score": ..., "verdict": ..., "main_yi": ...}
-      raw["obv"]       = {"score": ..., "verdict": ..., "obv_div_bot_60d": ...}
+      raw["obv"]       = {"score": ..., "verdict": ..., "obv5": ..., "obv_trend": ...}
       raw["peg"]       = {"score": ..., "PEG_真实": ..., ...}
       raw["position"]  = {"close_pos_day": ..., ...}
       # Phase2 派生 (weight=0)
@@ -575,7 +575,7 @@ class ObvStrategy:
             i = date_to_idx.get(date_clean, -1)
             if i < 1:
                 results[date_clean] = {"score": 0, "signals": [], "summary": "—", "verdict": "—",
-                                       "obv_div_bot_60d": 0, "obv_div_top_60d": 0, "source": "OBV 派生 (K线)"}
+                                       "obv": 0, "obv5": 0, "obv_trend": 0, "source": "OBV 派生 (K线)"}
                 continue
 
             p       = closes[i]
@@ -622,10 +622,15 @@ class ObvStrategy:
             ma20_dev  = round((closes[i] / m20  - 1) * 100, 1) if m20  else None
             ma120_dev = round((closes[i] / m120 - 1) * 100, 1) if m120 else None
 
+            # OBV 实战信号: 5 日价跌+OBV 涨 (obv5), OBV>MA20 (obv_trend)
+            obv5 = 1 if (i >= 5 and closes[i] < closes[i-5] and obv[i] > obv[i-5]) else 0
+            obv_trend = 1 if (obv_ma20_arr[i] and obv[i] > obv_ma20_arr[i]) else 0
+
             results[date_clean] = {
                 "score": score, "signals": signals, "summary": verdict, "verdict": verdict,
-                "obv": obv[i],  # OBV 累计值本身 (供 cache)
-                "obv_div_bot_60d": div_bot, "obv_div_top_60d": div_top,
+                "obv": obv[i],
+                "obv5": obv5,            # 5 日价跌 + OBV 涨
+                "obv_trend": obv_trend,  # OBV > MA20
                 "ma20_dev": ma20_dev, "ma120_dev": ma120_dev,
                 "source": "OBV 派生 (K线)",
             }

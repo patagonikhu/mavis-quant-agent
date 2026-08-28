@@ -92,21 +92,30 @@ def backfill_one(code: str, year_filter: str = None) -> int:
         dates = [k.get('trade_date', '').replace('-', '')[:8] for k in ctx.kline]
         n = len(closes)
 
-        obv_arr, div_bot_arr, div_top_arr = compute_obv_per_date(closes, vols)
+        obv_arr, _div_bot, _div_top = compute_obv_per_date(closes, vols)
 
-        # verdict (基于最终 obv_factor 状态)
-        from tools.factors.volume.price_fflow import obv_factor
-        res = obv_factor(closes=closes, vols=vols, dates=dates)
-        verdict = res.get('verdict', '')
+        # obv5: 5 日价跌 + OBV 涨 (实战吸筹信号)
+        obv5_arr = [0] * n
+        for i in range(5, n):
+            if closes[i] < closes[i-5] and obv_arr[i] > obv_arr[i-5]:
+                obv5_arr[i] = 1
 
-        # 按年过滤 (例 year_filter='2021' 只 update 2021 年)
+        # obv_trend: OBV > MA20 (资金净流入)
+        from tools.factors.kline_arrays import sliding_ma
+        obv_ma20 = sliding_ma(obv_arr, 20)
+        obv_trend_arr = [0] * n
+        for i in range(n):
+            if obv_ma20[i] and obv_arr[i] > obv_ma20[i]:
+                obv_trend_arr[i] = 1
+
+        # 按年过滤
         if year_filter:
-            updates = [(o, db, dt, v, code, ds) for o, db, dt, v, ds in
-                       zip(obv_arr, div_bot_arr, div_top_arr, [verdict]*n, dates)
+            updates = [(o, ob5, ot, code, ds) for o, ob5, ot, ds in
+                       zip(obv_arr, obv5_arr, obv_trend_arr, dates)
                        if ds.startswith(year_filter)]
         else:
-            updates = list(zip(obv_arr, div_bot_arr, div_top_arr,
-                               [verdict] * n, [code] * n, dates))
+            updates = list(zip(obv_arr, obv5_arr, obv_trend_arr,
+                               [code] * n, dates))
 
         if not updates:
             return 0
@@ -114,7 +123,7 @@ def backfill_one(code: str, year_filter: str = None) -> int:
         conn = sqlite3.connect(str(DB))
         cur = conn.cursor()
         cur.executemany(
-            "UPDATE analysis_cache SET obv=?, obv_div_bot=?, obv_div_top=?, obv_verdict=? "
+            "UPDATE analysis_cache SET obv=?, obv5=?, obv_trend=? "
             "WHERE code=? AND date_str=?",
             updates
         )

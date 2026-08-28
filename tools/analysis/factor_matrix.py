@@ -200,10 +200,8 @@ def _period_detail(
         'fflow_60d': vp.get('fflow_net_60d', 0) if vp else 0,
         'trend_3d': vp.get('trend_3d', '—') if vp else '—',
         'trend_30d': vp.get('trend_30d', '—') if vp else '—',
-        # OBV 段背离 (2026-08-17 OBV/fflow 拆分后加入)
+        # OBV (2026-08-29 简化: 只留 verdict, 删 60d 段背离字段)
         'obv_verdict':      vp.get('obv_verdict', '—') if vp else '—',
-        'obv_div_bot_60d':  vp.get('obv_div_bot_60d', 0) if vp else 0,
-        'obv_div_top_60d':  vp.get('obv_div_top_60d', 0) if vp else 0,
     }
 
     # === 多市场共振 ===
@@ -395,12 +393,11 @@ def build_factor_matrix(
         # 老字段 s5.get('volume_price') 已废弃, 优先读 fflow, obv 信息合并到同 dict
         fflow_dict = s5.get('fflow') or {}
         obv_dict   = s5.get('obv')   or {}
+        # 2026-08-29: 删 obv_div_bot_60d / obv_div_top_60d (60d 段背离太滞后)
         # 2026-08-17 fix: 之前 OBV 的 verdict/score 直接展开, 覆盖了 fflow 的 verdict/score (同 key 冲突)
-        # OBV 段背离字段 (obv_div_bot_60d / obv_div_top_60d) 不冲突, 直接展开
         # OBV 的 verdict/score 加 obv_ 前缀避免冲突, _obv 子 dict 保留完整 OBV 信息
         vp = {
             **fflow_dict,                                  # 主力净流入字段 (fflow_net_3d/5d/10d/20d/30d/60d, verdict, trend_*)
-            **{k: v for k, v in obv_dict.items() if k in ('obv_div_bot_60d', 'obv_div_top_60d')},  # 不冲突
             'obv_verdict': obv_dict.get('verdict', '—'),  # 避免覆盖 fflow.verdict
             'obv_score':   obv_dict.get('score', 0),      # 避免覆盖 fflow.score
             # 兼容老 s5.get('volume_price') 调用方
@@ -598,14 +595,9 @@ def _md_volume_price(vp: dict) -> str:
     v3 = vp.get('fflow_3d', 0) or 0
     v30 = vp.get('fflow_30d', 0) or 0
     verdict = vp.get('verdict', '—')[:16]  # fflow verdict
-    # OBV 段背离 (2026-08-17 新加)
-    div_bot = vp.get('obv_div_bot_60d', 0) or 0
-    div_top = vp.get('obv_div_top_60d', 0) or 0
-    obv_part = ""
-    if div_bot >= 2:   obv_part = f" OBV强底×{div_bot}/4"
-    elif div_top >= 2: obv_part = f" OBV强顶×{div_top}/4"
-    elif div_bot == 1: obv_part = " OBV底×1"
-    elif div_top == 1: obv_part = " OBV顶×1"
+    # OBV (2026-08-29 简化: 不再显示 60d 段背离, 只看 verdict)
+    obv_verdict = vp.get('obv_verdict', '')
+    obv_part = f" / OBV {obv_verdict}" if obv_verdict and obv_verdict != "—" else ""
     return f"3d:{v3:+.1f}亿 / 30d:{v30:+.1f}亿 / {verdict}{obv_part}"
 
 

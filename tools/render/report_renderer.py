@@ -1021,19 +1021,11 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
 
     fflow_focus = f"{short_w}: {_fflow_val(short_w)} / {mid_w}: {_fflow_val(mid_w)} / {long_w}: {_fflow_val(long_w)}"
 
-    # ── 4b. 量价 OBV (2026-08-17 拆分: 经典 Granville 1963) ──
+    # ── 4b. 量价 OBV (经典 Granville 1963, 简化: 只看 verdict) ──
     obv = s5.get("obv") or {}
-    obv_verdict    = obv.get("verdict", "")
-    obv_div_bot    = obv.get("obv_div_bot_60d", 0)
-    obv_div_top    = obv.get("obv_div_top_60d", 0)
-    if obv_div_bot >= 2 or obv_div_top >= 2:
-        obv_focus = f"OBV 强{'底' if obv_div_bot >= 2 else '顶'}背离 ({max(obv_div_bot, obv_div_top)}/4 窗口) + {obv_verdict}"
-    elif obv_div_bot == 1:
-        obv_focus = f"OBV 单次底背离 + {obv_verdict}"
-    elif obv_div_top == 1:
-        obv_focus = f"OBV 单次顶背离 + {obv_verdict}"
-    elif obv_verdict:
-        obv_focus = f"OBV {obv_verdict} (无段背离)"
+    obv_verdict = obv.get("verdict", "")
+    if obv_verdict:
+        obv_focus = f"OBV {obv_verdict}"
     else:
         obv_focus = "OBV 无数据"
 

@@ -65,11 +65,10 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     boll_bpct       REAL,
     boll_bwidth     REAL,        -- BOLL 宽度 % ((upper-lower)/mid * 100)
 
-    -- OBV
+    -- OBV (实用信号, 不用 60d 段背离)
     obv             REAL,        -- OBV 累计值
-    obv_div_bot     INTEGER,     -- 60d OBV 底背离次数 (0-4)
-    obv_div_top     INTEGER,     -- 60d OBV 顶背离次数 (0-4)
-    obv_verdict     TEXT,        -- 5 档: 进货/偏进货/中性/偏出货/出货
+    obv5            INTEGER,     -- 5 日价跌 + OBV 涨 (1/0)
+    obv_trend       INTEGER,     -- OBV > MA20 (1/0)
 
     -- meta
     updated_at      REAL,
@@ -102,8 +101,7 @@ def _init():
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
         for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER"),
                              ("boll_bwidth", "REAL"),
-                             ("obv", "REAL"), ("obv_div_bot", "INTEGER"),
-                             ("obv_div_top", "INTEGER"), ("obv_verdict", "TEXT")]:
+                             ("obv5", "INTEGER"), ("obv_trend", "INTEGER")]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
 
@@ -244,9 +242,8 @@ def _result_to_row(code: str, date_str: str,
         "boll_bwidth": _boll_bwidth(kline),
         # OBV
         "obv":         obv.get("obv"),
-        "obv_div_bot": obv.get("obv_div_bot_60d"),
-        "obv_div_top": obv.get("obv_div_top_60d"),
-        "obv_verdict": obv.get("verdict"),
+        "obv5":        obv.get("obv5"),
+        "obv_trend":   obv.get("obv_trend"),
         "updated_at": time.time(),
     }
 

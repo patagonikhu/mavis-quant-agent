@@ -165,10 +165,10 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "fflow_trend_3d": fflow_raw.get("trend_3d", "—"),
 
         # OBV 经典量价 (2026-08-17 拆分: 独立 strategy)
-        "obv_verdict":        obv_raw.get("verdict", "—"),
+        "obv_verdict":        obv_raw.get("verdict", "—"),  # 保留 (报告渲染用, 暂不删)
+        "obv5":                obv_raw.get("obv5", 0),
+        "obv_trend":           obv_raw.get("obv_trend", 0),
         "obv_strategy_score": obv_raw.get("score", 0),
-        "obv_div_bot_60d":    obv_raw.get("obv_div_bot_60d", 0),
-        "obv_div_top_60d":    obv_raw.get("obv_div_top_60d", 0),
     }
 
 
@@ -225,29 +225,18 @@ def obv_label(row: dict) -> str:
 
     输入 row 字段 (来自 factor_history.compute_factor_history 输出):
       - obv_verdict: 5 档 (🟢主力进货 / 🟡偏进货 / ⬜中性 / 🟠偏出货 / 🔴主力出货)
-      - obv_div_top_60d: 60 日扫描 顶背离 15日窗口命中数 (0-4)
-      - obv_div_bot_60d: 60 日扫描 底背离 15日窗口命中数 (0-4)
 
-    输出格式: "🟡偏进货  OBV[顶×1]  OBV[底×3]" / "—" (无信号)
+    输出格式: "🟡偏进货" / "—" (无信号)
       - verdict 用 emoji (除非中性/无数据)
-      - 顶/底段背离 分别用方括号显示 (≥1 才显示)
-      - 视觉分离: emoji vs 方括号
 
     复用方:
       - tools/batch/batch_summary.py: signal-watchlist.md OBV 列
       - tools/render/report_renderer.py: analyze-*.md 因子历史走势表 OBV 列
     """
-    parts = []
     verdict = row.get("obv_verdict", "—") or "—"
-    div_top = row.get("obv_div_top_60d", 0) or 0
-    div_bot = row.get("obv_div_bot_60d", 0) or 0
     if verdict not in ("—", "中性", "无数据", "⬜中性"):
-        parts.append(verdict)
-    if div_top >= 1:
-        parts.append(f"OBV[顶×{div_top}]")
-    if div_bot >= 1:
-        parts.append(f"OBV[底×{div_bot}]")
-    return "  ".join(parts) if parts else "—"
+        return verdict
+    return "—"
 
 
 # ============================================================

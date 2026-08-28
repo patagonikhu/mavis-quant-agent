@@ -45,58 +45,53 @@ def _load_tech_codes() -> set:
 
 def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
              require_obv: bool, tech_codes: set) -> dict | None:
-    """单只扫描: 用 compute_factor_history 直算 BOLL/BBW/OBV (跳过 cache)"""
+    """单只扫描: 从 cache 读 BOLL/BBW/OBV (O(1) 命中)"""
     t0 = time.time()
     try:
         from tools.kline_store import DataStore
-        from tools.analysis.analysis_engine import AnalysisEngine, WyckoffStrategy, ObvStrategy
+        from tools.analysis.signal_cache import get_cached
 
         # 科技股过滤
         if tech_codes is not None and code not in tech_codes:
             return None
 
         ctx = DataStore.get_ctx(code)
-        if not ctx.kline or len(ctx.kline) < 60:
+        if not ctx.kline or len(ctx.kline) < 20:
             return None
 
-        # 只需要算最近 window + 60 天 (给 OBV 60d 段背离留 buffer)
-        kline_window = ctx.kline[-(window + 60):]
-        all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
-        dates_window = all_dates[-(window + 60):]
+        # 取最近 window 日
+        kline = ctx.kline[-window:]
+        dates = [k['trade_date'].replace('-','')[:8] for k in kline]
+        n = len(dates)
 
-        # 只跑 WyckoffStrategy (含 build_kline_features 算 BOLL/BBW) + ObvStrategy
-        # 跳过 chan/smc/fflow/peg (省 70% 时间)
-        from tools.analysis.analysis_result_signals import compute_factor_history
-        rows = compute_factor_history(ctx, step=1, lookback=len(dates_window),
-                                     strategies=[WyckoffStrategy, ObvStrategy])
-        # rows 是 list[dict], 字段是 'date' (不是 'date_str')
-        # 转成 {date: dict} 方便查
-        history = {r.get('date', ''): r for r in rows if r.get('date')}
+        # 从 cache 读 boll_bpct / boll_bwidth / obv5 / obv_trend (O(1) 命中)
+        rows = get_cached(code, dates)
 
         # 找最近 window 日内 满足 BOLL AND BBW 条件
         trigger = None
-        recent_dates = dates_window[-window:]
-        for d in reversed(recent_dates):
-            if d not in history: continue
-            row = history[d]
-            bp = row.get('boll_pct')
-            bw = row.get('boll_width')
+        for i in range(n - 1, -1, -1):
+            r = rows.get(dates[i])
+            if r is None: continue
+            bp = r.get('boll_bpct')
+            bw = r.get('boll_bwidth')
             if bp is not None and bw is not None and bp < boll_th and bw < bbw_th:
-                trigger = (d, row)
+                trigger = (i, r)
                 break
         if trigger is None:
             return None
 
-        trigger_date, r_trig = trigger
-        trigger_bpct = r_trig.get('boll_pct', 0)
-        trigger_bbw = r_trig.get('boll_width', 0)
-        trigger_price = r_trig.get('close', 0)
+        i_trig, r_trig = trigger
+        trigger_date = dates[i_trig]
+        trigger_bpct = r_trig.get('boll_bpct', 0)
+        trigger_bbw = r_trig.get('boll_bwidth', 0)
+        trigger_price = kline[i_trig].get('close', 0)
 
-        # OBV 底背离 (3 重确认第 3 条件)
+        # OBV 实战信号: obv5 (5日价跌+OBV涨) OR obv_trend (OBV>MA20)
         has_obv = False
         if require_obv:
-            obv_div_bot = r_trig.get('obv_div_bot_60d') or 0
-            if obv_div_bot > 0:
+            obv5 = r_trig.get('obv5') or 0
+            obv_trend = r_trig.get('obv_trend') or 0
+            if obv5 > 0 or obv_trend > 0:
                 has_obv = True
         if require_obv and not has_obv:
             return None  # 3 重不满足
