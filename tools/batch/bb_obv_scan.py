@@ -59,23 +59,18 @@ def _load_tech_codes() -> set:
         return None
 
 
-def _obv_bottom(closes: list, vols: list, i: int, lookback: int = 5) -> bool:
-    """OBV 底背离: 价跌但 OBV 涨 (机构吸筹信号)
-    简化版: 价 3 日跌 AND OBV 3 日涨 (不要求背离严格, 主要看 OBV 趋势)
+def _obv_bottom(closes: list, vols: list, dates: list, i: int) -> bool:
+    """OBV 底背离: 复用 obv_factor 的 60d 段背离 (4 个 15d 窗口)
+    价 3 日跌 + 60d 内 OBV 底背离次数 ≥1
     """
-    if i < 4: return False
+    if i < 3: return False
     # 价 3 日前比今天高 (价跌)
     if closes[i] >= closes[i - 3]: return False
-    # OBV 3 日趋势: 今天 > 3 天前
-    obv_now = 0
-    obv_then = 0
-    for j in range(1, i + 1):
-        if closes[j] > closes[j - 1]: obv_now += vols[j]
-        elif closes[j] < closes[j - 1]: obv_now -= vols[j]
-    for j in range(1, i - 2):
-        if closes[j] > closes[j - 1]: obv_then += vols[j]
-        elif closes[j] < closes[j - 1]: obv_then -= vols[j]
-    return obv_now > obv_then
+    # 用现有 obv_factor 算 OBV (含 60d 段背离检测)
+    from tools.factors.volume.price_fflow import obv_factor
+    res = obv_factor(closes=closes, vols=vols, dates=dates)
+    # 60d 内有 OBV 底背离 → 视为吸筹信号
+    return res.get("obv_div_bot_60d", 0) > 0
 
 
 def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
@@ -122,19 +117,18 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         trigger_bpct = r_trig.get('boll_bpct', 0)
         trigger_bbw = r_trig.get('boll_bwidth', 0)
 
-        # OBV 底背离检测 (可选)
+        # OBV 底背离检测 (可选) - 复用 obv_factor 60d 段背离
         has_obv = False
         obv_days_ago = 0
         if require_obv:
-            closes = [k.get('close', 0) for k in kline[:i_trig + 1]]
-            vols = [k.get('volume', 0) for k in kline[:i_trig + 1]]
-            # 在前 5 日内查 OBV 底
-            for j in range(max(0, i_trig - 5), i_trig + 1):
-                if _obv_bottom(closes, vols, j, lookback=5):
-                    has_obv = True
-                    obv_days_ago = i_trig - j
-                    break
-            if not has_obv:
+            # 用全 kline 跑 obv_factor (O(n) 一次), 拿 obv_div_bot_60d
+            closes_all = [k.get('close', 0) for k in ctx.kline]
+            vols_all = [k.get('volume', 0) for k in ctx.kline]
+            dates_all = [k.get('trade_date', '').replace('-','')[:8] for k in ctx.kline]
+            if _obv_bottom(closes_all, vols_all, dates_all, i_trig):
+                has_obv = True
+                obv_days_ago = 0  # 简化: 不计算具体哪一天
+            else:
                 return None  # 3 重不满足, 跳过
 
         # 距今天数
