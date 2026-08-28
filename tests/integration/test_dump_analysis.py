@@ -259,18 +259,15 @@ class TestObvStrategy:
 
     @pytest.mark.integration
     def test_obv_result_structure(self, analysis_data_per_code):
-        """ctx.obv_result 字段完整"""
+        """ctx.obv_result 字段完整 (2026-08-29: 删 60d 段背离 obv_div_bot_60d/obv_div_top_60d)"""
         for code, data in analysis_data_per_code.items():
             obv = data["ctx"].obv_result
-            # 必有字段 (OBV 派生)
-            for k in ("verdict", "score", "signals", "obv_div_bot_60d", "obv_div_top_60d", "source", "asof"):
+            # 必有字段 (OBV 派生, 简化版: 5 档 verdict)
+            for k in ("verdict", "score", "signals", "source", "asof"):
                 assert k in obv, f"{code}: ctx.obv_result 缺 {k} 字段"
-            # div 计数是 int
-            assert isinstance(obv["obv_div_bot_60d"], int), f"{code}: obv_div_bot_60d 不是 int"
-            assert isinstance(obv["obv_div_top_60d"], int), f"{code}: obv_div_top_60d 不是 int"
-            # div 范围 0-4 (60 日 / 15 日窗口 = 4 窗口)
-            assert 0 <= obv["obv_div_bot_60d"] <= 4, f"{code}: obv_div_bot 越界"
-            assert 0 <= obv["obv_div_top_60d"] <= 4, f"{code}: obv_div_top 越界"
+            # 不应再有 60d 段背离字段
+            for k in ("obv_div_bot_60d", "obv_div_top_60d"):
+                assert k not in obv, f"{code}: ctx.obv_result 不应有 {k} (60d 段背离已删)"
 
     @pytest.mark.integration
     def test_obv_verdict_in_five_tiers(self, analysis_data_per_code):
@@ -285,31 +282,6 @@ class TestObvStrategy:
             assert any(v.startswith(verdict_base) for v in valid_verdicts), (
                 f"{code}: obv.verdict = {obv.summary!r}, 不在 5 档 {valid_verdicts}"
             )
-
-    @pytest.mark.integration
-    def test_obv_div_signal_correlation(self, analysis_data_per_code):
-        """【防 regression】段背离次数 >= 1 时, signals 列表必须包含 OBV 段背离信号"""
-        for code, data in analysis_data_per_code.items():
-            obv = data["ctx"].obv_result
-            signals = obv.get("signals", [])
-            if obv["obv_div_bot_60d"] >= 2:
-                assert any("OBV 强底背离" in s for s in signals), (
-                    f"{code}: obv_div_bot_60d={obv['obv_div_bot_60d']} 但 signals 没'OBV 强底背离' "
-                    f"(signals: {signals[:3]})"
-                )
-            elif obv["obv_div_bot_60d"] == 1:
-                assert any("OBV 单次底背离" in s for s in signals), (
-                    f"{code}: obv_div_bot_60d=1 但 signals 没'OBV 单次底背离' "
-                    f"(signals: {signals[:3]})"
-                )
-            if obv["obv_div_top_60d"] >= 2:
-                assert any("OBV 强顶背离" in s for s in signals), (
-                    f"{code}: obv_div_top_60d={obv['obv_div_top_60d']} 但 signals 没'OBV 强顶背离'"
-                )
-            elif obv["obv_div_top_60d"] == 1:
-                assert any("OBV 单次顶背离" in s for s in signals), (
-                    f"{code}: obv_div_top_60d=1 但 signals 没'OBV 单次顶背离'"
-                )
 
     @pytest.mark.integration
     def test_obv_dual_judgment_signal(self, analysis_data_per_code):

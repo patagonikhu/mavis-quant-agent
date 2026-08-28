@@ -144,11 +144,9 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
 
     Returns:
         dict:
-          - score: -3 ~ +5 (5 类信号累加 + 段背离加成)
+          - score: -3 ~ +5 (5 类信号累加)
           - verdict: 5 档 (进货/偏进货/中性/偏出货/出货)
           - signals: 命中的具体信号
-          - obv_div_bot_60d: 60 日内 OBV 底背离窗口数 (0-4)
-          - obv_div_top_60d: 60 日内 OBV 顶背离窗口数 (0-4)
           - source: "OBV 派生 (K线)" (因为 fflow 走的是 Tushare, OBV 走的是 K线)
           - asof: "YYYYMMDD" / "latest"
     """
@@ -168,7 +166,6 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
     if not closes or len(closes) < 2:
         return {
             "score": 0, "verdict": "无数据", "signals": [],
-            "obv_div_bot_60d": 0, "obv_div_top_60d": 0,
             "source": "OBV 派生 (K线, 数据不足)", "asof": asof or "latest",
         }
 
@@ -201,17 +198,6 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
     elif m5 and m20 and m60 and m120 and p > m5 > m20 > m60 > m120:
         signals.append("多头排列"); score += 1
 
-    # 段背离多次确认 (60 日内 4 个 15 日窗口数底/顶背离次数)
-    div_count_bot, div_count_top = _scan_obv_divergence_60d(closes, vols, window=15, lookback=60)
-    if div_count_bot >= 2:
-        signals.append(f"OBV 强底背离 ({div_count_bot}/4 窗口)"); score += 2
-    elif div_count_bot == 1:
-        signals.append("OBV 单次底背离"); score += 1
-    if div_count_top >= 2:
-        signals.append(f"OBV 强顶背离 ({div_count_top}/4 窗口)"); score -= 2
-    elif div_count_top == 1:
-        signals.append("OBV 单次顶背离"); score -= 1
-
     if score >= 3:    verdict = "🟢主力进货"
     elif score >= 1:  verdict = "🟡偏进货"
     elif score == 0:  verdict = "⬜中性"
@@ -220,47 +206,7 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
 
     return {
         "score": score, "verdict": verdict, "signals": signals,
-        "obv_div_bot_60d": div_count_bot,
-        "obv_div_top_60d": div_count_top,
         "source": "OBV 派生 (K线)",
         "asof": asof or "latest",
     }
 
-
-def _scan_obv_divergence_60d(closes, vols, window=15, lookback=60,
-                              th_p=-0.02, th_o=0.03):
-    """60 日内不重叠 N 日窗口, 数底/顶背离次数 (OBV 净增量 / 窗口总成交)
-
-    Args:
-        th_p: 价变化阈值 (负=降价, 用于底背离)
-        th_o: OBV 净增量占窗口总成交比例 (正=净流入, 用于底背离)
-    Returns:
-        (count_bot, count_top)
-    """
-    if len(closes) < window * 2:
-        return 0, 0
-    n_windows = lookback // window
-    count_bot = count_top = 0
-    for i in range(n_windows):
-        end = len(closes) - i * window
-        start = end - window
-        if start < 0:
-            break
-        wc = closes[start:end]
-        wv = vols[start:end]
-        if len(wc) < 2:
-            continue
-        p_chg = wc[-1] / wc[0] - 1
-        # OBV 净增量
-        net = 0
-        for j in range(1, len(wc)):
-            if wc[j] > wc[j-1]:   net += wv[j]
-            elif wc[j] < wc[j-1]: net -= wv[j]
-        # 排除起点当日成交量 (分子只用 wv[1..], 分母对齐)
-        tv = sum(wv[1:]) if len(wv) > 1 else 0
-        o_pct = net / tv * 100 if tv > 0 else 0
-        if p_chg < th_p and o_pct > th_o:
-            count_bot += 1
-        elif p_chg > -th_p and o_pct < -th_o:
-            count_top += 1
-    return count_bot, count_top
