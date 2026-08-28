@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     boll_bpct       REAL,
     boll_bwidth     REAL,        -- BOLL 宽度 % ((upper-lower)/mid * 100)
 
+    -- OBV
+    obv             REAL,        -- OBV 累计值
+    obv_div_bot     INTEGER,     -- 60d OBV 底背离次数 (0-4)
+    obv_div_top     INTEGER,     -- 60d OBV 顶背离次数 (0-4)
+    obv_verdict     TEXT,        -- 5 档: 进货/偏进货/中性/偏出货/出货
+
     -- meta
     updated_at      REAL,
 
@@ -89,7 +95,10 @@ def _init():
         c.executescript(_SCHEMA)
         # 自动迁移：加新列（若已存在则忽略）
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
-        for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER"), ("boll_bwidth", "REAL")]:
+        for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER"),
+                             ("boll_bwidth", "REAL"),
+                             ("obv", "REAL"), ("obv_div_bot", "INTEGER"),
+                             ("obv_div_top", "INTEGER"), ("obv_verdict", "TEXT")]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
 
@@ -186,6 +195,9 @@ def _result_to_row(code: str, date_str: str,
         "chan_3sell": _has_bsp("3卖"),
     }
 
+    # OBV 段背离 (来自 ObvStrategy, 已写入 raw['obv'])
+    obv = raw.get("obv", {}) or {}
+
     # chan hub
     def _hub_str(h: Any) -> str | None:
         if not h or not isinstance(h, dict):
@@ -225,6 +237,11 @@ def _result_to_row(code: str, date_str: str,
         # Boll
         "boll_bpct": _boll_bpct(kline),
         "boll_bwidth": _boll_bwidth(kline),
+        # OBV
+        "obv":         obv.get("obv"),
+        "obv_div_bot": obv.get("obv_div_bot_60d"),
+        "obv_div_top": obv.get("obv_div_top_60d"),
+        "obv_verdict": obv.get("verdict"),
         "updated_at": time.time(),
     }
 

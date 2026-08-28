@@ -59,17 +59,20 @@ def _load_tech_codes() -> set:
         return None
 
 
-def _obv_bottom(closes: list, vols: list, dates: list, i: int) -> bool:
-    """OBV 底背离: 复用 obv_factor 的 60d 段背离 (4 个 15d 窗口)
+def _obv_bottom(closes: list, vols: list, dates: list, i: int,
+                 cached_div_bot: int = 0) -> bool:
+    """OBV 底背离 (双路径: 优先用 cache 里 backfill 的 obv_div_bot_60d)
     价 3 日跌 + 60d 内 OBV 底背离次数 ≥1
     """
     if i < 3: return False
     # 价 3 日前比今天高 (价跌)
     if closes[i] >= closes[i - 3]: return False
-    # 用现有 obv_factor 算 OBV (含 60d 段背离检测)
+    # 优先用 cache (0 成本)
+    if cached_div_bot > 0:
+        return True
+    # 退化: 实时算 (cache 缺数据时)
     from tools.factors.volume.price_fflow import obv_factor
     res = obv_factor(closes=closes, vols=vols, dates=dates)
-    # 60d 内有 OBV 底背离 → 视为吸筹信号
     return res.get("obv_div_bot_60d", 0) > 0
 
 
@@ -117,18 +120,22 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         trigger_bpct = r_trig.get('boll_bpct', 0)
         trigger_bbw = r_trig.get('boll_bwidth', 0)
 
-        # OBV 底背离检测 (可选) - 复用 obv_factor 60d 段背离
+        # OBV 底背离检测 (可选) - 优先用 cache, 退化用 obv_factor
         has_obv = False
         obv_days_ago = 0
         if require_obv:
-            # 用全 kline 跑 obv_factor (O(n) 一次), 拿 obv_div_bot_60d
-            closes_all = [k.get('close', 0) for k in ctx.kline]
-            vols_all = [k.get('volume', 0) for k in ctx.kline]
-            dates_all = [k.get('trade_date', '').replace('-','')[:8] for k in ctx.kline]
-            if _obv_bottom(closes_all, vols_all, dates_all, i_trig):
+            # 优先读 cache 里 backfill 的 obv_div_bot_60d
+            cached_div_bot = r_trig.get('obv_div_bot') or 0
+            if cached_div_bot > 0:
                 has_obv = True
-                obv_days_ago = 0  # 简化: 不计算具体哪一天
             else:
+                # 退化: 用全 kline 跑 obv_factor (O(n) 一次)
+                closes_all = [k.get('close', 0) for k in ctx.kline]
+                vols_all = [k.get('volume', 0) for k in ctx.kline]
+                dates_all = [k.get('trade_date', '').replace('-','')[:8] for k in ctx.kline]
+                if _obv_bottom(closes_all, vols_all, dates_all, i_trig, 0):
+                    has_obv = True
+            if not has_obv:
                 return None  # 3 重不满足, 跳过
 
         # 距今天数
