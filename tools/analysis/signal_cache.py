@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
 
     -- Boll
     boll_bpct       REAL,
+    boll_bwidth     REAL,        -- BOLL 宽度 % ((upper-lower)/mid * 100)
 
     -- meta
     updated_at      REAL,
@@ -88,7 +89,7 @@ def _init():
         c.executescript(_SCHEMA)
         # 自动迁移：加新列（若已存在则忽略）
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
-        for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER")]:
+        for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER"), ("boll_bwidth", "REAL")]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
 
@@ -124,6 +125,18 @@ def _boll_bpct(kline: list[dict]) -> float | None:
     if upper <= lower:
         return 50.0
     return round((c - lower) / (upper - lower) * 100, 1)
+
+
+def _boll_bwidth(kline: list[dict]) -> float | None:
+    """BOLL 宽度 % = (upper - lower) / mid * 100"""
+    if not kline or len(kline) < 20:
+        return None
+    closes = [k.get("close", 0) for k in kline[-20:]]
+    mid = sum(closes) / len(closes)
+    if mid <= 0:
+        return None
+    std = (sum((c - mid) ** 2 for c in closes) / len(closes)) ** 0.5
+    return round(4 * std / mid * 100, 2)   # (upper-lower) = 4*std, /mid*100 = 4*std/mid*100
 
 
 def _result_to_row(code: str, date_str: str,
@@ -211,6 +224,7 @@ def _result_to_row(code: str, date_str: str,
         "ma60_dev": _ma_dev(kline, 60),
         # Boll
         "boll_bpct": _boll_bpct(kline),
+        "boll_bwidth": _boll_bwidth(kline),
         "updated_at": time.time(),
     }
 

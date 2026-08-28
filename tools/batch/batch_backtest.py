@@ -24,8 +24,7 @@ ap.add_argument("--signal", action="append", dest="signals", default=[],
 ap.add_argument("--days", type=int, default=30, help="持仓期 (默认30)")
 ap.add_argument("--threshold", type=float, default=10.0, help="涨幅阈值%% (默认10%%)")
 ap.add_argument("--lookback", type=int, default=5, help="回看年数 (默认5)")
-ap.add_argument("--step", type=int, default=20,
-                help="计算间隔，默认20（需与 warm_cache --step 一致，否则缓存miss；step=1最密但慢）")
+
 ap.add_argument("--codes", nargs="+", default=None)
 ap.add_argument("--all", action="store_true", help="全watchlist")
 ap.add_argument("--portfolio", action="store_true", help="仅持仓")
@@ -121,6 +120,20 @@ def match_signal(row, signals: list[str]) -> bool:
             hit = row.get("wy_stage") == sig
         elif sig in ("1买", "2买", "3买", "1卖", "2卖", "3卖"):
             hit = bool(row.get(f"chan_{sig}"))
+        elif sig.startswith("boll:"):
+            # boll:N  →  boll_bpct < N (位置 0-100，越低越接近下轨)
+            try:
+                th = float(sig.split(":", 1)[1].lstrip("<"))
+                hit = (row.get("boll_bpct") is not None) and row["boll_bpct"] < th
+            except (ValueError, IndexError):
+                pass
+        elif sig.startswith("bbw:"):
+            # bbw:N  →  boll_bwidth < N (带宽 %，越小越窄/低波)
+            try:
+                th = float(sig.split(":", 1)[1].lstrip("<"))
+                hit = (row.get("boll_bwidth") is not None) and row["boll_bwidth"] < th
+            except (ValueError, IndexError):
+                pass
         if not hit:
             return False
     return True
@@ -131,7 +144,7 @@ def backtest_one(code: str):
     t1 = time.time()
     ctx = ds.get_ctx(code)
     if not ctx.kline:
-        return code, [], 0, time.time() - t1, False
+        return code, [], time.time() - t1, False
 
     kline = ctx.kline
     cutoff = kline[-1]["trade_date"]
@@ -144,27 +157,16 @@ def backtest_one(code: str):
     n = len(dates)
     date_to_idx = {d: i for i, d in enumerate(dates)}
 
-    # ── 缓存优先 ──────────────────────────────────────────
+    # ── 缓存优先（回测只读, 不写不重算）────────────────────
     rows = {}
     from_cache = False
     if not args.no_cache:
         cached = get_cached(code, dates)
         if cached:
-            from_cache = True   # kline 是增量追加的，stale 检查无意义（用 INSERT OR REPLACE 覆盖）
+            from_cache = True
             rows = cached
-
-    # 缺失部分 → 重算（无论是否有缓存，只要不完整就补算）
-    missing = [d for d in dates if d not in rows]
-    if missing:
-        from tools.analysis.analysis_engine import AnalysisEngine
-        history = AnalysisEngine().analyze_history(ctx, missing)
-        to_write = {}
-        for d, result in history.items():
-            if d in missing:
-                rows[d] = _result_to_row(result)
-                to_write[d] = result
-        if to_write:
-            write_batch(code, kline, to_write)
+        # 缺失的日期不重算（回测是只读, 重算会触发 SQLite 写锁竞争）
+        # 想要全量数据请先跑: tools/batch/signal_cache_warmup.py
 
     # 匹配信号
     hits = []
@@ -185,27 +187,35 @@ def backtest_one(code: str):
             hits.append({"date": d, "price": buy_price, "return": ret, "code": code})
 
     from_cache_label = "📦缓存" if from_cache else "⚡重算"
-    return code, hits, n, time.time() - t1, from_cache
+    return code, hits, time.time() - t1, from_cache
 
 
 # ── 并发执行 ────────────────────────────────────────────────
 print(f"并发 {args.workers} worker ...")
 results_all = []
-total_steps = 0
 done = 0
 cached_count = 0
+t_run0 = time.time()
+last_print = t_run0
+report_every = max(1, len(CODES) // 10)  # 至少打 10 次进度
 
 with ThreadPoolExecutor(max_workers=args.workers) as ex:
     futs = {ex.submit(backtest_one, code): code for code in CODES}
     for fut in as_completed(futs):
-        code, hits, steps, elapsed, from_cache = fut.result()
+        code, hits, elapsed, from_cache = fut.result()
         results_all.extend(hits)
-        total_steps += steps
         done += 1
         if from_cache:
             cached_count += 1
         tag = "📦" if from_cache else "⚡"
-        print(f"  [{done}/{len(CODES)}] {tag} {code}: {len(hits)}命中 {elapsed:.1f}s")
+        # 进度：每 10% 或每 5 秒打印
+        now = time.time()
+        if done % report_every == 0 or now - last_print > 5:
+            elapsed_total = now - t_run0
+            rate = done / elapsed_total
+            eta = (len(CODES) - done) / rate if rate > 0 else 0
+            print(f"  [{done}/{len(CODES)}] {tag} {code} +{len(hits)}命中 | {elapsed_total:.0f}s ETA={eta:.0f}s", flush=True)
+            last_print = now
 
 # ── 统计 ────────────────────────────────────────────────────
 valid = [h for h in results_all if h["return"] is not None]
@@ -215,14 +225,16 @@ hits_pass = [h for h in valid if h["return"] >= args.threshold]
 print(f"\n{'='*60}")
 print(f"信号: {args.signals}")
 print(f"回看 {args.lookback}y | 持仓 {args.days}d | 阈值 {args.threshold}%")
-print(f"step={args.step} | 命中: {len(valid)} 次 | 缓存命中: {cached_count}/{len(CODES)} 只")
+print(f"逐日扫描 | 命中: {len(valid)} 次 | 缓存命中: {cached_count}/{len(CODES)} 只")
 print(f"缓存状态: {get_stats()}")
 
 if valid:
     rate = len(hits_pass) / len(valid) * 100
+    win_rate = sum(1 for r in returns if r > 0) / len(returns) * 100
     avg = sum(returns) / len(returns)
     med = sorted(returns)[len(returns) // 2]
-    print(f"命中率: {len(hits_pass)}/{len(valid)} = {rate:.0f}%")
+    print(f"胜率: {win_rate:.0f}% ({sum(1 for r in returns if r > 0)}/{len(returns)} 盈利)")
+    print(f"达标率(>={args.threshold}%): {rate:.0f}% ({len(hits_pass)}/{len(valid)})")
     print(f"均涨幅: {avg:+.1f}% | 中位: {med:+.1f}% | 最大: {max(returns):+.1f}% | 最小: {min(returns):+.1f}%")
 
     print(f"\n明细 ({len(valid)} 次):")
