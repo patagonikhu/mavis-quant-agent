@@ -13,8 +13,6 @@ from pathlib import Path
 
 sys.path.insert(0, ".")
 
-WATCHLIST = Path("data/watchlist_oversold.json")
-
 
 def find_max_drawdown(closes, weekly_bars):
     """5y 最大回撤 (high -> low) 严格按 weekly K 线算.
@@ -103,12 +101,6 @@ def main():
     ap.add_argument("--min-bounces", type=int, default=0, help="最少反弹次数 (默认 0)")
     ap.add_argument("--write-md", action="store_true", help="写 docs/oversold-watchlist.md")
     args = ap.parse_args()
-
-    if not WATCHLIST.exists():
-        print(f"⚠️ {WATCHLIST} 不存在，将扫描全市场")
-        pass
-    else:
-        pass  # watchlist_oversold.json 已废弃，改走 DataStore.list_codes()
 
     gap_th = args.gap / 100.0
     weekly_gap_th = args.weekly_gap / 100.0

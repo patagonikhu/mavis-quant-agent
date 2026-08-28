@@ -65,6 +65,7 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         boll_lower = d_arrs.get('boll_lower', [None] * (ki+2))
         boll_mid   = d_arrs.get('boll_mid',   [None] * (ki+2))
         boll_pct   = d_arrs.get('boll_pct',   [None] * (ki+2))
+        boll_width = d_arrs.get('boll_width',  [None] * (ki+2))
         w_ma20  = w_arrs.get('ma20', [None] * (wi+2))
 
         def _dev(price, ma):
@@ -78,6 +79,7 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
             "boll_lower":    boll_lower[ki] if ki < len(boll_lower) else None,
             "boll_mid":      boll_mid[ki]   if ki < len(boll_mid)   else None,
             "boll_pct":      boll_pct[ki]   if ki < len(boll_pct)   else None,
+            "boll_width":    boll_width[ki] if ki < len(boll_width) else None,
         }
 
         rows.append({**_extract_row(result, date, close, ctx), **ma_devs})

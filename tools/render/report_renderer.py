@@ -1411,10 +1411,8 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     if not rows:
         return "> 数据不足\n"
 
-    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | 日分(顶/底) | A天(日/周) | OBV |"
-    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|"
-    HEADER += " 布林% | MA120偏离 |"
-    SEP    += "---|---|"
+    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | MA120偏离 |"
+    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     HEADER_N = HEADER.count("|") - 1
     lines = [HEADER, SEP]
 
@@ -1436,25 +1434,10 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
                     bsp_parts.append(f"{l}({lbl})")
         b3 = " ".join(bsp_parts) if bsp_parts else "—"
 
-        from tools.analysis.analysis_result_signals import format_signals_for_render, score_top_signals, score_bottom_signals
+        from tools.analysis.analysis_result_signals import format_signals_for_render
         chg = format_signals_for_render(changes)
         chg = [c for c in chg if not c.startswith('📊MA')]
         chg_str = ' '.join(chg) or '—'
-
-        # 当日顶/底信号分 (与 weekly_top_score 共享同一函数)
-        prev = rows[i-1] if i > 0 else None
-        top_day = score_top_signals(changes, row, prev)
-        bot_day = score_bottom_signals(changes, row, prev)
-        top_score = top_day["score"]
-        bot_score = bot_day["score"]
-        if top_score > 0 and bot_score > 0:
-            day_score = f"{top_score}/{bot_score}"
-        elif top_score > 0:
-            day_score = f"{top_score}/0"
-        elif bot_score > 0:
-            day_score = f"0/{bot_score}"
-        else:
-            day_score = "—"
 
         ad = row.get('accum_days_daily', 0)
         aw = row.get('accum_days_weekly', 0)
@@ -1465,14 +1448,16 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
             f"| {wy} | {se} "
             f"| {_ma_str(row)} "
             f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
-            f"| {b3} | {chg_str} | {day_score} | {accum_str} "
+            f"| {b3} | {chg_str} | {accum_str} "
             f"| {obv_label(row)} |"
         )
-        bpct = row.get('boll_pct')
+        bpct  = row.get('boll_pct')
+        bwid  = row.get('boll_width')
         ma120 = row.get('ma120_dev')
-        bpct_s  = f"{bpct:.0f}%" if bpct is not None else "—"
+        bpct_s  = f"{bpct:.0f}%"  if bpct  is not None else "—"
+        bwid_s  = f"{bwid:.1f}%"  if bwid  is not None else "—"
         ma120_s = f"{ma120:+.1f}%" if ma120 is not None else "—"
-        line = line.rstrip(" |") + f" | {bpct_s} | {ma120_s} |"
+        line = line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {ma120_s} |"
         # 2026-08-01: markdown 表格 cell 错位防护
         # cell 计数必须 == 表头 cell 数, 否则下游 batch_summary 解析会错位
         n_cells = line.count("|") - 1

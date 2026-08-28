@@ -67,8 +67,10 @@ def _boll_arr(closes, n, k, field):
         if field == 'upper':   result.append(round(upper, 2))
         elif field == 'lower': result.append(round(lower, 2))
         elif field == 'mid':   result.append(round(mid, 2))
-        else:  # pct
+        elif field == 'pct':
             result.append(round((closes[i] - lower) / (upper - lower) * 100, 1) if upper > lower else 50.0)
+        else:  # width
+            result.append(round((upper - lower) / mid * 100, 1) if mid > 0 else 0.0)
     return result
 
 
@@ -160,6 +162,7 @@ def build_kline_features(closes, highs, lows, vols, window=250, pos_lookback=60)
         'boll_lower': _boll_arr(closes, 20, 2.0, 'lower'),
         'boll_mid':   _boll_arr(closes, 20, 2.0, 'mid'),
         'boll_pct':   _boll_arr(closes, 20, 2.0, 'pct'),
+        'boll_width': _boll_arr(closes, 20, 2.0, 'width'),
 
         # 原始数据引用
         'closes': closes, 'highs': highs, 'lows': lows, 'vols': vols,
