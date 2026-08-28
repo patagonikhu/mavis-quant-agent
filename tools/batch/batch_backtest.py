@@ -44,8 +44,12 @@ from tools.analysis.signal_cache import get_cached, write_batch, get_stats
 ds = DataStore()
 
 if args.all:
-    wl = json.load(open("data/watchlist.json"))["stocks"]
-    CODES = [s["code"] for s in wl]
+    # --all: db 里有 cache 的所有股票 (1830 只, 不限于 watchlist)
+    import sqlite3
+    conn = sqlite3.connect("data/analysis_cache.db")
+    CODES = [r[0] for r in conn.execute("SELECT DISTINCT code FROM analysis_cache").fetchall()]
+    conn.close()
+    print(f"--all: cache 全部 {len(CODES)} 只")
 elif args.codes:
     CODES = args.codes
 else:
