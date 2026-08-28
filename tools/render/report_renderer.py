@@ -19,8 +19,10 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
   from tools.analysis.analysis_engine import AnalysisEngine
   from tools.analysis.render_data import RenderData
 
-  ctx    = DataStore.get_ctx("002371")
-  result = AnalysisEngine().analyze(ctx)
+  ctx = DataStore.get_ctx("002371")
+  all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+  history = AnalysisEngine().analyze_history(ctx, all_dates[-120:])
+  result = history[all_dates[-1]]
   data   = RenderData.from_result(ctx, result)
 
   # Step 3: render 层纯渲染

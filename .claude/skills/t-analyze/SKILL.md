@@ -34,7 +34,7 @@ allowed-tools:
 /t-analyze --all
 /t-analyze --all --no-news
 /t-analyze --sector AI
-/t-analyze 300308 600089 002028           ```
+/t-analyze 300308 600089 002028
 
 ## 入口判断（最先做）
 
@@ -144,17 +144,11 @@ bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py 2>&1
 
 ## 单只模式（/t-analyze {code}）
 
-
 ```
 60xxxx / 688xxx → 上交所 → secid = 1.{code},  SECUCODE = {code}.SH
 00xxxx / 30xxxx / 002xxx / 003xxx → 深交所 → secid = 0.{code},  SECUCODE = {code}.SZ
 ```
 
-###
-
-###
-
-###
 ```bash
 # Step A: 拉数据（sync only，不计算）
 bash tools/with_venv.sh python -m tools.sync_stock {code}
@@ -1685,155 +1679,15 @@ ATR 止损的已知局限：
 ```
 
 
-###
-> **每次 /t-analyze 必须按阳光电源格式输出完整缠论分析。**
-> **禁止使用 format_three_hubs，改用 format_chan_output。**
+### 缠论输出（已集成在 report_renderer）
 
-####
-每份报告缠论部分必须包含以下 5 个章节，顺序不可变：
+> **render_report 已自动渲染缠论 section**：`## 🚨 60 分钟级背驰信号`、`## 📐 缠论完整数据 (4 个级别)` 等。
+> 不要再手写 `format_chan_output` / `format_three_hubs` / `seg_red_area` / `find_all_hubs_full`（这些函数不存在，2026-08-28 删）。
 
-```
-
-    #```
-
-**命名规则（固化）：**
-- 段: `段-{级别简称}-{编号}` 例: `段-60分-10`
-- 中枢: `中枢-{级别简称}-{编号}` 例: `中枢-周-1`
-- 级别简称: `周` / `日` / `60分` / `30分`
-- ⭐真 = 宽度<25% 的中枢（质量好）
-
-**4 个级别（固化，不可变）：** 周线 / 日线 / 60分 / 30分（不含月线）
-
-####
-```python
-
-def seg_red_area(seg, hist, dt2i):
-    if seg['sdt'] not in dt2i or seg['edt'] not in dt2i: return 0.0
-    i1=dt2i[seg['sdt']]; i2=dt2i[seg['edt']]
-    return sum(x for x in hist[i1:i2+1] if x>0)
-
-def find_all_hubs_full(segs):
-    """找所有中枢，含段编号和宽度"""
-    hubs=[]
-    for i in range(len(segs)-2):
-        s1,s2,s3=segs[i],segs[i+1],segs[i+2]
-        if not(s1['sst']==s3['sst'] and s1['sst']!=s2['sst']): continue
-        hl=max(s1['lo'],s2['lo'],s3['lo']); hh=min(s1['hi'],s2['hi'],s3['hi'])
-        if hh<=hl: continue
-        center=(hl+hh)/2; width=(hh-hl)/center*100
-        if width<1: continue
-        hubs.append({'low':hl,'high':hh,'width':width,
-                     's1_idx':i+1,'s3_idx':i+3,
-                     's1_sdt':s1['sdt'],'s3_edt':s3['edt']})
-    return hubs
-
-def format_chan_output(code, name, data):
-    """
-    缠论输出 — 读 data.analysis['chan']，禁止在此重复实现缠论计算。
-    缠论计算已由 tools/sync_stock.py → AnalysisEngine.analyze() 完成并写入 analysis.chan。
-
-    data: RenderData 实例
-    用法:
-        from tools.kline_store import DataStore
-        from tools.analysis.analysis_engine import AnalysisEngine
-        from tools.analysis.render_data import RenderData
-        ctx = DataStore.get_ctx(code)
-        all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
-        history = AnalysisEngine().analyze_history(ctx, all_dates[-120:])
-        result = history[all_dates[-1]]
-        data = RenderData.from_result(ctx, result)
-        chan = data.analysis.get('chan', {})
-
-    chan 字段结构 (由 dump 提供):
-        chan['levels']   — dict: {'日': {...}, '周': {...}, '60分': {...}, '30分': {...}}
-        chan['levels'][lbl]['segs']        — 段列表
-        chan['levels'][lbl]['hubs']        — 中枢列表
-        chan['levels'][lbl]['top_signals'] — 顶背驰信号列表
-        chan['levels'][lbl]['bot_signals'] — 底背驰信号列表
-        chan['levels'][lbl]['hub_latest']  — 最近中枢
-    """
-    chan = data.analysis.get('chan', {})
-    if not chan:
-        return "**⚠️ 缠论数据缺失** — 请先运行 `bash tools/with_venv.sh python -m tools.sync_stock {code}`"
-
-    levels = chan.get('levels', {})
-    p = data.price
-    lines = []
-
-    # 60分背驰信号（最高优先级）
-    lbl_60 = levels.get('60分', {})
-    top_60 = lbl_60.get('top_signals', [])
-    bot_60 = lbl_60.get('bot_signals', [])
-    hubs_60 = lbl_60.get('hubs', [])
-
-    lines.append("## 🚨 60 分钟级背驰信号")
-    for kind, sigs, icon, label in [('top', top_60, '🔴', '顶背驰'), ('bot', bot_60, '🟢', '底背驰')]:
-        if not sigs:
-            continue
-        sig = sigs[-1]
-        s1, s2 = sig['s1'], sig['s2']
-        a1, a2, ratio = sig['a1'], sig['a2'], sig['ratio']
-        lines.append(f"**最新 {icon}{label}**: 触发 {s2['edt']} ¥{s2['ep']:.2f}")
-        lines.append(f"  段比: {a2:.1f}/{a1:.1f} = {ratio:.0%} << 50% ✅")
-    if not top_60 and not bot_60:
-        lines.append("**当前无60分背驰信号** — 趋势延伸中")
-
-    lines.append("\n---\n")
-
-    # 4级别中枢 + 段 + 背驰汇总
-    lines.append("## 📐 缠论完整数据 (4 个级别)")
-    lines.append("> 段名格式: `段-{级别}-{编号}` | 中枢名格式: `中枢-{级别}-{编号}`")
-    lines.append("> 级别: `周` `日` `60分` `30分`\n")
-
-    lbl_map = {'周': '周', '日': '日', '60分': '60分', '30分': '30分'}
-    for lbl in ['周', '日', '60分', '30分']:
-        lv = levels.get(lbl, {})
-        segs = lv.get('segs', [])
-        hubs = lv.get('hubs', [])
-        top_sigs = lv.get('top_signals', [])
-        bot_sigs = lv.get('bot_signals', [])
-
-        lines.append(f"### {lbl}线 ({len(segs)} 段 / {len(hubs)} 中枢)")
-
-        # 最近真中枢
-        true_hubs = [h for h in hubs if h.get('width', 100) < 25] or hubs[-1:]
-        if true_hubs:
-            hub = true_hubs[-1]
-            hub_name = f"中枢-{lbl_map[lbl]}-{len(hubs)}"
-            pos = "上方✅" if p > hub['high'] else ("下方⚠️" if p < hub['low'] else "内部⬜")
-            lines.append(f"**最近真中枢**: {hub_name} ¥{hub['low']:.2f}–¥{hub['high']:.2f} 当前{pos}")
-
-        # 最近10段
-        recent_segs = segs[-10:]
-        start_idx = len(segs) - len(recent_segs) + 1
-        for k, s in enumerate(recent_segs):
-            idx = start_idx + k
-            arrow = '↑' if s.get('sst') == 'B' else '↓'
-            chg = (s['ep']/s['sp']-1)*100
-            lines.append(f"  段-{lbl_map[lbl]}-{idx}: {arrow} {s['sdt'][:10]}~{s['edt'][:10]} ¥{s['sp']:.0f}→¥{s['ep']:.0f} ({chg:+.1f}%)")
-
-        # 背驰信号
-        lines.append(f"**背驰**: 顶{len(top_sigs)}个 / 底{len(bot_sigs)}个")
-        for s in top_sigs[-2:]:
-            lines.append(f"  🔴顶背驰 段-{lbl_map[lbl]}-{s['s1_idx']} vs {s['s2_idx']}: 段比{s['ratio']:.0%} | {s['trigger_date'][:10]} ¥{s['trigger_price']:.2f}")
-        for s in bot_sigs[-2:]:
-            lines.append(f"  🟢底背驰 段-{lbl_map[lbl]}-{s['s1_idx']} vs {s['s2_idx']}: 段比{s['ratio']:.0%} | {s['trigger_date'][:10]} ¥{s['trigger_price']:.2f}")
-        lines.append("")
-
-    return '\n'.join(lines)
-
-
-# 调用方式:
-# from tools.kline_store import DataStore
-# from tools.analysis.analysis_engine import AnalysisEngine
-# from tools.analysis.render_data import RenderData
-# ctx = DataStore.get_ctx(code)
-# all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
-# history = AnalysisEngine().analyze_history(ctx, all_dates[-120:])
-# data = RenderData.from_result(ctx, history[all_dates[-1]])
-# chan_section = format_chan_output(code, name, data)
-
-```
+**chan 数据来源**: `result.raw['chan']['levels']` 由 `AnalysisEngine.analyze_history()` 计算后填入
+**渲染函数**: `tools/render/report_renderer.py::_section_chan_full`（line 1+）
+**4 个级别（固化）**: 周 / 日 / 60分 / 30分
+**读取 MD 报告** (推荐，不要重算): `Read docs/portfolio/analyze-{code}-{name}.md` → 找 `## 📐 缠论` section
 
 ####
 ```
@@ -2491,10 +2345,13 @@ print("市场状态模块加载完成")
 
 **调用方式（在 format_chan_output 之前）：**
 ```python
-# 读市场状态：从 data.analysis 读（不用 exec /tmp/*.py）
-scene = (data.analysis or {}).get('scene')
-score = (data.analysis or {}).get('total_score', 0)
-state_section = f"场景: {scene}  总分: {score:.2f}"
+# 读市场状态：从 AnalysisResult 读（不用 exec /tmp/*.py）
+# AnalysisResult 字段: scene, scene_name, resonance_count, signals_active, action
+scene = result.scene                # 'A'/'B'/'C'/'D'/'E'
+scene_name = result.scene_name      # '主升浪'/'过渡回调'/'震荡观望'/...
+resonance = result.resonance_count  # 1-7 共振数
+action = result.action              # ⬜/🥇/🥈/⚠️/❌ 行动建议
+state_section = f"场景: {scene} ({scene_name})  共振: {resonance}/7  行动: {action}"
 ```
 
 print("补充分析模块加载完成")
