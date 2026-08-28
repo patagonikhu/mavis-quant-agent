@@ -87,6 +87,11 @@ def _conn() -> sqlite3.Connection:
     os.makedirs(_DB.parent, exist_ok=True)
     c = sqlite3.connect(str(_DB), check_same_thread=False)
     c.execute("PRAGMA journal_mode=WAL")
+    # 大 DB 性能优化
+    c.execute("PRAGMA cache_size=-200000")      # 200MB page cache
+    c.execute("PRAGMA temp_store=MEMORY")       # temp table 内存
+    c.execute("PRAGMA mmap_size=268435456")     # 256MB mmap (大文件读快)
+    c.execute("PRAGMA synchronous=NORMAL")     # WAL 模式下安全的折中
     return c
 
 
