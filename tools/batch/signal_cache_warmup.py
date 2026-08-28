@@ -15,6 +15,7 @@ signal_cache_warmup.py — 科技股信号缓存增量补全
 import argparse
 import json
 import os
+import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,7 +24,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
 from tools.kline_store import DataStore
-from tools.analysis.signal_cache import write_batch, get_stats, check_stale_batch
+from tools.analysis.signal_cache import write_batch, get_stats, check_stale_batch, _DB
 
 
 def _load_tech_codes() -> list[str]:
@@ -175,7 +176,24 @@ def main():
 
     elapsed_total = time.time() - t0
     print(f"\n完成: 写{total_written:,}行 / 跳{total_skipped:,}行 / {done}只 / {elapsed_total:.0f}s")
-    print(f"缓存: {get_stats()}")
+
+    # 详细 DB 状态: 日期范围 / 股票数 / 命中率
+    final = get_stats()
+    conn = sqlite3.connect(str(_DB))
+    cur = conn.cursor()
+    cur.execute("SELECT MIN(date_str), MAX(date_str), COUNT(DISTINCT code) FROM analysis_cache")
+    min_d, max_d, code_count = cur.fetchone()
+    # 这次新加的日期 (>= 最近 max_d 往前 7 天)
+    cur.execute("SELECT date_str, COUNT(*) FROM analysis_cache WHERE date_str >= date(?, '-7 day') GROUP BY date_str ORDER BY date_str DESC LIMIT 10", (max_d,))
+    recent_dates = cur.fetchall()
+    conn.close()
+
+    print(f"缓存总: {final['rows']:,} 行 | {code_count} 只 | {final['size_mb']:.1f}MB")
+    print(f"日期范围: {min_d} ~ {max_d} ({(int(max_d)-int(min_d))//10000 if min_d and max_d else 0} 年)")
+    print(f"新写日期 ({len(recent_dates)} 个):")
+    for d, cnt in recent_dates:
+        print(f"  {d}: {cnt} 行")
+    print(f"耗时: {elapsed_total:.0f}s | 写: {total_written:,} | 跳(已缓存): {total_skipped:,}")
 
 
 if __name__ == "__main__":
