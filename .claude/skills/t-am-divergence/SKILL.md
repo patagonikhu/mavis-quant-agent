@@ -11,24 +11,24 @@ allowed-tools:
 /t-am-divergence                       # 默认: 5d 内三重确认
 /t-am-divergence --window 10           # 10d 内
 /t-am-divergence --no-macd             # 只要 A→M + 缠论
-/t-am-divergence --workers 16          # 16 并发（默认8）
+/t-am-divergence --workers 16          # 16 并发（默认 8）
 /t-am-divergence --write-md            # 写 docs/am-divergence-watchlist.md
 /t-am-divergence --limit 100           # 调试：只扫前100只
 ```
 
-## 算法 (4 步)
+## 算法
 
-Step 1: `sync_incremental()` 补缺失交易日
-Step 2: `DataStore.list_codes()` 获取本地历史库所有股票（全市场）
-Step 3: 每只只跑 3 个 strategy（WyckoffStrategy / ChanStrategy / MacdDivergenceStrategy），`compute_factor_history(lookback=window+30, strategies=[...])`
-Step 4: 找最近 window 天内的 A→M 切换（Accumulation→Markup），检查切换日前 30d 内：
-  - 缠论底背驰（daily_beichi direction=bot）
-  - MACD 底背驰（MacdDivergenceStrategy triggered）
-Step 5: 三重确认 → 输出清单（按距今天数升序）
+1. `sync_incremental()` 补缺失交易日
+2. `DataStore.list_codes()` 取全市场代码
+3. 每只只跑 **3 strategy** (Wyckoff / Chan / MacdDivergence) — 比全量快 2-3x
+4. 找最近 `window` 天内的 A→M 切换（Accumulation→Markup）
+5. 切换日前 30d 内同时有 缠论底背驰 + MACD 底背驰 → 三重确认
+6. 输出清单（按距今天数升序）
 
-## 运行
+## 执行
 
 ```bash
+# 后台跑（>30s 必须 background, 不用 timeout）
 bash tools/with_venv.sh python -m tools.batch.am_divergence
 bash tools/with_venv.sh python -m tools.batch.am_divergence --window 10 --write-md
 ```
@@ -43,19 +43,9 @@ bash tools/with_venv.sh python -m tools.batch.am_divergence --window 10 --write-
 
 ## 性能
 
-- 全 A 股 ~5000 只 × 3 strategy × 35 天 ÷ 8 并发 ≈ 2-3 分钟
-- 只跑 3 个 strategy（不是全部7个），比全量快 2-3x
+全 A 股 ~5000 只 × 3 strategy × 35 天 ÷ 8 并发 ≈ 2-3 分钟
 
-## 数据源
-
-| 数据 | 来源 |
-|---|---|
-| K线历史 | `data/history/daily/*.parquet`（DataStore.get_kline） |
-| 周线 | 日线聚合（_synthesize_weekly） |
-| 股票基础信息 | `data/cache/stock_basic.json` |
-| 威科夫/缠论/MACD | AnalysisEngine 实时计算（0网络） |
-
-## 关键参数
+## 参数
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
@@ -65,8 +55,17 @@ bash tools/with_venv.sh python -m tools.batch.am_divergence --window 10 --write-
 | `--write-md` | False | 写 docs/am-divergence-watchlist.md |
 | `--limit` | 0 | 调试：只扫前 N 只（0=全部） |
 
-## 相关文件
+## 数据源
+
+| 数据 | 来源 |
+|---|---|
+| K线历史 | `data/history/daily/*.parquet` (DataStore) |
+| 周线 | 日线聚合 (`_synthesize_weekly`) |
+| 股票基础信息 | `data/cache/stock_basic.json` |
+| 威科夫/缠论/MACD | `AnalysisEngine` 实时计算（0 网络） |
+
+## 相关
 
 - `tools/batch/am_divergence.py` — 扫描脚本
-- `tools/analysis/analysis_result_signals.py` — `compute_factor_history(strategies=...)` 按需策略
+- `tools/analysis/analysis_result_signals.py` — `compute_factor_history(strategies=[...])` 按需策略
 - `tools/kline_store.py` — `DataStore.list_codes()` 全市场代码
