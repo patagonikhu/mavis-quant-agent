@@ -664,7 +664,7 @@ class ChanStrategy:
 
     @staticmethod
     def _hub_result(czsc_obj, p_now, label, dates):
-        """从 CZSC/kas 对象提取中枢信息，统一格式。segs/bis 不存储（只 render 最新节点用，历史节点不需要）。"""
+        """从 CZSC/kas 对象提取中枢+段信息，统一格式。bis 不存储（render 不需要笔列表）。"""
         from tools.factors.chan.czsc_adapter import bis_to_segs_format, czsc_zss_to_hub_format
         from czsc import get_zs_seq
         bis  = czsc_obj.bi_list
@@ -690,7 +690,7 @@ class ChanStrategy:
         supports = sorted([s['lo'] for s in segs[-8:] if s['lo'] < p_now], reverse=True)[:3]
         return {
             'hub': hubs[-1] if hubs else {'valid': False},
-            'hubs': hubs,
+            'hubs': hubs, 'segs': segs,
             'n_strokes': len(bis), 'n_segs': len(segs),
             'seg_status': seg_status, 'supports': supports,
             'p': p_now, 'label': label,
