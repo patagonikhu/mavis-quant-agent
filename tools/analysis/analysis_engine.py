@@ -749,7 +749,8 @@ class ChanStrategy:
     def analyze_history(self, ctx: RawContext, dates: list) -> dict:
         """一次遍历全量 bars，在每个 date 节点记录中枢+买卖点。"""
         from tools.factors.chan.czsc_signals import extract_points_from_sigs  # noqa
-        dates_set = set(d.replace("-", "")[:8] for d in dates)
+        dates_clean = [d.replace("-", "")[:8] for d in dates]
+        dates_set   = set(dates_clean)
         if not ctx.kline or len(ctx.kline) < 30:
             return {}
 

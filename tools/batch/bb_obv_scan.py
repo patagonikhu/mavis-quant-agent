@@ -1,13 +1,14 @@
 """
-tools/batch/bb_obv_scan.py — 科技股 BOLL+BBW+OBV 三重确认扫描
+tools/batch/bb_obv_scan.py — 科技股 BOLL+BBW+OBV 三重确认扫描 (compute_factor_history 直算)
 
 策略 (严格 3 重确认, 每天 0-2 只):
   1. BOLL% < 15  (接近下轨, 短期超卖)
   2. BBW < 10   (布林带收窄, 低波/蓄势)
-  3. OBV 底背离  (价跌但 OBV 上行, 机构吸筹)
+  3. OBV 60d 底背离次数 ≥1  (机构吸筹)
 
-数据源: data/analysis_cache.db (BOLL/BBW 已 backfill)
-        + K线 close/volume (OBV 实时算)
+不走 cache: 直接用 AnalysisEngine.analyze_history(ctx, dates,
+                                              strategies=[WyckoffStrategy, ObvStrategy])
+跳过 chan/smc/fflow/peg (只跑必要 2 个), 比 cache 实时
 
 用法:
   bash tools/with_venv.sh python -m tools.batch.bb_obv_scan
@@ -16,7 +17,6 @@ tools/batch/bb_obv_scan.py — 科技股 BOLL+BBW+OBV 三重确认扫描
   bash tools/with_venv.sh python -m tools.batch.bb_obv_scan --no-obv
 """
 import argparse
-import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,22 +26,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-
-def _is_tech(code: str) -> bool:
-    """科技股过滤 (申万行业)"""
-    try:
-        import pyarrow.parquet as pq
-        tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
-        df = tbl.to_pandas()
-        TECH_KW = ["半导体", "软件服务", "通信设备", "电子", "计算机设备",
-                    "电气设备", "电器仪表", "光学光电子", "互联网", "航空",
-                    "军工", "航天", "汽车电子", "机器人", "新能源"]
-        mask = df["industry"].fillna("").apply(lambda x: any(kw in x for kw in TECH_KW))
-        tech = set(df[mask]["code"].tolist())
-        return code in tech
-    except Exception:
-        return True  # 失败不过滤, 跑全部
 
 
 def _load_tech_codes() -> set:
@@ -59,30 +43,13 @@ def _load_tech_codes() -> set:
         return None
 
 
-def _obv_bottom(closes: list, vols: list, dates: list, i: int,
-                 cached_div_bot: int = 0) -> bool:
-    """OBV 底背离 (双路径: 优先用 cache 里 backfill 的 obv_div_bot_60d)
-    价 3 日跌 + 60d 内 OBV 底背离次数 ≥1
-    """
-    if i < 3: return False
-    # 价 3 日前比今天高 (价跌)
-    if closes[i] >= closes[i - 3]: return False
-    # 优先用 cache (0 成本)
-    if cached_div_bot > 0:
-        return True
-    # 退化: 实时算 (cache 缺数据时)
-    from tools.factors.volume.price_fflow import obv_factor
-    res = obv_factor(closes=closes, vols=vols, dates=dates)
-    return res.get("obv_div_bot_60d", 0) > 0
-
-
 def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
              require_obv: bool, tech_codes: set) -> dict | None:
-    """扫描单只股票"""
+    """单只扫描: 用 compute_factor_history 直算 BOLL/BBW/OBV (跳过 cache)"""
     t0 = time.time()
     try:
         from tools.kline_store import DataStore
-        from tools.analysis.signal_cache import get_cached
+        from tools.analysis.analysis_engine import AnalysisEngine, WyckoffStrategy, ObvStrategy
 
         # 科技股过滤
         if tech_codes is not None and code not in tech_codes:
@@ -92,51 +59,47 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         if not ctx.kline or len(ctx.kline) < 60:
             return None
 
-        # 取最近 window 日
-        kline = ctx.kline[-window:]
-        dates = [k['trade_date'].replace('-','')[:8] for k in kline]
-        n = len(dates)
+        # 只需要算最近 window + 60 天 (给 OBV 60d 段背离留 buffer)
+        kline_window = ctx.kline[-(window + 60):]
+        all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+        dates_window = all_dates[-(window + 60):]
 
-        # 从 cache 读 boll_bpct / boll_bwidth
-        rows = get_cached(code, dates)
+        # 只跑 WyckoffStrategy (含 build_kline_features 算 BOLL/BBW) + ObvStrategy
+        # 跳过 chan/smc/fflow/peg (省 70% 时间)
+        from tools.analysis.analysis_result_signals import compute_factor_history
+        rows = compute_factor_history(ctx, step=1, lookback=len(dates_window),
+                                     strategies=[WyckoffStrategy, ObvStrategy])
+        # rows 是 list[dict], 字段是 'date' (不是 'date_str')
+        # 转成 {date: dict} 方便查
+        history = {r.get('date', ''): r for r in rows if r.get('date')}
 
         # 找最近 window 日内 满足 BOLL AND BBW 条件
         trigger = None
-        for i in range(n - 1, -1, -1):
-            r = rows.get(dates[i])
-            if r is None: continue
-            bp = r.get('boll_bpct')
-            bw = r.get('boll_bwidth')
+        recent_dates = dates_window[-window:]
+        for d in reversed(recent_dates):
+            if d not in history: continue
+            row = history[d]
+            bp = row.get('boll_pct')
+            bw = row.get('boll_width')
             if bp is not None and bw is not None and bp < boll_th and bw < bbw_th:
-                trigger = (i, r)
+                trigger = (d, row)
                 break
         if trigger is None:
             return None
 
-        i_trig, r_trig = trigger
-        trigger_date = dates[i_trig]
-        # cache 没存 close, 从 kline 读
-        trigger_price = kline[i_trig].get('close', 0)
-        trigger_bpct = r_trig.get('boll_bpct', 0)
-        trigger_bbw = r_trig.get('boll_bwidth', 0)
+        trigger_date, r_trig = trigger
+        trigger_bpct = r_trig.get('boll_pct', 0)
+        trigger_bbw = r_trig.get('boll_width', 0)
+        trigger_price = r_trig.get('close', 0)
 
-        # OBV 底背离检测 (可选) - 优先用 cache, 退化用 obv_factor
+        # OBV 底背离 (3 重确认第 3 条件)
         has_obv = False
-        obv_days_ago = 0
         if require_obv:
-            # 优先读 cache 里 backfill 的 obv_div_bot_60d
-            cached_div_bot = r_trig.get('obv_div_bot') or 0
-            if cached_div_bot > 0:
+            obv_div_bot = r_trig.get('obv_div_bot_60d') or 0
+            if obv_div_bot > 0:
                 has_obv = True
-            else:
-                # 退化: 用全 kline 跑 obv_factor (O(n) 一次)
-                closes_all = [k.get('close', 0) for k in ctx.kline]
-                vols_all = [k.get('volume', 0) for k in ctx.kline]
-                dates_all = [k.get('trade_date', '').replace('-','')[:8] for k in ctx.kline]
-                if _obv_bottom(closes_all, vols_all, dates_all, i_trig, 0):
-                    has_obv = True
-            if not has_obv:
-                return None  # 3 重不满足, 跳过
+        if require_obv and not has_obv:
+            return None  # 3 重不满足
 
         # 距今天数
         try:
@@ -167,7 +130,7 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
             "trigger_price":  trigger_price,
             "boll_pct":       trigger_bpct,
             "bbw":            trigger_bbw,
-            "obv_days_ago":   obv_days_ago if require_obv else None,
+            "obv_days_ago":   0 if has_obv else None,
             "days_ago":       days_ago,
             "status":         status,
             "elapsed":        time.time() - t0,
@@ -177,11 +140,11 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="科技股 BOLL+BBW+OBV 三重确认扫描")
+    parser = argparse.ArgumentParser(description="科技股 BOLL+BBW+OBV 三重确认 (compute_factor_history 直算, 跳过 cache)")
     parser.add_argument("--window",          type=int,   default=2,    help="触底窗口天数（默认2）")
     parser.add_argument("--boll-threshold",  type=float, default=15.0, help="BOLL% 上限（默认15）")
     parser.add_argument("--bbw-threshold",   type=float, default=10.0, help="BBW 上限（默认10）")
-    parser.add_argument("--no-obv",          action="store_true",      help="不要 OBV 底背离 (只要 BOLL+BBW 双确认)")
+    parser.add_argument("--no-obv",          action="store_true",      help="只要 BOLL+BBW 双确认")
     parser.add_argument("--all",             action="store_true",      help="全市场 (默认只科技股)")
     parser.add_argument("--workers",         type=int,   default=4,    help="并发数（默认4）")
     parser.add_argument("--write-md",        action="store_true",      help="写 docs/bb-obv-watchlist.md")
@@ -189,7 +152,6 @@ def main():
     args = parser.parse_args()
 
     require_obv = not args.no_obv
-    n_conditions = 3 if require_obv else 2
 
     # 加载科技股代码
     if args.all:
@@ -199,8 +161,9 @@ def main():
         tech_codes = _load_tech_codes()
         scope = f"科技股 ({len(tech_codes)} 只)" if tech_codes else "科技股 (加载失败)"
 
-    # 读 cache 全部代码
-    conn = sqlite3.connect("data/analysis_cache.db")
+    # 读 cache 全部代码 (跳过 stock_basic 列出 4000+ 死代码)
+    import sqlite3
+    conn = sqlite3.connect(str(ROOT / "data" / "analysis_cache.db"))
     codes = [r[0] for r in conn.execute("SELECT DISTINCT code FROM analysis_cache").fetchall()]
     conn.close()
 
@@ -208,6 +171,7 @@ def main():
         codes = codes[:args.limit]
 
     print(f"=== {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% {'AND OBV 底' if require_obv else ''} ===")
+    print(f"直算 (compute_factor_history, 只跑 WyckoffStrategy + ObvStrategy)")
     print(f"扫描 {len(codes)} 只 ({args.workers} workers)...")
 
     t0 = time.time()
@@ -231,8 +195,6 @@ def main():
                 print(f"  [{done}/{len(codes)}] +{len(hits)} 命中 | {elapsed:.0f}s", flush=True)
 
     elapsed = time.time() - t0
-
-    # 按距今排序
     hits.sort(key=lambda x: (x['days_ago'], x['code']))
 
     print()

@@ -273,22 +273,28 @@ def get_cached(code: str, dates: list[str]) -> dict[str, dict]:
 
 
 def write_batch(code: str, kline: list[dict], results: dict[str, dict]):
-    """批量写入（事务）"""
+    """批量写入 (事务, executemany)"""
     if not results:
         return
     date_idx = {k["trade_date"].replace("-", "")[:8]: i for i, k in enumerate(kline)}
     conn = _conn()
     try:
-        conn.execute("BEGIN")
+        # 一次性准备所有 row + sql
+        rows = []
+        cols = None
+        ph = None
         for ds, result in results.items():
             kl = kline[:date_idx.get(ds, -1) + 1]
             row = _result_to_row(code, ds, kl, result)
-            cols = list(row)
-            ph = ",".join(["?"] * len(cols))
-            conn.execute(
-                f"INSERT OR REPLACE INTO analysis_cache ({','.join(cols)}) VALUES ({ph})",
-                [row[c] for c in cols]
-            )
+            if cols is None:
+                cols = list(row)
+                ph = ",".join(["?"] * len(cols))
+            rows.append([row[c] for c in cols])
+        if not rows: return
+        conn.executemany(
+            f"INSERT OR REPLACE INTO analysis_cache ({','.join(cols)}) VALUES ({ph})",
+            rows
+        )
         conn.commit()
     except Exception:
         conn.rollback()

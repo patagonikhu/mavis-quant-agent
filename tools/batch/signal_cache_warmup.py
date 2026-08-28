@@ -87,10 +87,11 @@ def calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
         if not stale_dates:
             return code, {}, kline, skipped, time.time() - t0
 
-        # 从第一个 stale date 往前加 120 根缠论上下文缓冲
+        # 从第一个 stale date 往前加 120 根缠论上下文缓冲，到最后一个 stale date 截止
         first_stale_idx = next((i for i, d in enumerate(all_dates) if d == stale_dates[0]), 0)
+        last_stale_idx  = next((i for i, d in enumerate(all_dates) if d == stale_dates[-1]), first_stale_idx)
         buf_start = max(0, first_stale_idx - 120)
-        compute_dates = all_dates[buf_start:]  # 从缓冲起点到末尾
+        compute_dates = all_dates[buf_start : last_stale_idx + 1]  # 不延伸到末尾
 
         from tools.analysis.analysis_engine import AnalysisEngine
         history = AnalysisEngine().analyze_history(ctx, compute_dates)
@@ -143,6 +144,9 @@ def main():
     # ── Phase1: 并发算（不写 DB）────────────────────────────────────────
     results_map: dict[str, tuple] = {}  # code → (to_write, kline, skipped, elapsed)
     done = 0
+    total = len(CODES)
+    recent_times: list[float] = []   # 最近 20 只的耗时，用于 ETA 滚动均值
+
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(calc_signals_for_code, code, args.full, args.batch_size, args.step): code
                 for code in CODES}
@@ -151,12 +155,23 @@ def main():
             _, to_write, kline, skipped, elapsed = fut.result()
             done += 1
             results_map[code] = (to_write, kline, skipped, elapsed)
-            tag = "⏭️" if to_write == {} else ("❌" if to_write is None else f"+{len(to_write or {})}")
-            print(f"  [{done:4d}/{len(CODES)}] {tag:>6} {code} {elapsed:.0f}s", flush=True)
+
+            recent_times.append(elapsed)
+            if len(recent_times) > 20:
+                recent_times.pop(0)
+            avg = sum(recent_times) / len(recent_times)
+            remaining = total - done
+            eta = remaining * avg / args.workers
+            eta_str = f"{int(eta//60)}m{int(eta%60):02d}s" if eta < 9999 else "--"
+
+            tag = "⏭" if to_write == {} else ("❌" if to_write is None else f"+{len(to_write or {})}")
+            # 每10只打一行进度，有新写入或出错时也打
+            if done % 10 == 0 or to_write is None or (to_write and len(to_write) > 0):
+                pct = done / total * 100
+                print(f"  [{done:4d}/{total}] {pct:5.1f}%  ETA {eta_str}  {tag:>4} {code} {elapsed:.1f}s", flush=True)
 
             if time.time() - t0 >= args.timeout:
-                timed_out = True
-                print(f"\n⏰ timeout {args.timeout}s 到，取消剩余 {len(futs)-done} 个任务，写已完成结果...")
+                print(f"⏰ timeout {args.timeout}s 到，取消剩余 {remaining} 个任务，写已完成结果...")
                 for f in futs:
                     f.cancel()
                 break
