@@ -219,7 +219,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
         ("见大盘背景段", "多市场共振 占位符 (应实算)"),
         ("N/A (Sina 60分 K线 3795 根硬上限)", "SMC-OB 占位符 (应实算)"),
         # === 2026-08-15: 实算失败的硬性残行 (factor_history bug 期间 render 留下的脏数据) ===
-        # 背景: factor_history.py 字典字面量塞赋值时, render 阶段不依赖此模块也能成功,
+        # 背景: analysis_result_signals.py 字典字面量塞赋值时, render 阶段不依赖此模块也能成功,
         # 留下 "❌ 历史计算失败: ..." 残行在 57 份 md 报告里, 直到下一次 render 才覆盖
         # 防护: 任何 md 里出现"历史计算失败"→ 立即 FAIL, 强制重跑 refresh_all
         ("历史计算失败", "factor_history 实算失败残行 (必须重跑 refresh_all.sh)"),

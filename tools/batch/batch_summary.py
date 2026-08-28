@@ -326,7 +326,7 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
     import sys
     sys.path.insert(0, ".")
     from tools.analysis.analysis_engine import RawContext
-    from tools.analysis.factor_history import (
+    from tools.analysis.analysis_result_signals import (
         compute_factor_history, diff_rows, score_top_signals, score_bottom_signals
     )
     from collections import defaultdict

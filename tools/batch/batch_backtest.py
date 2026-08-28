@@ -3,7 +3,7 @@ batch_backtest.py — 信号回测引擎 (SQLite 缓存版)
 
 缓存优先:
   1. 查 SQLite → 命中则直接读
-  2. 缺失则 compute_factor_history → 写 SQLite
+  2. 缺失则 AnalysisEngine.analyze_history → 写 SQLite
 
 用法:
   python tools/batch/batch_backtest.py --signal Spring --days 30 --threshold 10
@@ -40,7 +40,6 @@ if not args.signals:
 # ── 数据加载 ────────────────────────────────────────────────
 t0 = time.time()
 from tools.kline_store import DataStore
-from tools.analysis.factor_history import compute_factor_history
 from tools.analysis.signal_cache import get_cached, write_batch, get_stats
 
 ds = DataStore()
@@ -157,15 +156,13 @@ def backtest_one(code: str):
     # 缺失部分 → 重算（无论是否有缓存，只要不完整就补算）
     missing = [d for d in dates if d not in rows]
     if missing:
-        out = {}
-        compute_factor_history(ctx, step=args.step, lookback=args.lookback * 365,
-                              out_results=out)
-        # AnalysisResult → dict 标准化后写入 rows + 缓存
+        from tools.analysis.analysis_engine import AnalysisEngine
+        history = AnalysisEngine().analyze_history(ctx, missing)
         to_write = {}
-        for d, result in out.items():
+        for d, result in history.items():
             if d in missing:
                 rows[d] = _result_to_row(result)
-                to_write[d] = result  # 缓存写原始 AnalysisResult
+                to_write[d] = result
         if to_write:
             write_batch(code, kline, to_write)
 

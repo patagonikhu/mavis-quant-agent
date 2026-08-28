@@ -36,7 +36,7 @@ from datetime import datetime
 from typing import Optional
 
 from tools.analysis.render_data import RenderData
-from tools.analysis.factor_history import obv_label
+from tools.analysis.analysis_result_signals import obv_label
 
 
 # ============================================================
@@ -1401,7 +1401,7 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     if not data.ctx:
         return "> ⚠️ ctx 未设置，无法计算历史\n"
     try:
-        from tools.analysis.factor_history import compute_factor_history, diff_rows
+        from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows
         rows = compute_factor_history(data.ctx, step=1, lookback=lookback)
     except Exception as e:
         return f"> ❌ 历史计算失败: {e}\n"
@@ -1434,7 +1434,7 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
                     bsp_parts.append(f"{l}({lbl})")
         b3 = " ".join(bsp_parts) if bsp_parts else "—"
 
-        from tools.analysis.factor_history import format_signals_for_render, score_top_signals, score_bottom_signals
+        from tools.analysis.analysis_result_signals import format_signals_for_render, score_top_signals, score_bottom_signals
         chg = format_signals_for_render(changes)
         chg = [c for c in chg if not c.startswith('📊MA')]
         chg_str = ' '.join(chg) or '—'

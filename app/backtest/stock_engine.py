@@ -22,7 +22,7 @@ from statistics import mean
 from typing import Optional
 
 from app.backtest.stock_metrics import SignalReport, SignalStats, StockSignalRecord
-from tools.analysis.factor_history import extract_signals as _extract_signals
+from tools.analysis.analysis_result_signals import extract_signals as _extract_signals
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class StockBacktestEngine:
     # ── 核心：单只股票回测 ────────────────────────────────────────────────
 
     def _run_one(self, code: str, name: str) -> list[StockSignalRecord]:
-        from tools.analysis.factor_history import compute_factor_history, diff_rows
+        from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows
 
         ctx = self._load_dump(code)
         if ctx is None:

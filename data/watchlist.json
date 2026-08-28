@@ -1,6 +1,6 @@
 {
   "version": "1.4",
-  "last_updated": "2026-08-13",
+  "last_updated": "2026-08-28",
   "description": "关注清单 + 你手填的笔记。LLM 用这些笔记 + 训练知识 + 框架 doc 出报告。每周花 10 分钟改一下。v1.2 加 rating_history 字段追踪评级变化。 v1.2 批量导入 docs/analyze-*.md 所有标的。",
   "stocks": [
     {
@@ -34,6 +34,7 @@
     {
       "code": "000725",
       "name": "京东方A",
+      "list_type": "持仓",
       "sector": "面板-LCD+OLED",
       "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实0.64x+L/E3=1.66x低估+面板超跌+龙头5/14,升级观望→轻仓(待fflow转正确认)"
     },
@@ -222,6 +223,7 @@
     {
       "code": "600089",
       "name": "特变电工",
+      "list_type": "持仓",
       "sector": "电力变压器",
       "notes": "2026-08-25 复盘: PEG 0.46x极低估 + DCF L/E3=3.0x叙事已部分priced (矛盾). 1买⭐消失(daily)=SELL警报. fflow 5d/-3.84亿(收窄) / 10d/-13.75亿(持续流出). RSI6=13极度超卖, BOLL跌破下轨, MACD死叉, MA空头排列. 日中枢¥25-28已跌穿(-24.7%). 威科夫Accumulation末段(31%),等Spring触发. 1买窗口关闭,持有者应¥20.84减仓1/3;空仓者不开新仓,等¥17.5+Spring+fflow转正三条件齐.",
       "tech_params": {
@@ -415,6 +417,76 @@
       "name": "中芯国际",
       "sector": "半导体-晶圆代工",
       "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实7.13x+L/E3=22.56x极度透支,半导体晶圆代工,清仓"
+    },
+    {
+      "code": "600765",
+      "name": "中航重机",
+      "sector": "军工-锻铸",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "601888",
+      "name": "中国中免",
+      "sector": "消费-免税",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "002531",
+      "name": "天顺风能",
+      "sector": "风电-塔筒",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "300699",
+      "name": "光威复材",
+      "sector": "碳纤维-军工",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "603033",
+      "name": "三维股份",
+      "sector": "输送带",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "002304",
+      "name": "洋河股份",
+      "sector": "白酒",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "601633",
+      "name": "长城汽车",
+      "sector": "汽车",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "512400",
+      "name": "有色ETF",
+      "sector": "有色金属ETF",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "002237",
+      "name": "恒邦股份",
+      "sector": "黄金冶炼",
+      "list_type": "持仓",
+      "notes": ""
+    },
+    {
+      "code": "000792",
+      "name": "盐湖股份",
+      "sector": "盐湖提锂",
+      "list_type": "持仓",
+      "notes": ""
     }
   ],
   "changelog": [

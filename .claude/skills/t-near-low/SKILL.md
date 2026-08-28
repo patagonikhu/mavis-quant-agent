@@ -100,7 +100,7 @@ import sys; sys.path.insert(0, '.')
 from tools.kline_store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.render_data import RenderData
-from tools.analysis.factor_history import compute_factor_history
+from tools.analysis.analysis_result_signals import compute_factor_history
 from tools.render.report_renderer import render_report
 from pathlib import Path
 ctx = DataStore.get_ctx('002531')

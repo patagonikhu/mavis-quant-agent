@@ -67,5 +67,5 @@ tools/with_venv.sh python -m tools.batch.signal_cache_warmup --full
 ```
 tools/batch/signal_cache_warmup.py   # 入口，--timeout 默认 600
 tools/analysis/signal_cache.py       # SQLite 读写，data/analysis_cache.db
-tools/analysis/factor_history.py     # compute_factor_history() 核心计算
+tools/analysis/analysis_result_signals.py     # compute_factor_history() 核心计算
 ```

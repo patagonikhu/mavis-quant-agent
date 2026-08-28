@@ -62,7 +62,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, '.')
 from tools.kline_store import DataStore
-from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
+from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
 
 watchlist = json.load(open('data/watchlist.json'))['stocks']
 output_path = Path('docs') / 'signal-watchlist.md'

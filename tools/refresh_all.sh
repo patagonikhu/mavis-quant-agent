@@ -28,14 +28,14 @@ cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 
 # === Smoke test (2026-08-15 v3) ===
-# 2026-08-15: 引入 — 修 factor_history.py 字典字面量塞赋值的 bug 时,57 份 md 报告残留"历史计算失败"残行
+# 2026-08-15: 引入 — 修 analysis_result_signals.py 字典字面量塞赋值的 bug 时,57 份 md 报告残留"历史计算失败"残行
 # 因为 render 阶段没依赖 factor_history (只有 batch_summary 才 import), pipeline 走完才在尾部炸
 # 防护: 启动时 import 所有 render/batch 必用的关键模块, 任何一个失败立即 exit 1
 # 任何 .py 改动 (factor_history / analysis_engine / report_renderer / batch_summary) 必须:
 #   1. 本地 `python -c "import <module>"` 通过
 #   2. 或者重跑此 smoke test 通过
 SMOKE_MODULES=(
-    "tools.analysis.factor_history"   # batch_summary 强依赖
+    "tools.analysis.analysis_result_signals"   # batch_summary 强依赖
     "tools.analysis.analysis_engine"  # dump + render 强依赖
     "tools.render.report_renderer"    # render 强依赖
     "tools.batch.batch_summary"       # batch 阶段
@@ -131,7 +131,7 @@ process_one() {
     if bash tools/with_venv.sh python3 -c "
 from tools.kline_store import DataStore
 from tools.analysis.analysis_data import AnalysisData
-from tools.analysis.factor_history import compute_factor_history
+from tools.analysis.analysis_result_signals import compute_factor_history
 from tools.render.report_renderer import render_report
 from pathlib import Path
 code = '$code'

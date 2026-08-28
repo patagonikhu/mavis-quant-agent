@@ -96,7 +96,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, '.')
 
-from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
+from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
 from tools.render.report_renderer import render_report
 
 skip = {'000001','000300','399001','399006'}
@@ -118,7 +118,7 @@ def _process_one(s):
             return None
         # 单次 pass: lookback=120，out_results 拿最后结果
         out = {}
-        rows = compute_factor_history(ctx, step=1, lookback=120, out_results=out)
+        rows = compute_factor_history(ctx, step=1, lookback=120)
         if len(rows) < 2:
             return None
         # 渲染个股 MD
@@ -239,7 +239,7 @@ sys.path.insert(0, '.')
 from tools.kline_store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.render_data import RenderData
-from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals
+from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows, extract_signals
 from tools.render.report_renderer import render_report
 from pathlib import Path
 
@@ -250,7 +250,7 @@ if not ctx.kline:
 
 # L2+L3 合并：compute_factor_history 一次遍历，out_results 存最后一个 AnalysisResult
 out = {}
-rows = compute_factor_history(ctx, step=1, lookback=120, out_results=out)
+rows = compute_factor_history(ctx, step=1, lookback=120)
 last_date = ctx.kline[-1]['trade_date'].replace('-', '')[:8]
 result = out.get(last_date) or (out[max(out)] if out else None)
 if result is None:

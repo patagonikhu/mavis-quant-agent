@@ -1,5 +1,5 @@
 """
-factor_history.py - 历史因子计算 + 信号 diff
+analysis_result_signals.py - 历史因子计算 + 信号 diff
 
 核心函数:
   compute_factor_history(ctx, step, lookback) → list[dict]
@@ -13,8 +13,7 @@ from typing import Callable
 
 
 def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
-                           strategies=None,
-                           out_results: dict | None = None) -> list[dict]:
+                           strategies=None) -> list[dict]:
     """计算最近 lookback 天的因子历史，每 step 天一个节点。
 
     Args:
@@ -22,8 +21,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         step:        采样间隔（render 用 5，回测用 1）
         lookback:    回看天数（默认 60 = 3个月）
         strategies:  传入 strategy 类列表，None 表示跑全部
-        out_results: 可选 dict，函数会把 {date_str: AnalysisResult} 写入，
-                     调用方可从中取最后一个 AnalysisResult 避免重复 analyze()
 
     Returns:
         list[dict]，按日期升序
@@ -55,8 +52,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         result = history.get(date_clean)
         if result is None:
             continue
-        if out_results is not None:
-            out_results[date_clean] = result
         close = date_to_close.get(date_clean, 0)
 
         ki = date_to_ki.get(date_clean, len(kline))
@@ -86,9 +81,8 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         }
 
         rows.append({**_extract_row(result, date, close, ctx), **ma_devs})
-        # out_results 不需要时立即释放，避免 1250 个 AnalysisResult 同时驻留内存
-        if out_results is None:
-            del history[date_clean]
+        # 提取完立即释放，避免 AnalysisResult 大对象在循环结束前全部驻留内存
+        del history[date_clean]
 
     # post-process: 计算三周期连续 Accum 天数（升序扫，遇非Accum重置）
     for field, out_key in [
@@ -469,7 +463,7 @@ def format_signals_for_render(changes: dict) -> list[str]:
 
 
 # ============================================================
-# 当日顶信号评分 (2026-08-01 提到 factor_history.py, 单一真源)
+# 当日顶信号评分 (2026-08-01 提到 analysis_result_signals.py, 单一真源)
 # 供 render (写md表格) 和 weekly_top_score (按周聚合) 共同调用
 # ============================================================
 

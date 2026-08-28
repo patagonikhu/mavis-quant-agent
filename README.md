@@ -225,7 +225,7 @@ for each date:               ← 1250 次
 | +3 | `WyckoffStrategy.analyze_history`：`wyckoff_judge(i, arrs)` O(1) | — |
 | +4 | `SmcStrategy.analyze_history`：OB/FVG/Sweep 全量扫一次 | — |
 | +5 | `ObvStrategy.analyze_history`：OBV 数组预建 O(n) | ~0.4s |
-| +6 | `factor_history.py` 内 3 处 O(n) 查找改预建 dict/bisect | ~0.4s |
+| +6 | `analysis_result_signals.py` 内 3 处 O(n) 查找改预建 dict/bisect | ~0.4s |
 
 **总提升 ~150x**（63s → 0.4s，lookback=120 step=1）。
 
@@ -238,7 +238,7 @@ for each date:               ← 1250 次
 | `tools/analysis/analysis_engine.py::WyckoffStrategy.analyze_history` | 预算 arrs + pre_scan sub_events，循环内 O(1) |
 | `tools/analysis/analysis_engine.py::SmcStrategy.analyze_history` | `find_order_blocks/fvg/sweeps` 全量跑一次，per-date 按 idx 过滤 |
 | `tools/analysis/analysis_engine.py::ObvStrategy.analyze_history` | OBV 数组 + MA 数组 O(n) 预建，per-date O(1) |
-| `tools/analysis/factor_history.py` | 外层用 `date_to_ki` dict + `bisect` 替代 O(n) 的 `next(k for k in kline if ...)` |
+| `tools/analysis/analysis_result_signals.py` | 外层用 `date_to_ki` dict + `bisect` 替代 O(n) 的 `next(k for k in kline if ...)` |
 
 ### 4.4 并发铁律
 

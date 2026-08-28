@@ -3,7 +3,7 @@ tools/batch/weekly_top_score.py - 顶信号周度评分统计
 
 把所有顶部信号按周聚合评分，用于找到逃顶阈值。
 
-信号权重 (v2, 2026-08-01, 已迁到 tools.analysis.factor_history.TOP_SIGNAL_WEIGHTS):
+信号权重 (v2, 2026-08-01, 已迁到 tools.analysis.analysis_result_signals.TOP_SIGNAL_WEIGHTS):
   ⭐趋势1卖              8分  (bsp 含 1卖⭐)
   普通1卖                5分  (bsp 含 1卖)
   DistributionStart      6分  (威科夫子事件)
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from tools.analysis.factor_history import score_top_signals, TOP_SIGNAL_WEIGHTS as _SIGNAL_WEIGHTS
+from tools.analysis.analysis_result_signals import score_top_signals, TOP_SIGNAL_WEIGHTS as _SIGNAL_WEIGHTS
 
 _RATING = [
     (10, "🔴 强逃顶"),
@@ -74,7 +74,7 @@ def compute_weekly_top_score(ctx, lookback: int = 250) -> list[dict]:
           signals     — list[(signal_key, weight, date)]
           days        — list[str] (该周有信号的日期)
     """
-    from tools.analysis.factor_history import compute_factor_history, diff_rows
+    from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows
 
     rows = compute_factor_history(ctx, step=1, lookback=lookback)
     if not rows:

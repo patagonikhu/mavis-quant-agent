@@ -38,7 +38,7 @@ def scan_one(code: str, window: int, require_macd: bool,
     try:
         from tools.kline_store import DataStore
         from tools.analysis.analysis_engine import ChanStrategy
-        from tools.analysis.factor_history import compute_factor_history
+        from tools.analysis.analysis_result_signals import compute_factor_history
 
         strategies = [ChanStrategy]
         ctx = DataStore.get_ctx(code, kline_only=True, limit=250)

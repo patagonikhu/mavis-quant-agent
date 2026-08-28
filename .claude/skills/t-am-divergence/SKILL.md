@@ -68,5 +68,5 @@ bash tools/with_venv.sh python -m tools.batch.am_divergence --window 10 --write-
 ## 相关文件
 
 - `tools/batch/am_divergence.py` — 扫描脚本
-- `tools/analysis/factor_history.py` — `compute_factor_history(strategies=...)` 按需策略
+- `tools/analysis/analysis_result_signals.py` — `compute_factor_history(strategies=...)` 按需策略
 - `tools/kline_store.py` — `DataStore.list_codes()` 全市场代码
