@@ -1,11 +1,12 @@
 # 全量扫描 2026-08-28
 
-> 67 只 | DataStore | 18:48:25
+> 71 只 | DataStore | 19:20:36
 
 ## 底部信号（buy）
 
 | 代码 | 名称 | 信号 |
 |------|------|------|
+| 000001 | 上证指数 | LPS(daily) |
 | 002028 | 思源电气 | MA超跌≤-10%🟡(-14.2%)(weekly) |
 | 002886 | 沃特股份 | C→A |
 | 300223 | 北京君正 | 内部⬜→上方✅(daily) |
@@ -59,6 +60,8 @@
 
 | 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |
 |------|------|------|---------|-------|--------|----------|
+| 000001 | 上证指数 | ⭐C | Accumulati | +1.2% | ¥3851~3968内部 | ✅LPS(daily) |
+| 000300 | 沪深300 | ⭐C | Accumulati | -0.1% | ¥4523~4744内部 | 🔄wydaily:?→Accumulation |
 | 000792 | 盐湖股份 | ⭐C | Accumulati | +0.0% | ¥28~30内部 | 📊MA回升→正常(weekly) |
 | 000970 | 中科三环 | ⭐C | Accumulati | -6.0% | ¥13~15跌穿 | 🔄wyweekly:Markup→Accumulation |
 | 002028 | 思源电气 | ⭐C | Accumulati | -8.0% | ¥149~170内部 | 🔄场景A→C 📊MA超跌≤-10%🟡(-14.2%)(weekly) 🔄wydaily:Markup→Accumulation 🔄wyweekly:Markup→Accumulation |
@@ -76,6 +79,7 @@
 | 300748 | 金力永磁 | ⭐C | ? | +0.6% | ¥26~28内部 | 📊MA回升→正常(weekly) 🔄wydaily:Accumulation→? |
 | 300990 | 同飞股份 | ⭐C | Accumulati | +24.3% | ¥80~98内部 | 🔄中枢内部⬜→上方✅(weekly) 📊MA过热≥+20%🟠(+24.3%)(daily) 🔄wyweekly:Accumulation→Markup |
 | 301308 | 江波龙 | ⭐C | Accumulati | +1.3% | ¥354~442内部 | 📊MA超跌≤-10%🟡(-18.6%)(weekly) |
+| 399001 | 深证成指 | ⭐C | ? | -0.3% | ¥13569~14734内部 | 🔄wydaily:Accumulation→? |
 | 600176 | 中国巨石 | ⭐C | Accumulati | +3.4% | ¥34~40上方 | 🔄中枢内部⬜→上方✅(daily) 🔄wydaily:?→Accumulation |
 | 600362 | 江西铜业 | ⭐A | Markup | +7.0% | ¥44~49上方 | 🔄中枢内部⬜→上方✅(daily) |
 | 601138 | 工业富联 | ⭐C | ? | +0.3% | ¥55~64内部 | 🔄wydaily:Accumulation→? |
@@ -108,6 +112,7 @@
 | 300567 | 精测电子 | C | Accumulati | +3.4% | ¥175~232内部 | — |
 | 300580 | 贝斯特 | C | Accumulati | -4.1% | ¥20~23内部 | — |
 | 300661 | 圣邦股份 | E | Distributi | +4.7% | ¥102~128内部 | — |
+| 399006 | 创业板指 | C | Accumulati | -1.2% | ¥3360~3748内部 | — |
 | 600089 | 特变电工 | C | Accumulati | -6.2% | ¥19~22内部 | — |
 | 600584 | 长电科技 | C | Distributi | +1.3% | ¥68~95内部 | — |
 | 600765 | 中航重机 | C | Accumulati | +0.7% | ¥13~14内部 | — |
