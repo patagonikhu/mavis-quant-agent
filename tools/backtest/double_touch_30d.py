@@ -30,8 +30,8 @@ BOLL = 15  # 布林阈值
 def scan_one(code):
     """单只票: 1 次读 K 线 + 滑动窗口计算 (O(1)/step)"""
     try:
-        from tools.history_sync import read_kline
-        from tools.data_store import _to_ts_code
+        from tools.kline_history_backfill import read_kline
+        from tools.kline_store import _to_ts_code
         rows = read_kline(_to_ts_code(code), limit=300)
         if len(rows) < 130:
             return []
@@ -148,7 +148,7 @@ def main():
         print(f"  均fin: {statistics.mean(fin_vals):+.1f}%")
 
     # 全市场
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     all_codes = DataStore.list_codes()
     print(f"\n全市场 {len(all_codes)} 只...")
     results, elapsed = run(all_codes, "全市场", workers=32)

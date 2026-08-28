@@ -31,7 +31,7 @@ import yaml
 
 # === 项目级配置加载 (2026-07-27 集中管理, 无默认值) ===
 def _load_config() -> dict:
-    config_path = Path(__file__).parent.parent / "config" / "project.yaml"
+    config_path = Path(__file__).parent.parent.parent / "config" / "project.yaml"
     if not config_path.exists():
         raise FileNotFoundError(
             f"❌ 找不到 {config_path}\n"

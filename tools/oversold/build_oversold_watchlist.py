@@ -89,7 +89,7 @@ def fetch_all_a_stocks() -> List[Dict[str, Any]]:
 def fetch_weekly_one(ts_code: str) -> Tuple[List[Dict[str, Any]], str]:
     """从本地历史库读日线并聚合成周线（走 DataStore，0 网络）"""
     try:
-        from tools.data_store import DataStore
+        from tools.kline_store import DataStore
         from tools.fetch.data_fetcher import _synthesize_weekly
         code = _to_code(ts_code)
         kline = DataStore.get_kline(code, limit=WEEKLY_LIMIT * 5)
@@ -326,7 +326,7 @@ def main() -> int:
 
     # 先补缺失交易日（全市场增量，无缺口秒返回）
     print("🔄 同步K线历史...")
-    from tools.history_sync import sync_incremental
+    from tools.kline_history_backfill import sync_incremental
     sync_incremental()
 
     print(f"🔄 全 A 股 weekly 扫描 (跌幅 ≥ {args.drop_threshold*100:.0f}%, weekly {weekly_limit} 根)")

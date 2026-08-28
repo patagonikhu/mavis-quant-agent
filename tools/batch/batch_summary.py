@@ -1,7 +1,7 @@
 """
 batch_summary.py — 批量扫描全 watchlist, 输出有 代码+名称+场景+信号 的 batch md (2026-07-31 v2.0)
 
-**v2.0 关键变化**: 不调 AnalysisData.from_raw, 不调 compute_factor_history.
+**v2.0 关键变化**: 不调 RenderData.from_raw, 不调 compute_factor_history.
 直接读 refresh_all 阶段生成的 `docs/analyze-{code}-{name}.md` 报告,
 从 "## 📈 因子历史走势" section 提取最后一行 (12 列) → batch md 的 12 列.
 0 重算, 0 from_raw, 0 compute_factor_history.
@@ -359,7 +359,7 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
 
         # 10 天合集: 重算每日具体信号 (md 没存 10 天每日信号字符串)
         try:
-            from tools.data_store import DataStore
+            from tools.kline_store import DataStore
             ctx = DataStore.get_ctx(code)
             if not ctx.kline:
                 continue

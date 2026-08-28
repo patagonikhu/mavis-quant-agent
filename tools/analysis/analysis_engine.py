@@ -47,6 +47,7 @@ class RawContext:
     fflow_result:   dict = field(default_factory=dict)   # 主力资金流 (Tushare.money_flow)
     obv_result:     dict = field(default_factory=dict)   # 经典 OBV (Granville 1963, K线累计)
     resonance_result: dict = field(default_factory=dict)
+    _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
 
     def slice(self, as_of_date: str) -> "RawContext":
         """按日期截断 K 线，返回新 RawContext，原对象不变"""
@@ -118,7 +119,7 @@ class AnalysisResult:
     action: str = ""
 
     def to_dict(self, ctx: "RawContext | None" = None) -> dict:
-        """序列化为 dict (给 AnalysisData / render 用)
+        """序列化为 dict (给 RenderData / render 用)
 
         以 raw 为基础，顶层补充 code/name/scene 等元字段。
         """
@@ -173,13 +174,12 @@ class WyckoffStrategy:
 
         sub_events_by_period = {}
         wyckoff_3period = {}
+        _pre = getattr(ctx, 'cached_sub_events', {})
         for level, bars, label in [
             ("daily",  ctx.kline,  "daily"),
             ("weekly", ctx.weekly, "weekly"),
         ]:
             if bars and len(bars) >= 30:
-                # 2026-08-26 改: 传 as_of_idx 让 sub_events 只扫到 bars 末尾 (factor_history 用)
-                # bars 已被 ctx.slice(as_of_date) 切到该时间点, 末尾就是当前
                 as_of_idx = len(bars) - 1
                 out = WyckoffStageFactor().compute(
                     _make_df(bars), period_label=label,
@@ -187,6 +187,7 @@ class WyckoffStrategy:
                     market_cap_yi=ctx.market_cap_yi,
                     code=ctx.code,
                     as_of_idx=as_of_idx,
+                    precomputed_sub_events_raw=_pre.get(level),
                 )
                 sub_events_by_period[level] = out.get("sub_events", [])
                 wyckoff_3period[level] = out
@@ -216,12 +217,97 @@ class WyckoffStrategy:
         }
 
     def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """批量历史：逐节点切片，复用 analyze。Wyckoff 无状态，切片后全量扫。"""
+        """O(n) 批量威科夫：kline_arrays 预算一次，wyckoff_judge O(1) per date。"""
+        import bisect
+        from tools.factors.wyckoff.detectors.sub_event_scanner import scan_sub_events as _scan
+        from tools.factors.wyckoff.stage_factor import wyckoff_judge
+        from tools.factors.kline_arrays import precompute as _precompute
+
+        score_map = {"Accumulation": 0.6, "Markup": 1.0, "Distribution": -0.6, "?": 0.0}
+
+        def _pre_scan(bars, period_label, arrs=None):
+            if not bars or len(bars) < 30:
+                return []
+            return _scan(
+                [k["close"] for k in bars],           [k["high"] for k in bars],
+                [k["low"] for k in bars],              [k.get("volume", 0) for k in bars],
+                None,
+                o=[k.get("open", k["close"]) for k in bars],
+                pct_chg=[k.get("pct_chg", 0) for k in bars],
+                dates=[k["trade_date"].replace("-", "")[:8] for k in bars],
+                period_label=period_label, code=ctx.code,
+                precomputed_arrs=arrs,
+            )
+
+        # ── 一次性预算：kline_arrays 先算，再 pre_scan 传入 ─────────────────
+        def _arrs_for(bars):
+            if not bars or len(bars) < 30:
+                return None
+            closes = [k["close"] for k in bars]
+            highs  = [k["high"]  for k in bars]
+            lows   = [k["low"]   for k in bars]
+            vols   = [k.get("volume", 0) for k in bars]
+            return _precompute(closes, highs, lows, vols, window=min(250, len(bars)))
+
+        arrs_daily  = _arrs_for(ctx.kline)
+        arrs_weekly = _arrs_for(ctx.weekly) if ctx.weekly else None
+
+        all_events = {
+            "daily":  _pre_scan(ctx.kline,  "daily",  arrs_daily),
+            "weekly": _pre_scan(ctx.weekly, "weekly", arrs_weekly) if ctx.weekly else [],
+        }
+
+        daily_dates  = [k["trade_date"].replace("-", "")[:8] for k in ctx.kline]
+        weekly_dates = [k["trade_date"].replace("-", "")[:8] for k in (ctx.weekly or [])]
+        daily_idx    = {d: i for i, d in enumerate(daily_dates)}
+
+        # ── 逐 date O(1) 判定 ─────────────────────────────────────────────
         results = {}
         for date in dates:
             date_clean = date.replace("-", "")[:8]
-            sliced = ctx.slice(date_clean)
-            results[date_clean] = self.analyze(sliced)
+            d_idx = daily_idx.get(date_clean, -1)
+            w_idx = bisect.bisect_right(weekly_dates, date_clean) - 1
+
+            wyckoff_3period: dict = {}
+            sub_events_by_period: dict = {}
+
+            for level, arrs, abs_idx, label in (
+                ("daily",  arrs_daily,  d_idx, "daily"),
+                ("weekly", arrs_weekly, w_idx, "weekly"),
+            ):
+                if arrs is None or abs_idx < 1:
+                    continue
+                evs_raw = [e for e in all_events[level] if e["idx"] <= abs_idx]
+                sub_set = {e["name"] for e in evs_raw}
+                window  = arrs["window"]
+                out = wyckoff_judge(abs_idx, arrs, sub_set, window=window,
+                                    period_label=label)
+                if out is None:
+                    continue
+                # attach full event list (render 层需要 date/idx 字段)
+                out["sub_events"] = evs_raw
+                out["sub_event_count"] = len(evs_raw)
+                sub_events_by_period[level] = evs_raw
+                wyckoff_3period[level] = out
+
+            daily_out = wyckoff_3period.get("daily", {})
+            stage = daily_out.get("stage", "?")
+            score = score_map.get(stage, 0.0)
+
+            signals = []
+            for level, evs in sub_events_by_period.items():
+                if evs:
+                    last = evs[-1]
+                    signals.append(f"威科夫 {level} 最近: {last['name']} {last.get('date', '?')}")
+
+            results[date_clean] = {
+                "score":   score,
+                "signals": signals,
+                "summary": f"威科夫 {stage}",
+                **daily_out,
+                "sub_events_by_period": sub_events_by_period,
+                "3period": wyckoff_3period,
+            }
         return results
 
 
@@ -270,6 +356,85 @@ class SmcStrategy:
             "summary": f"SMC OB={total_obs} 扫流={sweeps}",
             **smc,
         }
+
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """O(n): OB/FVG/Sweep 预扫一次，per date O(小常数) 过滤。"""
+        from tools.factors.smc.order_blocks import find_order_blocks
+        from tools.factors.smc.fvg import find_fvg
+        from tools.factors.smc.swings_sweeps import find_liquidity_sweeps
+        from tools.factors.smc.atr import calc_atr
+
+        dates_clean = set(d.replace("-", "")[:8] for d in dates)
+        kline = ctx.kline or []
+        if len(kline) < 20:
+            return {d.replace("-","")[:8]: {"score":0,"signals":[],"summary":"SMC 数据不足"} for d in dates}
+
+        opens  = [k.get("open", k["close"]) for k in kline]
+        highs  = [k["high"]  for k in kline]
+        lows   = [k["low"]   for k in kline]
+        closes = [k["close"] for k in kline]
+        dates_list = [k.get("trade_date","").replace("-","")[:8] for k in kline]
+        vols   = [k.get("volume", 0) for k in kline]
+
+        # displacement_atr_mult 自适应（与 smc_analysis 逻辑一致）
+        atr = calc_atr(highs, lows, closes) or 0
+        n_pre = min(50, len(closes) - 1)
+        if atr > 0 and n_pre >= 5:
+            bar_amp = sorted(abs(closes[i] - opens[i]) / atr for i in range(-n_pre, 0) if atr > 0)
+            idx70 = int(len(bar_amp) * 0.7)
+            displacement_atr_mult = max(0.8, min(2.5, bar_amp[idx70]))
+        else:
+            displacement_atr_mult = 1.0
+
+        # 全量扫一次
+        obs_all  = find_order_blocks(opens, highs, lows, closes, dates_list, 120,
+                                     displacement_atr_mult=displacement_atr_mult)
+        fvgs_all = find_fvg(opens, highs, lows, closes, dates_list, 120)
+        swps_all = find_liquidity_sweeps(opens, highs, lows, closes, dates_list, lookback=30)
+
+        date_to_idx = {d: i for i, d in enumerate(dates_list)}
+        max_ob_age = 80
+
+        results = {}
+        for date in dates:
+            date_clean = date.replace("-","")[:8]
+            i = date_to_idx.get(date_clean, -1)
+            if i < 0:
+                results[date_clean] = {"score": 0, "signals": [], "summary": "—"}
+                continue
+
+            cp = closes[i]
+
+            def _age(ob): return i - ob.get("formed_at_index", i)
+            def _sweep_age(s): return i - s.get("sweep_candle_index", i)
+
+            bull_obs = [ob for ob in obs_all["bull"]
+                        if ob.get("formed_at_index", i) <= i and _age(ob) <= max_ob_age]
+            bear_obs = [ob for ob in obs_all["bear"]
+                        if ob.get("formed_at_index", i) <= i and _age(ob) <= max_ob_age]
+            fvgs = [f for f in fvgs_all if f.get("formed_at_index", i) <= i]
+            sweeps = [s for s in swps_all if s.get("sweep_candle_index", i) <= i]
+
+            nearest_bull = max((ob for ob in bull_obs if ob["bottom"] < cp), key=lambda ob: ob["bottom"], default=None)
+            nearest_bear = min((ob for ob in bear_obs if ob["top"] > cp), key=lambda ob: ob["top"], default=None)
+
+            total_obs  = len(bull_obs) + len(bear_obs)
+            total_fvgs = len(fvgs)
+            n_sweeps   = len([s for s in sweeps if _sweep_age(s) <= 30])
+
+            score   = min(total_obs * 0.1, 0.5) if total_obs > 0 else 0.0
+            signals = []
+            if total_obs > 3:  signals.append(f"SMC OB {total_obs}个")
+            if n_sweeps > 0:   signals.append(f"SMC 扫流 ×{n_sweeps}")
+
+            results[date_clean] = {
+                "score": score, "signals": signals,
+                "summary": f"SMC OB={total_obs} 扫流={n_sweeps}",
+                "nearest_bull_ob": nearest_bull, "nearest_bear_ob": nearest_bear,
+                "total_obs": total_obs, "total_fvgs": total_fvgs,
+                "recent_sweeps": sweeps[-3:],
+            }
+        return results
 
 
 class FflowStrategy:
@@ -324,6 +489,11 @@ class FflowStrategy:
             **ff,
         }
 
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """fflow 不依赖历史切片，直接对全量 ctx 跑一次，所有 date 共享同一结果。"""
+        result = self.analyze(ctx)
+        return {d: result for d in dates}
+
 
 class ObvStrategy:
     """OBV (经典 Granville 1963) → 分数, 从 ctx.kline 直接计算
@@ -364,6 +534,90 @@ class ObvStrategy:
             "summary": summary,
             **obv,
         }
+
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """O(n): OBV 数组预建一次，per date O(1) 查信号。"""
+        from tools.factors.volume.price_fflow import _scan_obv_divergence_60d
+        from tools.factors.kline_arrays import sliding_ma
+
+        kline = ctx.kline or []
+        if len(kline) < 2:
+            return {d.replace("-","")[:8]: {"score":0,"signals":[],"summary":"OBV 数据不足"} for d in dates}
+
+        closes = [k["close"]          for k in kline]
+        vols   = [k.get("volume", 0)  for k in kline]
+        dates_list = [k.get("trade_date","").replace("-","")[:8] for k in kline]
+        date_to_idx = {d: i for i, d in enumerate(dates_list)}
+
+        # OBV 数组：一次遍历 O(n)
+        obv = [0.0]
+        for i in range(1, len(closes)):
+            if closes[i] > closes[i-1]:   obv.append(obv[-1] + vols[i])
+            elif closes[i] < closes[i-1]: obv.append(obv[-1] - vols[i])
+            else:                          obv.append(obv[-1])
+
+        obv_ma20_arr = sliding_ma(obv, 20)
+        ma5_arr   = sliding_ma(closes, 5)
+        ma20_arr  = sliding_ma(closes, 20)
+        ma60_arr  = sliding_ma(closes, 60)
+        ma120_arr = sliding_ma(closes, 120)
+
+        dates_clean = [d.replace("-","")[:8] for d in dates]
+        results = {}
+        for date_clean in dates_clean:
+            i = date_to_idx.get(date_clean, -1)
+            if i < 1:
+                results[date_clean] = {"score": 0, "signals": [], "summary": "—", "verdict": "—",
+                                       "obv_div_bot_60d": 0, "obv_div_top_60d": 0, "source": "OBV 派生 (K线)"}
+                continue
+
+            p       = closes[i]
+            m5      = ma5_arr[i]
+            m20     = ma20_arr[i]
+            m60     = ma60_arr[i]
+            m120    = ma120_arr[i]
+            obv_now = obv[i]
+            obv_ma20 = obv_ma20_arr[i]
+            obv_trend = (obv_now - obv_ma20) / max(abs(obv_ma20), 1) if obv_ma20 else 0
+
+            pct5  = (closes[i] / closes[i-5]  - 1) * 100 if i >= 5  else 0
+            pct20 = (closes[i] / closes[i-20] - 1) * 100 if i >= 20 else 0
+            vr    = vols[i] / (sum(vols[i-19:i+1]) / 20) if i >= 20 else 1.0
+            d120  = (p / m120 - 1) * 100 if m120 else 0
+
+            signals = []; score = 0
+            if d120 > 5:    signals.append(f"MA120偏{d120:.0f}%高位"); score -= 1
+            elif d120 < -5: signals.append(f"MA120偏{d120:.0f}%低位蓄势"); score += 1
+            if pct20 > 10 and obv_trend < -0.05:  signals.append("OBV背离:价涨OBV降→出货"); score -= 2
+            elif pct20 < -5 and obv_trend > 0.05: signals.append("OBV底背离:价跌OBV升→吸筹"); score += 2
+            if vr > 1.5 and pct5 > 2:   signals.append(f"放量上涨vol={vr:.2f}"); score += 1
+            elif vr > 1.5 and pct5 < -2: signals.append(f"放量下跌vol={vr:.2f}"); score -= 1
+            elif vr < 0.5 and pct5 > 3:  signals.append(f"缩量拉高vol={vr:.2f}出货嫌疑"); score -= 1
+            elif vr < 0.7 and pct5 < -2: signals.append("缩量回调卖压轻"); score += 1
+            if m60 and m120 and m60 > m120 and m5 and p < m5:
+                signals.append("拉高出货型"); score -= 1
+            elif m5 and m20 and m60 and m120 and p > m5 > m20 > m60 > m120:
+                signals.append("多头排列"); score += 1
+
+            # 段背离 O(60) — 有界常数
+            div_bot, div_top = _scan_obv_divergence_60d(closes[:i+1], vols[:i+1])
+            if div_bot >= 2:   signals.append(f"OBV 强底背离 ({div_bot}/4 窗口)"); score += 2
+            elif div_bot == 1: signals.append("OBV 单次底背离"); score += 1
+            if div_top >= 2:   signals.append(f"OBV 强顶背离 ({div_top}/4 窗口)"); score -= 2
+            elif div_top == 1: signals.append("OBV 单次顶背离"); score -= 1
+
+            if score >= 3:    verdict = "🟢主力进货"
+            elif score >= 1:  verdict = "🟡偏进货"
+            elif score == 0:  verdict = "⬜中性"
+            elif score >= -2: verdict = "🟠偏出货"
+            else:             verdict = "🔴主力出货"
+
+            results[date_clean] = {
+                "score": score, "signals": signals, "summary": verdict, "verdict": verdict,
+                "obv_div_bot_60d": div_bot, "obv_div_top_60d": div_top,
+                "source": "OBV 派生 (K线)",
+            }
+        return results
 
 
 class ChanStrategy:
@@ -551,6 +805,10 @@ class PegStrategy:
             **peg,
         }
 
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """PEG 不依赖历史切片，对全量 ctx 跑一次，所有 date 共享同一结果。"""
+        result = self.analyze(ctx)
+        return {d: result for d in dates}
 
 # ============================================================
 # 3. Phase2 派生函数 (weight=0, 纯数据提取)
@@ -762,7 +1020,7 @@ class AnalysisEngine:
     def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
         """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
 
-        Phase 2 (DCF/exit_signals/...) 不在此处运行 — 由 AnalysisData.from_result() 在
+        Phase 2 (DCF/exit_signals/...) 不在此处运行 — 由 RenderData.from_result() 在
         render 路径按需执行一次。
 
         Args:
@@ -773,39 +1031,29 @@ class AnalysisEngine:
         """
         dates_clean = [d.replace("-", "")[:8] for d in dates]
 
-        # 每个 strategy 各自批量计算
-        # 有 analyze_history 的用批量版，否则降级逐节点切片
+        # 每个 strategy 各自批量计算（所有 strategy 现在都有 analyze_history）
         strategy_results: dict[str, dict[str, dict]] = {}
         for inst in self._phase1:
-            if hasattr(inst, 'analyze_history'):
-                strategy_results[inst.name] = inst.analyze_history(ctx, dates_clean)
-            else:
-                per_date = {}
-                for date in dates_clean:
-                    sliced = ctx.slice(date)
-                    try:
-                        per_date[date] = inst.analyze(sliced)
-                    except Exception as e:
-                        per_date[date] = {"score": 0.0, "signals": [], "summary": str(e)}
-                strategy_results[inst.name] = per_date
+            strategy_results[inst.name] = inst.analyze_history(ctx, dates_clean)
+
+        # 预建 date → close 索引，避免合并阶段 O(n) 查找
+        date_to_close = {k["trade_date"].replace("-", "")[:8]: k["close"] for k in ctx.kline}
 
         # 合并每个节点的所有 strategy 结果 → AnalysisResult
         results = {}
         for date in dates_clean:
-            sliced = ctx.slice(date)
             raw: Dict[str, Any] = {}
             for inst in self._phase1:
                 raw[inst.name] = (strategy_results.get(inst.name) or {}).get(date, {})
-            # buy_sell_points: chan 结果轻量 reshape，factor_history._extract_row 需要
             chan_bsp = (raw.get('chan') or {}).get('buy_sell_points') or {}
-            sliced._bsp_for_data = chan_bsp
-            raw["buy_sell_points"] = _derive_buy_sell_points(sliced, raw)
-            scene, scene_name, signals_active = self._decide_scene(raw, sliced)
+            ctx._bsp_for_data = chan_bsp
+            raw["buy_sell_points"] = _derive_buy_sell_points(ctx, raw)
+            scene, scene_name, signals_active = self._decide_scene(raw, ctx)
             resonance_count = self._count_resonance(raw, scene)
             action = self._decide_action(scene, 0.0, resonance_count, 0, len(self._phase1))
             results[date] = AnalysisResult(
                 code=ctx.code, name=ctx.name,
-                current_price=sliced.current_price,
+                current_price=date_to_close.get(date, ctx.current_price),
                 raw=raw, scene=scene, scene_name=scene_name,
                 resonance_count=resonance_count,
                 signals_active=signals_active, action=action,
@@ -910,7 +1158,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     code = sys.argv[1]
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     ctx = DataStore.get_ctx(code)
     last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
     result = AnalysisEngine().analyze_history(ctx, [last]).get(last)

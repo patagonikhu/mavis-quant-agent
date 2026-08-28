@@ -38,17 +38,17 @@ allowed-tools:
 ## Step 1: 检查本地数据
 
 ```bash
-bash tools/with_venv.sh python3 -c "from tools.data_store import DataStore; codes = DataStore.list_codes(); print(f'本地 parquet: {len(codes)} 只')"
+bash tools/with_venv.sh python3 -c "from tools.kline_store import DataStore; codes = DataStore.list_codes(); print(f'本地 parquet: {len(codes)} 只')"
 ```
 
-如果 < 400, 提示先跑 `bash tools/with_venv.sh python -m tools.history_sync` 同步全市场数据.
+如果 < 400, 提示先跑 `bash tools/with_venv.sh python -m tools.kline_history_backfill` 同步全市场数据.
 
 ## Step 2: 跑筛选脚本 (并发 8 worker, ~10 秒)
 
 ```bash
-bash tools/with_venv.sh python3 tools/find_near_low.py [参数]
+bash tools/with_venv.sh python3 tools/batch/find_near_low.py [参数]
 # 加 --write-md 自动写 docs/oversold-watchlist.md (单文件覆盖, 含时间戳)
-bash tools/with_venv.sh python3 tools/find_near_low.py --write-md
+bash tools/with_venv.sh python3 tools/batch/find_near_low.py --write-md
 ```
 
 **输出示例**:
@@ -97,14 +97,14 @@ done
 bash tools/with_venv.sh python -m tools.sync_stock 002531
 bash tools/with_venv.sh python3 -c "
 import sys; sys.path.insert(0, '.')
-from tools.data_store import DataStore
+from tools.kline_store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
-from tools.analysis.analysis_data import AnalysisData
+from tools.analysis.render_data import RenderData
 from tools.analysis.factor_history import compute_factor_history
 from tools.render.report_renderer import render_report
 from pathlib import Path
 ctx = DataStore.get_ctx('002531')
-data = AnalysisData.from_result(ctx, AnalysisEngine().analyze(ctx))
+data = RenderData.from_result(ctx, AnalysisEngine().analyze(ctx))
 data.factor_history_rows = compute_factor_history(ctx, step=1, lookback=120)
 md = render_report(data)
 p = Path('docs') / f'analyze-002531-{ctx.name or \"002531\"}.md'
@@ -162,9 +162,9 @@ def count_bounces(closes, threshold=0.30, window=3):
     return n
 ```
 
-**5y weekly 数据**: DataStore parquet (由 `tools/history_sync.py` 维护, 全市场)
+**5y weekly 数据**: DataStore parquet (由 `tools/kline_history_backfill.py` 维护, 全市场)
 
 ## 相关资源
 
-- `tools/find_near_low.py` - 筛选脚本 (8 worker 并发, ~10 秒, 走 DataStore)
+- `tools/batch/find_near_low.py` - 筛选脚本 (8 worker 并发, ~10 秒, 走 DataStore)
 - `tools/with_venv.sh` - 虚拟环境包装

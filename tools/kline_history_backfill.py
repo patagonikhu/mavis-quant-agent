@@ -1,5 +1,5 @@
 """
-tools/history_sync.py — 本地 K 线历史库增量同步
+tools/kline_history_backfill.py — 本地 K 线历史库增量同步
 
 存储结构:
   data/history/daily/
@@ -10,13 +10,13 @@ tools/history_sync.py — 本地 K 线历史库增量同步
 
 用法:
   # 首次建档 (拉5年历史, 约60次调用)
-  tools/with_venv.sh python -m tools.history_sync --init
+  tools/with_venv.sh python -m tools.kline_history_backfill --init
 
   # 日常增量 (只补缺失交易日, 通常1次调用)
-  tools/with_venv.sh python -m tools.history_sync
+  tools/with_venv.sh python -m tools.kline_history_backfill
 
   # 指定日期
-  tools/with_venv.sh python -m tools.history_sync --date 20260822
+  tools/with_venv.sh python -m tools.kline_history_backfill --date 20260822
 """
 
 import argparse

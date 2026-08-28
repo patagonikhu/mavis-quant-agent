@@ -77,7 +77,8 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
                     market_cap_yi=0.0, period_label="daily",
                     as_of_idx: int | None = None,
                     dates: list | None = None,
-                    code: str | None = None) -> list:
+                    code: str | None = None,
+                    precomputed_arrs=None) -> list:
     """扫整段 K 线, 返回触发的 sub_events (带时间戳 list)
 
     9 sub_event (跟 WyckoffTradingAgent L4 1:1):
@@ -106,6 +107,9 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
     """
     if o is None:
         o = [c[i-1] if i > 0 else c[0] for i in range(len(c))]
+
+    # 从预算数组提取 ma200（distribution_start / upthrust 共用）
+    _pre_ma200 = precomputed_arrs.get('ma200') if precomputed_arrs else None
 
     # ===== 周期自适应参数 (2026-07-29 v5.7 加, 从 config 读) =====
     sos_cfg = _det_cfg("sos", code)
@@ -213,13 +217,15 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
         if detect_distribution_start(c, h, l, v, o, i, ma_long_w=ma_long_w,
                                      high_thr=dist_min_bias,
                                      confirm_days=ds_confirm_days,
-                                     vol_dry_ratio=ds_vol_dry_ratio):
+                                     vol_dry_ratio=ds_vol_dry_ratio,
+                                     precomputed_ma=_pre_ma200):
             events.append({"name": "DistributionStart", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_upthrust(c, h, l, v, o, i, ma_long_w=ma_long_w, min_bias=dist_min_bias,
                            lookback=upthrust_lookback,
                            breakout_pct=utad_breakout_pct,
                            close_back_pct=utad_close_back_pct,
                            upper_shadow_thr=utad_upper_shadow_thr,
-                           vol_ratio_thr=utad_vol_ratio_thr):
+                           vol_ratio_thr=utad_vol_ratio_thr,
+                           precomputed_ma=_pre_ma200):
             events.append({"name": "UTAD", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
     return events

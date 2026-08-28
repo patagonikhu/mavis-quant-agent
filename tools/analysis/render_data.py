@@ -1,5 +1,5 @@
 """
-analysis_data.py — 分析数据契约 (v1.0, 2026-07-21)
+render_data.py — 分析数据契约 (v1.0, 2026-07-21)
 
 架构铁律 (三层分离):
   AnalysisEngine 层 = 纯计算 factor, 零网络请求
@@ -14,13 +14,13 @@ analysis_data.py — 分析数据契约 (v1.0, 2026-07-21)
   5. 零依赖: 用标准库 dataclass, 不需要 pydantic
 
 使用方式:
-  from tools.data_store import DataStore
+  from tools.kline_store import DataStore
   from tools.analysis.analysis_engine import AnalysisEngine
-  from tools.analysis.analysis_data import AnalysisData
+  from tools.analysis.render_data import RenderData
 
   ctx    = DataStore.get_ctx("002371")          # L1: 读数据
   result = AnalysisEngine().analyze(ctx)        # L2: 算分析
-  data   = AnalysisData.from_result(ctx, result) # L3: 渲染容器
+  data   = RenderData.from_result(ctx, result) # L3: 渲染容器
 """
 from __future__ import annotations
 import sys
@@ -279,7 +279,7 @@ class MaRow:
 # ============================================================
 
 @dataclass
-class AnalysisData:
+class RenderData:
     """单只标的的完整分析数据契约"""
     code: str = ""
     name: str = ""
@@ -456,8 +456,8 @@ class AnalysisData:
     # ============================================================
 
     @classmethod
-    def from_result(cls, ctx: "RawContext", result: "AnalysisResult") -> "AnalysisData":
-        """从 RawContext (L1) + AnalysisResult (L2) 构造 AnalysisData (L3)。
+    def from_result(cls, ctx: "RawContext", result: "AnalysisResult") -> "RenderData":
+        """从 RawContext (L1) + AnalysisResult (L2) 构造 RenderData (L3)。
 
         这是三层分离后的正确入口，不再自己跑 analysis。
         """

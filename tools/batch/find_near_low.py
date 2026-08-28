@@ -101,6 +101,7 @@ def main():
     ap.add_argument("--drop-max", type=float, default=80.0, help="跌幅阈值 %% 上限 (默认 80, 排除 80%+ 异常)")
     ap.add_argument("--lookback-years", type=int, default=5, help="max_dd (5y 内最深回撤) 计算窗口 (默认 5, 可选 3)")
     ap.add_argument("--min-bounces", type=int, default=0, help="最少反弹次数 (默认 0)")
+    ap.add_argument("--write-md", action="store_true", help="写 docs/oversold-watchlist.md")
     args = ap.parse_args()
 
     if not WATCHLIST.exists():
@@ -115,8 +116,8 @@ def main():
     drop_max_th = args.drop_max / 100.0
     lookback_weeks = args.lookback_years * 52  # 5y=260 周
 
-    from tools.data_store import DataStore, _to_ts_code
-    from tools.history_sync import sync_incremental
+    from tools.kline_store import DataStore, _to_ts_code
+    from tools.kline_history_backfill import sync_incremental
     from tools.fetch.data_fetcher import _synthesize_weekly
     sync_incremental()
     all_codes = DataStore.list_codes()
@@ -279,6 +280,47 @@ def main():
             f"{r['current_drop'] * 100:>+7.1f}% "
             f"{r['daily_gap'] * 100:>+5.2f}% {r['n_b']:>4d}次"
         )
+
+    # 写 md 报告
+    if args.write_md:
+        import time
+        from pathlib import Path
+
+        ts = time.strftime("%Y-%m-%d %H:%M")
+        rows_md = ""
+        for r in candidates:
+            rows_md += (
+                f"| {r['code']} | {r['name']} | {r['sector']} | "
+                f"{r['cur']:.2f} | {r['weekly_cur']:.2f} | {r['lo_5y']:.2f} | "
+                f"{r['max_dd_5y']*100:+.1f}% | {r['current_drop']*100:+.1f}% | "
+                f"{r['daily_gap']*100:+.2f}% | {r['n_b']}次 |\n"
+            )
+
+        md = f"""# 超跌观察清单 · {ts}
+
+> **筛选条件**: 5y 最大回撤 {args.drop:.0f}–{args.drop_max:.0f}% + 距 5y 低 < {args.gap:.0f}% + 反弹 ≥ {args.min_bounces} 次  
+> **数据来源**: 本地 parquet ({len(candidates)} 只通过精筛 / 全市场扫描)  
+> **现价日期**: daily 末根 {candidates[0]["cur_date"]} (5y low/high 来自 weekly)
+
+## 反弹策略说明
+
+谷底跌 70-80% 反弹期望最好（中位 +45%），90%+ 反弹差（中位 +13%）。  
+本清单内 80% 业绩下行，属于 **纯技术反弹策略，非价值投资**：
+
+- 涨 10-20% → 跑
+- 跌破谷底 10% → 砍
+- 持有 1-3 个月
+- 5-10 只分散，单只轻仓
+
+## 清单 ({len(candidates)} 只)
+
+| 代码 | 名称 | 行业 | 现价 | 上周 | 5y低 | 5y最大回撤 | 距5y高 | 今gap | 反弹 |
+|---|---|---|---|---|---|---|---|---|---|
+{rows_md}
+"""
+        out_path = Path("docs/oversold-watchlist.md")
+        out_path.write_text(md, encoding="utf-8")
+        print(f"\n📝 报告已写: {out_path}")
 
 
 if __name__ == "__main__":

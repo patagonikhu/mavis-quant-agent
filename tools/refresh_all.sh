@@ -113,7 +113,7 @@ mkdir -p docs/portfolio docs/watchlist
 # 阶段 0: 预同步 (CLAUDE.md 铁律: sync_incremental 单线程先跑, 4 worker 再各取所需)
 echo ""
 echo "🔄 预同步: sync_incremental (单线程, 全市场增量补齐)..."
-bash tools/with_venv.sh python3 -c "from tools.history_sync import sync_incremental; sync_incremental()" 2>&1 | tail -3
+bash tools/with_venv.sh python3 -c "from tools.kline_history_backfill import sync_incremental; sync_incremental()" 2>&1 | tail -3
 echo ""
 
 # 阶段 1: dump + render (4 并发)
@@ -129,7 +129,7 @@ process_one() {
 
     # analyze + render 合一，阶段 0 已做 sync_incremental，这里 0 网络
     if bash tools/with_venv.sh python3 -c "
-from tools.data_store import DataStore
+from tools.kline_store import DataStore
 from tools.analysis.analysis_data import AnalysisData
 from tools.analysis.factor_history import compute_factor_history
 from tools.render.report_renderer import render_report

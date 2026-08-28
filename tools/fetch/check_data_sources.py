@@ -20,11 +20,11 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent  # tools/fetch/ → 项目根
 # 合法的 fetch 入口 (白名单)
 WHITELIST = {
     "tools/fetch/tushare_fetcher.py",  # 单一权威 (Tushare 直连入口)
-    "tools/data_store.py",  # parquet 缓存主路径
-    "tools/history_sync.py",  # parquet 读写 (sync_incremental)
+    "tools/kline_store.py",  # parquet 缓存主路径
+    "tools/kline_history_backfill.py",  # parquet 读写 (sync_incremental)
     "tools/fetch/data_fetcher.py",  # 旧入口, 已 deprecate, 仅保留兼容
     "tools/fetch/check_data_sources.py",  # 本检查脚本
-    "tools/ensure_fresh.py",  # 缓存检查
+    "tools/sync_watchlist_fresh.py",  # 缓存检查
 }
 
 # 违规模式 (regex)

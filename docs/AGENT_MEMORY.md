@@ -8,8 +8,8 @@
 
 - **项目根**: `/Users/I514959/workspace/mavis-quant-agent/`
 - **数据**: `data/history/daily/{year}.parquet` (duckdb 读)
-- **统一入口**: `tools/data_store.py` `DataStore` (classmethod)
-- **同步**: `tools/history_sync.py` `sync_incremental()` (幂等)
+- **统一入口**: `tools/kline_store.py` `DataStore` (classmethod)
+- **同步**: `tools/kline_history_backfill.py` `sync_incremental()` (幂等)
 - **单只**: `tools/sync_stock.py`
 - **分析引擎**: `tools/analysis/analysis_engine.py` 8 strategies
 - **4 个活 skill**: `.claude/skills/{t-am-divergence, t-analyze, t-near-low, t-ranking}/`

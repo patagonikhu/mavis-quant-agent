@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/ensure_fresh.py — 智能判断并刷新 JSON 数据 (2026-07-22)
+tools/sync_watchlist_fresh.py — 智能判断并刷新 JSON 数据 (2026-07-22)
 
 设计目标:
   - skill 跑前调它, 自动决定哪些票需要 dump
@@ -9,12 +9,12 @@ tools/ensure_fresh.py — 智能判断并刷新 JSON 数据 (2026-07-22)
   - 静默执行, 不需要用户介入
 
 用法:
-  python3 tools/ensure_fresh.py 300274                    # 单只
-  python3 tools/ensure_fresh.py 300274 000725 002273      # 多只
-  python3 tools/ensure_fresh.py --sector 半导体设备         # 板块成分股
-  python3 tools/ensure_fresh.py --watchlist                # 70 只
-  python3 tools/ensure_fresh.py --max-age 1800 300274     # 自定义过期阈值 (秒)
-  python3 tools/ensure_fresh.py --force 300274            # 强制刷, 不看 age
+  python3 tools/sync_watchlist_fresh.py 300274                    # 单只
+  python3 tools/sync_watchlist_fresh.py 300274 000725 002273      # 多只
+  python3 tools/sync_watchlist_fresh.py --sector 半导体设备         # 板块成分股
+  python3 tools/sync_watchlist_fresh.py --watchlist                # 70 只
+  python3 tools/sync_watchlist_fresh.py --max-age 1800 300274     # 自定义过期阈值 (秒)
+  python3 tools/sync_watchlist_fresh.py --force 300274            # 强制刷, 不看 age
 """
 import sys
 import os
@@ -44,7 +44,7 @@ def dump_one(code: str, force: bool = False, max_age: int = 3600) -> bool:
     """
     if not force:
         try:
-            from tools.data_store import DataStore
+            from tools.kline_store import DataStore
             from datetime import datetime
             ctx = DataStore.get_ctx(code)
             if ctx.kline:

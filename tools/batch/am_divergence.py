@@ -36,7 +36,7 @@ def scan_one(code: str, window: int, require_macd: bool,
              boll_threshold: float, ma120_min: float, ma120_max: float) -> dict | None:
     """扫描单只股票，找布林%触底 + 确认信号。返回命中信息或 None。"""
     try:
-        from tools.data_store import DataStore
+        from tools.kline_store import DataStore
         from tools.analysis.analysis_engine import ChanStrategy
         from tools.analysis.factor_history import compute_factor_history
 
@@ -146,10 +146,10 @@ def main():
     require_macd = not args.no_macd
 
     print("🔄 同步K线历史...")
-    from tools.history_sync import sync_incremental
+    from tools.kline_history_backfill import sync_incremental
     sync_incremental()
 
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     codes = DataStore.list_codes()
     if args.limit:
         codes = codes[:args.limit]
@@ -159,8 +159,8 @@ def main():
         before = len(codes)
         def _check_amount(code):
             try:
-                from tools.history_sync import read_kline
-                from tools.data_store import _to_ts_code
+                from tools.kline_history_backfill import read_kline
+                from tools.kline_store import _to_ts_code
                 rows = read_kline(_to_ts_code(code), limit=20)
                 if len(rows) < 10:
                     return True
@@ -180,8 +180,8 @@ def main():
         before = len(codes)
         def _check_atr(code):
             try:
-                from tools.history_sync import read_kline
-                from tools.data_store import _to_ts_code
+                from tools.kline_history_backfill import read_kline
+                from tools.kline_store import _to_ts_code
                 rows = read_kline(_to_ts_code(code), limit=20)
                 if len(rows) < 15:
                     return True

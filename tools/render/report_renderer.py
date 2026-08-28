@@ -3,7 +3,7 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
 
 架构铁律 (三层分离):
   Render 层 = 纯渲染, 零网络请求
-  ✅ 只读 AnalysisData 对象字段
+  ✅ 只读 RenderData 对象字段
   ❌ 禁止 import requests / subprocess curl / fetch_all / 任何网络调用
 
 设计目标:
@@ -15,13 +15,13 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
 使用方式 (必须先走 dump 层):
   # Step 1: dump 层拉数据 (唯一网络入口)
   # Step 2: 读数据 + 算 factor
-  from tools.data_store import DataStore
+  from tools.kline_store import DataStore
   from tools.analysis.analysis_engine import AnalysisEngine
-  from tools.analysis.analysis_data import AnalysisData
+  from tools.analysis.render_data import RenderData
 
   ctx    = DataStore.get_ctx("002371")
   result = AnalysisEngine().analyze(ctx)
-  data   = AnalysisData.from_result(ctx, result)
+  data   = RenderData.from_result(ctx, result)
 
   # Step 3: render 层纯渲染
   from tools.render.report_renderer import render_report
@@ -35,7 +35,7 @@ import sys
 from datetime import datetime
 from typing import Optional
 
-from tools.analysis.analysis_data import AnalysisData
+from tools.analysis.render_data import RenderData
 from tools.analysis.factor_history import obv_label
 
 
@@ -43,7 +43,7 @@ from tools.analysis.factor_history import obv_label
 # Section 渲染器
 # ============================================================
 
-def _section_eps(data: AnalysisData) -> str:
+def _section_eps(data: RenderData) -> str:
     if not data.eps_table:
         return "> **数据状态:** ❌ EPS 预测未拉取\n> **降级路径:** PEG/DCF 无法计算，标 N/A\n"
     rows = ["| 年份 | EPS | 净利(亿) | 营收(亿) | ROE |",
@@ -53,7 +53,7 @@ def _section_eps(data: AnalysisData) -> str:
     return "\n".join(rows)
 
 
-def _section_ma(data: AnalysisData) -> str:
+def _section_ma(data: RenderData) -> str:
     if not data.ma_table:
         return "> **数据状态:** ❌ MA 未计算 (K线不足)\n"
     rows = ["| 均线 | 数值 | 偏离 |", "|---|---|---|"]
@@ -77,7 +77,7 @@ def _section_ma(data: AnalysisData) -> str:
     return "\n".join(rows) + f"\n\n**MA 排列:** {arrange}"
 
 
-def _section_technical(data: AnalysisData) -> str:
+def _section_technical(data: RenderData) -> str:
     """8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比) — Wilder 标准公式"""
     if not data.technical or "error" in data.technical:
         return "> **数据状态:** ❌ 技术指标未计算 (K线不足或 compute_indicators 失败)\n"
@@ -122,7 +122,7 @@ def _section_technical(data: AnalysisData) -> str:
     return "\n\n".join(parts) + "\n"
 
 
-def _section_fflow(data: AnalysisData) -> str:
+def _section_fflow(data: RenderData) -> str:
     if not data.fflow_data:
         return "> **数据状态:** ❌ fflow 未拉取\n> **降级:** 主力信号无法计算，标 N/A\n"
     # FflowRow.main_net 单位 = 亿 (analysis_data 统一)
@@ -150,7 +150,7 @@ def _section_fflow(data: AnalysisData) -> str:
 
 
 
-def _section_chan_full(data: AnalysisData) -> str:
+def _section_chan_full(data: RenderData) -> str:
     """缠论完整 4 级别 — 从 dump JSON 的 chan 字段生成 (2026-07-24 修复: 之前只放占位)"""
     if data.chan_data and "full_table" in data.chan_data:
         return data.chan_data["full_table"]
@@ -202,7 +202,7 @@ def _section_chan_full(data: AnalysisData) -> str:
 """
 
 
-def _section_four_questions(data: AnalysisData) -> str:
+def _section_four_questions(data: RenderData) -> str:
     if data.four_questions:
         fq = data.four_questions
         return f"""- **① 卡点:** {fq.get('chokepoint', '—')} {fq.get('chokepoint_reason', '')}
@@ -215,7 +215,7 @@ def _section_four_questions(data: AnalysisData) -> str:
 """
 
 
-def _section_t_frame(data: AnalysisData) -> str:
+def _section_t_frame(data: RenderData) -> str:
     if data.t_frame:
         tf = data.t_frame
         event     = tf.get('event') or tf.get('最近事件', '无近期事件')
@@ -233,7 +233,7 @@ def _section_t_frame(data: AnalysisData) -> str:
     return "> **数据状态:** ⚠️ T 框架未生成，需在 data/events.json 添加事件后重新 sync_stock\n"
 
 
-def _section_ga_factor(data: AnalysisData) -> str:
+def _section_ga_factor(data: RenderData) -> str:
     """🧪 GA 因子验证 (2026-07-27 加, 实验性)
 
     调 tools/factors/alpha101/alpha_ga_001 factor 算当前值
@@ -293,7 +293,7 @@ def _section_ga_factor(data: AnalysisData) -> str:
         return f"> ⚠️ GA 因子计算失败: {e}\n"
 
 
-def _section_peg(data: AnalysisData) -> str:
+def _section_peg(data: RenderData) -> str:
     if data.peg_detail:
         p = data.peg_detail
         return f"""| 步骤 | 数值 | 来源 |
@@ -315,7 +315,7 @@ def _section_peg(data: AnalysisData) -> str:
 """
 
 
-def _section_dcf(data: AnalysisData) -> str:
+def _section_dcf(data: RenderData) -> str:
     if data.dcf_detail:
         d = data.dcf_detail
         return f"""| 折现率 r | 隐含终局利润 L | L/E3 | g/年 |
@@ -335,7 +335,7 @@ def _section_dcf(data: AnalysisData) -> str:
 """
 
 
-def _section_fundamental(data: AnalysisData) -> str:
+def _section_fundamental(data: RenderData) -> str:
     if not data.fundamental or "error" in data.fundamental:
         return "> **数据状态:** ❌ 基本面未计算 (财务数据不足)\n> **降级:** 用 EPS 一致预期 + PE_TTM 间接算\n"
     f = data.fundamental
@@ -367,7 +367,7 @@ def _section_fundamental(data: AnalysisData) -> str:
     return "\n".join(parts) + "\n"
 
 
-def _section_signal_5cat(data: AnalysisData) -> str:
+def _section_signal_5cat(data: RenderData) -> str:
     if not data.signal_5cat or "error" in data.signal_5cat:
         return "> **数据状态:** ❌ 5 类 14 子信号未计算\n> **降级:** 用 K 线 + 量价 + fflow 自动算 (部分项用中性 5/10 分)\n"
     s = data.signal_5cat
@@ -388,7 +388,7 @@ def _section_signal_5cat(data: AnalysisData) -> str:
     return "\n".join(parts) + "\n"
 
 
-def _section_strategy(data: AnalysisData) -> str:
+def _section_strategy(data: RenderData) -> str:
     """4 套交易策略 (新增, 接通 compute_strategy_signals)"""
     if not data.strategy or "error" in data.strategy:
         return "> **数据状态:** ❌ 4 套策略未计算 (技术指标缺失)\n> **降级:** 用 MACD/KDJ/BOLL 间接判断\n"
@@ -405,7 +405,7 @@ def _section_strategy(data: AnalysisData) -> str:
     return "\n".join(parts) + "\n"
 
 
-def _section_xgboost(data: AnalysisData) -> str:
+def _section_xgboost(data: RenderData) -> str:
     if data.xgboost_prob is not None:
         return f"""- **启动概率:** {data.xgboost_prob:.2f}
 - **状态:** {'🟢 高' if data.xgboost_prob > 0.7 else '🟡 中' if data.xgboost_prob > 0.4 else '🔴 低'}
@@ -415,7 +415,7 @@ def _section_xgboost(data: AnalysisData) -> str:
 """
 
 
-def _section_sector_overheat(data: AnalysisData) -> str:
+def _section_sector_overheat(data: RenderData) -> str:
     if data.sector_overheat:
         so = data.sector_overheat
         # 兼容两种字段格式: {1w/1m/3m/ma20_dev} 或 {1周涨幅/1月涨幅/3月涨幅/判定}
@@ -435,7 +435,7 @@ def _section_sector_overheat(data: AnalysisData) -> str:
     return "> **数据状态:** ⚠️ 板块过热数据具备但未生成，需重新 sync_stock\n"
 
 
-def _section_take_profit(data: AnalysisData) -> str:
+def _section_take_profit(data: RenderData) -> str:
     if data.take_profit:
         tp = data.take_profit
         return f"""| 涨幅 | 触发价 | 操作 | 卖多少 |
@@ -449,7 +449,7 @@ def _section_take_profit(data: AnalysisData) -> str:
 """
 
 
-def _section_stop_loss(data: AnalysisData) -> str:
+def _section_stop_loss(data: RenderData) -> str:
     if data.stop_loss:
         sl = data.stop_loss
         return f"""| 跌幅 | 触发价 | 操作 |
@@ -463,7 +463,7 @@ def _section_stop_loss(data: AnalysisData) -> str:
 """
 
 
-def _section_exit_signals(data: AnalysisData) -> str:
+def _section_exit_signals(data: RenderData) -> str:
     if data.exit_signals:
         es = data.exit_signals
         return "\n".join(f"- {k}: {v}" for k, v in es.items())
@@ -472,7 +472,7 @@ def _section_exit_signals(data: AnalysisData) -> str:
 """
 
 
-def _section_position_layer(data: AnalysisData) -> str:
+def _section_position_layer(data: RenderData) -> str:
     if data.position_layer:
         pl = data.position_layer
         # 兼容两种字段命名
@@ -840,7 +840,7 @@ def _smc_sub_events_md(sweeps, fvg_bull, fvg_bear, bull_ob, bear_ob,
     return "\n".join(rows)
 
 
-def _section_period(data: AnalysisData, level: str, label: str, weight: str,
+def _section_period(data: RenderData, level: str, label: str, weight: str,
                     vp_windows: tuple) -> str:
     """
     单周期 section：缠论详细数据 + 其余4方法在该周期视角的数据
@@ -1151,21 +1151,21 @@ def _section_period(data: AnalysisData, level: str, label: str, weight: str,
 """
 
 
-def _section_weekly(data: AnalysisData) -> str:
+def _section_weekly(data: RenderData) -> str:
     """📋 周线分析 (5 方法)"""
     if not data.chan_data and not data.analysis:
         return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
     return _section_period(data, "weekly", "周线", "1.5x", ("20d", "30d", "60d"))
 
 
-def _section_daily(data: AnalysisData) -> str:
+def _section_daily(data: RenderData) -> str:
     """📋 日线分析 (5 方法)"""
     if not data.chan_data and not data.analysis:
         return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
     return _section_period(data, "daily", "日线", "1.0x", ("5d", "10d", "20d"))
 
 
-def _section_factor_matrix(data: AnalysisData) -> str:
+def _section_factor_matrix(data: RenderData) -> str:
     """
     🎯 因子 × 3周期 综合矩阵 (2026-07-25 重构: 用 factor_matrix 模块, 2026-08-17 改名)
 
@@ -1199,7 +1199,7 @@ def _section_factor_matrix(data: AnalysisData) -> str:
         return f"> **❌ factor_matrix 调用失败:** {e}\n"
 
 
-def _section_monitor(data: AnalysisData) -> str:
+def _section_monitor(data: RenderData) -> str:
     if data.monitor_triggers:
         mt = data.monitor_triggers
         # 兼容两种字段命名
@@ -1215,7 +1215,7 @@ def _section_monitor(data: AnalysisData) -> str:
     return "> **数据状态:** ⚠️ 监控触发点未生成，需重新 sync_stock\n"
 
 
-def _section_four_q_short(data: AnalysisData) -> str:
+def _section_four_q_short(data: RenderData) -> str:
     """报告头的简短四问 + 评级"""
     if data.four_questions:
         fq = data.four_questions
@@ -1392,7 +1392,7 @@ def _has_signal(row: dict) -> bool:
     )
 
 
-def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
+def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     """因子历史走势 — 每天一行，全部显示
 
     Args:
@@ -1505,7 +1505,7 @@ def _section_factor_history(data: AnalysisData, lookback: int = 120) -> str:
 
     return "\n".join(lines) + "\n"
 
-def _section_chan_three_elements(data: AnalysisData) -> str:
+def _section_chan_three_elements(data: RenderData) -> str:
     """🧠 缠论三要素 (中枢+背驰+止跌)"""
     if not data.chan_data:
         return "> **数据状态:** ⚠️ 缠论数据未生成\n"
@@ -1548,7 +1548,7 @@ def _section_chan_three_elements(data: AnalysisData) -> str:
 """
 
 
-def _section_chan_signals(data: AnalysisData) -> str:
+def _section_chan_signals(data: RenderData) -> str:
     """📊 缠论信号汇总 (中枢+买卖点)"""
     if not data.chan_data:
         return "> **数据状态:** ⚠️ 缠论信号未生成\n"
@@ -1589,7 +1589,7 @@ def _section_chan_signals(data: AnalysisData) -> str:
 """
 
 
-def _section_buy_sell_points(data: AnalysisData) -> str:
+def _section_buy_sell_points(data: RenderData) -> str:
     """🟢 三买三卖操作点 (来自 buy_sell_points)"""
     bsp = data.buy_sell_points
     if not bsp:
@@ -1612,7 +1612,7 @@ def _section_buy_sell_points(data: AnalysisData) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _section_market_context(data: AnalysisData) -> str:
+def _section_market_context(data: RenderData) -> str:
     """🌍 大盘 + 美股背景 (2026-08-26: 内联 fetch_index_quote, 删 data_source 间接层)"""
     try:
         from tools.fetch.tushare_fetcher import _safe_call
@@ -1641,7 +1641,7 @@ def _section_market_context(data: AnalysisData) -> str:
     return "\n".join(rows) + "\n"
 
 
-def _section_data_sources(data: AnalysisData) -> str:
+def _section_data_sources(data: RenderData) -> str:
     """📡 数据源矩阵 (2026-08-26: 内联 _load_config, 删 data_source 间接层)"""
     try:
         import yaml
@@ -1658,9 +1658,9 @@ def _section_data_sources(data: AnalysisData) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _section_ts_basic(data: AnalysisData) -> str:
+def _section_ts_basic(data: RenderData) -> str:
     """📊 基础信息 (Tushare) — 从 DataStore 读"""
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     sb = DataStore.get_stock_basic(data.code)
     name     = sb.get("name")     or data.name or "未知"
     industry = sb.get("industry") or data.industry if hasattr(data, "industry") else "未知"
@@ -1676,7 +1676,7 @@ def _section_ts_basic(data: AnalysisData) -> str:
             "> **数据源:** Tushare.stock_basic (dump)\n")
 
 
-def _section_t_events(data: AnalysisData) -> str:
+def _section_t_events(data: RenderData) -> str:
     """🎯 T 框架事件"""
     import json as _json
     from pathlib import Path
@@ -1709,7 +1709,7 @@ def _section_t_events(data: AnalysisData) -> str:
     return "\n".join(lines) + "\n\n> **数据源:** data/events.json\n"
 
 
-def _section_ts_money_flow(data: AnalysisData) -> str:
+def _section_ts_money_flow(data: RenderData) -> str:
     """💹 个股资金流向 (Tushare moneyflow)"""
     # 直接用已有的 fflow_data (dump 里的真实数据, 不重复拉取)
     if not data.fflow_data:
@@ -1729,12 +1729,12 @@ def _section_ts_money_flow(data: AnalysisData) -> str:
 # 主渲染器
 # ============================================================
 
-def render_report(data: AnalysisData, sector: str = "—") -> str:
+def render_report(data: RenderData, sector: str = "—") -> str:
     """
     渲染完整分析报告 (22 section 全部输出, 缺数据也保留)
 
     Args:
-        data: AnalysisData 实例
+        data: RenderData 实例
         sector: 板块名 (可由调用方传入)
 
     Returns:
@@ -1938,12 +1938,12 @@ if __name__ == "__main__":
 
     test_code = sys.argv[1] if len(sys.argv) > 1 else "002371"
 
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
-    from tools.analysis.analysis_data import AnalysisData
+    from tools.analysis.render_data import RenderData
     ctx    = DataStore.get_ctx(test_code)
     result = AnalysisEngine().analyze_history(ctx, [ctx.kline[-1]["trade_date"].replace("-","")[:8]]).get(ctx.kline[-1]["trade_date"].replace("-","")[:8]) if ctx.kline else None
-    data   = AnalysisData.from_result(ctx, result)
+    data   = RenderData.from_result(ctx, result)
     md = render_report(data)
     print(md[:2000])
     print(f"\n\n... 总长度 {len(md)} 字符 ...")

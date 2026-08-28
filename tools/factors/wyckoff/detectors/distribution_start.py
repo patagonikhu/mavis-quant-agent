@@ -8,14 +8,16 @@ from ..helpers import _bias_200_exceeds_limit
 
 
 def detect_distribution_start(c, h, l, v, o, i, ma_long_w=200, high_thr=30.0,
-                              confirm_days=3, vol_dry_ratio=0.5) -> bool:
+                              confirm_days=3, vol_dry_ratio=0.5,
+                              precomputed_ma=None) -> bool:
     """DistributionStart 检测 (1:1 搬运 WyckoffTradingAgent 2521 行)"""
     n = len(c)
     if i < max(ma_long_w, confirm_days) + 20:
         return False
     if i < ma_long_w + 1:
         return False
-    ma_long = sum(c[i-ma_long_w:i]) / ma_long_w
+    # precomputed_ma[i-1] = mean(c[i-200:i])，等价于原来 sum(c[i-200:i])/200
+    ma_long = precomputed_ma[i - 1] if precomputed_ma is not None else sum(c[i-ma_long_w:i]) / ma_long_w
     last_close = c[i-1]
     if ma_long <= 0:
         return False

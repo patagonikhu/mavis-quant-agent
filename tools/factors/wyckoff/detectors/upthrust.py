@@ -9,7 +9,8 @@ detectors/upthrust.py - UTAD 派发后上探 (跟 WyckoffTradingAgent 2556 行 1
 """
 def detect_upthrust(c, h, l, v, o, i, ma_long_w=200, lookback=60,
                     breakout_pct=1.0, close_back_pct=0.3, upper_shadow_thr=0.35,
-                    vol_ratio_thr=1.5, min_bias=15.0) -> bool:
+                    vol_ratio_thr=1.5, min_bias=15.0,
+                    precomputed_ma=None) -> bool:
     """UTAD 检测 (1:1 搬运 WyckoffTradingAgent 2556 行 _detect_upthrust_after_distribution)"""
     n = len(c)
     if i < max(ma_long_w, lookback) + 1:
@@ -29,7 +30,8 @@ def detect_upthrust(c, h, l, v, o, i, ma_long_w=200, lookback=60,
     #   原算法: swing_highs[-5:] = [75.88, 78.38, 91.96, 94.70, 104.17], avg=89.02
     #   修复后: max(prior_high) = 109.33 (当日 high)
     resistance = max(prior_high)
-    ma200 = sum(c[i-ma_long_w:i]) / ma_long_w
+    # precomputed_ma[i-1] = mean(c[i-200:i])，等价于原来 sum(c[i-200:i])/200
+    ma200 = precomputed_ma[i - 1] if precomputed_ma is not None else sum(c[i-ma_long_w:i]) / ma_long_w
     ref_volume = sum(v[i-22:i-1]) / 21 if i >= 22 else 0
     if not resistance or not ma200 or ref_volume is None or resistance <= 0 or ma200 <= 0:
         return False

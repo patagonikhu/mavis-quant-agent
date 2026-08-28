@@ -85,119 +85,106 @@ done
 # 多只 (>1 只) 永远走 refresh_all.sh 批量入口
 ```
 
-### Step 3: 提取每只股票今日状态，写入 md 文件
+### Step 3: 一次 pass 完成信号扫描 + 个股 MD 渲染（--all 合并版）
+
+> 单次 `compute_factor_history(lookback=120)` 同时输出信号表和个股 MD，避免重复计算。
 
 ```bash
 bash tools/with_venv.sh python3 << 'PYEOF'
-import json, os, sys, datetime
+import json, sys, datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 sys.path.insert(0, '.')
 
-# Step 0: 先同步增量，单线程完成后再开多线程
-from tools.history_sync import sync_incremental
-sync_incremental()
-
 from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
+from tools.render.report_renderer import render_report
 
-watchlist = json.load(open('data/watchlist.json'))['stocks']
+skip = {'000001','000300','399001','399006'}
+wl = json.load(open('data/watchlist.json'))['stocks']
+stocks = [s for s in wl if s['code'] not in skip]
 today = datetime.date.today().isoformat()
-output_path = Path('docs') / 'signal-watchlist.md'  # 方案 A (2026-08-20): 单文件覆盖
+output_path = Path('docs/signal-watchlist.md')
 
-lines = []
-lines.append(f"# 全量扫描 {today}\n")
-lines.append(f"> {len(watchlist)} 只票 | 数据来自 DataStore | 因子历史 diff\n")
+buy_rows, sell_rows, all_table_rows = [], [], []
 
-# -------- buy/sell 信号汇总（并发 4 worker）--------
-buy_rows, sell_rows = [], []
-all_table_rows = []
-
-def _scan_one(s):
+def _process_one(s):
     code, name = s['code'], s['name']
+    subdir = 'portfolio' if s.get('list_type') == '持仓' else 'watchlist'
     try:
-        from tools.data_store import DataStore
+        from tools.kline_store import DataStore
+        from tools.analysis.render_data import RenderData
         ctx = DataStore.get_ctx(code)
         if not ctx.kline:
             return None
-        rows = compute_factor_history(ctx, step=1, lookback=3)
+        # 单次 pass: lookback=120，out_results 拿最后结果
+        out = {}
+        rows = compute_factor_history(ctx, step=1, lookback=120, out_results=out)
         if len(rows) < 2:
             return None
-        r        = rows[-1]
-        changes   = diff_rows(rows[-2], rows[-1])
-        sigs      = extract_signals(changes)
-        sig_fmtd  = format_signals_for_render(changes)
-
-        hub_d   = r.get('hub_daily') or {}
-        hub_str  = f"¥{hub_d.get('low',0):.0f}~{hub_d.get('high',0):.0f}{hub_d.get('pos','')[:2]}" if hub_d.get('valid') else '—'
-        wy       = (r.get('wyckoff_daily') or '?')[:10]
-        ma       = f"{r.get('ma_dev_daily') or 0:+.1f}%"
-        sig_str  = ' '.join(sig_fmtd) if sig_fmtd else '—'
-        scene    = r.get('scene', '?')
-        has_sig  = '⭐' if sig_fmtd else ''
+        # 渲染个股 MD
+        last_date = ctx.kline[-1]['trade_date'].replace('-','')[:8] if isinstance(ctx.kline[0], dict) else ctx.kline[-1][0]
+        result = out.get(last_date) or (out[max(out)] if out else None)
+        if result:
+            data = RenderData.from_result(ctx, result)
+            data.factor_history_rows = rows
+            md = render_report(data)
+            md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(md, encoding='utf-8')
+        # 信号表
+        r = rows[-1]
+        changes = diff_rows(rows[-2], rows[-1])
+        sigs = extract_signals(changes)
+        sig_fmtd = format_signals_for_render(changes)
+        hub_d = r.get('hub_daily') or {}
+        hub_str = f"¥{hub_d.get('low',0):.0f}~{hub_d.get('high',0):.0f}{hub_d.get('pos','')[:2]}" if hub_d.get('valid') else '—'
+        has_sig = '⭐' if sig_fmtd else ''
         return {
             'code': code, 'name': name, 'sigs': sigs, 'sig_fmtd': sig_fmtd,
-            'table_row': (code, name, scene, wy, ma, hub_str, sig_str, has_sig),
+            'table_row': (code, name, r.get('scene','?'), (r.get('wyckoff_daily') or '?')[:10],
+                          f"{r.get('ma_dev_daily') or 0:+.1f}%", hub_str,
+                          ' '.join(sig_fmtd) if sig_fmtd else '—', has_sig),
         }
-    except Exception:
+    except Exception as e:
         return None
 
-# 并发跑
+print(f'开始处理 {len(stocks)} 只（信号扫描 + MD 渲染一次 pass）...')
 with ThreadPoolExecutor(max_workers=4) as ex:
-    futs = {ex.submit(_scan_one, s): s for s in watchlist}
+    futs = {ex.submit(_process_one, s): s for s in stocks}
+    done = 0
     for fut in as_completed(futs):
+        done += 1
         r = fut.result()
         if not r:
             continue
-        code, name = r['code'], r['name']
         for _, detail, direction in r['sigs']:
-            if direction == 'buy':
-                buy_rows.append((code, name, detail))
-            else:
-                sell_rows.append((code, name, detail))
+            if direction == 'buy': buy_rows.append((r['code'], r['name'], detail))
+            else:                   sell_rows.append((r['code'], r['name'], detail))
         all_table_rows.append(r['table_row'])
+        if done % 10 == 0:
+            print(f'  [{done}/{len(stocks)}]')
 
-# buy 表
-lines.append("---\n\n## 底部信号（buy）\n\n")
-lines.append("| 代码 | 名称 | 信号 |\n")
-lines.append("|------|------|------|\n")
-if buy_rows:
-    for code, name, detail in buy_rows:
-        lines.append(f"| {code} | {name} | {detail} |\n")
-else:
-    lines.append("| — | 无 | — |\n")
-
-# sell 表
-lines.append("\n---\n\n## 顶部/弱势信号（sell）\n\n")
-lines.append("| 代码 | 名称 | 信号 |\n")
-lines.append("|------|------|------|\n")
-if sell_rows:
-    for code, name, detail in sell_rows:
-        lines.append(f"| {code} | {name} | {detail} |\n")
-else:
-    lines.append("| — | 无 | — |\n")
-
-# 完整表格（⭐排前面）
-lines.append("\n---\n\n## 完整状态表\n\n")
-lines.append(f"| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n")
-lines.append("|------|------|------|---------|-------|--------|----------|\n")
-all_table_rows.sort(key=lambda x: (0 if x[7] == '⭐' else 1, x[0]))
+# 写 signal-watchlist.md
+lines = [f"# 全量扫描 {today}\n\n> {len(stocks)} 只 | DataStore | {datetime.datetime.now().strftime('%H:%M:%S')}\n\n"]
+lines.append("## 底部信号（buy）\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
+for code, name, detail in buy_rows: lines.append(f"| {code} | {name} | {detail} |\n")
+if not buy_rows: lines.append("| — | 无 | — |\n")
+lines.append("\n## 顶部/弱势信号（sell）\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
+for code, name, detail in sell_rows: lines.append(f"| {code} | {name} | {detail} |\n")
+if not sell_rows: lines.append("| — | 无 | — |\n")
+lines.append("\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n|------|------|------|---------|-------|--------|----------|\n")
+all_table_rows.sort(key=lambda x: (0 if x[7]=='⭐' else 1, x[0]))
 for code, name, scene, wy, ma, hub_str, sig_str, has_sig in all_table_rows:
     lines.append(f"| {code} | {name} | {has_sig}{scene} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
-
-lines.append(f"\n---\n> 生成时间: {datetime.datetime.now().strftime('%H:%M:%S')}\n")
-
 output_path.parent.mkdir(exist_ok=True)
 output_path.write_text(''.join(lines), encoding='utf-8')
 
-# chat 摘要
-total   = len(all_table_rows)
-with_sig = sum(1 for r in all_table_rows if r[7] == '⭐')
-sig_codes = [r[0] for r in all_table_rows if r[7] == '⭐']
+total = len(all_table_rows)
+with_sig = sum(1 for r in all_table_rows if r[7]=='⭐')
+sig_codes = [r[0] for r in all_table_rows if r[7]=='⭐']
 print(f'FILE: {output_path}')
 print(f'SUMMARY: 共 {total} 只, {with_sig} 只有今日信号')
-if sig_codes:
-    print(f'SIG_CODES: {", ".join(sig_codes)}')
+if sig_codes: print(f'SIG_CODES: {", ".join(sig_codes)}')
 PYEOF
 ```
 
@@ -249,9 +236,9 @@ bash tools/with_venv.sh python -m tools.sync_stock {code}
 bash tools/with_venv.sh python3 << 'PYEOF'
 import sys
 sys.path.insert(0, '.')
-from tools.data_store import DataStore
+from tools.kline_store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
-from tools.analysis.analysis_data import AnalysisData
+from tools.analysis.render_data import RenderData
 from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals
 from tools.render.report_renderer import render_report
 from pathlib import Path
@@ -276,7 +263,7 @@ list_type = next((s.get('list_type','自选') for s in wl if s['code'] == code),
 subdir = 'portfolio' if list_type == '持仓' else 'watchlist'
 
 # L4: 渲染（读缓存，不重算）
-data = AnalysisData.from_result(ctx, result)
+data = RenderData.from_result(ctx, result)
 data.factor_history_rows = rows
 md = render_report(data)
 name = ctx.name or code
@@ -1309,7 +1296,7 @@ v8 (X 年股价预测):    价格分布 + 加权预期 → 3 场景概率
 | 维度 | 来源 | 类型 |
 |---|---|---|
 | 板块归属 (code → 板块名) | `data/sectors.json` ("sector_index_map") | 🟢 手工 + 半自动 |
-| 板块假设 (板块名 → (WACC, FCF, g)) | `tools/sector_assumptions.py` | 🟡 行业 typical (硬编码) |
+| 板块假设 (板块名 → (WACC, FCF, g)) | `tools/factors/valuation/dcf_engine.py` | 🟡 行业 typical (硬编码) |
 
 ####
 ```python
@@ -1344,7 +1331,7 @@ Step 1: 拿到 stock code (e.g. "002475")
 Step 2: 查 data/sectors.json["sector_index_map"]["002475"]
         → 找到 ["消费电子代工"]
   ↓ (如果没找到 → 用 DEFAULT_ASSUMPTIONS)
-Step 3: 查 tools/sector_assumptions.get_assumptions("消费电子代工")
+Step 3: 查 tools/factors/valuation/dcf_engine.get_assumptions("消费电子代工")
         → (WACC=0.10, FCF_factor=0.88, g=0.030)
   ↓
 Step 4: 用板块-aware 假设算 DCF 矩阵:
@@ -1380,9 +1367,9 @@ total_value = PV_forecast + TV
 
 ####
 ```bash
-python3 tools/sector_assumptions.py add {code} {sector_name}
+python3 tools/factors/valuation/dcf_engine.py add {code} {sector_name}
 
-python3 tools/sector_assumptions.py add 301308 半导体设备
+python3 tools/factors/valuation/dcf_engine.py add 301308 半导体设备
 
 
 ```
@@ -1393,8 +1380,8 @@ python3 tools/sector_assumptions.py add 301308 半导体设备
 
 **板块归属:** 🟢 {sector_name} (来自 data/sectors.json)
 **DCF 假设 (板块 hardcode):** 🟡 (WACC={wacc}, FCF_factor={fcf}, g={g})
-  - 来源: tools/sector_assumptions.py / Damodaran / A股实证
-  - 用户可审计: 改 sector_assumptions.py 中假设即改变输出
+  - 来源: tools/factors/valuation/dcf_engine.py / Damodaran / A股实证
+  - 用户可审计: 改 tools/factors/valuation/dcf_engine.py 中假设即改变输出
 
 | WACC \ g | g={g-1}% | g={g}% | g={g+1}% | g={g+2}% |
 |----------|---------|---------|----------|----------|
@@ -1425,7 +1412,7 @@ python3 tools/sector_assumptions.py add 301308 半导体设备
 - 用统一 FCF_factor=0.80 (一刀切, 已废弃)
 - 输出"公允价值 ¥X" 单值 (不显示矩阵)
 - 隐藏板块归属 (必须标 🟢 sectors.json 来源)
-- 隐藏假设来源 (必须标 🟡 sector_assumptions.py)
+- 隐藏假设来源 (必须标 🟡 tools/factors/valuation/dcf_engine.py)
 ```
 
 ####
@@ -1533,7 +1520,7 @@ DCF 隐含 L (市值=1805亿, 净利率5.6%):
 - **复苏扭曲必须识别** — 前年亏损/ROE<0 时 NTM 增速不可信，必须算稳态 CAGR
 - **4 PEG 必须同时显示** — A 派 + C 派 + 真实 + 表观 (v4 强制, 江波龙教训), 即便失真也要展示
 - **MA 均线必须显示** — MA5/20/60/120 必算, v5 强制 (立讯/拉高出货教训), 与 PEG 联动决策
-- **DCF 必须用 v9.1 板块-aware 框架** — 禁止用统一 FCF_factor=0.80 (v9 已废弃), 必须查 sectors.json + sector_assumptions.py
+- **DCF 必须用 v9.1 板块-aware 框架** — 禁止用统一 FCF_factor=0.80 (v9 已废弃), 必须查 sectors.json + tools/factors/valuation/dcf_engine.py
 - **X 年翻 N 倍概率必须用 4 维度框架** — 用户问"翻倍吗"时, v6 强制: DCF L 缺口 + 可达利润路径 + 周期位置 + PE 扩张 4 维度全分析, 不允许单一概率数字
 - **X 年股价预测必须用 v8 概率加权框架** — 用户问"涨到多少", v8 强制: 3 场景 (乐观/中性/悲观) + 动态概率 + 加权预期价格 + 置信区间 + 期望回报率
 - **T 位置必须算** — events.json 里没这个 code 就说"未识别到 T 点", 然后继续分析
@@ -1817,14 +1804,14 @@ def format_chan_output(code, name, data):
     缠论输出 — 读 data.analysis['chan']，禁止在此重复实现缠论计算。
     缠论计算已由 tools/sync_stock.py → AnalysisEngine.analyze() 完成并写入 analysis.chan。
 
-    data: AnalysisData 实例
+    data: RenderData 实例
     用法:
-        from tools.data_store import DataStore
+        from tools.kline_store import DataStore
         from tools.analysis.analysis_engine import AnalysisEngine
-        from tools.analysis.analysis_data import AnalysisData
+        from tools.analysis.render_data import RenderData
         ctx = DataStore.get_ctx(code)
         result = AnalysisEngine().analyze(ctx)
-        data = AnalysisData.from_result(ctx, result)
+        data = RenderData.from_result(ctx, result)
         chan = data.analysis.get('chan', {})
 
     chan 字段结构 (由 dump 提供):
@@ -1907,11 +1894,11 @@ def format_chan_output(code, name, data):
 
 
 # 调用方式:
-# from tools.data_store import DataStore
+# from tools.kline_store import DataStore
 # from tools.analysis.analysis_engine import AnalysisEngine
-# from tools.analysis.analysis_data import AnalysisData
+# from tools.analysis.render_data import RenderData
 # ctx = DataStore.get_ctx(code)
-# data = AnalysisData.from_result(ctx, AnalysisEngine().analyze(ctx))
+# data = RenderData.from_result(ctx, AnalysisEngine().analyze(ctx))
 # chan_section = format_chan_output(code, name, data)
 
 ```

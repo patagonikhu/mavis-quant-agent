@@ -34,7 +34,7 @@ ls docs/analyze-*.md
 ```
 
 ### Step 2: 提取关键字段 (PEG_A / PEG_C / DCF / 卡点 / Leader)
-- PEG: 从 `data.analysis.get('peg')` 读 (DataStore.get_ctx → AnalysisEngine.analyze → AnalysisData.from_result), 不由 LLM 自己算
+- PEG: 从 `data.analysis.get('peg')` 读 (DataStore.get_ctx → AnalysisEngine.analyze → RenderData.from_result), 不由 LLM 自己算
 - DCF L/E3 (r=10%): 从 `data.analysis.get('dcf')` 读, 不调 dcf_implied.py
 
 ### Step 3: 按优先级排序

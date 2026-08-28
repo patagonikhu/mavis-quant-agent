@@ -100,7 +100,7 @@ def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
     start = time.time()
     try:
         # 8-22 重写: 不再调 tools.老 data 工具.analyze (已删), 改走 DataStore + AnalysisEngine
-        from tools.data_store import DataStore
+        from tools.kline_store import DataStore
         from tools.analysis.analysis_engine import AnalysisEngine
         ctx = DataStore.get_ctx(code)
         _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
@@ -109,9 +109,9 @@ def run_dump(code: str, render: bool = True) -> Tuple[dict | None, float]:
 
         if render:
             try:
-                from tools.analysis.analysis_data import AnalysisData
+                from tools.analysis.render_data import RenderData
                 from tools.render.report_renderer import render_report
-                render_report(AnalysisData.from_result(ctx, result))
+                render_report(RenderData.from_result(ctx, result))
             except Exception as e:
                 logger.warning("render {code} failed: {e}", code=code, e=e)
 
@@ -154,7 +154,7 @@ def _load_pending() -> list:
 def extract_fields(code: str) -> dict:
     """从 dump.json 提取要回测的关键字段 (排除 _meta 避免时间戳干扰)
 
-    v5.10.31 改: 走 AnalysisData.from_raw() util 类读 dump 字段
+    v5.10.31 改: 走 RenderData.from_raw() util 类读 dump 字段
     之前直接读 dump['factor']['wyckoff']['stage'] 等老 key,
     字段迁移 (v5.10.21 factor.*, v5.10.28 中英 key 删) 后要同步改两处
     现在 util 类单点读 dump, regression_test 只关心要哪些字段
@@ -165,13 +165,13 @@ def extract_fields(code: str) -> dict:
     if not code:
         return {}
 
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
-    from tools.analysis.analysis_data import AnalysisData
+    from tools.analysis.render_data import RenderData
     ctx = DataStore.get_ctx(code)
     _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
     result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
-    ad = AnalysisData.from_result(ctx, result)
+    ad = RenderData.from_result(ctx, result)
 
     factor = {}
     chan_daily = (ad.analysis or {}).get('chan', {}).get('daily', {}) or {}
@@ -457,7 +457,7 @@ def run_compare(codes: List[str] = DEFAULT_CODES) -> bool:
 
         # 0 API 调用: 走 DataStore (parquet, 无 JSON 依赖)
         try:
-            from tools.data_store import DataStore
+            from tools.kline_store import DataStore
             ctx = DataStore.get_ctx(code)
             if not ctx.kline:
                 print(f"  ❌ {code} DataStore 无K线, 先跑: python -m tools.sync_stock {code}")

@@ -159,9 +159,9 @@ def _main():
     parser.add_argument("--format", choices=["table", "json"], default="table")
     args = parser.parse_args()
 
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
-    from tools.analysis.analysis_data import AnalysisData
+    from tools.analysis.render_data import RenderData
 
     ctx = DataStore.get_ctx(args.code)
     if not ctx.kline:
@@ -169,7 +169,7 @@ def _main():
         sys.exit(1)
     _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
     result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
-    data = AnalysisData.from_result(ctx, result)
+    data = RenderData.from_result(ctx, result)
     name = ctx.name or ""
 
     print(f"📊 计算 {args.code} {name} 周度顶信号评分 (lookback={args.lookback})...")

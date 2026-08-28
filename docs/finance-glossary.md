@@ -312,7 +312,7 @@ WACC = 0.7 × 9.0% + 0.3 × 3.4% = 6.3% + 1.0% = 7.3%
 ### Mavis 用的 WACC (按板块 hardcode)
 
 ```python
-# tools/sector_assumptions.py
+# tools/factors/valuation/dcf_engine.py
 SECTOR_DCF_ASSUMPTIONS = {
     "半导体设备":   0.110,  # 11% 高波动, 高增长
     "AI 服务器":    0.110,
@@ -939,7 +939,7 @@ MA 空头
 
 > 前置依赖: §3 DCF 详解 + §4 WACC + §5 g + §6 FCF
 > 章节来源: 用户提问"这三参数举例 + 用途" → 整理
-> 工具关联: `tools/double_screen.py` 直接读 `tools/sector_assumptions.py` 里的硬编码
+> 工具关联: `tools/double_screen.py` 直接读 `tools/factors/valuation/dcf_engine.py` 里的硬编码
 
 ### 13.1 三参数一句话 + 例子
 
@@ -964,7 +964,7 @@ FCF_factor = 18 / 25 = 0.72 (略低于行业 0.80-0.85 的 typical)
             ← 说明这家公司当前扩产比同业更激进 (要把未来产能砸出来)
 ```
 
-**FCF_factor 行业 typical (来自 `tools/sector_assumptions.py`):**
+**FCF_factor 行业 typical (来自 `tools/factors/valuation/dcf_engine.py`):**
 - 半导体设备: 0.80-0.85
 - 消费/家电: 0.88
 - 半导体 (晶圆/设计): 1.20 (现金流好, 因为轻资产)
@@ -1072,4 +1072,4 @@ Q3: "WACC/FCF/g 举个例子, 是啥用途"   → 本章 §13 (整合前三章�
 
 **生成日期:** 2026-07-04
 **作者:** Mavis 自动化框架
-**关联:** §3 DCF 详解, §4 WACC, §5 g, §6 FCF, `tools/sector_assumptions.py`
+**关联:** §3 DCF 详解, §4 WACC, §5 g, §6 FCF, `tools/factors/valuation/dcf_engine.py`

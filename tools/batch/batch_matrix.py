@@ -66,9 +66,9 @@ def render_one_matrix(code: str) -> str:
 
     v5.10.30 改: 走 AnalysisEngine.analyze_dump_to_dict() (内含 factor.* 3 周期桥接)
     v5.10.26 改: dump.get("signals_5method") 字段已删, 改用 AnalysisEngine
-    v5.10.42 改: 删 AnalysisData.signals_5method property 兼容层 (5 处全部改读 data.analysis)
+    v5.10.42 改: 删 RenderData.signals_5method property 兼容层 (5 处全部改读 data.analysis)
     """
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
 
     ctx = DataStore.get_ctx(code)

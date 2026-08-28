@@ -7,7 +7,7 @@ tools/batch/factor_history_export.py — 单只股票历史因子导出 (v1, 202
 - 一次生成单只股票的历史因子, 搞个 skill 出来
 
 **输出**: docs/factor-history-{code}-{name}-{years}year.md
-**数据**: parquet (DataStore.get_ctx) → AnalysisData.from_result → _section_factor_history(lookback=years*250)
+**数据**: parquet (DataStore.get_ctx) → RenderData.from_result → _section_factor_history(lookback=years*250)
 **复用**: 100% 复用 tools/render/report_renderer._section_factor_history, 0 重复代码
 
 **用法**:
@@ -47,16 +47,16 @@ def _load_name_from_watchlist(code: str) -> str | None:
 
 def export_one(code: str, years: int, out_path: Path | None) -> tuple[str, Path, int]:
     """导出单只票的历史因子"""
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
-    from tools.analysis.analysis_data import AnalysisData
+    from tools.analysis.render_data import RenderData
     from tools.render.report_renderer import _section_factor_history
 
     ctx = DataStore.get_ctx(code)
     name = ctx.name or code
     _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
     result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
-    data = AnalysisData.from_result(ctx, result)
+    data = RenderData.from_result(ctx, result)
 
     lookback = years * TRADING_DAYS_PER_YEAR
     t0 = time.time()

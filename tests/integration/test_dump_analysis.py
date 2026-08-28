@@ -2,7 +2,7 @@
 tests/integration/test_dump_analysis.py - dump + analysis 集成测试
 
 **目的**: 用户最担心 analysis 层 regression bug (2026-08-17 发现的 4 个 bug 就是这一层),
-这套测试覆盖 dump → AnalysisData → AnalysisEngine 的完整数据流,确保:
+这套测试覆盖 dump → RenderData → AnalysisEngine 的完整数据流,确保:
   1. dump 字段不丢 (ctx.moneyflow / ctx.name / ctx.industry 等)
   2. 7 个核心 strategy 都跑出 factor_score
   3. fflow 主路径不显示"无数据" (有 60 条 moneyflow)
@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.analysis.analysis_data import AnalysisData
+from tools.analysis.render_data import RenderData
 from tools.analysis.analysis_engine import AnalysisEngine
 
 
@@ -55,7 +55,7 @@ ALL_STRATEGIES = CORE_STRATEGIES + [("dcf", 0.00)]
 @pytest.fixture(scope="module")
 def dumps():
     """加载 5 只票的 ctx (走 DataStore, 跳过无K线的)"""
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
     loaded = {}
     for code in TEST_CODES:
         try:
@@ -71,12 +71,12 @@ def dumps():
 
 @pytest.fixture(scope="module")
 def analysis_data_per_code(dumps):
-    """5 只票的 AnalysisData (构造 + 跑 AnalysisEngine)"""
+    """5 只票的 RenderData (构造 + 跑 AnalysisEngine)"""
     result = {}
     for code, ctx in dumps.items():
         engine = AnalysisEngine()
         ar = engine.analyze(ctx)
-        ad = AnalysisData.from_result(ctx, ar)
+        ad = RenderData.from_result(ctx, ar)
         result[code] = {
             "dump": {},  # DataStore 模式无原始 dump dict
             "ad": ad,
@@ -87,17 +87,17 @@ def analysis_data_per_code(dumps):
 
 
 # =====================================================================
-# 1. 数据流通: dump → AnalysisData (防 ctx 重建覆盖 bug)
+# 1. 数据流通: dump → RenderData (防 ctx 重建覆盖 bug)
 # =====================================================================
 
 class TestDataFlow:
-    """dump 字段 → AnalysisData / RawContext 数据流不丢"""
+    """dump 字段 → RenderData / RawContext 数据流不丢"""
 
     @pytest.mark.integration
     def test_ctx_moneyflow_equals_dump_tushare_money_flow(self, analysis_data_per_code):
         """【防 regression】ctx.moneyflow 长度 == dump.tushare.money_flow 长度
 
-        2026-08-17 bug: analysis_data.py:522-528 重建 ctx 漏传 moneyflow,
+        2026-08-17 bug: render_data.py:522-528 重建 ctx 漏传 moneyflow,
         导致 FflowStrategy 拿空数据, 5 只票 fflow 全显示"无数据".
         这个断言能立即捕捉到同类 bug.
         """
@@ -107,7 +107,7 @@ class TestDataFlow:
             assert ctx_mf_len == dump_mf_len, (
                 f"{code}: ctx.moneyflow ({ctx_mf_len}) != "
                 f"dump.tushare.money_flow ({dump_mf_len}) — "
-                f"ctx 字段被覆盖了! (analysis_data.py:522-528 重建 bug)"
+                f"ctx 字段被覆盖了! (render_data.py:522-528 重建 bug)"
             )
             # 有数据的票应该 ≥ 3 条 (fflow_factor 最低 3 条才能判)
             if dump_mf_len > 0:

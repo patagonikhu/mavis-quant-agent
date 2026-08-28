@@ -9,9 +9,9 @@
 | 0-3 | ⬇️震荡下跌 | ⚠️谨慎 | ⚠️等Accumulation确认 | ✅主用 |
 
 ```python
-# 读市场状态：从 AnalysisData.from_raw(dump).analysis 读（不用 exec /tmp/*.py）
-from tools.analysis.analysis_data import AnalysisData
-data = AnalysisData.from_raw(dump)
+# 读市场状态：从 RenderData.from_raw(dump).analysis 读（不用 exec /tmp/*.py）
+from tools.analysis.render_data import RenderData
+data = RenderData.from_raw(dump)
 analysis = data.analysis or {}
 scene    = analysis.get('scene')          # A/B/C/D/E
 wyckoff  = analysis.get('wyckoff', {}).get('stage')  # Accumulation/Markup/Distribution

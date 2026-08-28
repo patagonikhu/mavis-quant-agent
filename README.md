@@ -183,7 +183,74 @@ Layer 3（重点）：MOCVD设备/高纯靶材/外延片
 
 ---
 
-## 4. 数据维护流程
+## 4. 因子历史计算架构（单次遍历设计）
+
+### 4.0 核心思路
+
+所有因子/信号只需要遍历 K 线一遍。先把 MA、成交量均线、OBV 等基础数组批量算好，再用这些数组计算缠论/威科夫/SMC，每个日期节点只做 O(1) 索引查询。
+
+```
+kline → precompute() → arrs {ma20, ma60, vol20, slope_60, obv, ...}   O(n) 一次
+                              │
+              ┌───────────────┼──────────────────┐
+              ▼               ▼                  ▼
+        wyckoff_judge(i)  smc_filter(i)    obv_signals(i)
+        arrs['ma20'][i]   obs_all[<=i]     obv[i]
+             O(1)              O(1)            O(1)
+```
+
+### 4.1 原来的问题（O(n²)）
+
+`compute_factor_history(lookback=1250)` 要算 1250 个历史节点，原始实现每个节点都从头重算所有因子：
+
+```
+for each date:               ← 1250 次
+  ctx.slice(date)            # 切出 kline[:i]
+  WyckoffStrategy.analyze()
+    scan_sub_events()
+      for i in range(n):     ← n 次
+        sum(c[i-200:i])/200  # O(n) MA 重算
+        sum(v[i-20:i])/20    # O(n) 成交量均线重算
+```
+
+1250 dates × O(n) per date = **O(n²)**。基线耗时 63s/只。
+
+### 4.2 修复链
+
+| 阶段 | 优化内容 | 耗时 |
+|------|---------|------|
+| 基线 | 无优化 | ~63s |
+| +1 | `scan_sub_events` 预扫一次，per-date filter | ~6.6s |
+| +2 | `kline_arrays.precompute()` 共享预算层 | ~3.6s |
+| +3 | `WyckoffStrategy.analyze_history`：`wyckoff_judge(i, arrs)` O(1) | — |
+| +4 | `SmcStrategy.analyze_history`：OB/FVG/Sweep 全量扫一次 | — |
+| +5 | `ObvStrategy.analyze_history`：OBV 数组预建 O(n) | ~0.4s |
+| +6 | `factor_history.py` 内 3 处 O(n) 查找改预建 dict/bisect | ~0.4s |
+
+**总提升 ~150x**（63s → 0.4s，lookback=120 step=1）。
+
+### 4.3 关键文件
+
+| 文件 | 职责 |
+|------|------|
+| `tools/factors/kline_arrays.py` | 共享预算层：MA20/50/60/200、vol均线、rolling min/max、slope、trend，`precompute()` 返回 dict，O(n) 一次 |
+| `tools/factors/wyckoff/stage_factor.py::wyckoff_judge` | per-bar O(1)，用 `arrs[key][i]` 替代 `sum(c[i-n:i])/n` |
+| `tools/analysis/analysis_engine.py::WyckoffStrategy.analyze_history` | 预算 arrs + pre_scan sub_events，循环内 O(1) |
+| `tools/analysis/analysis_engine.py::SmcStrategy.analyze_history` | `find_order_blocks/fvg/sweeps` 全量跑一次，per-date 按 idx 过滤 |
+| `tools/analysis/analysis_engine.py::ObvStrategy.analyze_history` | OBV 数组 + MA 数组 O(n) 预建，per-date O(1) |
+| `tools/analysis/factor_history.py` | 外层用 `date_to_ki` dict + `bisect` 替代 O(n) 的 `next(k for k in kline if ...)` |
+
+### 4.4 并发铁律
+
+```
+1. sync_incremental()           # 单线程，先跑，补齐本地 parquet
+2. DataStore.list_codes()       # 获取全量代码
+3. ThreadPoolExecutor(N)        # 再开多线程，每个线程只读 DataStore（0 网络）
+```
+
+`tools/batch/signal_cache_warmup.py` 4 worker 并发跑全市场 5783 只（lookback=1250 step=1）估计 ~50min；禁止在 worker 线程里调 sync 或任何网络请求。
+
+
 
 ### 4.1 watchlist.json（1 周改 1 次，30 秒）
 

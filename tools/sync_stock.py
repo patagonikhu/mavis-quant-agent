@@ -11,8 +11,8 @@ from pathlib import Path
 
 
 def main():
-    from tools.history_sync import sync_incremental
-    from tools.data_store import DataStore
+    from tools.kline_history_backfill import sync_incremental
+    from tools.kline_store import DataStore
 
     parser = argparse.ArgumentParser()
     parser.add_argument("code", help="股票代码 (如 300274)")
@@ -26,7 +26,7 @@ def main():
     print(f"📊 验证: {args.code}")
     ctx = DataStore.get_ctx(args.code)
     if not ctx.kline:
-        print(f"⚠️ {args.code} 本地无K线, 请先跑: python -m tools.history_sync --init")
+        print(f"⚠️ {args.code} 本地无K线, 请先跑: python -m tools.kline_history_backfill --init")
         return
 
     print(f"  - 价: ¥{ctx.current_price}")

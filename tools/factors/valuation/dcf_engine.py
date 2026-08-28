@@ -16,7 +16,7 @@ v9.1 改进: 板块-aware DCF 估值
   🟡 永续 g 来自 IMF + 国务院长期 GDP 假设 + 行业 share
 
 使用:
-  from tools.sector_assumptions import get_assumptions
+  from tools.factors.valuation.dcf_engine import get_assumptions
   wacc, fcf_factor, g = get_assumptions("半导体设备")
   FCF = NI * fcf_factor
 
@@ -116,11 +116,11 @@ def add_stock_to_sector(code: str, sector_name: str):
     """一键加股票到 sectors.json (板块 + 反转索引)
 
     用法:
-        python3 tools/sector_assumptions.py add {code} {sector_name}
+        python3 tools/factors/valuation/dcf_engine.py add {code} {sector_name}
 
     示例:
-        python3 tools/sector_assumptions.py add 688041 AI 芯片
-        python3 tools/sector_assumptions.py add 002747 人形机器人
+        python3 tools/factors/valuation/dcf_engine.py add 688041 AI 芯片
+        python3 tools/factors/valuation/dcf_engine.py add 002747 人形机器人
 
     行为:
         1. 在 sectors["{sector_name}"]["codes"] 中加入 {code}

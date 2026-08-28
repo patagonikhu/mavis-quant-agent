@@ -17,7 +17,7 @@
 ```
 ✅ tools/sync_stock.py {code}                                # 单只拉数据 (只 sync, 不计算)
 ✅ tools/refresh_all.sh                                     # watchlist 全刷 (4 worker, 启动跑 4 核心模块 import smoke test)
-✅ tools/with_venv.sh python -m tools.ensure_fresh --watchlist   # 检查新鲜度
+✅ tools/with_venv.sh python -m tools.sync_watchlist_fresh --watchlist   # 检查新鲜度
 ✅ tools/fetch/data_source.py 统一入口函数
 ❌ 任何 curl 直连 WAF 拒接域
 ```
@@ -41,8 +41,8 @@
 |---|---|---|---|
 | **L1 Sync** | `tools/sync_stock.py` | 增量同步 K线到 parquet + 触发分析入口 | — |
 | **L2 Analysis** | `tools/analysis/analysis_engine.py` | Strategy 模式, 7 个策略各算分数 | ❌ 网络 |
-| **L2 容器** | `tools/analysis/analysis_data.py` | `AnalysisData` dataclass, 9 派生字段 (peg/dcf/sector_overheat/five_categories/buy_sell_points/exit_signals/stop_profit_loss/three_layer_position/monitor_triggers) 通过 `@property` 从 `analysis` dict 读 | ❌ 网络 |
-| **L3 Render** | `tools/render/report_renderer.py` | `AnalysisData` → Markdown | ❌ 网络 |
+| **L2 容器** | `tools/analysis/render_data.py` | `RenderData` dataclass, 9 派生字段 (peg/dcf/sector_overheat/five_categories/buy_sell_points/exit_signals/stop_profit_loss/three_layer_position/monitor_triggers) 通过 `@property` 从 `analysis` dict 读 | ❌ 网络 |
+| **L3 Render** | `tools/render/report_renderer.py` | `RenderData` → Markdown | ❌ 网络 |
 
 **调用顺序:** `sync_stock` → `DataStore.get_ctx(code)` → `AnalysisEngine.analyze(ctx)` → `render_report(analysis_data)`, 全程零网络。
 
@@ -82,7 +82,7 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 ### 9 派生字段在 analysis 层 (v5.10.34 起)
 
-`peg / dcf / sector_overheat / five_categories / buy_sell_points / exit_signals / stop_profit_loss / three_layer_position / monitor_triggers` —— **不存 dump**, render 时由 analysis 算; `AnalysisData` 9 个 `@property` 兼容老代码 `data.<field>` 调用, 内部读 `data.analysis[field]`。
+`peg / dcf / sector_overheat / five_categories / buy_sell_points / exit_signals / stop_profit_loss / three_layer_position / monitor_triggers` —— **不存 dump**, render 时由 analysis 算; `RenderData` 9 个 `@property` 兼容老代码 `data.<field>` 调用, 内部读 `data.analysis[field]`。
 
 ### asof 历史回测 (2026-08-15 三层全加)
 
@@ -94,7 +94,7 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 ### fflow 单位校验 (幂等修复)
 
-`tools/analysis/analysis_data.py::_FFLOW_UNIT_MAX = 1e6`:
+`tools/analysis/render_data.py::_FFLOW_UNIT_MAX = 1e6`:
 - 任何 `abs(value) > 1e6` 视为单位错误 (常见: 万元被当亿, 偏大 1e4 倍)
 - 标 0 + `warnings.warn`, **不抛错** (幂等, 不让脏数据流到下游)
 
@@ -206,7 +206,7 @@ PEG = Forward PE / 稳态 EPS CAGR(%)
 
 #### DCF 隐含 L
 
-`tools/analysis_evaluators.py::compute_dcf_l` + `tools/factors/valuation/multi.py::DcfFactor`, 三档 r=8/10/12%:
+`tools/analysis/report_section_evaluators.py::compute_dcf_l` + `tools/factors/valuation/multi.py::DcfFactor`, 三档 r=8/10/12%:
 
 ```
 Step1: L/E3 快筛: < 2 叙事未满 / 2-5 较高 / > 5 饱满警惕

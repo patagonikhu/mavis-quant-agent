@@ -152,8 +152,6 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
           - source: "OBV 派生 (K线)" (因为 fflow 走的是 Tushare, OBV 走的是 K线)
           - asof: "YYYYMMDD" / "latest"
     """
-    import statistics
-
     # asof 切片 (跟 fflow_factor 同样的处理)
     if asof and dates and len(dates) == len(closes):
         from tools.factors.utils import normalize_asof
@@ -175,18 +173,18 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
         }
 
     p = closes[-1]
-    def ma(n): return statistics.mean(closes[-n:]) if len(closes) >= n else None
+    def ma(n): return sum(closes[-n:]) / n if len(closes) >= n else None
     m5, m20, m60, m120 = ma(5), ma(20), ma(60), ma(120)
     obv = [0]
     for i in range(1, len(closes)):
         if closes[i] > closes[i-1]:   obv.append(obv[-1] + vols[i])
         elif closes[i] < closes[i-1]: obv.append(obv[-1] - vols[i])
         else:                          obv.append(obv[-1])
-    obv_ma20  = statistics.mean(obv[-20:]) if len(obv) >= 20 else obv[-1]
+    obv_ma20  = sum(obv[-20:]) / 20 if len(obv) >= 20 else obv[-1]
     obv_trend = (obv[-1] - obv_ma20) / max(abs(obv_ma20), 1) if obv_ma20 else 0
     pct5  = (closes[-1] / closes[-6]  - 1) * 100 if len(closes) >= 6  else 0
     pct20 = (closes[-1] / closes[-21] - 1) * 100 if len(closes) >= 21 else 0
-    vr = vols[-1] / statistics.mean(vols[-20:]) if len(vols) >= 20 else 1.0
+    vr = vols[-1] / (sum(vols[-20:]) / 20) if len(vols) >= 20 else 1.0
     d120 = (p / m120 - 1) * 100 if m120 else 0
 
     signals = []; score = 0

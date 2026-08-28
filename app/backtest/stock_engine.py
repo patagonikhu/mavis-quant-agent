@@ -74,7 +74,7 @@ class StockBacktestEngine:
         )
 
     def _load_dump(self, code: str) -> Optional["RawContext"]:
-        from tools.data_store import DataStore
+        from tools.kline_store import DataStore
         ctx = DataStore.get_ctx(code)
         if not ctx.kline:
             logger.warning("DataStore 无K线: %s，跳过", code)

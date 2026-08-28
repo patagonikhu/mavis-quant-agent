@@ -217,9 +217,9 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, '/Users/I514959/workspace/mavis-quant-agent')
 
-    from tools.data_store import DataStore
-    from tools.history_sync import read_kline
-    from tools.data_store import _to_ts_code
+    from tools.kline_store import DataStore
+    from tools.kline_history_backfill import read_kline
+    from tools.kline_store import _to_ts_code
     from tools.factors.chan.hub import analyze_hub_v2  # 现有
     from tools.factors.chan.czsc_adapter import analyze_hub_v2_czsc
 

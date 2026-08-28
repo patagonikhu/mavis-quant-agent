@@ -45,7 +45,7 @@ echo ""
 echo "🔄 Step 2: sync_incremental (单线程)..."
 bash tools/with_venv.sh python3 -c "
 import sys; sys.path.insert(0, '.')
-from tools.history_sync import sync_incremental
+from tools.kline_history_backfill import sync_incremental
 sync_incremental()
 " 2>&1 | tail -5
 
@@ -61,7 +61,7 @@ import json, sys, datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, '.')
-from tools.data_store import DataStore
+from tools.kline_store import DataStore
 from tools.analysis.factor_history import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
 
 watchlist = json.load(open('data/watchlist.json'))['stocks']

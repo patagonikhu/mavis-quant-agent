@@ -1,18 +1,18 @@
 """
-tools/data_store.py — 统一数据访问层
+tools/kline_store.py — 统一数据访问层
 
 所有代码通过这里访问数据，不直接读文件。
 
 用法:
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
 
     raw = DataStore.get_raw("002371")       # 替代 json.load(dump)
     ctx = DataStore.get_ctx("002371")       # 替代 RawContext.from_dump(dump)
     kline = DataStore.get_kline("002371")   # 单独取 K线
 
 内部依赖:
-    tools/history_sync.py  — K线历史库 (data/history/daily/*.parquet)
-    tools/static_cache.py  — 低频缓存 (data/cache/)
+    tools/kline_history_backfill.py  — K线历史库 (data/history/daily/*.parquet)
+    tools/eps_consensus_cache.py  — 低频缓存 (data/cache/)
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class DataStore:
         """日线 K线，升序。limit=0 表示全量（默认取 config 里的 kline_days）。
         统一字段名：vol → volume（parquet 存的是 Tushare 原始 vol，计算层期望 volume）。
         """
-        from tools.history_sync import read_kline
+        from tools.kline_history_backfill import read_kline
         if limit == 0:
             limit = _PROJECT_CFG.get("data", {}).get("kline_days", 1250)
         ts_code = _to_ts_code(code)
@@ -91,19 +91,19 @@ class DataStore:
     @classmethod
     def get_daily_basic(cls, code: str) -> dict:
         """PE/PB/市值等估值快照，从 parquet 读（全市场，近1年）。"""
-        from tools.history_sync import read_daily_basic
+        from tools.kline_history_backfill import read_daily_basic
         return read_daily_basic(_to_ts_code(code))
 
     @classmethod
     def get_stock_basic(cls, code: str) -> dict:
         """行业/名称/上市日期等静态信息，从 parquet 读（全市场）。"""
-        from tools.history_sync import read_stock_basic
+        from tools.kline_history_backfill import read_stock_basic
         return read_stock_basic(code)
 
     @classmethod
     def get_eps(cls, code: str) -> list[dict]:
         """EPS 机构一致预期表（每月更新）。"""
-        from tools.static_cache import get_eps
+        from tools.eps_consensus_cache import get_eps
         return get_eps(code)
 
     @classmethod

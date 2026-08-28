@@ -117,7 +117,7 @@ SIGNALS = {**TOP_SIGNALS, **BOT_SIGNALS, **SELL_SIGNALS}
 def run(forward_days: int, threshold_pct: float) -> None:
     from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.factor_history import compute_factor_history, backtest_signal
-    from tools.data_store import DataStore
+    from tools.kline_store import DataStore
 
     codes = DataStore.watchlist_codes() or DataStore.list_codes()
     print(f"扫描 {len(codes)} 只股票 | forward={forward_days}d | threshold={threshold_pct}%\n")

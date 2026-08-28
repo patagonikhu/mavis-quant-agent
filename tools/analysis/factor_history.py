@@ -38,6 +38,12 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     # 批量历史计算：每个 strategy 自己决定怎么遍历，不在外部切片
     history = engine.analyze_history(ctx, dates)
 
+    # 预建索引，避免 for-loop 里 O(n) 查找
+    import bisect
+    date_to_ki    = {k["trade_date"].replace("-","")[:8]: i for i, k in enumerate(kline)}
+    date_to_close = {k["trade_date"].replace("-","")[:8]: k["close"] for k in kline}
+    weekly_dates_sorted = [b["trade_date"].replace("-","")[:8] for b in (ctx.weekly or [])]
+
     rows = []
     for date in dates:
         result = history.get(date.replace("-", "")[:8])
@@ -45,13 +51,13 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
             continue
         if out_results is not None:
             out_results[date.replace("-", "")[:8]] = result
-        close = next((k["close"] for k in kline if k["trade_date"].replace("-","")[:8] == date.replace("-","")[:8]), 0)
-
-        # MA/BOLL 需要切片后的 K 线（取索引直接切，不用 list comprehension 过滤）
         date_clean = date.replace("-", "")[:8]
-        ki = next((i for i, k in enumerate(kline) if k["trade_date"].replace("-","")[:8] == date_clean), len(kline))
+        close = date_to_close.get(date_clean, 0)
+
+        ki = date_to_ki.get(date_clean, len(kline))
         k_slice = kline[:ki+1]
-        w_slice = [b for b in ctx.weekly if b["trade_date"].replace("-","")[:8] <= date_clean]
+        wi = bisect.bisect_right(weekly_dates_sorted, date_clean)
+        w_slice = (ctx.weekly or [])[:wi]
 
         def _ma_dev(bars: list, n: int = 20) -> float | None:
             if not bars or len(bars) < n:
