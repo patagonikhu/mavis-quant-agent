@@ -100,12 +100,14 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         trigger_price = r_trig.get('close', 0)
 
         # OBV 实战信号: obv5 (5日价跌+OBV涨) OR obv_trend (OBV>MA20)
-        has_obv = False
-        if require_obv:
-            obv5 = r_trig.get('obv5') or 0
-            obv_trend = r_trig.get('obv_trend') or 0
-            if obv5 > 0 or obv_trend > 0:
-                has_obv = True
+        obv5 = r_trig.get('obv5') or 0
+        obv_trend = r_trig.get('obv_trend') or 0
+        # 信号类型标签: obv5 / obv_trend / 两者
+        sigs = []
+        if obv5 > 0:       sigs.append("obv5")
+        if obv_trend > 0:  sigs.append("obv_trend")
+        obv_label = "+".join(sigs) if sigs else "-"
+        has_obv = bool(sigs)
         if require_obv and not has_obv:
             return None  # 3 重不满足
 
@@ -138,7 +140,7 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
             "trigger_price":  trigger_price,
             "boll_pct":       trigger_bpct,
             "bbw":            trigger_bbw,
-            "obv_days_ago":   0 if has_obv else None,
+            "obv_label":      obv_label,
             "days_ago":       days_ago,
             "status":         status,
             "elapsed":        time.time() - t0,
@@ -212,11 +214,11 @@ def main():
         print(f"错误: {len(errs)} 只 (前3: {[e['code'] for e in errs[:3]]})")
     print()
     if hits:
-        print(f"{'代码':<8}{'名称':<10}{'行业':<14}{'触发日':<10}{'价格':<10}{'BOLL%':<8}{'BBW%':<7}{'状态':<10}{'距今':<6}")
+        print(f"{'代码':<8}{'名称':<10}{'行业':<14}{'触发日':<10}{'价格':<10}{'BOLL%':<8}{'BBW%':<7}{'OBV信号':<14}{'距今':<6}")
         for h in hits:
             print(f"{h['code']:<8}{h['name'][:8]:<10}{(h['industry'] or '')[:12]:<14}"
                   f"{h['trigger_date']:<10}{h['trigger_price']:<10.2f}"
-                  f"{h['boll_pct']:<8.1f}{h['bbw']:<7.2f}{h['status']:<10}{h['days_ago']:<6}d")
+                  f"{h['boll_pct']:<8.1f}{h['bbw']:<7.2f}{h['obv_label']:<14}{h['days_ago']:<6}d")
     else:
         print(f"无命中 (3 重确认严格, 0-2 只/天为正常)")
 
@@ -227,13 +229,14 @@ def main():
         md = [f"# BB+OBV 三重确认 ({today})\n\n"]
         md.append(f"> {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% {'AND OBV 底' if require_obv else ''}\n\n")
         md.append(f"**{len(hits)} 只命中** (实战: 宁可错过不可做错)\n\n")
-        md.append("| 代码 | 名称 | 行业 | 触发日 | 价格 | BOLL% | BBW% | OBV 底 | 距今 |\n")
+        md.append("| 代码 | 名称 | 行业 | 触发日 | 价格 | BOLL% | BBW% | OBV 信号 | 距今 |\n")
         md.append("|---|---|---|---|---|---|---|---|---|\n")
         for h in hits:
-            obv_str = f"-{h['obv_days_ago']}d" if h.get('obv_days_ago') else "-"
             md.append(f"| {h['code']} | {h['name']} | {h['industry']} | {h['trigger_date']} | "
                      f"¥{h['trigger_price']:.2f} | {h['boll_pct']:.1f} | {h['bbw']:.2f} | "
-                     f"{obv_str} | {h['days_ago']}d |\n")
+                     f"{h['obv_label']} | {h['days_ago']}d |\n")
+        md.append("\n**OBV 信号说明**: `obv5` = 5 日价跌+OBV 涨 (短期吸筹) | "
+                 "`obv_trend` = OBV > MA20 (资金净流入) | `+` = 两信号都触发\n")
         out_path.write_text("".join(md), encoding='utf-8')
         print(f"\n📄 {out_path}")
 
