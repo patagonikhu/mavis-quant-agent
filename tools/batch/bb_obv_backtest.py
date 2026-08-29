@@ -151,7 +151,8 @@ def _compute_obv_signals(closes, vols):
 
 
 def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
-              take_profit: float = 0, stop_loss: float = 0, max_hold: int = 30) -> list[dict]:
+              take_profit: float = 0, stop_loss: float = 0, max_hold: int = 30,
+              min_mcap: float = 0, exclude_st: bool = False) -> list[dict]:
     """扫单只票所有命中日, 返回命中详情 list
 
     实战可执行规则 (按优先级):
@@ -163,11 +164,21 @@ def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
        obv5/obv_trend 5d/20d 滚动窗口, 边界处抖来抖去, 信号反复触发-消失-再触发.
        实战会被反复打脸 (假信号), 不能当卖出依据.
 
+    股票质量过滤 (2026-08-29 用户反馈: 垃圾股拖累胜率):
+      - min_mcap: 最小市值 (亿), 0=不限 (排除壳股/控盘股)
+      - exclude_st: 是否排除 ST/*ST (排除退市风险)
+
     take_profit / stop_loss = 0 表示不设该规则
     """
     try:
         ctx = DataStore.get_ctx(code)
         if not ctx.kline or len(ctx.kline) < 60:
+            return []
+
+        # === 股票质量过滤 ===
+        if exclude_st and ctx.name and ("ST" in ctx.name or "st" in ctx.name.lower()):
+            return []
+        if min_mcap > 0 and ctx.market_cap_yi < min_mcap:
             return []
 
         kline = ctx.kline
@@ -310,6 +321,10 @@ def main():
                     help="加大盘过滤时, 震荡市也跳过 (只 bull 启用, 严格模式)")
     ap.add_argument("--index", default="000688.SH",
                     help="大盘指数代码 (默认 000688.SH 科创板, 也可 000300.SH 沪深300)")
+    ap.add_argument("--min-mcap", type=float, default=0,
+                    help="最小市值 (亿), 0=不限 (过滤壳股/控盘股, 实战建议 50)")
+    ap.add_argument("--exclude-st", action="store_true",
+                    help="排除 ST/*ST 股票 (排除退市风险)")
     args = ap.parse_args()
 
     rules = []
@@ -345,15 +360,21 @@ def main():
     t0 = time.time()
     all_hits = []
     skipped_bear = 0
+    skipped_mcap = 0
+    skipped_st = 0
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(_scan_one, code, args.lookback, args.boll_threshold,
                           args.bbw_threshold, args.take_profit, args.stop_loss,
-                          args.days): code
+                          args.days, args.min_mcap, args.exclude_st): code
                 for code in codes}
         done = 0
         for fut in as_completed(futs):
             done += 1
             r = fut.result()
+            # 区分 mcap/st 过滤和命中过滤
+            if r == [] and (args.min_mcap > 0 or args.exclude_st):
+                # 股票被过滤掉 (不算命中, 单独记)
+                pass
             if args.market_filter and market_states:
                 # 过滤熊市 / 震荡市命中
                 r_kept = []
@@ -372,7 +393,7 @@ def main():
                 all_hits.extend(r)
             if done % 200 == 0:
                 print(f"  [{done}/{len(codes)}] 累计命中 {len(all_hits)} "
-                      f"(跳过熊市 {skipped_bear}) | {time.time()-t0:.0f}s",
+                      f"(跳熊市 {skipped_bear}) | {time.time()-t0:.0f}s",
                       flush=True)
     elapsed = time.time() - t0
     if args.market_filter:
