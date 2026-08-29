@@ -173,6 +173,8 @@ def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
 
             # === 模拟一笔完整交易 ===
             entry_price = closes[i]  # 信号日收盘价 (T 日买, 实际 T+1 开盘更准; 简化用 close)
+            entry_bpct = bp     # 入场 BOLL 位置
+            entry_bbw = bw      # 入场 BBW
 
             exit_day = None
             exit_price = None
@@ -184,11 +186,10 @@ def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
                     break
                 # 1) 止盈: 用当日 high 触发 (盘中触达就算)
                 if take_profit > 0 and highs[idx] >= entry_price * (1 + take_profit / 100):
-                    # 假设次日开盘平仓 (T+1 开盘, 实战更准)
                     if idx + 1 < len(rows):
                         exit_price = opens[idx + 1]
                     else:
-                        exit_price = closes[idx]  # 最后一天用 close
+                        exit_price = closes[idx]
                     exit_reason = f"止盈+{take_profit}%"
                     exit_day = j
                     break
@@ -201,7 +202,29 @@ def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
                     exit_reason = f"止损-{stop_loss}%"
                     exit_day = j
                     break
-            # 3) 兜底: max_hold 日后收盘卖
+                # 3) 入场条件反转 (实战: 买点逻辑被破坏, 重新评估)
+                #    BOLL 突破 90% (=价格已经到上轨, 反弹到位, 留 10% 缓冲)
+                #    BBW 扩张 > 20 (=波动大幅放大, 蓄势形态被破坏)
+                #  ⚠️ 不能太严格: BOLL 突破 80% 还可能继续涨 (突破上轨才进超买)
+                cur_bpct = bpct_arr[idx]
+                cur_bbw = bbw_arr[idx]
+                if cur_bpct is not None and cur_bpct > 90:
+                    if idx + 1 < len(rows):
+                        exit_price = opens[idx + 1]
+                    else:
+                        exit_price = closes[idx]
+                    exit_reason = "BOLL反转(>90)"
+                    exit_day = j
+                    break
+                if cur_bbw is not None and cur_bbw > 20:
+                    if idx + 1 < len(rows):
+                        exit_price = opens[idx + 1]
+                    else:
+                        exit_price = closes[idx]
+                    exit_reason = "BBW扩张(>20)"
+                    exit_day = j
+                    break
+            # 4) 兜底: max_hold 日后收盘卖
             if exit_price is None:
                 exit_idx = i + max_hold
                 if exit_idx < len(rows):
@@ -257,6 +280,7 @@ def main():
     rules = []
     if args.take_profit > 0: rules.append(f"止盈+{args.take_profit}%")
     if args.stop_loss > 0:   rules.append(f"止损-{args.stop_loss}%")
+    rules.append("买点反转(BOLL>80|BBW>15)")
     rules.append(f"兜底{args.days}日")
     print(f"=== BB+OBV 三重确认回测 | {args.lookback}y ===")
     print(f"    卖出规则 (按优先级): {' → '.join(rules)}")
