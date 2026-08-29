@@ -104,10 +104,13 @@ def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
     """扫单只票所有命中日, 返回命中详情 list
 
     实战可执行规则 (按优先级):
-      1. 止盈: 涨 ≥ take_profit% 当日收盘卖 (0 = 不设)
-      2. 止损: 跌 ≤ -stop_loss% 当日开盘卖 (T+1 开盘价估算 = 当日 open, 简化用收盘)
-      3. OBV 信号消失: 任一触发信号 obv5/obv_trend 变 0 → 当日收盘卖
-      4. 兜底: 持有 max_hold 日收盘卖
+      1. 止盈: 涨 ≥ take_profit% 当日触达, 次日开盘卖
+      2. 止损: 跌 ≤ -stop_loss% 当日触达, 次日开盘卖
+      3. 兜底: 持有 max_hold 日收盘卖
+
+    ⚠️ 故意不引入 OBV 信号消失规则 — 2026-08-29 反馈:
+       obv5/obv_trend 5d/20d 滚动窗口, 边界处抖来抖去, 信号反复触发-消失-再触发.
+       实战会被反复打脸 (假信号), 不能当卖出依据.
 
     take_profit / stop_loss = 0 表示不设该规则
     """
@@ -170,8 +173,6 @@ def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
 
             # === 模拟一笔完整交易 ===
             entry_price = closes[i]  # 信号日收盘价 (T 日买, 实际 T+1 开盘更准; 简化用 close)
-            entry_obv5 = o5
-            entry_obv_trend = ot
 
             exit_day = None
             exit_price = None
@@ -200,13 +201,7 @@ def _scan_one(code: str, lookback_years: int, boll_th: float, bbw_th: float,
                     exit_reason = f"止损-{stop_loss}%"
                     exit_day = j
                     break
-                # 3) OBV 信号消失 (实战: 主力跑了)
-                if (obv5_arr[idx] < entry_obv5) or (obv_trend_arr[idx] < entry_obv_trend):
-                    exit_price = closes[idx]
-                    exit_reason = "OBV信号消失"
-                    exit_day = j
-                    break
-            # 4) 兜底: max_hold 日后收盘卖
+            # 3) 兜底: max_hold 日后收盘卖
             if exit_price is None:
                 exit_idx = i + max_hold
                 if exit_idx < len(rows):
@@ -262,7 +257,6 @@ def main():
     rules = []
     if args.take_profit > 0: rules.append(f"止盈+{args.take_profit}%")
     if args.stop_loss > 0:   rules.append(f"止损-{args.stop_loss}%")
-    rules.append("OBV信号消失")
     rules.append(f"兜底{args.days}日")
     print(f"=== BB+OBV 三重确认回测 | {args.lookback}y ===")
     print(f"    卖出规则 (按优先级): {' → '.join(rules)}")
