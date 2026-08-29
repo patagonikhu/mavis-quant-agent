@@ -221,54 +221,87 @@ def main():
         print(f"\n无命中 ({elapsed:.0f}s)")
         return
 
-    max_rets = [h["ret_30d_max"] for h in all_hits]
     close_rets = [h["ret_30d_close"] for h in all_hits]
-    wins = [r for r in max_rets if r >= args.threshold]
-    losses = [r for r in max_rets if r < args.threshold]
-    avg_max = sum(max_rets) / n
-    med_max = sorted(max_rets)[n // 2]
+    max_rets = [h["ret_30d_max"] for h in all_hits]
+
+    # 业界标准 (wbt/czsc): 胜率 = 30 日后收盘 > 0 的占比
+    # 不算 max 高点 (散户看不到未来, 不可执行)
+    wins = [r for r in close_rets if r > 0]
+    losses = [r for r in close_rets if r <= 0]
+    n_win = len(wins)
+    n_loss = len(losses)
+    win_rate = n_win / n * 100
+    avg_win = sum(wins) / n_win if n_win else 0.0
+    avg_loss = sum(losses) / n_loss if n_loss else 0.0
     avg_close = sum(close_rets) / n
-    win_rate = len(wins) / n * 100
-    avg_loss = sum(losses) / len(losses) if losses else 0.0
+    avg_max = sum(max_rets) / n
+    med_close = sorted(close_rets)[n // 2]
+    # 盈亏比: 平均盈利 / |平均亏损|
+    profit_loss_ratio = avg_win / abs(avg_loss) if avg_loss else 0
+    # 期望收益 (per trade): win_rate * avg_win - loss_rate * |avg_loss|
+    expected_ret = win_rate / 100 * avg_win + (1 - win_rate / 100) * avg_loss
 
     print(f"\n=== 完成 ({elapsed:.0f}s) ===")
     print(f"总命中: {n} 次 (平均每天 {n / (args.lookback * 250):.1f} 只)")
-    print(f"持仓 {args.days} 日, 阈值 ≥{args.threshold}%")
-    print(f"  命中数: {len(wins)} ({win_rate:.1f}%)")
-    print(f"  失败数: {len(losses)}")
-    print(f"  最大涨幅: 均 {avg_max:.1f}% / 中位 {med_max:.1f}% / 峰值 {max(max_rets):.1f}%")
-    print(f"  30 日收盘涨幅: 均 {avg_close:.1f}%")
-    if losses:
-        print(f"  失败组均跌: {avg_loss:.1f}% / 最差 {min(losses):.1f}%")
+    print(f"\n【核心指标】(30 日后收盘 vs 命中日, 业界 wbt/czsc 标准)")
+    print(f"  交易胜率: {win_rate:.1f}% ({n_win}/{n})  ← '按信号完整做一单, 赚的比例'")
+    print(f"  平均盈利: +{avg_win:.1f}% (n={n_win})")
+    print(f"  平均亏损: {avg_loss:.1f}% (n={n_loss})")
+    print(f"  盈亏比:   {profit_loss_ratio:.2f} (avg_win / |avg_loss|, >1 划算)")
+    print(f"  期望收益: {expected_ret:+.2f}% / 单笔 (胜率*均盈 + 败率*均亏)")
+    print(f"\n【次要指标】")
+    print(f"  30 日收盘涨幅: 均 {avg_close:+.1f}% / 中位 {med_close:+.1f}%")
+    print(f"  30 日最大涨幅: 均 {avg_max:+.1f}% (含盘中冲高, 不可执行, 仅参考)")
+    print(f"  失败组:  {n_loss} 次, 最差 {min(losses):.1f}%")
+    print(f"  命中组:  {n_win} 次, 最好 {max(wins):.1f}%")
 
-    obv5_only = sum(1 for h in all_hits if h["obv5"] and not h["obv_trend"])
-    obv_trend_only = sum(1 for h in all_hits if h["obv_trend"] and not h["obv5"])
-    obv_both = sum(1 for h in all_hits if h["obv5"] and h["obv_trend"])
-    print(f"\n信号分布:")
-    print(f"  obv5 only: {obv5_only}")
-    print(f"  obv_trend only: {obv_trend_only}")
-    print(f"  obv5+obv_trend: {obv_both}")
+    # 按信号类型分组
+    def _sig_key(h):
+        if h["obv5"] and h["obv_trend"]: return "双"
+        if h["obv5"]: return "obv5"
+        if h["obv_trend"]: return "obv_trend"
+        return "其他"
+    by_sig = {}
+    for h in all_hits:
+        by_sig.setdefault(_sig_key(h), []).append(h["ret_30d_close"])
+    print(f"\n【按信号类型分组】(30 日收盘胜率)")
+    print(f"  {'信号':<14}{'笔数':>6}{'胜率':>8}{'均收':>10}{'盈亏比':>10}{'期望':>10}")
+    for sig in ["obv5", "obv_trend", "双"]:
+        rets = by_sig.get(sig, [])
+        if not rets:
+            continue
+        w = sum(1 for r in rets if r > 0)
+        wr = w / len(rets) * 100
+        wins_s = [r for r in rets if r > 0]
+        losses_s = [r for r in rets if r <= 0]
+        avg_w = sum(wins_s) / len(wins_s) if wins_s else 0
+        avg_l = sum(losses_s) / len(losses_s) if losses_s else 0
+        pl = avg_w / abs(avg_l) if avg_l else 0
+        exp = wr / 100 * avg_w + (1 - wr / 100) * avg_l
+        print(f"  {sig:<14}{len(rets):>6}{wr:>7.1f}%{sum(rets)/len(rets):>+9.1f}%{pl:>9.2f}{exp:>+9.2f}%")
 
+    # 按年分组
     year_stats = {}
     for h in all_hits:
         y = h["date"][:4]
-        year_stats.setdefault(y, []).append(h["ret_30d_max"])
-    print(f"\n按年统计:")
+        year_stats.setdefault(y, []).append(h["ret_30d_close"])
+    print(f"\n【按年统计】(30 日收盘胜率)")
+    print(f"  {'年':<6}{'笔数':>6}{'胜率':>8}{'均收':>10}{'年化':>10}")
     for y in sorted(year_stats.keys()):
         rets = year_stats[y]
-        wins_y = sum(1 for r in rets if r >= args.threshold)
-        print(f"  {y}: {len(rets):3d} 命中, 胜率 {wins_y/len(rets)*100:.0f}%, "
-              f"均涨幅 {sum(rets)/len(rets):+.1f}%")
+        w = sum(1 for r in rets if r > 0)
+        wr = w / len(rets) * 100
+        annual_factor = 250 / args.days  # 年化倍数
+        annual = sum(rets) / len(rets) * annual_factor
+        print(f"  {y:<6}{len(rets):>6}{wr:>7.1f}%{sum(rets)/len(rets):>+9.1f}%{annual:>+9.1f}%")
 
-    print(f"\n明细 (按日期排序, 前 30 条):")
+    print(f"\n【明细】(按日期排序, 前 30 条, 30 日收盘为准)")
     all_hits.sort(key=lambda x: x["date"])
     for h in all_hits[:30]:
-        marker = "✅" if h["ret_30d_max"] >= args.threshold else "❌"
-        sig = "obv5" if h["obv5"] and not h["obv_trend"] else (
-            "obv_trend" if h["obv_trend"] and not h["obv5"] else "双"
-        )
+        marker = "✅" if h["ret_30d_close"] > 0 else "❌"
+        sig = _sig_key(h)
         print(f"  {marker} {h['date']} {h['code']} @¥{h['close']:.2f} "
-              f"→ 30日最大 {h['ret_30d_max']:+.1f}% / 收盘 {h['ret_30d_close']:+.1f}% "
+              f"→ 30日收盘 {h['ret_30d_close']:+.1f}% (max {h['ret_30d_max']:+.1f}%) "
               f"[{sig}] BOLL={h['boll_pct']:.1f}% BBW={h['bbw']:.2f}")
     if len(all_hits) > 30:
         print(f"  ... 共 {len(all_hits)} 条")
@@ -278,32 +311,49 @@ def main():
         out_path.parent.mkdir(parents=True, exist_ok=True)
         md = [f"# BB+OBV 三重确认回测 ({datetime.now().strftime('%Y-%m-%d')})\n\n"]
         md.append(f"> 策略: BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% AND (obv5 OR obv_trend)\n")
-        md.append(f"> 回看: {args.lookback}y ({min_date} ~ {last_db_date}) | 持仓 {args.days} 日 | 阈值 ≥{args.threshold}%\n\n")
-        md.append(f"## 汇总\n\n")
+        md.append(f"> 回看: {args.lookback}y ({min_date} ~ {last_db_date}) | 持仓 {args.days} 日\n")
+        md.append(f"> **胜率口径**: 30 日后**收盘价** vs 命中日收盘价, ret > 0 算赢 (业界 wbt/czsc 标准)\n")
+        md.append(f"> ⚠️ 不再以盘中 max 算胜率 (散户不可执行, 仅作 max 列参考)\n\n")
+        md.append(f"## 核心指标\n\n")
         md.append(f"| 指标 | 值 |\n|---|---|\n")
         md.append(f"| 总命中 | {n} 次 ({n / (args.lookback * 250):.1f}/天) |\n")
-        md.append(f"| 命中 ≥{args.threshold}% | {len(wins)} ({win_rate:.1f}%) |\n")
-        md.append(f"| 失败 <{args.threshold}% | {len(losses)} |\n")
-        md.append(f"| 最大涨幅 均/中位/峰 | {avg_max:.1f}% / {med_max:.1f}% / {max(max_rets):.1f}% |\n")
-        md.append(f"| 30 日收盘涨幅 均 | {avg_close:.1f}% |\n")
-        if losses:
-            md.append(f"| 失败组均跌/最差 | {avg_loss:.1f}% / {min(losses):.1f}% |\n")
-        md.append(f"\n## 按年\n\n| 年 | 命中 | 胜率 | 均涨幅 |\n|---|---|---|---|\n")
+        md.append(f"| **交易胜率** | **{win_rate:.1f}%** ({n_win}/{n}) |\n")
+        md.append(f"| 平均盈利 | +{avg_win:.1f}% (n={n_win}) |\n")
+        md.append(f"| 平均亏损 | {avg_loss:.1f}% (n={n_loss}) |\n")
+        md.append(f"| **盈亏比** | **{profit_loss_ratio:.2f}** (avg_win / |avg_loss|) |\n")
+        md.append(f"| **期望收益/单笔** | **{expected_ret:+.2f}%** |\n")
+        md.append(f"| 30 日收盘涨幅 均/中位 | {avg_close:+.1f}% / {med_close:+.1f}% |\n")
+        md.append(f"| 30 日最大涨幅 均 (参考) | {avg_max:+.1f}% |\n")
+        md.append(f"\n## 按信号类型\n\n")
+        md.append(f"| 信号 | 笔数 | 胜率 | 均收 | 盈亏比 | 期望 |\n|---|---|---|---|---|---|\n")
+        for sig in ["obv5", "obv_trend", "双"]:
+            rets = by_sig.get(sig, [])
+            if not rets:
+                continue
+            w = sum(1 for r in rets if r > 0)
+            wr = w / len(rets) * 100
+            wins_s = [r for r in rets if r > 0]
+            losses_s = [r for r in rets if r <= 0]
+            avg_w = sum(wins_s) / len(wins_s) if wins_s else 0
+            avg_l = sum(losses_s) / len(losses_s) if losses_s else 0
+            pl = avg_w / abs(avg_l) if avg_l else 0
+            exp = wr / 100 * avg_w + (1 - wr / 100) * avg_l
+            md.append(f"| {sig} | {len(rets)} | {wr:.1f}% | {sum(rets)/len(rets):+.1f}% | {pl:.2f} | {exp:+.2f}% |\n")
+        md.append(f"\n## 按年\n\n| 年 | 笔数 | 胜率 | 均收 | 年化 |\n|---|---|---|---|---|\n")
         for y in sorted(year_stats.keys()):
             rets = year_stats[y]
-            wins_y = sum(1 for r in rets if r >= args.threshold)
-            md.append(f"| {y} | {len(rets)} | {wins_y/len(rets)*100:.0f}% | {sum(rets)/len(rets):+.1f}% |\n")
-        md.append(f"\n## 明细 ({len(all_hits)} 条)\n\n")
-        md.append("| 日期 | 代码 | 收盘 | 30日最大 | 30日收盘 | 信号 | BOLL% | BBW |\n")
-        md.append("|---|---|---|---|---|---|---|---|\n")
+            w = sum(1 for r in rets if r > 0)
+            wr = w / len(rets) * 100
+            annual = sum(rets) / len(rets) * (250 / args.days)
+            md.append(f"| {y} | {len(rets)} | {wr:.1f}% | {sum(rets)/len(rets):+.1f}% | {annual:+.1f}% |\n")
+        md.append(f"\n## 明细 ({len(all_hits)} 条, 收盘为准)\n\n")
+        md.append("| 日期 | 代码 | 收盘 | 30日收盘 | 30日最大 | 信号 | 胜/败 |\n")
+        md.append("|---|---|---|---|---|---|---|\n")
         for h in all_hits:
-            marker = "✅" if h["ret_30d_max"] >= args.threshold else "❌"
-            sig = "obv5" if h["obv5"] and not h["obv_trend"] else (
-                "obv_trend" if h["obv_trend"] and not h["obv5"] else "双"
-            )
+            marker = "✅" if h["ret_30d_close"] > 0 else "❌"
+            sig = _sig_key(h)
             md.append(f"| {h['date']} | {h['code']} | ¥{h['close']:.2f} | "
-                     f"{marker} {h['ret_30d_max']:+.1f}% | {h['ret_30d_close']:+.1f}% | "
-                     f"{sig} | {h['boll_pct']:.1f} | {h['bbw']:.2f} |\n")
+                     f"{h['ret_30d_close']:+.1f}% | {h['ret_30d_max']:+.1f}% | {sig} | {marker} |\n")
         out_path.write_text("".join(md), encoding="utf-8")
         print(f"\n📄 {out_path}")
 
