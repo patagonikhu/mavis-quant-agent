@@ -209,42 +209,35 @@ def compute_market_state(
     return result
 
 
-def _parse_md_scene_and_sigs(md_path: Path) -> tuple[str, list[str]]:
-    """从 md 头部读 scene + 从 5 方法矩阵 section 拿 buy/sell 信号
-    scene: 从 "**场景**: D (底部建仓)" 抓字母
-    signals: 从 "## 🎯 5 方法 × 3 周期" 表格里抓有 🟢/🔴 的行
+def _parse_md_last_signal(md_path: Path) -> list[str]:
+    """从 md 的 "## 📈 因子历史走势" section 末行读今日新触发的信号
+
+    2026-08-29: scene 字段已删 (A/B/C/D/E 硬编码 if-else), 改为只读 signals
+    注意: 不能扫全部行——历史行里的 🆕 是当天首次触发，扫全部会把 3 个月前的旧信号混入
     """
     if not md_path.exists():
-        return "?", []
+        return []
     try:
         text = md_path.read_text(encoding="utf-8")
     except Exception:
-        return "?", []
+        return []
 
-    # scene: 从 "**场景**: D (底部建仓)" 抓字母
-    scene = "?"
-    m_scene = re.search(r"\*\*场景\*\*:\s*([A-E])\b", text)
-    if m_scene:
-        scene = m_scene.group(1)
-
-    # signals: 只读因子历史末行的"变化"列 (今日新触发)
-    # 注意: 不能扫全部行——历史行里的 🆕 是当天首次触发，扫全部会把 3 个月前的旧信号混入
-    sigs = []
     m_fh = re.search(r"## 📈 因子历史走势.*?\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
-    if m_fh:
-        data_lines = [
-            ln for ln in m_fh.group(1).splitlines()
-            if ln.startswith("| ") and not ln.startswith("|---") and "日期" not in ln
-        ]
-        if data_lines:
-            last = data_lines[0]  # 逆序后第一行是最新日期
-            cells = [c.strip() for c in last.strip("|").split("|")]
-            if len(cells) >= 12:
-                chg = cells[10]
-                if chg and chg != "—":
-                    sigs = [chg[:120]]
-
-    return scene, sigs
+    if not m_fh:
+        return []
+    data_lines = [
+        ln for ln in m_fh.group(1).splitlines()
+        if ln.startswith("| ") and not ln.startswith("|---") and "日期" not in ln
+    ]
+    if not data_lines:
+        return []
+    last = data_lines[0]  # 末行是最新日期
+    cells = [c.strip() for c in last.strip("|").split("|")]
+    if len(cells) >= 12:
+        chg = cells[10]
+        if chg and chg != "—":
+            return [chg[:120]]
+    return []
 
 
 def _sig_weight(detail: str, direction: str) -> int:
@@ -318,7 +311,7 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
     排序按 day_top/day_bot 数字 (权重)
 
     buy_rows / sell_rows 每项: (date, code, name, score, signal_str)
-    all_table_rows 每项: (code, name, scene, last_row_dict, has_sig) —— 14 列原格式
+    all_table_rows 每项: (code, name, last_row_dict, has_sig) —— 14 列原格式
 
     实现: 调 RawContext.from_dump + compute_factor_history + score_top/bot_signals 重算
     (md 文件没存 10 天每日信号字符串, 必须重算)
@@ -349,9 +342,8 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
         n_ok += 1
 
         # 完整状态表 (14 列原格式, 用最新一行 last_row)
-        scene, _sigs = _parse_md_scene_and_sigs(md_path)
         has_sig = "⭐" if any(t in last["bsp"] for t in ("0买", "1买", "2买", "3买")) else ""
-        all_table_rows.append((code, name, scene, last, has_sig))
+        all_table_rows.append((code, name, last, has_sig))
 
         # 收集全 60 天因子历史的日分 (用于市场状态判定, 仍从 md 读 0 重算)
         for row in _parse_md_factor_history(md_path):
@@ -453,11 +445,11 @@ def _render_md(buy_rows, sell_rows, all_table_rows, total_watchlist: int,
     # 完整状态表 (含日分顶/底)
     lines += [
         "\n---\n\n## 完整状态表 (含今日信号分, 跟单只 md 因子历史走势最后一行对齐)\n\n",
-        "| 代码 | 名称 | 场景 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 信号 | 日分(顶/底) | A天(日/周) |\n",
-        "|------|------|------|------|--------------|-------------|-----------|--------|--------|--------|------|-------------|------------|\n",
+        "| 代码 | 名称 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 信号 | 日分(顶/底) | A天(日/周) |\n",
+        "|------|------|------|--------------|-------------|-----------|--------|--------|--------|------|-------------|------------|\n",
     ]
     all_table_rows.sort(key=lambda x: (0 if x[-1] == "⭐" else 1, x[0]))
-    for code, name, scene, last, has_sig in all_table_rows:
+    for code, name, last, has_sig in all_table_rows:
         top = last.get("day_top", 0)
         bot = last.get("day_bot", 0)
         if top or bot:
@@ -465,7 +457,7 @@ def _render_md(buy_rows, sell_rows, all_table_rows, total_watchlist: int,
         else:
             ds_str = "—"
         lines.append(
-            f"| {code} | {name} | {has_sig}{scene} | {last['close']} | "
+            f"| {code} | {name}{has_sig} | {last['close']} | "
             f"{last['wyckoff']} | {last['sub_event']} | {last['ma']} | "
             f"{last['hub_daily']} | {last['hub_weekly']} | "
             f"{last['bsp']} | {last['chg']} | {ds_str} | {last.get('accum_days','—')} |\n"

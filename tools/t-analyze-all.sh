@@ -100,7 +100,7 @@ for code, name, d in buy_rows:
 lines.append("\n---\n\n## 顶部/弱势信号 (sell)\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
 for code, name, d in sell_rows:
     lines.append(f"| {code} | {name} | {d} |\n")
-lines.append("\n---\n\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n|------|------|------|---------|-------|--------|----------|\n")
+lines.append("\n---\n\n## 完整状态表\n\n| 代码 | 名称 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n|------|------|---------|-------|--------|----------|\n")
 all_table_rows.sort(key=lambda x: (0 if x[3] else 1, x[0]))
 for code, name, r, sig_fmtd in all_table_rows:
     hub_d = r.get('hub_daily') or {}
@@ -108,9 +108,8 @@ for code, name, r, sig_fmtd in all_table_rows:
     wy = (r.get('wyckoff_daily') or '?')[:10]
     ma = f"{r.get('ma_dev_daily') or 0:+.1f}%"
     sig_str = ' '.join(sig_fmtd) if sig_fmtd else '—'
-    scene = r.get('scene', '?')
     has_sig = '⭐' if sig_fmtd else ''
-    lines.append(f"| {code} | {name} | {has_sig}{scene} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
+    lines.append(f"| {code} | {name}{has_sig} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
 lines.append(f"\n---\n> 生成时间: {datetime.datetime.now().strftime('%H:%M:%S')}\n")
 output_path.write_text(''.join(lines), encoding='utf-8')
 print(f'OK: {output_path} ({len(all_table_rows)} 只, {len(buy_rows)} buy / {len(sell_rows)} sell)')

@@ -219,22 +219,33 @@ def _active_bsp(bsp_raw: dict, level: str, as_of: str = "") -> dict:
 
 
 def obv_label(row: dict) -> str:
-    """OBV 标签 (2026-08-18 统一)
+    """OBV 标签 (2026-08-18 统一, 2026-08-29 改: 读 verdict 而非 obv_verdict)
 
     输入 row 字段 (来自 factor_history.compute_factor_history 输出):
-      - obv_verdict: 5 档 (🟢主力进货 / 🟡偏进货 / ⬜中性 / 🟠偏出货 / 🔴主力出货)
+      - verdict: 5 档 (🟢主力进货 / 🟡偏进货 / ⬜中性 / 🟠偏出货 / 🔴主力出货)
+      - obv5: 0/1 (5日价跌+OBV 涨, 实战吸筹信号)
+      - obv_trend: 0/1 (OBV > MA20, 实战吸筹信号)
 
     输出格式: "🟡偏进货" / "—" (无信号)
       - verdict 用 emoji (除非中性/无数据)
+      - obv5/obv_trend 任一为 1 时附 "吸筹" 标注
 
     复用方:
       - tools/batch/batch_summary.py: signal-watchlist.md OBV 列
       - tools/render/report_renderer.py: analyze-*.md 因子历史走势表 OBV 列
     """
-    verdict = row.get("obv_verdict", "—") or "—"
-    if verdict not in ("—", "中性", "无数据", "⬜中性"):
-        return verdict
-    return "—"
+    verdict = row.get("verdict", "—") or "—"
+    obv5 = row.get("obv5", 0) or 0
+    obv_trend = row.get("obv_trend", 0) or 0
+    # 实战信号: obv5 + obv_trend 至少 1 个触发 → 标记"吸筹"
+    if verdict in ("—", "中性", "无数据", "⬜中性"):
+        if obv5 or obv_trend:
+            return "⬆ 吸筹"
+        return "—"
+    # 5 档判定 + 实战信号标记
+    if obv5 or obv_trend:
+        return f"{verdict} ⬆"
+    return verdict
 
 
 # ============================================================
@@ -349,7 +360,7 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
 
     signal_type: bsp_new / bsp_gone /
                  wyckoff_event_top / wyckoff_event_bot /
-                 scene_change / hub_pos_change
+                 hub_pos_change / ma_dev_cross
     direction:   "buy" | "sell"
 
     render 和 backtest 都调这个函数，保持一致。

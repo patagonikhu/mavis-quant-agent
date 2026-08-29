@@ -10,7 +10,7 @@ class StockSignalRecord:
     code: str
     name: str
     date: str           # 信号触发日 YYYY-MM-DD
-    signal_type: str    # beichi_new / bsp_new / wyckoff_event_top / wyckoff_event_bot / scene_change / hub_pos_change
+    signal_type: str    # bsp_new / bsp_gone / wyckoff_event_top / wyckoff_event_bot / hub_pos_change / ma_dev_cross
     signal_detail: str  # 原始值，如 "1买" / "顶背驰(日线)" / "DistributionStart"
     direction: str      # "buy" | "sell"
     close: float        # 触发日收盘价

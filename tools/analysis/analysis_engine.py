@@ -1024,6 +1024,21 @@ class AnalysisEngine:
         else:
             self._phase1 = [s() for s in strategies
                             if s in PHASE1_STRATEGY_CLASSES]
+
+    def analyze(self, ctx: "RawContext") -> "AnalysisResult":
+        """单点分析: ctx 最后一日的 AnalysisResult
+
+        2026-08-29 删 scene/resonance 后, 单点入口改回调 analyze_history 取末点
+        (避免双份合并逻辑漂移)
+        """
+        if not ctx.kline:
+            return AnalysisResult(code=ctx.code, name=ctx.name, current_price=0.0)
+        last = ctx.kline[-1]["trade_date"].replace("-", "")[:8]
+        results = self.analyze_history(ctx, [last])
+        return results.get(last) or AnalysisResult(
+            code=ctx.code, name=ctx.name, current_price=ctx.current_price,
+        )
+
     def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
         """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
 

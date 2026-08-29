@@ -1,14 +1,18 @@
 """backfill_obv.py — backfill OBV columns in analysis_cache.db
 
 算法: O(n) per stock
-  1. OBV 数组: 一次遍历
-  2. 4 个 15 天滑窗的 OBV 净增量: 用前缀和 O(1) 查
-  3. 段背离: 对每根 K 线, 直接看 4 个窗口的 (价变化, OBV 净增)
+  1. OBV 数组: 一次遍历 (累加 vol 当 close 涨, 减 vol 当 close 跌)
+  2. obv5: 5 日价跌 + OBV 涨 (实战吸筹信号)
+  3. obv_trend: OBV > MA20 (资金净流入)
 
 用法:
   bash tools/with_venv.sh python3 tools/batch/backfill_obv.py
+  bash tools/with_venv.sh python3 tools/batch/backfill_obv.py --year 2024
 """
-import sys, time, sqlite3
+import sys
+import time
+import sqlite3
+import argparse
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -17,69 +21,42 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.kline_store import DataStore
+from tools.factors.kline_arrays import sliding_ma
 
 DB = ROOT / "data" / "analysis_cache.db"
 ds = DataStore()
 
-WIN = 15  # 段背离窗口大小
 
+def compute_obv_signals(closes, vols):
+    """O(n): 算 OBV 数组 + obv5 + obv_trend
 
-def compute_obv_per_date(closes, vols, win=WIN, lookback=60):
-    """O(n): 算 OBV 数组 + 4 个 15d 窗口的 60d 段背离次数
-    段背离: 60d 内不重叠 4 个 15d 窗口
+    Returns:
+        (obv_arr, obv5_arr, obv_trend_arr) 三个等长 list
     """
     n = len(closes)
-    if n < win * 2:
-        return [0.0] * n, [0] * n, [0] * n
-
-    # 1) OBV 数组 (前缀和)
     obv_arr = [0.0] * n
     for i in range(1, n):
-        if closes[i] > closes[i-1]:   obv_arr[i] = obv_arr[i-1] + vols[i]
-        elif closes[i] < closes[i-1]: obv_arr[i] = obv_arr[i-1] - vols[i]
-        else:                          obv_arr[i] = obv_arr[i-1]
+        if closes[i] > closes[i-1]:
+            obv_arr[i] = obv_arr[i-1] + vols[i]
+        elif closes[i] < closes[i-1]:
+            obv_arr[i] = obv_arr[i-1] - vols[i]
+        else:
+            obv_arr[i] = obv_arr[i-1]
 
-    # 2) 对每根 K 线 i 算 [end-window, end] 窗口的 OBV 净增量
-    #    obv_net[end] = obv_arr[end-1] - obv_arr[start-1]  (从 start 到 end-1 的累计变化)
-    #    vol_sum_window[end] = sum(vols[start+1 : end+1])  (窗口内的成交量, 排除起点)
-    # 用前缀和 O(1) 查
-    obv_prefix = [0.0] * (n + 1)
-    vol_prefix = [0.0] * (n + 1)
+    # obv5: 5 日价跌 + OBV 涨
+    obv5_arr = [0] * n
+    for i in range(5, n):
+        if closes[i] < closes[i-5] and obv_arr[i] > obv_arr[i-5]:
+            obv5_arr[i] = 1
+
+    # obv_trend: OBV > MA20
+    obv_ma20 = sliding_ma(obv_arr, 20)
+    obv_trend_arr = [0] * n
     for i in range(n):
-        obv_prefix[i+1] = obv_prefix[i] + (obv_arr[i] - obv_arr[i-1] if i > 0 else 0)
-        vol_prefix[i+1] = vol_prefix[i] + vols[i]
+        if obv_ma20[i] and obv_arr[i] > obv_ma20[i]:
+            obv_trend_arr[i] = 1
 
-    # 3) 段背离
-    div_bot_arr = [0] * n
-    div_top_arr = [0] * n
-    th_p = -0.02  # 价跌 2%
-    th_o = 0.03   # OBV 净增 3%
-    for i in range(win * 2 - 1, n):  # 至少 win*2 根
-        count_bot = 0
-        count_top = 0
-        # 4 个 15d 窗口: 末/15/30/45/60 日前
-        for w in range(4):
-            end = i - w * win
-            start = end - win
-            if start < 0: break
-            # 窗口 [start, end]
-            p_chg = closes[end] / closes[start] - 1
-            # 窗口内 OBV 净增量 (从 start+1 到 end 的 vol 涨跌累计)
-            net = 0
-            for j in range(start + 1, end + 1):
-                if closes[j] > closes[j-1]:   net += vols[j]
-                elif closes[j] < closes[j-1]: net -= vols[j]
-            # 窗口内总成交 (排除起点日)
-            tv = sum(vols[start+1:end+1]) if end + 1 > start + 1 else 0
-            o_pct = net / tv * 100 if tv > 0 else 0
-            if p_chg < th_p and o_pct > th_o:
-                count_bot += 1
-            elif p_chg > -th_p and o_pct < -th_o:
-                count_top += 1
-        div_bot_arr[i] = count_bot
-        div_top_arr[i] = count_top
-
-    return obv_arr, div_bot_arr, div_top_arr
+    return obv_arr, obv5_arr, obv_trend_arr
 
 
 def backfill_one(code: str, year_filter: str = None) -> int:
@@ -90,32 +67,16 @@ def backfill_one(code: str, year_filter: str = None) -> int:
         closes = [k.get('close', 0) for k in ctx.kline]
         vols = [k.get('volume', 0) for k in ctx.kline]
         dates = [k.get('trade_date', '').replace('-', '')[:8] for k in ctx.kline]
-        n = len(closes)
 
-        obv_arr, _div_bot, _div_top = compute_obv_per_date(closes, vols)
+        obv_arr, obv5_arr, obv_trend_arr = compute_obv_signals(closes, vols)
 
-        # obv5: 5 日价跌 + OBV 涨 (实战吸筹信号)
-        obv5_arr = [0] * n
-        for i in range(5, n):
-            if closes[i] < closes[i-5] and obv_arr[i] > obv_arr[i-5]:
-                obv5_arr[i] = 1
-
-        # obv_trend: OBV > MA20 (资金净流入)
-        from tools.factors.kline_arrays import sliding_ma
-        obv_ma20 = sliding_ma(obv_arr, 20)
-        obv_trend_arr = [0] * n
-        for i in range(n):
-            if obv_ma20[i] and obv_arr[i] > obv_ma20[i]:
-                obv_trend_arr[i] = 1
-
-        # 按年过滤
         if year_filter:
-            updates = [(o, ob5, ot, code, ds) for o, ob5, ot, ds in
-                       zip(obv_arr, obv5_arr, obv_trend_arr, dates)
-                       if ds.startswith(year_filter)]
+            updates = [
+                (obv_arr[i], obv5_arr[i], obv_trend_arr[i], code, dates[i])
+                for i in range(len(dates)) if dates[i].startswith(year_filter)
+            ]
         else:
-            updates = list(zip(obv_arr, obv5_arr, obv_trend_arr,
-                               [code] * n, dates))
+            updates = list(zip(obv_arr, obv5_arr, obv_trend_arr, [code] * len(dates), dates))
 
         if not updates:
             return 0
@@ -125,46 +86,36 @@ def backfill_one(code: str, year_filter: str = None) -> int:
         cur.executemany(
             "UPDATE analysis_cache SET obv=?, obv5=?, obv_trend=? "
             "WHERE code=? AND date_str=?",
-            updates
+            updates,
         )
         conn.commit()
         conn.close()
         return len(updates)
-    except Exception as e:
+    except Exception:
         return 0
 
 
 def main():
-    import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--year", type=str, default=None,
-                    help="只 backfill 某一年 (e.g. 2021, 2022, 2023)")
-    ap.add_argument("--recent", type=int, default=None,
-                    help="只 backfill 最近 N 天")
+    ap.add_argument("--year", default=None, help="按年过滤, 例 2024")
     ap.add_argument("--workers", type=int, default=4)
     args = ap.parse_args()
 
-    conn = sqlite3.connect(str(DB))
-    codes = [r[0] for r in conn.execute("SELECT DISTINCT code FROM analysis_cache").fetchall()]
-    conn.close()
-    scope = f"year={args.year}" if args.year else (f"recent {args.recent} days" if args.recent else "all dates")
-    print(f"=== Backfill OBV: {len(codes)} 只 | scope: {scope} ===")
-    t0 = time.time()
+    codes = ds.list_codes()
+    print(f"开始 backfill: {len(codes)} 只, year={args.year or 'all'}")
+
     total = 0
     done = 0
+    t0 = time.time()
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(backfill_one, code, args.year): code for code in codes}
         for fut in as_completed(futs):
-            n = fut.result()
-            total += n
             done += 1
+            total += fut.result()
             if done % 200 == 0:
-                elapsed = time.time() - t0
-                rate = done / elapsed
-                eta = (len(codes) - done) / rate
-                print(f"  [{done}/{len(codes)}] +{total:,} | {elapsed:.0f}s, {rate:.0f}只/s, ETA={eta:.0f}s", flush=True)
-    print(f"\n=== 完成 ({(time.time()-t0):.0f}s) ===")
-    print(f"updated: {total:,} rows")
+                print(f"  [{done}/{len(codes)}] 累计 {total} 行")
+
+    print(f"完成: {total} 行, 耗时 {time.time()-t0:.1f}s")
 
 
 if __name__ == "__main__":

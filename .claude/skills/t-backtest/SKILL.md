@@ -34,7 +34,10 @@ allowed-tools:
 | 缠论买卖点 | 1买 / 1买⭐ / 2买 / 3买 / 双中枢 / 笔结束 / 吞没 |
 | 威科夫阶段 | Accumulation / Markup / Distribution / Markdown |
 | 主力 fflow | fflow:强进货 / 偏进货 / 中性 / 偏出货 / 强出货 |
-| 场景 | scene:A / B / C / D / E |
+| 背驰 | 底背驰 / 顶背驰 |
+| OBV | obv5 / obv_trend |
+
+> 2026-08-29 删: 场景 scene:A/B/C/D/E (硬编码 if-else, 已被 signals_active 列表替代)
 
 ## 算法 (3 步)
 

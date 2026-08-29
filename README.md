@@ -195,7 +195,7 @@ PegStrategy.analyze_history(ctx, dates)       O(1) — 查表
 ResonanceStrategy.analyze_history(ctx, dates) O(n) — 1d/5d/20d 共振
   │
   ▼
-AnalysisResult 合并 (scene + resonance_count + action)
+AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonance_count 硬编码 if-else
 ```
 
 ### 4.1 修复链（O(n²) → O(n)）
