@@ -46,7 +46,7 @@
 ### 阶段 2: 套框架 (LLM, 必读本文件)
 - 投资四问 (卡点/TAM/龙头/估值) ← docs/analysis-framework.md §2
 - T 框架 (T 位置计算) ← docs/analysis-framework.md §3
-- 5方法×3周期 综合矩阵 ← 抽到 `.claude/skills/_shared/supplement_analysis.md`
+- 5方法×3周期 综合矩阵 (见本文件)
 - PEG + DCF L 双指标 ← docs/analysis-framework.md §2.4
 
 ### 阶段 3: 落报告 (LLM 套 22 section 模板)
@@ -113,7 +113,7 @@ PEG + DCF L (basic_data/peg_calc/dcf_calc)
 
 ## 7. 维护规则 (2026-07-27 起)
 
-1. **新 skill** 描述个股分析, 必须引用本文件 + `.claude/skills/_shared/supplement_analysis.md`
+1. **新 skill** 描述个股分析, 必须引用本文件
 2. **改方法** 改本文件 + analysis-framework.md, 不在 skill 里重复定义
 3. **术语** 统一用 "5方法×3周期", 不用 "投资四问 + T 框架"
 4. **代码** 调 `tools/factors/` 库, 不在 skill 里写内联计算
@@ -122,7 +122,6 @@ PEG + DCF L (basic_data/peg_calc/dcf_calc)
 
 ## 8. 关联文件
 
-- `.claude/skills/_shared/supplement_analysis.md` — 5方法×3周期 矩阵 + 场景判定
 - `docs/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行)
 - `tools/factors/` — 22 个 factor 库 (缠论/威科夫/SMC/量价/多市场 + 估值/风控/仓位)
 - `tools/render/report_renderer.py` — 22 section 报告模板
