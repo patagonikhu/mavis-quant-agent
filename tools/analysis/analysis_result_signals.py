@@ -120,8 +120,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         # 基础
         "date":       date,
         "close":      close,
-        "scene":      result.scene,
-        "resonance":  result.resonance_count,
 
         # 移植因子: 价格位置 (WyckoffTradingAgent → mavis, 2026-08)
         "close_pos_day":       float(pos_raw.get("close_pos_day", 0.0))    if isinstance(pos_raw, dict) else 0.0,
@@ -246,13 +244,13 @@ def diff_rows(prev: dict, curr: dict) -> dict:
 
     Returns:
         dict，只包含有变化的字段，如:
-          {"scene": "C→A", "wyckoff_daily": "Accumulation→Markup",
+          {"wyckoff_daily": "Accumulation→Markup",
            "new_bsp_daily": {"🔴2卖": "¥258.02 接近"}}
     """
     changes = {}
 
-    # 标量字段：直接比
-    for field in ("scene", "wyckoff_daily", "wyckoff_weekly"):
+    # 标量字段：直接比 (2026-08-29 删 scene)
+    for field in ("wyckoff_daily", "wyckoff_weekly"):
         if prev.get(field) != curr.get(field):
             changes[field] = f"{prev.get(field)}→{curr.get(field)}"
 
@@ -327,8 +325,7 @@ _BSP_BUY  = {"1买", "2买", "3买", "趋势1买", "趋势2买", "盘整1买", "
 _BSP_SELL = {"1卖", "2卖", "3卖", "趋势1卖", "趋势2卖", "盘整1卖", "盘整2卖"}
 _WY_TOP   = {"DistributionStart", "UTAD", "EVR", "LPSY", "BC", "UT"}
 _WY_BOT   = {"Spring", "LPS", "SOS", "SC", "AR", "Compression"}
-_SCENE_BUY  = {"A", "D"}   # A=主升, D=底部
-_SCENE_SELL = {"B", "C"}   # B=派发, C=震荡转弱
+# 2026-08-29: 删 _SCENE_BUY/_SCENE_SELL (A/B/C/D/E scene 分类已删, scene_change 信号不再有)
 
 
 def _bsp_direction(label: str):
@@ -337,14 +334,6 @@ def _bsp_direction(label: str):
         if k in clean: return "buy"
     for k in _BSP_SELL:
         if k in clean: return "sell"
-    return None
-
-
-def _scene_direction(val: str):
-    s = val.split("→")[-1].strip() if "→" in val else val
-    s = s[0] if s else ""
-    if s in _SCENE_BUY:  return "buy"
-    if s in _SCENE_SELL: return "sell"
     return None
 
 
@@ -389,11 +378,6 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
             ev = ev.strip()
             if ev in _WY_TOP: signals.append(("wyckoff_event_top", f"{ev}({period})", "sell"))
             elif ev in _WY_BOT: signals.append(("wyckoff_event_bot", f"{ev}({period})", "buy"))
-
-    # 场景切换
-    if "scene" in changes:
-        d = _scene_direction(changes["scene"])
-        if d: signals.append(("scene_change", changes["scene"], d))
 
     # 中枢位置变化
     for field in ("hub_daily_pos", "hub_weekly_pos"):
@@ -440,8 +424,6 @@ def format_signals_for_render(changes: dict) -> list[str]:
             parts.append(f"🔴{detail}")
         elif sig_type == "wyckoff_event_bot":
             parts.append(f"✅{detail}")
-        elif sig_type == "scene_change":
-            parts.append(f"🔄场景{detail}")
         elif sig_type == "hub_pos_change":
             parts.append(f"🔄中枢{detail}")
         elif sig_type == "ma_dev_cross":
@@ -744,7 +726,6 @@ def analyze_fp(fp_cases: list[dict]) -> dict:
 
     avg_fwd  = sum(r["forward_pct"] for r in fp_cases) / len(fp_cases)
     stages   = Counter(r["wyckoff_daily"] for r in fp_cases)
-    scenes   = Counter(r["scene"]         for r in fp_cases)
     hub_pos  = Counter((r["hub_daily"] or {}).get("pos", "—") for r in fp_cases)
     resonance= Counter(r["resonance"]     for r in fp_cases)
 
@@ -752,7 +733,6 @@ def analyze_fp(fp_cases: list[dict]) -> dict:
         "count":     len(fp_cases),
         "avg_fwd":   round(avg_fwd, 2),
         "wyckoff":   stages.most_common(),
-        "scene":     scenes.most_common(),
         "hub_pos":   hub_pos.most_common(),
         "resonance": resonance.most_common(),
     }

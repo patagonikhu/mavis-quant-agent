@@ -10,11 +10,12 @@
 输入: signals_5method 输出 + chan_data + buy_sell_points
 输出: {
     "code", "name", "current_price",
-    "scene", "scene_name", "resonance_count", "action",
+    "action",
     "matrix": {"weekly"/"daily"/"60min": {5方法 + 建议价}},
     "top_warning": {"weekly"/"daily"/"60min": "强/标准/弱/否"},
     "bottom_signal": {"weekly"/"daily"/"60min": "1买⭐/1买/2买/3买/否"},
 }
+(2026-08-29: 删 scene/scene_name/resonance_count, 硬编码 if-else 不准)
 """
 from typing import Dict, List, Optional, Tuple
 
@@ -422,9 +423,6 @@ def build_factor_matrix(
         'code': code,
         'name': name,
         'current_price': current_price,
-        'scene': s5.get('scene', '?'),
-        'scene_name': s5.get('scene_name', '未知'),
-        'resonance_count': s5.get('resonance_count', 0),
         'action': s5.get('action', '—'),
         'matrix': matrix,
     }
@@ -485,9 +483,7 @@ def render_factor_matrix_md(matrix_result: dict) -> str:
 
     md = []
     md.append(f"**股票**: {code} {name} ¥{price:.2f}")
-    md.append(f"**场景**: {matrix_result['scene']} ({matrix_result['scene_name']}) | "
-              f"**共振数**: {matrix_result['resonance_count']} 重 | "
-              f"**行动**: {matrix_result['action']}\n")
+    md.append(f"**行动**: {matrix_result['action']}\n")
 
     # 因子 × 3 周期 (含价格)
     md.append("**🎯 因子 × 2 周期 (含中枢 + 123 买卖点 + 建议价格):**\n")

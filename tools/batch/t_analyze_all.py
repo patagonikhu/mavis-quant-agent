@@ -116,7 +116,7 @@ for i, s in enumerate(stocks, 1):
                     buy_rows.append((code, name, detail))
                 else:
                     sell_rows.append((code, name, detail))
-            all_table_rows.append((code, name, r.get('scene','?'), (r.get('wyckoff_daily') or '?')[:10],
+            all_table_rows.append((code, name, (r.get('wyckoff_daily') or '?')[:10],
                                   f"{r.get('ma_dev_daily') or 0:+.1f}%", hub_str,
                                   ' '.join(sig_fmtd) if sig_fmtd else '—', has_sig))
         elapsed = time.time() - t0
@@ -144,8 +144,8 @@ if not sell_rows:
     lines.append("| — | 无 | — |\n")
 lines.append("\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n|------|------|------|---------|-------|--------|----------|\n")
 all_table_rows.sort(key=lambda x: (0 if x[7] == '⭐' else 1, x[0]))
-for code, name, scene, wy, ma, hub_str, sig_str, has_sig in all_table_rows:
-    lines.append(f"| {code} | {name} | {has_sig}{scene} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
+for code, name, wy, ma, hub_str, sig_str, has_sig in all_table_rows:
+    lines.append(f"| {code} | {name} | {has_sig} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
 output_path.parent.mkdir(exist_ok=True)
 output_path.write_text(''.join(lines), encoding='utf-8')
 

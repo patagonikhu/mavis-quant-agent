@@ -13,7 +13,6 @@
 from tools.analysis.render_data import RenderData
 data = RenderData.from_raw(dump)
 analysis = data.analysis or {}
-scene    = analysis.get('scene')          # A/B/C/D/E
 wyckoff  = analysis.get('wyckoff', {}).get('stage')  # Accumulation/Markup/Distribution
 score    = analysis.get('total_score', 0)
 ```

@@ -59,19 +59,22 @@
 **禁止在 worker 线程里调 `sync_incremental()` 或任何网络请求。**
 sync 是全局操作，必须在多线程启动前单线程完成。
 
-### 7 个 Strategy (v5.10.34 完整)
+### 6 个 Strategy (Phase1, 2026-08-29 简化)
 
-`AnalysisEngine.analyze(ctx)` 跑完返 `AnalysisResult`:
+`AnalysisEngine.analyze(ctx)` 跑完返 `AnalysisResult`。Phase1 + Phase2 共 7 个 (DcfStrategy 是 Phase2 派生)。
 
 | Strategy | name | weight | 输入 | 输出 |
 |---|---|---|---|---|
-| `WyckoffStrategy` | wyckoff | 0.20 | K线 (日/周/60m) | 3 阶段 + sub_events |
+| `ChanStrategy` | chan | 0.20 | K线 (日/周/60m) | 中枢+背驰+买卖点 (czsc) |
+| `WyckoffStrategy` | wyckoff | 0.20 | K线 (日/周/60m) | 3 阶段 + sub_events (build_kline_features 算 BOLL/BBW) |
 | `SmcStrategy` | smc | 0.10 | K线 (日/周/60m) | OB/FVG/Sweep 三周期 |
-| `VolumePriceStrategy` | volume_price | 0.20 | K线 + moneyflow | fflow + OBV 并联, 双判定 |
-| `ResonanceStrategy` | resonance | 0.15 | 1d/5d/20d 共振 | 多市场方向 |
-| `ChanStrategy` | chan | 0.20 | K线 (日/周/60m) | 中枢+背驰+买卖点 |
+| `ObvStrategy` | obv | 0.10 | K线 (close + volume) | OBV 累计 + 5档 verdict + obv5/obv_trend (2026-08-29 简化) |
+| `FflowStrategy` | fflow | 0.15 | Tushare money_flow | 大单/特大单净流入 5档 verdict |
 | `PegStrategy` | peg | 0.15 | EPS + current_price | PEG 真实分数 |
-| `DcfStrategy` | dcf | 0.00 | EPS + market_cap | L/E3 估值 (不参与 scene/total_score) |
+| `DcfStrategy` | dcf | 0.00 | EPS + market_cap | L/E3 估值 (Phase2 派生, 不参与 scene/total_score) |
+
+> 2026-08-17 拆分: `VolumePriceStrategy` (v5.10.34) 拆成 `ObvStrategy` + `FflowStrategy` 两个独立 strategy
+> 2026-08-29 简化: `ObvStrategy` 删 60d 段背离 (太滞后), 改 obv5 (5日价跌+OBV涨) + obv_trend (OBV>MA20)
 
 ### RawContext (历史回测核心)
 
@@ -84,13 +87,11 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 `peg / dcf / sector_overheat / five_categories / buy_sell_points / exit_signals / stop_profit_loss / three_layer_position / monitor_triggers` —— **不存 dump**, render 时由 analysis 算; `RenderData` 9 个 `@property` 兼容老代码 `data.<field>` 调用, 内部读 `data.analysis[field]`。
 
-### asof 历史回测 (2026-08-15 三层全加)
+### 历史回测 (2026-08 简化)
 
-`RawContext.slice(as_of_date)` + `engine.analyze(ctx, as_of_date=...)` 切片, 三层 (dump/analysis/render) 统一走 `tools/factors/utils.py::normalize_asof` / `asof_slice`:
-- dump 层: `sync_stock.py` 写算子时传 asof
-- analysis 层: `fflow_factor(asof=...)` / `obv_factor(asof=...)` (`price_fflow_factor` 已于 2026-08-17 拆成两个独立函数)
-- factor_history 层: `compute_factor_history(ctx, step, lookback)` 每 step 天一个节点, 跑 `engine.analyze(ctx, as_of_date=as_of)`
-- render 层: 报告 header 显示当前 asof
+- **回测走 `signal_cache`** (5 年 backfill 过, 979k 行有 obv5/obv_trend)
+- `t-bb-obv` **不走 cache** (直算 `compute_factor_history` 30 天 K 线, 不依赖 cache 完整)
+- `as_of_date` 历史切片已删 (2026-08-29): `RawContext.slice()` 仍是单点切片, 实战回测不需要
 
 ### fflow 单位校验 (幂等修复)
 
@@ -102,34 +103,32 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 ## 🔴 OBV 在系统里的三块 (易混淆, 别再犯错)
 
-> 这是 v3.5 之后的状态。三个东西名字都带 "OBV", 但算法完全不同。
+> 2026-08-29 简化: 删 60d 段背离 (太滞后, 日线不实用)。改用 `obv5` (5日价跌+OBV涨) + `obv_trend` (OBV>MA20)。
 
 | 块 | 路径 | 是什么 | 备注 |
 |---|---|---|---|
-| **经典 OBV** | `tools/factors/volume/price_fflow.py::obv_factor` | Granville 1963 经典累计 (价涨+vol/价跌-vol/平盘不动) + 5 类信号 + 60 日段背离多次确认 | v3.5 起在主路径**并联** fflow 算, 不再是 fallback |
+| **经典 OBV** | `tools/factors/volume/price_fflow.py::obv_factor` | Granville 1963 经典累计 (价涨+vol/价跌-vol/平盘不动) + 5 类信号 verdict | v3.5 起在主路径**并联** fflow 算, 不再是 fallback |
 | **fflow_factor** (主力) | `tools/factors/volume/price_fflow.py::fflow_factor` | 基于 Tushare `money_flow` 大单+特大单净流入的 5 档判定 (强/弱/偏出货) | 真值, dump 预拉, **跟经典 OBV 无关** |
 
 **主路径调用链:**
 ```
-VolumePriceStrategy.analyze(ctx)
-  → fflow_factor(code, moneyflow, dates)              # 走 dump 预拉 main_yi
-      └─ 5档 verdict (强/弱/偏出货)
-  → obv_factor(closes, vols, dates, asof)              # 经典 Granville 1963
-      └─ _scan_obv_divergence_60d (60日内 4 个 15日窗口 数背离)
-  → 双判定同向 → "✅ fflow+OBV 同向" / 矛盾 → "⚠️ 数据冲突"
+ObvStrategy.analyze_history(ctx, dates)
+  → 算 OBV 数组 (累计 vol)
+  → 算 obv_ma20 (sliding 20)
+  → 每根 K 线输出: obv5 (5日价跌+OBV涨) + obv_trend (OBV>MA20)
+  → verdict 5 档 (🟢/🟡/⬜/🟠/🔴)
 ```
 
-**段背离阈值 (v3.5 放宽, 避免 0 触发):**
-- 底背离: 价 `pct<-2%` 且 OBV 净增 `>+3%`
-- 顶背离: 价 `pct>+2%` 且 OBV 净增 `<-3%`
-- ≥2 窗口 = 强背离 (分数 ±2), =1 = 单次 (±1)
+**OBV 信号版块适用性 (重要):**
+- ✅ 光学 / 封测 / HBM: 主力控盘度高, OBV 提前出货信号准
+- ❌ 题材股 / 小盘股: 主力分散, OBV 噪声大, 容易假信号
+- ❌ 周期股: 行业 β 主导, OBV 个股信号被行业 β 淹没
 
-**报告展示:**
-- 5 方法矩阵新增 `**【量价 OBV 段背离】**` section (`report_renderer.py:1178`), 引用 Granville 1963 + Lee-Swaminathan 2000
-
-- linter 警告 fflow 段必须标 "Tushare.money_flow" 或 "OBV 派生" (`report_linter.py:218,288`)
-
-详见 `docs/AGENT_MEMORY.md` 296-330 行的 "OBV 段背离工程化" 备忘。
+**Cache 列** (3.6 简版):
+- `obv REAL` (累计值)
+- `obv5 INTEGER` (5日价跌+OBV涨 1/0)
+- `obv_trend INTEGER` (OBV > MA20 1/0)
+- ❌ 已删: `obv_div_bot/top/verdict` (60d 段背离, 太滞后)
 
 ---
 
@@ -466,15 +465,15 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 
 ---
 
-## 八个 Slash 命令
+## 五个 Slash 命令 (2026-08-28 清理后)
 
 | 命令 | 用途 |
 |---|---|
-| `/t-analyze <code> [name] [--no-news]` | 单标的完整分析 (拉数据 + DCF L + PEG + T框架, 60 行报告) |
-| `/t-watchlist [--no-news]` | 批量分析 watchlist.json |
-| `/t-monitor [--window N] [--no-news]` | 跨扫 events.json + watchlist.json，高亮建仓/减仓窗口 |
-| `/t-sector <name> [--no-news]` | 板块批量分析 |
-| `/t-etf <code> [name] [--no-news]` | ETF 持仓批量分析 |
-| `/t-chain <industry>` | 产业链映射 — 行业 → 子板块 → 龙头股 |
-| `/t-checklist <code/name>` | 巴菲特六关 Checklist — 买入前质量复核，补充 /t-analyze（来源：ai-berkshire）|
-| `/t-bottleneck <趋势>` | 瓶颈猎手 — 拆解供应链四层，找 Layer 2/3 被低估卡脖子公司（来源：ai-berkshire）|
+| `/t-analyze <code> [name] [--no-news]` | 单标的完整分析 (22 section 详报, 写 docs/portfolio/ 或 docs/watchlist/) |
+| `/t-analyze --all` | 批量扫 watchlist (71 只, 含 4 指数), 后台 ~90s 跑完 |
+| `/t-backtest <signal>` | 信号回测 (5 年历史, 走 signal_cache 命中 O(1) 读) |
+| `/t-sync-cache [--portfolio]` | 增量补全 signal_cache.db (5 年, 断点续跑) |
+| `/t-near-low` | 监控"跌 70-80% + 距 5y 低 <3%"清单 |
+| `/t-bb-obv [--window 5]` | 科技股扫 BOLL<15% + BBW<10% + OBV 5日/趋势 (compute_factor_history **直算**, 不走 cache) |
+
+**已删除** (过时的): `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking`

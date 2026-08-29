@@ -132,17 +132,15 @@ print(f'REPORT: {out_path}')
 if len(rows) >= 2:
     r = rows[-1]
     changes = diff_rows(rows[-2], rows[-1])
-    print(f"场景: {r['scene']}  威科夫: {r.get('wyckoff_daily','?')}  MA偏: 日{r.get('ma_dev_daily') or 0:+.1f}%")
+    print(f"威科夫: {r.get('wyckoff_daily','?')}  MA偏: 日{r.get('ma_dev_daily') or 0:+.1f}%")
     for sig_type, detail, direction in extract_signals(changes):
         print(f"{'⬆️买' if direction=='buy' else '⬇️卖'} | {sig_type} | {detail}")
     if not extract_signals(changes): print('无新信号')
 PYEOF
 ```
 
-**AnalysisResult 字段**: `code, name, current_price, raw, scene, scene_name, resonance_count, signals_active, action`
-- `scene`: 'A'/'B'/'C'/'D'/'E'
-- `scene_name`: '主升浪'/'过渡回调'/'震荡观望'/...
-- `resonance_count`: 1-7
+**AnalysisResult 字段**: `code, name, current_price, raw, signals_active, action`
+(2026-08-29 删: scene, scene_name, resonance_count — 硬编码 if-else 不准)
 - `action`: ⬜/🥇/🥈/⚠️/❌
 
 > **🚨 读 MD 而非手算**：MD 报告 `## 📊 技术指标 (8 种)` 已含 MA/EMA/ADX/RSI/BB/OBV/ATR/量比。**禁止重复手算**。
@@ -285,10 +283,12 @@ P/MA120 > 50% 长期透支
 | 4-6 | 过渡回调 🔄 | 缠论背驰 + 中枢 + 量价 |
 | 0-3 | 震荡下跌 ⬇️ | 缠论中枢 + SMC-OB |
 
-**v3.5 AnalysisResult 字段已替代旧 v7**:
-- `result.scene` (A/B/C/D/E)
-- `result.resonance_count` (1-7)
+**v3.6 AnalysisResult 字段** (2026-08-29 简化):
+- `result.code`, `result.name`, `result.current_price`
+- `result.raw` (各 strategy 结果 dict: wyckoff/chan/smc/obv/fflow/peg)
+- `result.signals_active` (所有命中的信号列表)
 - `result.action` (⬜/🥇/🥈/⚠️/❌)
+- ❌ 已删: scene, scene_name, resonance_count (硬编码 if-else 不准)
 
 ---
 

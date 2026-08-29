@@ -114,9 +114,6 @@ class AnalysisResult:
     name: str
     current_price: float
     raw: Dict[str, Any] = field(default_factory=dict)  # 唯一数据来源
-    scene: str = "?"  # A/B/C/D/E
-    scene_name: str = "未知"
-    resonance_count: int = 0
     signals_active: list[str] = field(default_factory=list)
     action: str = ""
 
@@ -130,9 +127,6 @@ class AnalysisResult:
             "code":            self.code,
             "name":            self.name,
             "current_price":   self.current_price,
-            "scene":           self.scene,
-            "scene_name":      self.scene_name,
-            "resonance_count": self.resonance_count,
             "signals_active":  self.signals_active,
             "action":          self.action,
         })
@@ -1061,128 +1055,17 @@ class AnalysisEngine:
             chan_bsp = (raw.get('chan') or {}).get('buy_sell_points') or {}
             ctx._bsp_for_data = chan_bsp
             raw["buy_sell_points"] = _derive_buy_sell_points(ctx, raw)
-            scene, scene_name, signals_active = self._decide_scene(raw, ctx)
-            resonance_count = self._count_resonance(raw, scene)
-            action = self._decide_action(scene, 0.0, resonance_count, 0, len(self._phase1))
+            # 2026-08-29: 删 A/B/C/D/E scene 分类 (硬编码 if-else 不准)
+            # 改: signals_active 直接从 raw 聚合 (LLM 自己判)
+            signals_active = []
+            for k, d in raw.items():
+                if isinstance(d, dict):
+                    for s in (d.get("signals") or []):
+                        signals_active.append(f"{k}: {s}")
             results[date] = AnalysisResult(
                 code=ctx.code, name=ctx.name,
                 current_price=date_to_close.get(date, ctx.current_price),
-                raw=raw, scene=scene, scene_name=scene_name,
-                resonance_count=resonance_count,
-                signals_active=signals_active, action=action,
+                raw=raw, signals_active=signals_active,
             )
         return results
 
-    # --- 内部: 场景判定 / 共振 / 行动 ---
-
-    def _decide_scene(self, raw: dict, ctx: "RawContext") -> tuple[str, str, list[str]]:
-        """场景判定 A/B/C/D/E (5 选 1 互斥)"""
-        wy   = raw.get("wyckoff") or {}
-        chan = raw.get("chan")    or {}
-
-        signals = []
-        for k, d in raw.items():
-            if isinstance(d, dict):
-                for s in (d.get("signals") or []):
-                    signals.append(f"{k}: {s}")
-
-        stage    = wy.get("stage", "?")
-        wy_score = float(wy.get("score", 0) or 0)
-
-        # 2026-08-17 拆分: 量价拆成 fflow + obv, scene 判定用两个分数的较小值 (任一出货都算弱)
-        fflow_score = float((raw.get("fflow") or {}).get("score", 0) or 0)
-        obv_score   = float((raw.get("obv")   or {}).get("score", 0) or 0)
-        vp_score    = min(fflow_score, obv_score) if (raw.get("fflow") or raw.get("obv")) else 0.0
-
-        if vp_score < -0.5 and wy_score <= 0:
-            return ("E", "弱势", signals)
-
-        if stage == "Accumulation":
-            ma60_dev = self._calc_ma60_dev(ctx)
-            chan_res  = ctx.chan_result
-            daily_pos = str((chan_res.get("daily") or {}).get("hub", {}).get("pos", "") or "")
-            hub_below = any(t in daily_pos for t in ["下方", "跌穿"])
-            # 共振 1d 从 ctx.resonance_result 读
-            res_1d_positive = (ctx.resonance_result.get("1d") or {}).get("score", 0) > 0
-
-            if ma60_dev < -0.05 and hub_below and res_1d_positive:
-                return ("D", "底部建仓", signals)
-
-        chan_score = float(chan.get("score", 0) or 0)
-        if stage == "Distribution" and chan_score < -0.3:
-            return ("B", "派发减仓", signals)
-        if stage == "Markup" and wy_score > 0.5:
-            return ("A", "主升持有", signals)
-        return ("C", "震荡观望", signals)
-
-    @staticmethod
-    def _calc_ma60_dev(ctx: "RawContext") -> float:
-        """从 ctx.kline 算 MA60 偏离"""
-        kline = ctx.kline
-        if len(kline) < 60:
-            return 0.0
-        closes = [r["close"] for r in kline[-60:]]
-        ma60 = sum(closes) / len(closes)
-        if ma60 <= 0:
-            return 0.0
-        return (kline[-1]["close"] - ma60) / ma60
-
-    def _count_resonance(self, raw: dict, scene: str) -> int:
-        """共振数: 多少策略 score > 0.2 (正向共振)"""
-        count = 0
-        for d in raw.values():
-            if isinstance(d, dict) and float(d.get("score", 0) or 0) > 0.2:
-                count += 1
-        return count
-
-    def _decide_action(self, scene: str, total: float, resonance_count: int, n_effective: int = 0, n_total: int = 1) -> str:
-        """根据场景 + 总分 + 共振数, 输出行动建议
-
-        v3.6.1 改: 不显示 total_score 数字 (fallback 0.2 误导, dump 缺失时总分无效)
-        改显示 data_completeness (多少 strategy 跑成功, 0-100%)
-        """
-        if n_total > 0 and n_effective / n_total < 0.5:
-            return f"⬜ 数据不足 (仅 {n_effective}/{n_total} 方法有效), 震荡观望"
-        scene_actions = {
-            "A": f"🟢 主升持有 ({resonance_count} 重共振)",
-            "B": f"🔴 派发减仓 ({resonance_count} 重共振)",
-            "C": f"⬜ 震荡观望 ({resonance_count} 重共振)",
-            "D": f"🥇 大底建仓 ({resonance_count} 重共振)",
-            "E": f"⚠️ 弱势规避 ({resonance_count} 重共振)",
-        }
-        return scene_actions.get(scene, f"未知 ({resonance_count} 重共振)")
-
-
-# ============================================================
-# 6. 模块级单例
-# ============================================================
-
-_engine = AnalysisEngine()
-
-
-# ============================================================
-# 7. 测试
-# ============================================================
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 2:
-        print("用法: python -m tools.analysis_engine 002028")
-        sys.exit(1)
-
-    code = sys.argv[1]
-    from tools.kline_store import DataStore
-    ctx = DataStore.get_ctx(code)
-    last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
-    result = AnalysisEngine().analyze_history(ctx, [last]).get(last)
-
-    print(f"📊 {result.code} {result.name} (¥{result.current_price})")
-    print(f"   场景: {result.scene} ({result.scene_name})")
-    print(f"   共振: {result.resonance_count} 重")
-    print(f"   行动: {result.action}")
-    print()
-    print("   raw keys:", list(result.raw.keys()))
-    if "wyckoff" in result.raw:
-        print("   wyckoff score:", result.raw["wyckoff"].get("score"))
-    if "chan" in result.raw:
-        print("   chan score:", result.raw["chan"].get("score"))

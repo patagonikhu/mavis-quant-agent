@@ -335,15 +335,18 @@ class TestSceneAndScore:
     """AnalysisResult 顶层字段 invariant"""
 
     @pytest.mark.integration
-    def test_scene_in_a_to_e(self, analysis_data_per_code):
-        """scene 必须是 A/B/C/D/E 之一"""
+    def test_scene_deleted(self, analysis_data_per_code):
+        """2026-08-29: scene/scene_name/resonance_count 已删 (硬编码 if-else 不准)"""
         for code, data in analysis_data_per_code.items():
-            scene = data["engine_result"].scene
-            assert scene in {"A", "B", "C", "D", "E"}, (
-                f"{code}: scene = {scene!r}, 不在 A/B/C/D/E"
-            )
-            scene_name = data["engine_result"].scene_name
-            assert scene_name, f"{code}: scene_name 空"
+            ar = data["engine_result"]
+            assert not hasattr(ar, "scene"), f"{code}: scene 字段应已删除"
+            assert not hasattr(ar, "scene_name"), f"{code}: scene_name 字段应已删除"
+            assert not hasattr(ar, "resonance_count"), f"{code}: resonance_count 应已删除"
+            # 必有字段
+            assert hasattr(ar, "code")
+            assert hasattr(ar, "raw")
+            assert hasattr(ar, "signals_active")
+            assert hasattr(ar, "action")
 
     @pytest.mark.integration
     def test_total_score_reasonable(self, analysis_data_per_code):
