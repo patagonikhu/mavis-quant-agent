@@ -42,8 +42,8 @@ def _load_codes_with_obv(min_date: str) -> list[str]:
     return [r[0] for r in rows]
 
 
-def _load_index_state(min_date: str, code: str = "000300.SH") -> dict:
-    """加载沪深300 (默认) 每日 MA20 斜率, 决定是否启用策略
+def _load_index_state(min_date: str, code: str = "000688.SH") -> dict:
+    """加载科创板指数 (默认 000688.SH, 科技股对标) MA20 斜率
 
     状态:
       bull  (>0.3%/日): 主升期, 启用
@@ -305,9 +305,11 @@ def main():
     ap.add_argument("--workers", type=int, default=4, help="并发数")
     ap.add_argument("--write-md", action="store_true", help="写 docs/backtest-bb-obv.md")
     ap.add_argument("--market-filter", action="store_true",
-                    help="加大盘状态过滤 (沪深300 MA20 斜率)")
+                    help="加大盘状态过滤 (科创板指数 000688.SH MA20 斜率)")
     ap.add_argument("--filter-flat", action="store_true",
                     help="加大盘过滤时, 震荡市也跳过 (只 bull 启用, 严格模式)")
+    ap.add_argument("--index", default="000688.SH",
+                    help="大盘指数代码 (默认 000688.SH 科创板, 也可 000300.SH 沪深300)")
     args = ap.parse_args()
 
     rules = []
@@ -317,7 +319,7 @@ def main():
     print(f"=== BB+OBV 三重确认回测 | {args.lookback}y ===")
     print(f"    卖出规则 (按优先级): {' → '.join(rules)}")
     if args.market_filter:
-        print(f"    大盘过滤: 沪深300 MA20 斜率 (bull>0.3%/日, flat ±0.3%, bear<-0.3%/日)")
+        print(f"    大盘过滤: 科创板指数 (000688.SH) MA20 斜率 (bull>0.3%/日, flat ±0.3%, bear<-0.3%/日)")
         print(f"    bull/flat: 启用, bear: 关闭")
 
     last_db_date = sqlite3.connect(str(DB)).execute(
@@ -333,11 +335,11 @@ def main():
     # 大盘状态 (可选)
     market_states = {}
     if args.market_filter:
-        market_states = _load_index_state(min_date)
+        market_states = _load_index_state(min_date, code=args.index)
         bull_n = sum(1 for s in market_states.values() if s == "bull")
         flat_n = sum(1 for s in market_states.values() if s == "flat")
         bear_n = sum(1 for s in market_states.values() if s == "bear")
-        print(f"  大盘状态: bull={bull_n}日 ({bull_n/len(market_states)*100:.0f}%) | "
+        print(f"  大盘 ({args.index}) 状态: bull={bull_n}日 ({bull_n/len(market_states)*100:.0f}%) | "
               f"flat={flat_n}日 | bear={bear_n}日")
 
     t0 = time.time()
