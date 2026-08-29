@@ -40,6 +40,10 @@ allowed-tools:
    - `obv5`: 5 日价跌 + OBV 涨 (短期吸筹)
    - `obv_trend`: OBV > MA20 (资金净流入)
 
+**时效性** (2026-08-29 改): `--window N` = "距今天 ≤ N 个日历日" (以 today 为基准, 不是最后交易日).
+例: 周六 8/29 跑 window=3, 8/25 (距今 4 天) 被排除, 8/27 (距今 2 天) 入选.
+实战过期信号无意义, 不要看 4-5 天前的"老信号".
+
 **实战理念**: 宁可错过不可做错. 每天 0-2 只命中, 不构成高频信号.
 
 ## 执行 (走 compute_factor_history)
@@ -92,7 +96,7 @@ history[date] = {boll_pct, boll_width, obv5, obv_trend}
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
-| `--window` | 2 | 触底窗口天数 |
+| `--window` | 2 | 触底窗口 (距今 ≤ N 个**日历日**, 默认 2 = 2 天内) |
 | `--all` | False | 全市场 (默认科技股 ≈ 1132 只) |
 | `--no-obv` | False | 只要 BOLL+BBW 双确认 |
 | `--boll-threshold` | 15 | BOLL% 上限 (越小越严) |

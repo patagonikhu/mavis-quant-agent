@@ -60,10 +60,19 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         if not ctx.kline or len(ctx.kline) < 20:
             return None
 
-        # 只需要算最近 window + 20 天 (OBV MA20 需要)
-        kline_window = ctx.kline[-(window + 20):]
+        # 只需要算最近 window 个日历日 + 20 天 (OBV MA20 需要)
+        # 2026-08-29 改: window = "距今天 ≤ N 个日历日" (以今天为基准,不是最后交易日)
+        # 例: 今天 8/29 周六, 8/25 (周一) 距今 4 天, window=3 应排除
         all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
-        dates_window = all_dates[-(window + 20):]
+        today = datetime.now()
+        cutoff_dt = today - timedelta(days=window)
+        cutoff_str = cutoff_dt.strftime('%Y%m%d')
+        dates_window = [d for d in all_dates if d >= cutoff_str]
+        # 至少要 20 根 K 线算 OBV MA20
+        if len(dates_window) < 20:
+            extra_needed = 20 - len(dates_window)
+            earlier = [d for d in all_dates if d < cutoff_str][-extra_needed:]
+            dates_window = earlier + dates_window
 
         # 直算 (不走 cache): 只跑 WyckoffStrategy (BOLL/BBW) + ObvStrategy (obv5/obv_trend)
         # 跳过 chan/smc/fflow/peg (省 70% 时间)
@@ -71,9 +80,9 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
                                      strategies=[WyckoffStrategy, ObvStrategy])
         history = {r.get('date', ''): r for r in rows if r.get('date')}
 
-        # 找最近 window 日内 满足 BOLL AND BBW 条件
+        # 找距今 ≤ window 天 的最近一个交易日 满足 BOLL AND BBW
         trigger = None
-        recent_dates = dates_window[-window:]
+        recent_dates = [d for d in dates_window if d >= cutoff_str]
         for d in reversed(recent_dates):
             if d not in history: continue
             row = history[d]
@@ -100,10 +109,10 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         if require_obv and not has_obv:
             return None  # 3 重不满足
 
-        # 距今天数
+        # 距今天数 (基于 today, 不是最后交易日)
         try:
             dt = datetime.strptime(trigger_date, '%Y%m%d')
-            days_ago = (datetime.now() - dt).days
+            days_ago = (today - dt).days
         except Exception:
             days_ago = 99
 
