@@ -10,11 +10,15 @@
 数据: K 线走 DataStore (跟其它工具一致), BOLL/BBW/OBV 实时算
 """
 import argparse
+import glob
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import pandas as pd
+import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DB = ROOT / "data" / "analysis_cache.db"
@@ -36,6 +40,53 @@ def _load_codes_with_obv(min_date: str) -> list[str]:
     ).fetchall()
     conn.close()
     return [r[0] for r in rows]
+
+
+def _load_index_state(min_date: str, code: str = "000300.SH") -> dict:
+    """加载沪深300 (默认) 每日 MA20 斜率, 决定是否启用策略
+
+    状态:
+      bull  (>0.3%/日): 主升期, 启用
+      flat  (-0.3 ~ 0.3): 震荡, 减仓
+      bear  (<-0.3%/日): 熊市, 关闭
+    """
+    try:
+        files = sorted(glob.glob(str(ROOT / "data/history/daily/*.parquet")))
+        if not files:
+            return {}
+        df = pd.concat([pq.read_table(f).to_pandas() for f in files])
+        idx = df[df["ts_code"] == code].sort_values("trade_date")
+        if idx.empty:
+            return {}
+        idx = idx.copy()
+        idx["trade_date"] = idx["trade_date"].astype(str).str.replace("-", "").str[:8]
+        idx = idx[idx["trade_date"] >= min_date]
+        if len(idx) < 25:
+            return {}
+        closes = idx["close"].astype(float).tolist()
+        dates = idx["trade_date"].tolist()
+        n = len(closes)
+        # MA20
+        ma20 = [None] * n
+        for i in range(19, n):
+            ma20[i] = sum(closes[i - 19: i + 1]) / 20
+        # 斜率: (ma20[i] - ma20[i-5]) / ma20[i-5] / 5  (日率)
+        states = {}
+        for i in range(20, n):
+            if ma20[i] is None or ma20[i - 5] is None or ma20[i - 5] == 0:
+                continue
+            slope_pct_per_day = (ma20[i] - ma20[i - 5]) / ma20[i - 5] / 5 * 100
+            if slope_pct_per_day > 0.3:
+                s = "bull"
+            elif slope_pct_per_day < -0.3:
+                s = "bear"
+            else:
+                s = "flat"
+            states[dates[i]] = s
+        return states
+    except Exception as e:
+        print(f"[_load_index_state] {e}", flush=True)
+        return {}
 
 
 def _sliding_mean(arr, n):
@@ -253,6 +304,10 @@ def main():
     ap.add_argument("--bbw-threshold", type=float, default=10.0, help="BBW 上限")
     ap.add_argument("--workers", type=int, default=4, help="并发数")
     ap.add_argument("--write-md", action="store_true", help="写 docs/backtest-bb-obv.md")
+    ap.add_argument("--market-filter", action="store_true",
+                    help="加大盘状态过滤 (沪深300 MA20 斜率)")
+    ap.add_argument("--filter-flat", action="store_true",
+                    help="加大盘过滤时, 震荡市也跳过 (只 bull 启用, 严格模式)")
     args = ap.parse_args()
 
     rules = []
@@ -261,6 +316,9 @@ def main():
     rules.append(f"兜底{args.days}日")
     print(f"=== BB+OBV 三重确认回测 | {args.lookback}y ===")
     print(f"    卖出规则 (按优先级): {' → '.join(rules)}")
+    if args.market_filter:
+        print(f"    大盘过滤: 沪深300 MA20 斜率 (bull>0.3%/日, flat ±0.3%, bear<-0.3%/日)")
+        print(f"    bull/flat: 启用, bear: 关闭")
 
     last_db_date = sqlite3.connect(str(DB)).execute(
         "SELECT MAX(date_str) FROM analysis_cache"
@@ -272,8 +330,19 @@ def main():
     codes = _load_codes_with_obv(min_date)
     print(f"扫描 {len(codes)} 只票 ({args.workers} workers)...")
 
+    # 大盘状态 (可选)
+    market_states = {}
+    if args.market_filter:
+        market_states = _load_index_state(min_date)
+        bull_n = sum(1 for s in market_states.values() if s == "bull")
+        flat_n = sum(1 for s in market_states.values() if s == "flat")
+        bear_n = sum(1 for s in market_states.values() if s == "bear")
+        print(f"  大盘状态: bull={bull_n}日 ({bull_n/len(market_states)*100:.0f}%) | "
+              f"flat={flat_n}日 | bear={bear_n}日")
+
     t0 = time.time()
     all_hits = []
+    skipped_bear = 0
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(_scan_one, code, args.lookback, args.boll_threshold,
                           args.bbw_threshold, args.take_profit, args.stop_loss,
@@ -283,11 +352,29 @@ def main():
         for fut in as_completed(futs):
             done += 1
             r = fut.result()
-            all_hits.extend(r)
+            if args.market_filter and market_states:
+                # 过滤熊市 / 震荡市命中
+                r_kept = []
+                for h in r:
+                    state = market_states.get(h["date"], "bull")
+                    if state == "bear":
+                        skipped_bear += 1
+                        continue
+                    if args.filter_flat and state == "flat":
+                        skipped_bear += 1
+                        continue
+                    h["market_state"] = state
+                    r_kept.append(h)
+                all_hits.extend(r_kept)
+            else:
+                all_hits.extend(r)
             if done % 200 == 0:
-                print(f"  [{done}/{len(codes)}] 累计命中 {len(all_hits)} | {time.time()-t0:.0f}s",
+                print(f"  [{done}/{len(codes)}] 累计命中 {len(all_hits)} "
+                      f"(跳过熊市 {skipped_bear}) | {time.time()-t0:.0f}s",
                       flush=True)
     elapsed = time.time() - t0
+    if args.market_filter:
+        print(f"\n  共跳过熊市命中: {skipped_bear} 条")
 
     n = len(all_hits)
     if n == 0:
