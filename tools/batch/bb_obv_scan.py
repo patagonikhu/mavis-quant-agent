@@ -43,9 +43,31 @@ def _load_tech_codes() -> set:
         return None
 
 
+def _load_all_basic() -> dict:
+    """主线程一次性加载全市场 stock_basic (避免 worker 里 duckdb 竞态)
+
+    Returns:
+        {code: {"name": ..., "industry": ...}, ...}
+    """
+    try:
+        import pyarrow.parquet as pq
+        tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
+        df = tbl.to_pandas()
+        return {
+            row["code"]: {"name": row.get("name", "") or "", "industry": row.get("industry", "") or ""}
+            for _, row in df.iterrows()
+        }
+    except Exception as e:
+        print(f"[WARN] _load_all_basic 失败: {e}", flush=True)
+        return {}
+
+
 def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
-             require_obv: bool, tech_codes: set) -> dict | None:
-    """单只扫描: 直算 BOLL/BBW/OBV (不走 cache, cache 只给回测用)"""
+             require_obv: bool, tech_codes: set, basic_map: dict) -> dict | None:
+    """单只扫描: 直算 BOLL/BBW/OBV (不走 cache, cache 只给回测用)
+
+    basic_map: 主线程预加载的 {code: {"name", "industry"}}, 避免 worker 里 duckdb 竞态
+    """
     t0 = time.time()
     try:
         from tools.kline_store import DataStore
@@ -118,14 +140,10 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         except Exception:
             days_ago = 99
 
-        # 股票基础信息
-        try:
-            sb = DataStore.get_stock_basic(code)
-            name = sb.get("name", code) or code
-            industry = sb.get("industry", "")
-        except Exception:
-            name = code
-            industry = ""
+        # 股票基础信息 (主线程预加载, 避免 duckdb worker 竞态)
+        sb = basic_map.get(code, {})
+        name = sb.get("name", "") or code
+        industry = sb.get("industry", "") or ""
 
         # 三重状态
         n_conditions = 3 if require_obv else 2
@@ -180,6 +198,11 @@ def main():
     if args.limit:
         codes = codes[:args.limit]
 
+    # 主线程预加载 stock_basic (一次性, 避免 worker 竞态)
+    print("加载 stock_basic ...", flush=True)
+    basic_map = _load_all_basic()
+    print(f"  {len(basic_map)} 只票基础信息已加载", flush=True)
+
     print(f"=== {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% {'AND OBV 底' if require_obv else ''} ===")
     print(f"直算 (compute_factor_history, strategies=[Wyckoff, Obv], 跳过 chan/smc/fflow/peg)")
     print(f"扫描 {len(codes)} 只 ({args.workers} workers)...")
@@ -190,7 +213,7 @@ def main():
     done = 0
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(scan_one, code, args.window, args.boll_threshold,
-                           args.bbw_threshold, require_obv, tech_codes): code
+                           args.bbw_threshold, require_obv, tech_codes, basic_map): code
                for code in codes}
         for fut in as_completed(futs):
             r = fut.result()
