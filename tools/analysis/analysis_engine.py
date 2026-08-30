@@ -869,7 +869,6 @@ def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
     """缠论 1买/1卖/2买/3买 + 双中枢/笔结束 (3 级别)
 
     v3.0: 直接读 ChanStrategy 算的 ctx._bsp_for_data (czsc_signals 输出, 100% czsc)
-    不再调老的 BuySellPointsFactor (tools/factors/chan/_deprecated/buy_sell.py)
     """
     bsp = getattr(ctx, "_bsp_for_data", None) or {}
     if not bsp:

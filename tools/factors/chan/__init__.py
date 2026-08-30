@@ -2,7 +2,6 @@
 chan/__init__.py - 缠论算法库 (v4.1, 100% czsc)
 
 所有缠论算法 (分型/笔/中枢/段/背驰/买卖点) 都通过 czsc 计算。
-我们的 Python 实现已废弃, 移到 _deprecated/ 目录。
 
 主入口:
   from tools.factors.chan.czsc_adapter import analyze_hub_v2_czsc

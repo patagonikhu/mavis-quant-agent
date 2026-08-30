@@ -212,7 +212,6 @@ def compute_market_state(
 def _parse_md_last_signal(md_path: Path) -> list[str]:
     """从 md 的 "## 📈 因子历史走势" section 末行读今日新触发的信号
 
-    2026-08-29: scene 字段已删 (A/B/C/D/E 硬编码 if-else), 改为只读 signals
     注意: 不能扫全部行——历史行里的 🆕 是当天首次触发，扫全部会把 3 个月前的旧信号混入
     """
     if not md_path.exists():

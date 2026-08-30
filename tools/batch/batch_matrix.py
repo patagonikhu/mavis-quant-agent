@@ -65,7 +65,6 @@ def render_one_matrix(code: str) -> str:
     1 个 section, 0 重复计算
 
     v5.10.30 改: 走 AnalysisEngine.analyze_dump_to_dict() (内含 factor.* 3 周期桥接)
-    v5.10.26 改: dump.get("signals_5method") 字段已删, 改用 AnalysisEngine
     v5.10.42 改: 删 RenderData.signals_5method property 兼容层 (5 处全部改读 data.analysis)
     """
     from tools.kline_store import DataStore

@@ -344,7 +344,7 @@ def _phase_progress_map(stage, stage_detail, sub_events, accum_abc_pass, distrib
 
 
 def wyckoff_stage(closes, highs, lows, vols, window=120, **kwargs):
-    """兼容层: 老 signals_5method 用函数式调用 (backtest_5methods 已删, signals_5method 仍调用)"""
+    """函数式威科夫阶段判定 (供老 API 兼容)"""
     df = pd.DataFrame({
         "close": closes,
         "high": highs,

@@ -351,7 +351,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
             warnings.append(
                 f"🔴 顺序违反铁律: PEG (第{peg_idx+1}个) 在 5方法详情 (第{supp_idx+1}个) 之前 — CLAUDE.md 5️⃣ 必须在 2️⃣ 之后"
             )
-        # 2026-08-26: 删 "5 方法详情 section 缺失" 硬保证 (schema 已删 chan_supplement, 详情段非必填)
         if matrix_idx < 0:
             warnings.append("🔴 5 方法 × 3 周期 矩阵 section 缺失 (id:method_matrix)")
     except ImportError:

@@ -103,7 +103,6 @@ PEG + DCF L (basic_data/peg_calc/dcf_calc)
 | t-bottleneck | ❌ 否 (产业链) | 仅引用 PEG/DCFL |
 | t-chain | ❌ 否 (产业链) | 仅引用 PEG |
 | t-checklist | ✅ 是 (六关评分) | 调 t-analyze + 引用 MA |
-| t-ranking (已删) | 排序 | 调 t-analyze + 引用 PEG/MA |
 | t-rotation | ❌ 否 (板块轮动) | 不引用 |
 | t-trigger | ❌ 否 (信号触发) | 引用缠论字段 |
 | t-monitor | ❌ 否 (T 位置监控) | 引用 T 框架 |

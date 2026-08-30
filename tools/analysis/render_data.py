@@ -34,9 +34,6 @@ from typing import Optional
 # 状态
 # ============================================================
 
-# 2026-07-24: 机械算基础分 helper (LLM 后续在 chat 里精调)
-# 替代 enhance_report 阶段 LLM 没跑的占位符, 让 linter 不警告
-# 2026-07-25: enhance_report.py 已删, 注释保留供历史追溯
 
 def _mech_four_questions(raw, signals_5) -> dict:
     """机械算投资四问基础分 (PE/ROE/EPS CAGR)"""
@@ -319,7 +316,7 @@ class RenderData:
     analysis: Optional[dict] = None  # v5.10.26+: 替代 signals_5method, AnalysisEngine 输出 dict
 
     # 因子历史缓存 — 计算一次后由 render/_section_factor_history 复用，避免重复 analyze_history
-    factor_history_rows: Optional[list] = field(default=None, repr=False)  # deprecated，保留兼容，不再由 renderer 缓存
+    factor_history_rows: Optional[list] = field(default=None, repr=False)
 
     # v5.10.35: 9 个派生字段兼容层 (peg/dcf/exit_signals/...) — render 读 data.<字段> 现在自动从 analysis 拿
     # 之前 v5.10.34 前: 这 9 个字段从 dump 顶层读; 现在挪到 analysis 层

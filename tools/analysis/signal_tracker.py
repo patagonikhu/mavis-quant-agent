@@ -399,12 +399,6 @@ def cmd_stats(args):
     print()
 
 
-def cmd_scan_3in1(args):
-    """已废弃: 4 合 1 (BC+中枢+MA+威科夫) 扫描已删除。请改用 /t-trigger 或 /t-monitor。"""
-    print("⚠️  cmd_scan_3in1 已废弃: 4 合 1 相关代码已全量删除。")
-    print("   请改用: bash tools/with_venv.sh python -m tools.signal_tracker scan")
-
-
 def main():
     parser = argparse.ArgumentParser(description='Mavis Signal Tracker v1.0')
     sub = parser.add_subparsers(dest='cmd')
@@ -427,12 +421,6 @@ def main():
     p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/SMC/威科夫/PEG/fflow/T框架/板块) 过滤')
     p_st.add_argument('--window', type=int, help='只统计最近 N 天')
     p_st.set_defaults(func=cmd_stats)
-
-    # scan-3in1 subcommand kept for CLI compat (stub, prints deprecation notice)
-    p_scan = sub.add_parser('scan-3in1', help='(已废弃) 4 合 1 扫描已删除')
-    p_scan.add_argument('--watchlist', default='data/watchlist.json')
-    p_scan.add_argument('--sector', help='只扫指定板块')
-    p_scan.set_defaults(func=cmd_scan_3in1)
 
     args = parser.parse_args()
     if not args.cmd:

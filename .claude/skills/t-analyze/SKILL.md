@@ -193,7 +193,7 @@ events.json 找 `code` 匹配的事件；找不到就说"未识别到 T 点"
 
 ---
 
-## DCF L（替代已废弃的 Priced-in）
+## DCF L
 
 **三档折现率 r=8/10/12%**，校正值 = r=10% × 0.7
 
@@ -216,8 +216,6 @@ L/可达利润 > 2    → 叙事透支 ❌
 | 光学 | 0.110 | 0.90 | 0.035 |
 | 机器人 | 0.130 | 1.00 | 0.040 |
 | 默认 | 0.100 | 0.85 | 0.030 |
-
-**❌ 禁止用统一 FCF_factor=0.80（v9 已废弃）**
 
 ---
 
@@ -288,7 +286,6 @@ P/MA120 > 50% 长期透支
 - `result.raw` (各 strategy 结果 dict: wyckoff/chan/smc/obv/fflow/peg)
 - `result.signals_active` (所有命中的信号列表)
 - `result.action` (⬜/🥇/🥈/⚠️/❌)
-- ❌ 已删: scene, scene_name, resonance_count (硬编码 if-else 不准)
 
 ---
 

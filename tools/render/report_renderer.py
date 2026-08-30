@@ -1225,7 +1225,7 @@ def _section_four_q_short(data: RenderData) -> str:
 
 
 # ============================================================
-# Tushare 补充段 + 缠论三要素 (历史从 enhance_report 迁移, 2026-07-25 enhance_report.py 已删)
+# Tushare 补充段 + 缠论三要素
 # ============================================================
 
 def _hub_str(h: dict) -> str:

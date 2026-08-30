@@ -267,7 +267,7 @@ def diff_rows(prev: dict, curr: dict) -> dict:
     """
     changes = {}
 
-    # 标量字段：直接比 (2026-08-29 删 scene)
+    # 标量字段: 直接比
     for field in ("wyckoff_daily", "wyckoff_weekly"):
         if prev.get(field) != curr.get(field):
             changes[field] = f"{prev.get(field)}→{curr.get(field)}"
@@ -343,7 +343,6 @@ _BSP_BUY  = {"1买", "2买", "3买", "趋势1买", "趋势2买", "盘整1买", "
 _BSP_SELL = {"1卖", "2卖", "3卖", "趋势1卖", "趋势2卖", "盘整1卖", "盘整2卖"}
 _WY_TOP   = {"DistributionStart", "UTAD", "EVR", "LPSY", "BC", "UT"}
 _WY_BOT   = {"Spring", "LPS", "SOS", "SC", "AR", "Compression"}
-# 2026-08-29: 删 _SCENE_BUY/_SCENE_SELL (A/B/C/D/E scene 分类已删, scene_change 信号不再有)
 
 
 def _bsp_direction(label: str):

@@ -819,7 +819,6 @@ def get_fund_flow_combined(code: str, days: int = 10, moneyflow_list: list | Non
     """
     组合方案: Tushare.money_flow 真实数据 (主力=大单+特大单)
     - 主源: Tushare.money_flow API (2000 积分档, 24h 稳定)
-    - 备源: 无 (OBV 派生已废弃, 2026-07-22)
 
     v5.10.17 改: 接受 moneyflow_list 参数 (复用 fetch_all 已拉数据)
       - 不传 moneyflow_list: 内部调 get_money_flow(code, limit=days) 拉数据
@@ -832,7 +831,7 @@ def get_fund_flow_combined(code: str, days: int = 10, moneyflow_list: list | Non
         "source": "🟢 Tushare.money_flow (10 日真实)",
         "data_columns": {
           "real": [{"date": "2026-07-21", "main_yi": +18.28, ...}],
-          "derived": []  # 2026-07-22: OBV 派生已废弃, 留空保兼容
+          "derived": []
         },
         "today_real": {...},
         "verdict": "🟢 主力明显进货 ...",
@@ -905,10 +904,10 @@ def get_fund_flow_combined(code: str, days: int = 10, moneyflow_list: list | Non
 
     return {
         "success": today_real is not None,
-        "source": "🟢 Tushare.money_flow (10 日真实, 已废弃 OBV 派生)",
+        "source": "🟢 Tushare.money_flow (10 日真实)",
         "data_columns": {
             "real": real_column,
-            "derived": [],  # 2026-07-22: OBV 派生已废弃
+            "derived": [],
         },
         "data": real_column,
         "today_real": today_real,
@@ -922,7 +921,7 @@ def get_fund_flow_combined(code: str, days: int = 10, moneyflow_list: list | Non
         "fflow_available": today_real is not None,
         "always_available": True,
         "next_real_update": "Tushare 每日 ~18:00 更新昨日数据",
-        "note": "Tushare.money_flow 真实 (亿元). OBV 派生已废弃, Tushare 不可用时 fflow 段直接空",
+        "note": "Tushare.money_flow 真实 (亿元). Tushare 不可用时 fflow 段直接空",
     }
 
 
