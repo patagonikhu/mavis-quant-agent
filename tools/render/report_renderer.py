@@ -1403,8 +1403,8 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     if not rows:
         return "> 数据不足\n"
 
-    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | MA20斜率 | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | MA偏离 |"
-    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    HEADER = "| 日期 | 收盘 | MA综合(日/周/斜) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW |"
+    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     HEADER_N = HEADER.count("|") - 1
     lines = [HEADER, SEP]
 
@@ -1452,32 +1452,38 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
         aw = row.get('accum_days_weekly', 0)
         accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
 
-        # MA20 5日斜率 (%)
+        # MA 综合列: 日/周偏离 + 斜率方向 (1 列搞定 3 维信息)
+        # 格式: -1.2%/-7.7% ↗+0.07%/日
+        ma_d = row.get('ma_dev_daily')
+        ma_w = row.get('ma_dev_weekly')
         slope = slope_by_date.get(row.get("date"))
-        slope_s = f"{slope:+.2f}%/日" if slope is not None else "—"
+        if ma_d is not None or ma_w is not None or slope is not None:
+            ma_parts = []
+            for v in (ma_d, ma_w):
+                if v is not None:
+                    ma_parts.append(f"{v:+.1f}%")
+            if slope is not None:
+                if slope > 0.05:    arrow = "↗"
+                elif slope < -0.05: arrow = "↘"
+                else:               arrow = "→"
+                ma_parts.append(f"{arrow}{slope:+.2f}%/日")
+            ma_s = "/".join(ma_parts)
+        else:
+            ma_s = "—"
 
         line = (
             f"| {row['date']} | ¥{row['close']:.1f} "
+            f"| {ma_s} "
             f"| {wy} | {se} "
-            f"| {_ma_str(row)} | {slope_s} "
             f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
             f"| {b3} | {chg_str} | {accum_str} "
             f"| {obv_label(row)} |"
         )
         bpct  = row.get('boll_pct')
         bwid  = row.get('boll_width')
-        # MA 偏离合并: 日/周 偏离 + MA120 偏离 (短期/中期/长期 3 维度)
-        ma_d = row.get('ma_dev_daily')
-        ma_w = row.get('ma_dev_weekly')
-        ma120 = row.get('ma120_dev')
-        ma_parts = []
-        for v in (ma_d, ma_w, ma120):
-            if v is not None:
-                ma_parts.append(f"{v:+.1f}%")
-        ma_s = " / ".join(ma_parts) if ma_parts else "—"
         bpct_s  = f"{bpct:.0f}%"  if bpct  is not None else "—"
         bwid_s  = f"{bwid:.1f}%"  if bwid  is not None else "—"
-        line = line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {ma_s} |"
+        line = line.rstrip(" |") + f" | {bpct_s} | {bwid_s} |"
         # 2026-08-01: markdown 表格 cell 错位防护
         # cell 计数必须 == 表头 cell 数, 否则下游 batch_summary 解析会错位
         n_cells = line.count("|") - 1
