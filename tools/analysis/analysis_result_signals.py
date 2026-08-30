@@ -219,10 +219,10 @@ def _active_bsp(bsp_raw: dict, level: str, as_of: str = "") -> dict:
 
 
 def obv_label(row: dict) -> str:
-    """OBV 标签 (2026-08-18 统一, 2026-08-29 改: 读 verdict 而非 obv_verdict)
+    """OBV 标签 (2026-08-18 统一, 2026-08-30 修: 读 obv_verdict 而非 verdict)
 
-    输入 row 字段 (来自 factor_history.compute_factor_history 输出):
-      - verdict: 5 档 (🟢主力进货 / 🟡偏进货 / ⬜中性 / 🟠偏出货 / 🔴主力出货)
+    输入 row 字段 (来自 factor_history.compute_factor_history 输出, flat 结构):
+      - obv_verdict: 5 档 (🟢主力进货 / 🟡偏进货 / ⬜中性 / 🟠偏出货 / 🔴主力出货)
       - obv5: 0/1 (5日价跌+OBV 涨, 实战吸筹信号)
       - obv_trend: 0/1 (OBV > MA20, 实战吸筹信号)
 
@@ -234,9 +234,16 @@ def obv_label(row: dict) -> str:
       - tools/batch/batch_summary.py: signal-watchlist.md OBV 列
       - tools/render/report_renderer.py: analyze-*.md 因子历史走势表 OBV 列
     """
-    verdict = row.get("verdict", "—") or "—"
-    obv5 = row.get("obv5", 0) or 0
-    obv_trend = row.get("obv_trend", 0) or 0
+    # 兼容嵌套 (AnalysisResult.raw["obv"]) 和 flat (compute_factor_history 输出) 两种结构
+    obv_dict = row.get("obv") if isinstance(row.get("obv"), dict) else {}
+    verdict = (
+        row.get("obv_verdict")
+        or (obv_dict.get("verdict") if obv_dict else None)
+        or row.get("verdict")
+        or "—"
+    )
+    obv5 = row.get("obv5", obv_dict.get("obv5", 0) if obv_dict else 0) or 0
+    obv_trend = row.get("obv_trend", obv_dict.get("obv_trend", 0) if obv_dict else 0) or 0
     # 实战信号: obv5 + obv_trend 至少 1 个触发 → 标记"吸筹"
     if verdict in ("—", "中性", "无数据", "⬜中性"):
         if obv5 or obv_trend:
