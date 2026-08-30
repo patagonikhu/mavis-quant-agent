@@ -1403,10 +1403,27 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     if not rows:
         return "> 数据不足\n"
 
-    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | MA120偏离 |"
-    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 子事件(日/周) | MA(日/周) | MA20斜率 | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | MA偏离 |"
+    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     HEADER_N = HEADER.count("|") - 1
     lines = [HEADER, SEP]
+
+    # MA20 5日斜率: 在循环外算一次, 按日期索引
+    # 斜率 = (MA20[d] - MA20[d-5]) / MA20[d-5] / 5 * 100
+    # 通过 close 和 ma_dev_daily 反算 MA20: close / (1 + ma_dev_daily/100)
+    ma20_by_date = {}
+    for r in rows:
+        d_str = r.get("date")
+        c = r.get("close")
+        md = r.get("ma_dev_daily")
+        if d_str and c is not None and md is not None:
+            ma20_by_date[d_str] = c / (1 + md / 100)
+    sorted_dates = sorted(ma20_by_date.keys())
+    slope_by_date = {}
+    for i, d in enumerate(sorted_dates):
+        if i >= 5 and ma20_by_date[sorted_dates[i-5]] > 0:
+            slope = (ma20_by_date[d] - ma20_by_date[sorted_dates[i-5]]) / ma20_by_date[sorted_dates[i-5]] / 5 * 100
+            slope_by_date[d] = slope
 
     for i, row in enumerate(rows):
         changes = diff_rows(rows[i-1], row) if i > 0 else {}
@@ -1435,21 +1452,32 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
         aw = row.get('accum_days_weekly', 0)
         accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
 
+        # MA20 5日斜率 (%)
+        slope = slope_by_date.get(row.get("date"))
+        slope_s = f"{slope:+.2f}%/日" if slope is not None else "—"
+
         line = (
             f"| {row['date']} | ¥{row['close']:.1f} "
             f"| {wy} | {se} "
-            f"| {_ma_str(row)} "
+            f"| {_ma_str(row)} | {slope_s} "
             f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
             f"| {b3} | {chg_str} | {accum_str} "
             f"| {obv_label(row)} |"
         )
         bpct  = row.get('boll_pct')
         bwid  = row.get('boll_width')
+        # MA 偏离合并: 日/周 偏离 + MA120 偏离 (短期/中期/长期 3 维度)
+        ma_d = row.get('ma_dev_daily')
+        ma_w = row.get('ma_dev_weekly')
         ma120 = row.get('ma120_dev')
+        ma_parts = []
+        for v in (ma_d, ma_w, ma120):
+            if v is not None:
+                ma_parts.append(f"{v:+.1f}%")
+        ma_s = " / ".join(ma_parts) if ma_parts else "—"
         bpct_s  = f"{bpct:.0f}%"  if bpct  is not None else "—"
         bwid_s  = f"{bwid:.1f}%"  if bwid  is not None else "—"
-        ma120_s = f"{ma120:+.1f}%" if ma120 is not None else "—"
-        line = line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {ma120_s} |"
+        line = line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {ma_s} |"
         # 2026-08-01: markdown 表格 cell 错位防护
         # cell 计数必须 == 表头 cell 数, 否则下游 batch_summary 解析会错位
         n_cells = line.count("|") - 1
