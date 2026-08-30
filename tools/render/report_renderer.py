@@ -1403,8 +1403,8 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     if not rows:
         return "> 数据不足\n"
 
-    HEADER = "| 日期 | 收盘 | MA综合(日/周/斜) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW |"
-    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    HEADER = "| 日期 | 收盘 | MA偏离(日/周) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW |"
+    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     HEADER_N = HEADER.count("|") - 1
     lines = [HEADER, SEP]
 
@@ -1452,26 +1452,28 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
         aw = row.get('accum_days_weekly', 0)
         accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
 
-        # MA 综合列: 日偏离 | 周偏离 | 斜率方向+数值
-        # 用 1+2 个空格 + 箭头 分隔, 不用 /
-        # 例: "-1.2% -7.7%  ↗+0.07%/日"
+        # MA 分两列: MA偏离(日/周) + MA20斜率
         ma_d = row.get('ma_dev_daily')
         ma_w = row.get('ma_dev_weekly')
-        slope = slope_by_date.get(row.get("date"))
         ma_parts = []
         for v in (ma_d, ma_w):
             if v is not None:
                 ma_parts.append(f"{v:+.1f}%")
+        ma_s = " / ".join(ma_parts) if ma_parts else "—"
+
+        # MA20 斜率 (%, 带方向箭头)
+        slope = slope_by_date.get(row.get("date"))
         if slope is not None:
             if slope > 0.05:    arrow = "↗"
             elif slope < -0.05: arrow = "↘"
             else:               arrow = "→"
-            ma_parts.append(f"{arrow}{slope:+.2f}%/日")
-        ma_s = " ".join(ma_parts) if ma_parts else "—"
+            slope_s = f"{arrow}{slope:+.2f}%/日"
+        else:
+            slope_s = "—"
 
         line = (
             f"| {row['date']} | ¥{row['close']:.1f} "
-            f"| {ma_s} "
+            f"| {ma_s} | {slope_s} "
             f"| {wy} | {se} "
             f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
             f"| {b3} | {chg_str} | {accum_str} "
