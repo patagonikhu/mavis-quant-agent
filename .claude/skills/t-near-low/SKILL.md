@@ -24,10 +24,12 @@ allowed-tools:
    - `max_drop`: high → low 最深回撤，默认 `70% ≤ max_drop < 80%`
    - `距 5y 低 (粗筛)`: `< 10%` (用 weekly 末根)
    - `反弹次数`: 5y weekly 内 30%+ 反弹事件，window=3 strict local min
-2. **精筛 (并发 8 worker 拉 tushare)**: 对粗筛候选
-   - `get_daily(limit=1)` 拉 daily 最新价，重算 `距 5y 低 < 3%`
-   - `get_income(period=20251231 + 20241231)` 拉 2025A/2024A 净利
+2. **精筛 (本地 DataStore, 0 网络)**: 对粗筛候选
+   - `DataStore.get_daily_basic(code)` 读本地 daily 最新价, 重算 `距 5y 低 < 3%`
+   - `DataStore.get_income(code)` 读本地 EPS/净利 (2025A/2024A)
 3. **输出清单 (按距低% 升序)**: 8-13 只
+
+> 2026-08-30 修: 之前 SKILL.md 写"拉 tushare"是过时注释, 实际代码已改用本地 DataStore, 全程 0 网络, 跟 t-bb-obv / t-analyze 框架一致.
 
 ## 执行
 
