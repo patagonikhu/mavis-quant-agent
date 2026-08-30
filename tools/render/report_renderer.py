@@ -1452,24 +1452,22 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
         aw = row.get('accum_days_weekly', 0)
         accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
 
-        # MA 综合列: 日/周偏离 + 斜率方向 (1 列搞定 3 维信息)
-        # 格式: -1.2%/-7.7% ↗+0.07%/日
+        # MA 综合列: 日偏离 | 周偏离 | 斜率方向+数值
+        # 用 1+2 个空格 + 箭头 分隔, 不用 /
+        # 例: "-1.2% -7.7%  ↗+0.07%/日"
         ma_d = row.get('ma_dev_daily')
         ma_w = row.get('ma_dev_weekly')
         slope = slope_by_date.get(row.get("date"))
-        if ma_d is not None or ma_w is not None or slope is not None:
-            ma_parts = []
-            for v in (ma_d, ma_w):
-                if v is not None:
-                    ma_parts.append(f"{v:+.1f}%")
-            if slope is not None:
-                if slope > 0.05:    arrow = "↗"
-                elif slope < -0.05: arrow = "↘"
-                else:               arrow = "→"
-                ma_parts.append(f"{arrow}{slope:+.2f}%/日")
-            ma_s = "/".join(ma_parts)
-        else:
-            ma_s = "—"
+        ma_parts = []
+        for v in (ma_d, ma_w):
+            if v is not None:
+                ma_parts.append(f"{v:+.1f}%")
+        if slope is not None:
+            if slope > 0.05:    arrow = "↗"
+            elif slope < -0.05: arrow = "↘"
+            else:               arrow = "→"
+            ma_parts.append(f"{arrow}{slope:+.2f}%/日")
+        ma_s = " ".join(ma_parts) if ma_parts else "—"
 
         line = (
             f"| {row['date']} | ¥{row['close']:.1f} "
