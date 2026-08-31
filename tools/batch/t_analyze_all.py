@@ -1,7 +1,7 @@
 """
 t-analyze --all verbose 版本：每只股票分阶段打印进度
 """
-import json, sys, datetime, time, inspect
+import json, sys, datetime, time, inspect, os
 from pathlib import Path
 sys.path.insert(0, '.')
 
@@ -85,20 +85,21 @@ except Exception as e:
     print(f'  [WARN] sync_incremental 失败: {e}', flush=True)
 
 t_total = time.time()
-for i, s in enumerate(stocks, 1):
-    code, name = s['code'], s['name']
+
+# 单只处理函数 (供 ThreadPoolExecutor 调用)
+def process_one(s):
+    code = s['code']
+    name = s['name']
     subdir = 'portfolio' if s.get('list_type') == '持仓' else 'watchlist'
     list_type_label = '持仓' if s.get('list_type') == '持仓' else '自选'
-    print(f'\n[{i}/{len(stocks)}] {code} {name} ({list_type_label}) START', flush=True)
     t0 = time.time()
     try:
         ctx = DataStore.get_ctx(code)
         if not ctx.kline:
-            # 单只级 sync 兜底: 用 Tushare 直接拉这只, 写本地 parquet
-            print(f'  ⚠️ {code}: 无K线, 尝试单只 sync 兜底...', flush=True)
+            # 单只级 sync 兜底
             try:
                 from tools.fetch.tushare_fetcher import get_daily
-                from tools.kline_history_backfill import _append_records, _to_ts_code, _to_quarters
+                from tools.kline_history_backfill import _append_records, _to_ts_code
                 from datetime import datetime, timedelta
                 ts_code = _to_ts_code(code)
                 end_str = datetime.now().strftime('%Y%m%d')
@@ -108,32 +109,27 @@ for i, s in enumerate(stocks, 1):
                     _append_records(data)
                     ctx = DataStore.get_ctx(code)
             except Exception as e:
-                print(f'  ⚠️ {code}: 单只 sync 失败: {e}', flush=True)
+                pass
             if not ctx.kline:
-                print(f'  ❌ {code}: 无K线 (单只 sync 后仍空)', flush=True)
-                errs.append((code, '无K线 (主 sync + 单只 sync 兜底都失败, 可能是 ETF/退市/代码错)'))
-                continue
-            print(f'  ✅ {code}: 单只 sync 成功, 重新加载 ({len(ctx.kline)} 根)', flush=True)
+                return ('err', code, '无K线 (sync + 兜底都失败)')
+
         all_dates = [k['trade_date'].replace('-', '')[:8] for k in ctx.kline]
         dates = all_dates[-120:]
         history = AnalysisEngine().analyze_history(ctx, dates)
         if len(history) < 2:
-            print(f'  ❌ {code}: history 不足', flush=True)
-            errs.append((code, f'history 不足 ({len(history)} 根)'))
-            continue
+            return ('err', code, f'history 不足 ({len(history)} 根)')
+
         result = history[dates[-1]]
-        print(f'    [render] {code}: building MD...', flush=True)
         data = RenderData.from_result(ctx, result)
-        # factor_history_rows 用 compute_factor_history 输出 (list[dict], render 期望)
-        # 跟 signal table 用同一份, 避免重复
         data.factor_history_rows = compute_factor_history(ctx, step=1, lookback=120)
         md = render_report(data)
         md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
         md_path.parent.mkdir(parents=True, exist_ok=True)
         md_path.write_text(md, encoding='utf-8')
-        md_written += 1
-        # signal table (复用 data.factor_history_rows, 不再重复算)
+
+        # signal table
         rows = data.factor_history_rows
+        signals = []
         if len(rows) >= 2:
             r = rows[-1]
             changes = diff_rows(rows[-2], rows[-1])
@@ -143,21 +139,47 @@ for i, s in enumerate(stocks, 1):
             hub_str = f"¥{hub_d.get('low',0):.0f}~{hub_d.get('high',0):.0f}{(hub_d.get('pos') or '')[:2]}" if hub_d.get('valid') else '—'
             has_sig = '⭐' if sig_fmtd else ''
             for _, detail, direction in sigs:
-                if direction == 'buy':
-                    buy_rows.append((code, name, detail))
-                else:
-                    sell_rows.append((code, name, detail))
-            all_table_rows.append((code, name, (r.get('wyckoff_daily') or '?')[:10],
-                                  f"{r.get('ma_dev_daily') or 0:+.1f}%", hub_str,
-                                  ' '.join(sig_fmtd) if sig_fmtd else '—', has_sig))
+                signals.append((direction, code, name, detail))
+            table_row = (code, name, (r.get('wyckoff_daily') or '?')[:10],
+                         f"{r.get('ma_dev_daily') or 0:+.1f}%", hub_str,
+                         ' '.join(sig_fmtd) if sig_fmtd else '—', has_sig)
+        else:
+            table_row = (code, name, '?', '0.0%', '—', '—', '')
+
         elapsed = time.time() - t0
-        print(f'    [done] {code} -> {md_path.name} ({elapsed:.1f}s, {len(md):,}chars)', flush=True)
+        return ('ok', code, {'md_path': md_path, 'elapsed': elapsed, 'len': len(md),
+                              'signals': signals, 'table_row': table_row, 'list_type': list_type_label})
     except Exception as e:
-        elapsed = time.time() - t0
-        print(f'  ❌ {code}: {type(e).__name__}: {e} ({elapsed:.1f}s)', flush=True)
-        import traceback
-        traceback.print_exc()
-        errs.append((code, str(e)[:200]))
+        return ('err', code, str(e)[:200])
+
+
+# 并发跑 (跟 bb_obv_scan / refresh_all 一致, 默认 4 worker)
+WORKERS = int(os.environ.get('T_ANALYZE_WORKERS', '4'))
+print(f'\n[并发] {WORKERS} workers', flush=True)
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+results = []
+with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+    futs = {ex.submit(process_one, s): s for s in stocks}
+    for i, fut in enumerate(as_completed(futs), 1):
+        s = futs[fut]
+        status, code, payload = fut.result()
+        if status == 'ok':
+            results.append(payload)
+            print(f'  [{i}/{len(stocks)}] ✅ {code} -> {payload["md_path"].name} ({payload["elapsed"]:.1f}s, {payload["len"]:,}chars)', flush=True)
+        else:
+            errs.append((code, payload))
+            print(f'  [{i}/{len(stocks)}] ❌ {code}: {payload}', flush=True)
+
+# 汇总 signal-watchlist.md
+for r in results:
+    md_written += 1
+    for direction, code, name, detail in r['signals']:
+        if direction == 'buy':
+            buy_rows.append((code, name, detail))
+        else:
+            sell_rows.append((code, name, detail))
+    all_table_rows.append(r['table_row'])
 
 total_elapsed = time.time() - t_total
 
