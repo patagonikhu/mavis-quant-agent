@@ -78,13 +78,13 @@ import sys; sys.path.insert(0, '.')
 from tools.kline_store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.render_data import RenderData
-from tools.analysis.analysis_result_signals import compute_factor_history
 from tools.render.report_renderer import render_report
 from pathlib import Path
 ctx = DataStore.get_ctx('002531')
 all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
 history = AnalysisEngine().analyze_history(ctx, all_dates[-120:])
 data = RenderData.from_result(ctx, history[all_dates[-1]])
+# 复用 history (不调 compute_factor_history, render 接受 list[dict] 格式)
 data.factor_history_rows = list(history.values())
 md = render_report(data)
 p = Path('docs') / f'analyze-002531-{ctx.name}.md'

@@ -7,7 +7,7 @@ allowed-tools:
 
 ## ⚠️ 重要：不走 cache
 
-`t-bb-obv` **直接用 `compute_factor_history` 实时算**（不走 cache）。
+`t-bb-obv` **直接用 `analyze_history` 实时算**（不走 cache, 也不走 compute_factor_history, 因为只读 4 字段 boll_pct/boll_width/obv5/obv_trend, 不需要 16 字段组装）。
 
 **为什么**：
 - cache 经常不完整（`t-sync-cache` 太慢，没人会等）
@@ -46,7 +46,7 @@ allowed-tools:
 
 **实战理念**: 宁可错过不可做错. 每天 0-2 只命中, 不构成高频信号.
 
-## 执行 (走 compute_factor_history)
+## 执行 (走 analyze_history)
 
 ```bash
 # 后台跑（>30s 必须 background, 不用 timeout）
@@ -61,12 +61,13 @@ bash tools/with_venv.sh python -m tools.batch.bb_obv_scan --window 5
 ```
 DataStore.get_ctx(code)  →  K线 (30 天)
                               ↓
-compute_factor_history(ctx, lookback=30, 
-                       strategies=[WyckoffStrategy, ObvStrategy])
+AnalysisEngine(strategies=[Wyckoff, Obv]).analyze_history(ctx, dates)
                               ↓
               (跳过 chan/smc/fflow/peg, 省 70% 时间)
                               ↓
-history[date] = {boll_pct, boll_width, obv5, obv_trend}
+history[date] = AnalysisResult (raw['wyckoff'] + raw['obv'])
+                              ↓
+                  拼 5 字段 {boll_pct, boll_width, obv5, obv_trend}
                               ↓
                   检查 3 重条件, 命中即输出
 ```
@@ -110,12 +111,12 @@ history[date] = {boll_pct, boll_width, obv5, obv_trend}
 | 数据 | 来源 |
 |---|---|
 | K线 | `DataStore.get_ctx()` (parquet, 0 网络) |
-| BOLL%/BBW/OBV | **实时算** (`compute_factor_history` with [WyckoffStrategy, ObvStrategy]) |
+| BOLL%/BBW/OBV | **实时算** (`AnalysisEngine(strategies=[Wyckoff, Obv]).analyze_history`) |
 | 科技股过滤 | `data/history/stock_basic/stock_basic.parquet` (申万行业) |
 | 股票基础信息 | `DataStore.get_stock_basic()` |
 
 ## 相关
 
-- `tools/batch/bb_obv_scan.py` — 扫描脚本 (compute_factor_history 直算)
+- `tools/batch/bb_obv_scan.py` — 扫描脚本 (analyze_history 直算)
 - `/t-sync-cache` — **回测用** (cache 5 年数据)
 - `/t-backtest --signal "boll:15" --signal "bbw:10"` — 历史胜率回测 (用 cache)

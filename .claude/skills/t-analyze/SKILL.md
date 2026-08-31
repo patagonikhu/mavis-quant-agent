@@ -102,7 +102,7 @@ sys.path.insert(0, '.')
 from tools.kline_store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.render_data import RenderData
-from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows, extract_signals
+from tools.analysis.analysis_result_signals import diff_rows, extract_signals
 from tools.render.report_renderer import render_report
 
 code = '{code}'
