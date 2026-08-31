@@ -487,6 +487,13 @@
       "sector": "红利低波",
       "list_type": "持仓",
       "notes": "中证红利低波100指数, 防御性 ETF 替代, 用于熊市/震荡市对冲"
+    },
+    {
+      "code": "000858",
+      "name": "五粮液",
+      "sector": "白酒",
+      "list_type": "持仓",
+      "notes": "[2026-08-31] 加进 watchlist, 之前用 refresh_all.sh 单独跑, 现在批量自动处理"
     }
   ],
   "changelog": [
