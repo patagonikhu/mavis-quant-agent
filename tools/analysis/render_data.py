@@ -542,6 +542,18 @@ class RenderData:
             ma_status=DataStatus(name="ma", status="OK" if ma_table else "EMPTY"),
             eps_table=eps_table,
             eps_status=DataStatus(name="eps", status="OK" if eps_table else "EMPTY"),
+            # fflow_data: 从 ctx.moneyflow (Tushare money_flow 原始 list) 转 FflowRow
+            # 之前漏了, 一直空, MD 永远显示"❌ fflow 未拉取"
+            fflow_data=[FflowRow(
+                date=k.get("trade_date",""),
+                main_net=float(k.get("net_mf_amount", 0)) / 1e8,  # 元 → 亿
+                small=float(k.get("buy_sm_amount", 0) - k.get("sell_sm_amount", 0)) / 1e8,
+                mid=float(k.get("buy_md_amount", 0) - k.get("sell_md_amount", 0)) / 1e8,
+                big=float(k.get("buy_lg_amount", 0) - k.get("sell_lg_amount", 0)) / 1e8,
+                super_big=float(k.get("buy_elg_amount", 0) - k.get("sell_elg_amount", 0)) / 1e8,
+                derived=False,
+            ) for k in (ctx.moneyflow or [])],
+            fflow_status=DataStatus(name="fflow", status="OK" if (ctx.moneyflow or []) else "EMPTY"),
             technical=technical,
             technical_status=DataStatus(name="technical",
                                         status="OK" if technical and "error" not in technical else "EMPTY"),
@@ -578,7 +590,7 @@ class RenderData:
         line("基本面", self.fundamental_status, f"{self.fundamental.get('total_score', '—')}/100" if self.fundamental else "—")
         line("5类信号", self.signal_5cat_status, f"{self.signal_5cat.get('raw_score', '—')}/123" if self.signal_5cat else "—")
         line("策略", self.strategy_status, self.strategy.get('verdict', '—') if self.strategy else "—")
-        line("fflow", self.fflow_status, f"{len(self.fflow_data)} 日")
+        # 2026-08-31: fflow section 已停用 (CLAUDE.md 板块适用性限制), 不展示
         line("EPS", self.eps_status, f"{len(self.eps_table)} 条")
 
         report["缠论"] = ("✅" if self.chan_data else "❓", "OK" if self.chan_data else "未计算")

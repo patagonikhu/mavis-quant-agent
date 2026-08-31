@@ -131,10 +131,18 @@ class DataStore:
         sb  = cls.get_stock_basic(code)
         db  = cls.get_daily_basic(code)
         eps = cls.get_eps(code)
+        # 主力资金流 (Tushare money_flow, 内存缓存 1h, 第二次跑 0 网络)
+        # 跟 K线/EPS 一样, 走 L1 单入口, 让 fflow strategy 拿到真数据
+        try:
+            from tools.fetch.tushare_fetcher import get_money_flow
+            mf_data, _ = get_money_flow(_to_ts_code(code), limit=30)
+            moneyflow = mf_data or []
+        except Exception:
+            moneyflow = []
 
         return RawContext(
             kline=kline, weekly=weekly,
-            eps_table=eps, fflow={}, moneyflow=[],
+            eps_table=eps, fflow={}, moneyflow=moneyflow,
             current_price=db.get("close") or close,
             market_cap_yi=db.get("total_mv") or 0.0,
             industry=sb.get("industry", ""),

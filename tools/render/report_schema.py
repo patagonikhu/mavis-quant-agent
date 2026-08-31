@@ -139,15 +139,6 @@ REPORT_SECTIONS = [
         "required": True,
         "refresh": "PRESERVE",
     },
-    # === 6️⃣ 主力 fflow (验证, 强制刷新) ===
-    {
-        "id": "fflow",
-        "title": "🟢 主力分析 (fflow) — 组合方案",
-        "category": "6️⃣",
-        "render": "render_fflow",
-        "required": True,
-        "refresh": "REGEN",  # 实时数据, 强制刷新 (修复旧单位 bug)
-    },
     {
         "id": "five_categories",
         "title": "🚨 5 类 14 子信号",
@@ -365,7 +356,8 @@ def validate_schema() -> dict:
             last_cat = max(last_cat, cur)
 
     # 3. 关键 section 必填 (chan_supplement 已于 7-29 废弃, 用 method_matrix 替代)
-    required = {"method_matrix", "fflow", "peg", "dcf"}
+    # 2026-08-31: fflow section 已停用 (OBV 噪声大, CLAUDE.md 板块适用性限制), 不再 required
+    required = {"method_matrix", "peg", "dcf"}
     missing = required - set(ids)
     if missing:
         errors.append(f"❌ 必填 section 缺失: {missing}")

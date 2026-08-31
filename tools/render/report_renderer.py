@@ -124,34 +124,6 @@ def _section_technical(data: RenderData) -> str:
     return "\n\n".join(parts) + "\n"
 
 
-def _section_fflow(data: RenderData) -> str:
-    if not data.fflow_data:
-        return "> **数据状态:** ❌ fflow 未拉取\n> **降级:** 主力信号无法计算，标 N/A\n"
-    # FflowRow.main_net 单位 = 亿 (analysis_data 统一)
-    recent_5 = data.fflow_data[-5:]
-    total_main = sum(d.main_net for d in recent_5)
-    if total_main < -10:
-        verdict = "🔴 出货"
-    elif total_main < -3:
-        verdict = "🟠 偏出货"
-    elif total_main < 3:
-        verdict = "⬜ 中性"
-    elif total_main < 10:
-        verdict = "🟡 偏进货"
-    else:
-        verdict = "🟢 进货"
-    is_derived = any(d.derived for d in data.fflow_data)
-    source = "OBV 派生 (K线推算)" if is_derived else "Tushare.money_flow (真数据)"
-    lines = [f"> **数据源:** {source}", f"**5日主力净额: {total_main:+.2f} 亿** → {verdict}", ""]
-    lines.append("| 日期 | 主力净额(亿) | 小单(亿) | 中单(亿) | 大单(亿) | 超大(亿) |")
-    lines.append("|---|---|---|---|---|---|")
-    for d in recent_5:
-        date_str = d.date if "-" in d.date else f"{d.date[:4]}-{d.date[4:6]}-{d.date[6:8]}"
-        lines.append(f"| {date_str} | {d.main_net:+.2f} | {d.small:+.2f} | {d.mid:+.2f} | {d.big:+.2f} | {d.super_big:+.2f} |")
-    return "\n".join(lines)
-
-
-
 def _section_chan_full(data: RenderData) -> str:
     """缠论完整 4 级别 — 从 dump JSON 的 chan 字段生成 (2026-07-24 修复: 之前只放占位)"""
     if data.chan_data and "full_table" in data.chan_data:
@@ -1719,20 +1691,9 @@ def _section_t_events(data: RenderData) -> str:
     return "\n".join(lines) + "\n\n> **数据源:** data/events.json\n"
 
 
-def _section_ts_money_flow(data: RenderData) -> str:
-    """💹 个股资金流向 (Tushare moneyflow)"""
-    # 直接用已有的 fflow_data (dump 里的真实数据, 不重复拉取)
-    if not data.fflow_data:
-        return "> **数据状态:** ⚠️ fflow 数据未拉取\n"
-    recent = data.fflow_data[-10:]
-    total5 = sum(d.main_net for d in data.fflow_data[-5:])
-    verdict = "🟢 进货" if total5 > 3 else "🔴 出货" if total5 < -3 else "⬜ 中性"
-    lines = [f"**5日主力净额: {total5:+.2f} 亿** → {verdict}", "",
-             "| 日期 | 主力净额(亿) | 小单 | 中单 | 大单 | 超大单 |", "|---|---|---|---|---|---|"]
-    for d in recent:
-        date_str = d.date if "-" in d.date else f"{d.date[:4]}-{d.date[4:6]}-{d.date[6:8]}"
-        lines.append(f"| {date_str} | {d.main_net:+.2f} | {d.small:+.2f} | {d.mid:+.2f} | {d.big:+.2f} | {d.super_big:+.2f} |")
-    return "\n".join(lines) + "\n\n> **数据源:** Tushare.moneyflow\n"
+# 2026-08-31: 删除 _section_ts_money_flow, fflow section 整体停用
+# (OBV 噪声大, CLAUDE.md 板块适用性限制, 用户要求)
+
 
 
 # ============================================================
@@ -1762,6 +1723,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
         comp_table += f"| {k} | {emoji} | {detail} |\n"
 
     # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 5️⃣PEG → 6️⃣fflow → 7️⃣仓位)
+    # 2026-08-31: 6️⃣fflow section 已停用 (OBV 噪声大, CLAUDE.md 板块适用性限制)
     report = f"""# {code} {name} | {today}
 
 **板块:** {sector} | **股价:** {price_str} | {_section_four_q_short(data)}
@@ -1829,11 +1791,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🌍 大盘 + 美股背景
 {_section_market_context(data)}
-
----
-
-## 🟢 主力分析 (fflow) — 组合方案
-{_section_fflow(data)}
 
 ---
 
@@ -1914,11 +1871,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🎯 T 框架事件 (业绩自动 + 非业绩手维护, 2026-07-23 升级)
 {_section_t_events(data)}
-
----
-
-## 💹 个股资金流向 (Tushare moneyflow, 真正的 fflow)
-{_section_ts_money_flow(data)}
 
 ---
 
