@@ -130,8 +130,8 @@ process_one() {
     # analyze + render 合一，阶段 0 已做 sync_incremental，这里 0 网络
     if bash tools/with_venv.sh python3 -c "
 from tools.kline_store import DataStore
-from tools.analysis.analysis_data import AnalysisData
-from tools.analysis.analysis_result_signals import compute_factor_history
+from tools.analysis.render_data import RenderData
+from tools.analysis.analysis_engine import AnalysisEngine
 from tools.render.report_renderer import render_report
 from pathlib import Path
 code = '$code'
@@ -141,17 +141,17 @@ if not ctx.kline:
     print(f'⚠️ {code} 无K线')
     exit(1)
 print(f'  - K线: {len(ctx.kline)} 根')
-# 一次 compute_factor_history，结果存 out_results（render + 信号提取共享）
-out = {}
-rows = compute_factor_history(ctx, step=1, lookback=120, out_results=out)
-last_date = ctx.kline[-1]['trade_date'].replace('-', '')[:8]
-result = out.get(last_date) or (out[max(out)] if out else None)
+# analyze_history 返回 dict[date -> AnalysisResult], 一次跑通
+dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+history = AnalysisEngine().analyze_history(ctx, dates[-120:])
+last_date = dates[-1]
+result = history.get(last_date) or (history[max(history)] if history else None)
 if result is None:
     print(f'⚠️ {code} 分析结果为空'); exit(1)
-print(f'  - 场景: {result.scene}')
+print(f'  - 场景: {result.action or result.raw.get(\"buy_sell_points\", {}).get(\"daily\", {}).get(\"scene\", \"—\")}')
 if '$NO_RENDER' != '1':
-    data = AnalysisData.from_result(ctx, result)
-    data.factor_history_rows = rows
+    data = RenderData.from_result(ctx, result)
+    data.factor_history_rows = list(history.values())
     md = render_report(data)
     name = ctx.name or code
     p = Path('docs') / subdir / f'analyze-{code}-{name}.md'

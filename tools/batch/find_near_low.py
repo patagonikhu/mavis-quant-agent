@@ -106,11 +106,9 @@ def main():
     weekly_gap_th = args.weekly_gap / 100.0
     drop_th = args.drop / 100.0
     drop_max_th = args.drop_max / 100.0
-    lookback_weeks = args.lookback_years * 52  # 5y=260 周
 
     from tools.kline_store import DataStore, _to_ts_code
     from tools.kline_history_backfill import sync_incremental
-    from tools.fetch.data_fetcher import _synthesize_weekly
     sync_incremental()
     all_codes = DataStore.list_codes()
     print(f"Loaded: {len(all_codes)} 只股票 (本地历史库)")
@@ -133,64 +131,62 @@ def main():
             n_skipped += 1
             continue
         n_loaded += 1
-        # 合成 weekly (供 count_bounces / find_max_drawdown 用)
-        weekly = _synthesize_weekly(daily)
-        if len(weekly) < 60:
+        # 5y lookback (按 5y * 245 交易日 ≈ 1225 根, 5y 实际 ≈ 1217 天)
+        # 2026-08-31 改: 直接用 daily, 不合成 weekly (weekly 是 daily 的 max/min 聚合, 结果一致但代码冗余)
+        if len(daily) < 250:  # 至少 1 年
             continue
 
-        # 5y high/low + 最大回撤 用 weekly
-        weekly_closes = [float(w["close"]) for w in weekly]
-        lo_5y = min(weekly_closes)
-        hi_5y = max(weekly_closes)
+        # 5y high/low + 最大回撤 用 daily (用 low/high 字段, 不用 close)
+        daily_lows = [float(d["low"]) for d in daily]
+        daily_highs = [float(d["high"]) for d in daily]
+        daily_closes = [float(d["close"]) for d in daily]
+        lo_5y = min(daily_lows)
+        hi_5y = max(daily_highs)
 
         # 用 lookback 窗口算 max_dd (5y 或 3y 内最深 high→low)
-        lb_weekly = weekly[-lookback_weeks:] if len(weekly) >= lookback_weeks else weekly
-        lb_closes = [float(w["close"]) for w in lb_weekly]
-        lb_lo = min(lb_closes)
-        lb_hi = max(lb_closes)
-        # lookback 窗口最大回撤 (5y 内最深 high→low)
-        max_dd_lb, _, _ = find_max_drawdown(lb_closes, lb_weekly)
+        lb = args.lookback_years * 245  # 5y≈1225 个交易日
+        lb_daily = daily[-lb:] if len(daily) >= lb else daily
+        lb_closes = [float(d["close"]) for d in lb_daily]
+        max_dd_lb, _, _ = find_max_drawdown(lb_closes, lb_daily)
         if max_dd_lb is None:
             continue
 
         # 跌 70%-80% 用 lookback 窗口最大回撤 (5y 内最深, 不是末根距高点)
-        # 2026-08-26 改: 粗筛用 max_dd_lb (5y 内最深回撤), 不用 current_drop (末根距 5y 高)
-        # 反弹策略在乎 "5y 内曾跌 70-80%", 不在乎"现在距 5y 高点多少"
         if max_dd_lb > -drop_th:    # 不够跌 (5y 内最深回撤不到 70%)
             continue
         if max_dd_lb < -drop_max_th:  # 跌过头 (5y 内最深回撤超 80%)
             continue
 
-        weekly_cur = float(weekly[-1]["close"])
+        daily_cur = float(daily[-1]["close"])
         # current_drop: 末根距 5y 高点的当前跌幅 (反弹策略 "反弹空间" 参考)
-        # 跟 max_dd_5y (5y 内最深) 互补: 前者看现在, 后者看历史最深
-        current_drop = (weekly_cur - lb_hi) / lb_hi
+        lb_hi = max(float(d["high"]) for d in lb_daily)
+        current_drop = (daily_cur - lb_hi) / lb_hi
 
-        # 粗筛: weekly 末根距 5y 低 < 10%
-        if weekly_cur <= lo_5y:
+        # 粗筛: daily 末根距 5y 低 < 10%
+        if daily_cur <= lo_5y:
             continue
-        weekly_gap = (weekly_cur - lo_5y) / lo_5y
-        if weekly_gap >= weekly_gap_th:
+        daily_gap = (daily_cur - lo_5y) / lo_5y
+        if daily_gap >= weekly_gap_th:
             continue
 
-        # 反弹次数 (用 5y weekly 完整数据)
-        n_b = count_bounces(weekly_closes)
+        # 反弹次数 (用 5y daily 完整数据, close 序列)
+        n_b = count_bounces(daily_closes)
         if n_b < args.min_bounces:
             continue
 
         rough_pool.append({
             "code": code,
-            "weekly_cur": weekly_cur,
-            "weekly_gap": weekly_gap,
+            "daily_cur": daily_cur,
+            "daily_gap": daily_gap,
             "lo_5y": lo_5y,
             "hi_5y": hi_5y,
-            "current_drop": current_drop,  # 末根距 5y 高 (反弹空间)
+            "current_drop": current_drop,
             "max_dd_5y": max_dd_lb,
             "n_b": n_b,
         })
 
     print(f"Loaded: {n_loaded}, Skipped: {n_skipped}")
-    print(f"粗筛: 跌 ≥{args.drop:.0f}% + weekly 末根距 5y 低 < {args.weekly_gap:.0f}% + 反弹 ≥{args.min_bounces} = {len(rough_pool)} 只")
+    print(f"粗筛: 跌 ≥{args.drop:.0f}% + daily 末根距 5y 低 < {args.weekly_gap:.0f}% + 反弹 ≥{args.min_bounces} = {len(rough_pool)} 只")
 
     if not rough_pool:
         return
@@ -212,9 +208,9 @@ def main():
         lo_5y = r["lo_5y"]
         cur_today, today_date = daily_map.get(code, (None, "?"))
         if cur_today is None or cur_today <= 0:
-            cur = r["weekly_cur"]
+            cur = r["daily_cur"]
             cur_date = "?"
-            price_source = "weekly (fallback)"
+            price_source = "daily (fallback)"
         else:
             cur = cur_today
             cur_date = today_date
@@ -237,9 +233,9 @@ def main():
             "sector": sector,
             "cur": cur,
             "lo_5y": lo_5y,
-            "weekly_cur": r["weekly_cur"],
-            "weekly_gap": r["weekly_gap"],
-            "daily_gap": daily_gap,
+            "daily_cur": r["daily_cur"],
+            "daily_gap": r["daily_gap"],
+            "daily_gap_v2": daily_gap,
             "max_dd_5y": r["max_dd_5y"],
             "current_drop": r["current_drop"],
             "n_b": r["n_b"],
@@ -267,7 +263,7 @@ def main():
     for r in candidates:
         print(
             f"{r['code']:<8} {r['name']:<10} {r['sector'][:10]:<12} "
-            f"{r['cur']:>7.2f} {r['weekly_cur']:>7.2f} {r['lo_5y']:>7.2f} "
+            f"{r['cur']:>7.2f} {r['daily_cur']:>7.2f} {r['lo_5y']:>7.2f} "
             f"{r['max_dd_5y'] * 100:>+9.1f}% "
             f"{r['current_drop'] * 100:>+7.1f}% "
             f"{r['daily_gap'] * 100:>+5.2f}% {r['n_b']:>4d}次"
@@ -283,7 +279,7 @@ def main():
         for r in candidates:
             rows_md += (
                 f"| {r['code']} | {r['name']} | {r['sector']} | "
-                f"{r['cur']:.2f} | {r['weekly_cur']:.2f} | {r['lo_5y']:.2f} | "
+                f"{r['cur']:.2f} | {r['daily_cur']:.2f} | {r['lo_5y']:.2f} | "
                 f"{r['max_dd_5y']*100:+.1f}% | {r['current_drop']*100:+.1f}% | "
                 f"{r['daily_gap']*100:+.2f}% | {r['n_b']}次 |\n"
             )

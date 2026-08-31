@@ -177,6 +177,7 @@ def main():
     parser.add_argument("--workers",         type=int,   default=4,    help="并发数（默认4）")
     parser.add_argument("--write-md",        action="store_true",      help="写 docs/bb-obv-watchlist.md")
     parser.add_argument("--limit",           type=int,   default=0,    help="调试: 只扫前 N 只 (0=全部)")
+    parser.add_argument("--no-junk-filter",  action="store_true",      help="跳过垃圾股过滤 (ST/北交所/小市值)")
     args = parser.parse_args()
 
     require_obv = not args.no_obv
@@ -189,11 +190,69 @@ def main():
         tech_codes = _load_tech_codes()
         scope = f"科技股 ({len(tech_codes)} 只)" if tech_codes else "科技股 (加载失败)"
 
-    # 读 cache 全部代码 (跳过 stock_basic 列出 4000+ 死代码)
-    import sqlite3
-    conn = sqlite3.connect(str(ROOT / "data" / "analysis_cache.db"))
-    codes = [r[0] for r in conn.execute("SELECT DISTINCT code FROM analysis_cache").fetchall()]
-    conn.close()
+    # 读代码列表: 直接走 DataStore (K线 parquet), 不走 analysis_cache.db (那是回测用的)
+    from tools.kline_store import DataStore
+    codes = DataStore.list_codes()
+    print(f"  DataStore 加载: {len(codes)} 只 (K线 parquet, 0 网络)")
+
+    # 垃圾股过滤: ST/退市风险/北交所/小盘股 (从 stock_basic 拿名称 + 市值)
+    if not args.no_junk_filter:
+        try:
+            import pyarrow.parquet as pq
+            tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
+            sb = tbl.to_pandas()
+            sb_map = {row["code"]: row for _, row in sb.iterrows()}
+            n_before = len(codes)
+            codes_filtered = []
+            for c in codes:
+                row = sb_map.get(c)
+                if row is None:
+                    codes_filtered.append(c)
+                    continue
+                name = str(row.get("name", "") or "")
+                # 1. 排除 ST/*ST/ST 股 (退市风险)
+                if any(tag in name for tag in ["ST", "退", "*ST"]):
+                    continue
+                # 2. 排除北交所 (8/9 字头 6 位, 流动性差, 投机性强)
+                if (c.startswith(("83", "87", "43", "92")) and len(c) == 6):
+                    continue
+                # 3. 排除小盘股 (4 重过滤, 噪声大 OBV 失真):
+                #    a. 总市值 < 50 亿 (小盘)
+                total_mv = row.get("total_mv", 0) or 0  # 万元
+                if total_mv and total_mv < 500000:  # 50 亿 = 500000 万元
+                    continue
+                #    b. 流通市值 < 20 亿 (流动性差)
+                circ_mv = row.get("circ_mv", 0) or 0  # 万元
+                if circ_mv and circ_mv < 200000:  # 20 亿
+                    continue
+                codes_filtered.append(c)
+            codes = codes_filtered
+            # 4. 排除日成交额 < 5000 万的票 (流动性差, 主力难控盘)
+            #    amount 单位: 千元 (Tushare 默认), 5000 万 = 5e4 千元
+            try:
+                from tools.kline_history_backfill import HISTORY_DIR
+                import duckdb
+                files = sorted(HISTORY_DIR.glob("*.parquet"))
+                if files:
+                    files_glob = str(HISTORY_DIR) + "/*.parquet"
+                    amt_df = duckdb.execute(f"""
+                        SELECT ts_code, amount
+                        FROM read_parquet('{files_glob}')
+                        WHERE trade_date = (
+                            SELECT MAX(trade_date) FROM read_parquet('{files_glob}')
+                        )
+                    """).fetchdf()
+                    if len(amt_df) > 0:
+                        amt_df["code"] = amt_df["ts_code"].str.split(".").str[0]
+                        low_liq = set(amt_df[amt_df["amount"] < 50000]["code"].tolist())  # <5000万
+                        n_pre = len(codes)
+                        codes = [c for c in codes if c not in low_liq]
+                        print(f"  流动性过滤: {n_pre} → {len(codes)} (排除日成交额<5000万)")
+            except Exception as e:
+                print(f"  [WARN] 流动性过滤失败: {e}")
+            print(f"  垃圾股过滤: {n_before} → {len(codes)} (排除 ST/北交所/<50亿/<20亿流通/<5000万成交)")
+        except Exception as e:
+            print(f"  [WARN] 垃圾股过滤失败: {e}")
 
     if args.limit:
         codes = codes[:args.limit]
