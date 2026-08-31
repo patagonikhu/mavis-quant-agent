@@ -1,5 +1,8 @@
 """
-tools/batch/bb_obv_scan.py — 科技股 BOLL+BBW+OBV 三重确认扫描 (compute_factor_history 直算)
+tools/batch/bb_obv_scan.py — 科技股 BOLL+BBW+OBV 三重确认扫描 (analyze_history 直算)
+
+2026-08-31: 改用 analyze_history(strategies=[Wyckoff, Obv]) 直接调, 不再走 compute_factor_history
+              (只读 4 字段 boll_pct/boll_width/obv5/obv_trend, 不需要 16 字段组装)
 
 策略 (严格 3 重确认, 每天 0-2 只):
   1. BOLL% < 15  (接近下轨, 短期超卖)
@@ -72,8 +75,6 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
     try:
         from tools.kline_store import DataStore
         from tools.analysis.analysis_engine import WyckoffStrategy, ObvStrategy
-        from tools.analysis.analysis_result_signals import compute_factor_history
-
         # 科技股过滤
         if tech_codes is not None and code not in tech_codes:
             return None
@@ -280,7 +281,7 @@ def main():
     print(f"  {len(basic_map)} 只票基础信息已加载", flush=True)
 
     print(f"=== {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% {'AND OBV 底' if require_obv else ''} ===")
-    print(f"直算 (compute_factor_history, strategies=[Wyckoff, Obv], 跳过 chan/smc/fflow/peg)")
+    print(f"直算 (analyze_history, strategies=[Wyckoff, Obv], 跳过 chan/smc/fflow/peg)")
     print(f"扫描 {len(codes)} 只 ({args.workers} workers)...")
 
     t0 = time.time()

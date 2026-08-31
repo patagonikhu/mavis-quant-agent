@@ -588,7 +588,7 @@ OBV ⬜中性
 ---
 
 ## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
-> ⚠️ GA 因子计算失败: 'KLineBar' object has no attribute 'date'
+> ⚠️ alpha_ga_001 factor 未注册
 
 
 ---
