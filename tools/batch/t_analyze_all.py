@@ -94,9 +94,26 @@ for i, s in enumerate(stocks, 1):
     try:
         ctx = DataStore.get_ctx(code)
         if not ctx.kline:
-            print(f'  ❌ {code}: 无K线', flush=True)
-            errs.append((code, '无K线 (本地 parquet 空, sync 失败?)'))
-            continue
+            # 单只级 sync 兜底: 用 Tushare 直接拉这只, 写本地 parquet
+            print(f'  ⚠️ {code}: 无K线, 尝试单只 sync 兜底...', flush=True)
+            try:
+                from tools.fetch.tushare_fetcher import get_daily
+                from tools.kline_history_backfill import _append_records, _to_ts_code, _to_quarters
+                from datetime import datetime, timedelta
+                ts_code = _to_ts_code(code)
+                end_str = datetime.now().strftime('%Y%m%d')
+                start_str = (datetime.now() - timedelta(days=365*5)).strftime('%Y%m%d')
+                data, status = get_daily(ts_code, start_date=start_str, end_date=end_str)
+                if data:
+                    _append_records(data)
+                    ctx = DataStore.get_ctx(code)
+            except Exception as e:
+                print(f'  ⚠️ {code}: 单只 sync 失败: {e}', flush=True)
+            if not ctx.kline:
+                print(f'  ❌ {code}: 无K线 (单只 sync 后仍空)', flush=True)
+                errs.append((code, '无K线 (主 sync + 单只 sync 兜底都失败, 可能是 ETF/退市/代码错)'))
+                continue
+            print(f'  ✅ {code}: 单只 sync 成功, 重新加载 ({len(ctx.kline)} 根)', flush=True)
         all_dates = [k['trade_date'].replace('-', '')[:8] for k in ctx.kline]
         dates = all_dates[-120:]
         history = AnalysisEngine().analyze_history(ctx, dates)
