@@ -85,6 +85,7 @@ class StockBacktestEngine:
 
     def _run_one(self, code: str, name: str) -> list[StockSignalRecord]:
         from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows
+        from tools.analysis.analysis_engine import AnalysisEngine
 
         ctx = self._load_dump(code)
         if ctx is None:
@@ -98,8 +99,13 @@ class StockBacktestEngine:
         # 建立 date→kline_index 映射（用于收益计算）
         date_to_idx = {bar["trade_date"]: i for i, bar in enumerate(kline)}
 
+        # 2026-08-31: compute_factor_history 强制要求 history= 参数, 不传会 raise
+        # 复用 engine.analyze_history 结果, 跟 t_analyze_all / batch_summary 模式一致
         try:
-            rows = compute_factor_history(ctx, step=1, lookback=self.lookback_days)
+            all_dates = [k['trade_date'].replace('-','')[:8] for k in kline]
+            lookback_dates = all_dates[-self.lookback_days:]
+            history = AnalysisEngine().analyze_history(ctx, lookback_dates)
+            rows = compute_factor_history(ctx, step=1, lookback=self.lookback_days, history=history)
         except Exception as e:
             logger.error("%s compute_factor_history 失败: %s", code, e)
             return []
