@@ -1,16 +1,13 @@
 """
-batch_summary.py — 批量扫描全 watchlist, 输出有 代码+名称+场景+信号 的 batch md (2026-07-31 v2.0)
+batch_summary.py — 批量扫描全 watchlist, 输出有 代码+名称+场景+信号 的 batch md
 
-**v2.0 关键变化**: 不调 RenderData.from_raw.
-直接读 refresh_all 阶段生成的 `docs/analyze-{code}-{name}.md` 报告,
-从 "## 📈 因子历史走势" section 提取最后一行 (12 列) → batch md 的 12 列.
-0 重算, 0 from_raw.
-
-**v2.2 (2026-08-31)**: 10 天合集部分从"调 compute_factor_history(ctx, lookback=n_days)"
-改为"调 analyze_history 预算 history, 再传 compute_factor_history(ctx, history=history)" — 跟 t_analyze_all 复用模式一致, 不重算.
-
-**v2.1 (2026-08-20)**: 默认输出 `docs/signal-watchlist.md` (单文件, 每天覆盖, 方案 A),
-不是 `docs/batch-{date}.md` (按日期生成 13 个历史文件). 仍保留 `--out` 自定义.
+关键变化 (v2.0+):
+- 不调 RenderData.from_raw, 直接读 docs/{portfolio,watchlist}/analyze-{code}-{name}.md
+- 从 "## 📈 因子历史走势" section 提取最后一行 (12 列) → batch md
+- 10 天合集: 调 analyze_history 预算 history, 再传 compute_factor_history(ctx, history=history)
+  (复用, 跟 t_analyze_all 一致, 不重算)
+- 默认输出 `docs/signal-watchlist.md` (单文件, 每天覆盖), `--out` 可自定义
+- 0 重算, 0 from_raw
 
 **用法**:
   python -m tools.batch.batch_summary              # 默认 watchlist 全部 → signal-watchlist.md
@@ -315,8 +312,9 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
     buy_rows / sell_rows 每项: (date, code, name, score, signal_str)
     all_table_rows 每项: (code, name, last_row_dict, has_sig) —— 14 列原格式
 
-    实现: 调 RawContext.from_dump + analyze_history + compute_factor_history(history=...) + score_top/bot_signals 重算
-    (md 文件没存 10 天每日信号字符串, 必须重算; compute_factor_history 必传 history, 不重跑 analyze_history)
+    实现: RawContext.from_dump → analyze_history → compute_factor_history(history=...)
+            → score_top/bot_signals 重算
+    (md 文件没存 10 天每日信号字符串, 必须重算)
     """
     import sys
     sys.path.insert(0, ".")
@@ -324,7 +322,7 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
     from tools.analysis.analysis_result_signals import (
         compute_factor_history, diff_rows, score_top_signals, score_bottom_signals
     )
-    from tools.analysis.analysis_engine import AnalysisEngine  # 2026-08-31: 显式 import, compute_factor_history 强制要求传 history
+    from tools.analysis.analysis_engine import AnalysisEngine
     from collections import defaultdict
     buy_rows, sell_rows, all_table_rows = [], [], []
     weekly_scores: dict[str, list[tuple[int, int]]] = defaultdict(list)
@@ -359,7 +357,6 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
             ctx = DataStore.get_ctx(code)
             if not ctx.kline:
                 continue
-            # 预算 history (compute_factor_history 不再自己跑 analyze_history)
             all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
             n_days_idx = min(n_days, len(all_dates))
             dates = all_dates[-n_days_idx:]

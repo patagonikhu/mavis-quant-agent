@@ -84,7 +84,7 @@ ctx = DataStore.get_ctx('002531')
 all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
 history = AnalysisEngine().analyze_history(ctx, all_dates[-120:])
 data = RenderData.from_result(ctx, history[all_dates[-1]])
-# 复用 history (不调 compute_factor_history, render 接受 list[dict] 格式)
+# 复用 history (render 接受 list[dict] 格式)
 data.factor_history_rows = list(history.values())
 md = render_report(data)
 p = Path('docs') / f'analyze-002531-{ctx.name}.md'

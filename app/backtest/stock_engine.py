@@ -1,7 +1,7 @@
 """个股信号回测引擎
 
-复用 compute_factor_history + diff_rows，对 watchlist 每只股票逐日切片算信号，
-统计各信号触发后 5d/10d/20d 胜率。
+复用 analyze_history → compute_factor_history → diff_rows,
+对 watchlist 每只股票逐日切片算信号, 统计各信号触发后 5d/10d/20d 胜率。
 
 用法:
     from app.backtest.stock_engine import StockBacktestEngine
@@ -99,8 +99,7 @@ class StockBacktestEngine:
         # 建立 date→kline_index 映射（用于收益计算）
         date_to_idx = {bar["trade_date"]: i for i, bar in enumerate(kline)}
 
-        # 2026-08-31: compute_factor_history 强制要求 history= 参数, 不传会 raise
-        # 复用 engine.analyze_history 结果, 跟 t_analyze_all / batch_summary 模式一致
+        # 复用 engine.analyze_history 结果 (跟 t_analyze_all / batch_summary 模式一致)
         try:
             all_dates = [k['trade_date'].replace('-','')[:8] for k in kline]
             lookback_dates = all_dates[-self.lookback_days:]

@@ -29,10 +29,7 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     """
     if history is None:
         raise ValueError(
-            "compute_factor_history 必须传 history 参数, "
-            "不能内部调 analyze_history (避免重算). "
-            "调用方: engine = AnalysisEngine(); history = engine.analyze_history(ctx, dates); "
-            "再调 compute_factor_history(ctx, history=history)"
+            "compute_factor_history 必须传 history (调用方先 engine.analyze_history 算好)"
         )
 
     kline = ctx.kline

@@ -1,8 +1,7 @@
 """
 tools/batch/bb_obv_scan.py — 科技股 BOLL+BBW+OBV 三重确认扫描 (analyze_history 直算)
 
-2026-08-31: 改用 analyze_history(strategies=[Wyckoff, Obv]) 直接调, 不再走 compute_factor_history
-              (只读 4 字段 boll_pct/boll_width/obv5/obv_trend, 不需要 16 字段组装)
+只读 4 字段 boll_pct/boll_width/obv5/obv_trend, 跳过 chan/smc/fflow/peg (省 70% 时间)
 
 策略 (严格 3 重确认, 每天 0-2 只):
   1. BOLL% < 15  (接近下轨, 短期超卖)
@@ -97,9 +96,7 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
             earlier = [d for d in all_dates if d < cutoff_str][-extra_needed:]
             dates_window = earlier + dates_window
 
-        # 直算 (不走 cache): 只跑 WyckoffStrategy (BOLL/BBW) + ObvStrategy (obv5/obv_trend)
-        # 跳过 chan/smc/fflow/peg (省 70% 时间)
-        # 直接用 analyze_history, 不走 compute_factor_history (只读 4 字段, 不需要 16 字段组装)
+        # 只跑 WyckoffStrategy (BOLL/BBW) + ObvStrategy (obv5/obv_trend), 跳过 chan/smc/fflow/peg
         from tools.analysis.analysis_engine import AnalysisEngine
         engine = AnalysisEngine(strategies=[WyckoffStrategy, ObvStrategy])
         history_raw = engine.analyze_history(ctx, dates_window)

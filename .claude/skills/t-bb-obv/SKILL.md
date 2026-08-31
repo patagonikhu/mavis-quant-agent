@@ -7,7 +7,7 @@ allowed-tools:
 
 ## ⚠️ 重要：不走 cache
 
-`t-bb-obv` **直接用 `analyze_history` 实时算**（不走 cache, 也不走 compute_factor_history, 因为只读 4 字段 boll_pct/boll_width/obv5/obv_trend, 不需要 16 字段组装）。
+`t-bb-obv` **直接用 `analyze_history` 实时算**（不走 cache, 只跑 2 个 strategy 算 4 字段, 不组装 16 字段）。
 
 **为什么**：
 - cache 经常不完整（`t-sync-cache` 太慢，没人会等）
