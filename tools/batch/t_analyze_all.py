@@ -1,7 +1,7 @@
 """
-t-analyze --all verbose 版本：每只股票分阶段打印进度
+t-analyze --all 批量分析: sync K线 + 4-8 worker 并发 analyze+render, 输出 signal-watchlist.md
 """
-import json, sys, datetime, time, inspect, os
+import json, sys, datetime, time, os
 from pathlib import Path
 sys.path.insert(0, '.')
 
@@ -10,53 +10,6 @@ from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
 from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report
-from tools.render import report_renderer as rr_mod
-
-
-# Auto-discover all _section_* functions
-_section_funcs = {}
-for name, fn in inspect.getmembers(rr_mod, inspect.isfunction):
-    if name.startswith('_section_') and name != '_section_data_sources':
-        # 去掉 _section_ 前缀，得到中文标签
-        raw = name[len('_section_'):]
-        # 自动猜测中文标签
-        _section_funcs[name] = raw.replace('_', '·')
-
-_originals = {}
-
-
-def make_verbose_section(name, original):
-    def wrapper(*args, **kwargs):
-        result = original(*args, **kwargs)
-        code = '?'
-        if args and hasattr(args[0], 'code'):
-            code = args[0].code
-        elif args and isinstance(args[0], str):
-            code = args[0]
-        print(f'    [section] {code}: {name}', flush=True)
-        return result
-    return wrapper
-
-
-def install_verbose():
-    for name in _section_funcs:
-        orig = getattr(rr_mod, name)
-        if name not in _originals:
-            _originals[name] = orig
-        setattr(rr_mod, name, make_verbose_section(_section_funcs[name], orig))
-
-
-# Monkey-patch AnalysisEngine.analyze_history
-_orig_analyze_history = AnalysisEngine.analyze_history
-
-
-def verbose_analyze_history(self, ctx, dates):
-    code = ctx.code if hasattr(ctx, 'code') else '?'
-    n = len(self._phase1) if hasattr(self, '_phase1') else '?'
-    print(f'    [analysis] {code}: {n} strategies', flush=True)
-    for inst in self._phase1:
-        print(f'      [strategy] {code}: {inst.name}', flush=True)
-    return _orig_analyze_history(self, ctx, dates)
 
 
 wl = json.load(open('data/watchlist.json'))['stocks']
@@ -68,11 +21,7 @@ buy_rows, sell_rows, all_table_rows = [], [], []
 md_written = 0
 errs = []
 
-# Install verbose hooks
-install_verbose()
-AnalysisEngine.analyze_history = verbose_analyze_history
-
-print(f'=== t-analyze --all (verbose) | {len(stocks)} 只 | {datetime.datetime.now().strftime("%H:%M:%S")} ===', flush=True)
+print(f'=== t-analyze --all | {len(stocks)} 只 | {datetime.datetime.now().strftime("%H:%M:%S")} ===', flush=True)
 
 # 阶段 1: 增量同步 K 线 + dump 详情 (EPS/fflow/股本)
 # 跟 find_near_low / bb_obv_scan 一致, 走 DataStore.get_ctx 单入口
