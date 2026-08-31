@@ -190,6 +190,14 @@ def main():
         tech_codes = _load_tech_codes()
         scope = f"科技股 ({len(tech_codes)} 只)" if tech_codes else "科技股 (加载失败)"
 
+    # 增量同步最新 K 线 (跟 find_near_low.py 一致, 拉今天或昨天的新数据)
+    try:
+        from tools.kline_history_backfill import sync_incremental
+        print(f"  增量同步 K 线 (sync_incremental)...", flush=True)
+        sync_incremental()
+    except Exception as e:
+        print(f"  [WARN] sync_incremental 失败: {e}", flush=True)
+
     # 读代码列表: 直接走 DataStore (K线 parquet), 不走 analysis_cache.db (那是回测用的)
     from tools.kline_store import DataStore
     codes = DataStore.list_codes()
