@@ -351,10 +351,16 @@ def _build_rows(codes_names: list[tuple[str, str]], n_days: int = 10, threshold:
         # 10 天合集: 重算每日具体信号 (md 没存 10 天每日信号字符串)
         try:
             from tools.kline_store import DataStore
+            from tools.analysis.analysis_engine import AnalysisEngine
             ctx = DataStore.get_ctx(code)
             if not ctx.kline:
                 continue
-            rows = compute_factor_history(ctx, step=1, lookback=n_days)
+            # 预算 history (compute_factor_history 不再自己跑 analyze_history)
+            all_dates = [k['trade_date'].replace('-','')[:8] for k in ctx.kline]
+            n_days_idx = min(n_days, len(all_dates))
+            dates = all_dates[-n_days_idx:]
+            history = AnalysisEngine().analyze_history(ctx, dates)
+            rows = compute_factor_history(ctx, step=1, lookback=n_days, history=history)
             for i in range(1, len(rows)):
                 prev, cur = rows[i - 1], rows[i]
                 changes = diff_rows(prev, cur)

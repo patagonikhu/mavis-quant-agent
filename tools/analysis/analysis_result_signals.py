@@ -14,29 +14,30 @@ from typing import Callable
 
 def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
                            strategies=None, history=None) -> list[dict]:
-    """计算最近 lookback 天的因子历史，每 step 天一个节点。
+    """把 AnalysisResult 列表转成 flat dict 列表 (拼装, 不调 analyze_history)
 
     Args:
         ctx:         RawContext，含完整 K 线
         step:        采样间隔（render 用 5，回测用 1）
         lookback:    回看天数（默认 60 = 3个月）
-        strategies:  传入 strategy 类列表，None 表示跑全部
-        history:     可选, 预算好的 dict[date, AnalysisResult], 复用避免重算
-                     (t_analyze_all.py 等调用方已 analyze_history, 传进来不重跑)
+        strategies:  保留参数 (兼容旧调用, 不再使用)
+        history:     必填, dict[date, AnalysisResult], 调用方预算好传进来
+                     (不传会 raise, 强制避免重跑 analyze_history)
 
     Returns:
         list[dict]，按日期升序
     """
-    from tools.analysis.analysis_engine import AnalysisEngine
-    engine = AnalysisEngine(strategies=strategies)
+    if history is None:
+        raise ValueError(
+            "compute_factor_history 必须传 history 参数, "
+            "不能内部调 analyze_history (避免重算). "
+            "调用方: engine = AnalysisEngine(); history = engine.analyze_history(ctx, dates); "
+            "再调 compute_factor_history(ctx, history=history)"
+        )
 
     kline = ctx.kline
     start = max(0, len(kline) - lookback)
     dates = [kline[i]["trade_date"] for i in range(start, len(kline), step)]
-
-    # 批量历史计算: 调用方已算 (history 参数) 就复用, 否则自己跑
-    if history is None:
-        history = engine.analyze_history(ctx, dates)
 
     # 预建索引，避免 for-loop 里 O(n) 查找
     import bisect
