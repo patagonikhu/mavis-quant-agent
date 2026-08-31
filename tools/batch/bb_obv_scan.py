@@ -98,9 +98,18 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
 
         # 直算 (不走 cache): 只跑 WyckoffStrategy (BOLL/BBW) + ObvStrategy (obv5/obv_trend)
         # 跳过 chan/smc/fflow/peg (省 70% 时间)
-        rows = compute_factor_history(ctx, step=1, lookback=len(dates_window),
-                                     strategies=[WyckoffStrategy, ObvStrategy])
-        history = {r.get('date', ''): r for r in rows if r.get('date')}
+        # 直接用 analyze_history, 不走 compute_factor_history (只读 4 字段, 不需要 16 字段组装)
+        from tools.analysis.analysis_engine import AnalysisEngine
+        engine = AnalysisEngine(strategies=[WyckoffStrategy, ObvStrategy])
+        history_raw = engine.analyze_history(ctx, dates_window)
+        # 简化字段访问: 拼一个 flat dict, 只装 bb_obv_scan 用的字段
+        history = {d.replace('-','')[:8] if '-' in d else d: {
+            'close':          r.current_price,
+            'boll_pct':       (r.raw.get('wyckoff') or {}).get('boll_pct'),
+            'boll_width':     (r.raw.get('wyckoff') or {}).get('boll_width'),
+            'obv5':           (r.raw.get('obv') or {}).get('obv5', 0),
+            'obv_trend':      (r.raw.get('obv') or {}).get('obv_trend', 0),
+        } for d, r in history_raw.items()}
 
         # 找距今 ≤ window 天 的最近一个交易日 满足 BOLL AND BBW
         trigger = None

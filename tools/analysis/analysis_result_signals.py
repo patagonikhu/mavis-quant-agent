@@ -13,7 +13,7 @@ from typing import Callable
 
 
 def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
-                           strategies=None) -> list[dict]:
+                           strategies=None, history=None) -> list[dict]:
     """计算最近 lookback 天的因子历史，每 step 天一个节点。
 
     Args:
@@ -21,6 +21,8 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         step:        采样间隔（render 用 5，回测用 1）
         lookback:    回看天数（默认 60 = 3个月）
         strategies:  传入 strategy 类列表，None 表示跑全部
+        history:     可选, 预算好的 dict[date, AnalysisResult], 复用避免重算
+                     (t_analyze_all.py 等调用方已 analyze_history, 传进来不重跑)
 
     Returns:
         list[dict]，按日期升序
@@ -32,8 +34,9 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     start = max(0, len(kline) - lookback)
     dates = [kline[i]["trade_date"] for i in range(start, len(kline), step)]
 
-    # 批量历史计算：每个 strategy 自己决定怎么遍历，不在外部切片
-    history = engine.analyze_history(ctx, dates)
+    # 批量历史计算: 调用方已算 (history 参数) 就复用, 否则自己跑
+    if history is None:
+        history = engine.analyze_history(ctx, dates)
 
     # 预建索引，避免 for-loop 里 O(n) 查找
     import bisect

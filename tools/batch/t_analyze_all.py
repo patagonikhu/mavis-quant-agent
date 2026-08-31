@@ -122,7 +122,8 @@ def process_one(s):
 
         result = history[dates[-1]]
         data = RenderData.from_result(ctx, result)
-        data.factor_history_rows = compute_factor_history(ctx, step=1, lookback=120)
+        # 复用 history (不再让 compute_factor_history 内部重跑 analyze_history)
+        data.factor_history_rows = compute_factor_history(ctx, step=1, lookback=120, history=history)
         md = render_report(data)
         md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
         md_path.parent.mkdir(parents=True, exist_ok=True)
