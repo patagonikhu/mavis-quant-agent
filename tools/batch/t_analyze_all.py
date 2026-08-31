@@ -85,12 +85,14 @@ for i, s in enumerate(stocks, 1):
         ctx = DataStore.get_ctx(code)
         if not ctx.kline:
             print(f'  ❌ {code}: 无K线', flush=True)
+            errs.append((code, '无K线 (本地 parquet 空, sync 失败?)'))
             continue
         all_dates = [k['trade_date'].replace('-', '')[:8] for k in ctx.kline]
         dates = all_dates[-120:]
         history = AnalysisEngine().analyze_history(ctx, dates)
         if len(history) < 2:
             print(f'  ❌ {code}: history 不足', flush=True)
+            errs.append((code, f'history 不足 ({len(history)} 根)'))
             continue
         result = history[dates[-1]]
         print(f'    [render] {code}: building MD...', flush=True)
@@ -158,3 +160,9 @@ if errs:
     print(f'错误: {len(errs)}只')
     for c, e in errs:
         print(f'  {c}: {e}')
+    # 把 errs 写进 md 报告 (顶部提示, 不影响看表)
+    with output_path.open('a', encoding='utf-8') as f:
+        f.write(f"\n\n## ⚠️ 失败清单 ({len(errs)} 只)\n\n")
+        f.write("| 代码 | 错误 |\n|---|---|\n")
+        for c, e in errs:
+            f.write(f"| {c} | {e} |\n")
