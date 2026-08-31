@@ -143,7 +143,7 @@ for code, name, detail in sell_rows:
 if not sell_rows:
     lines.append("| — | 无 | — |\n")
 lines.append("\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n|------|------|------|---------|-------|--------|----------|\n")
-all_table_rows.sort(key=lambda x: (0 if x[7] == '⭐' else 1, x[0]))
+all_table_rows.sort(key=lambda x: (0 if x[6] == '⭐' else 1, x[0]))
 for code, name, wy, ma, hub_str, sig_str, has_sig in all_table_rows:
     lines.append(f"| {code} | {name} | {has_sig} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
 output_path.parent.mkdir(exist_ok=True)
@@ -152,7 +152,7 @@ output_path.write_text(''.join(lines), encoding='utf-8')
 print(f'\n=== 完成 ===')
 print(f'FILE: {output_path}')
 print(f'MD生成: {md_written}/{len(stocks)}')
-print(f'有今日信号: {sum(1 for r in all_table_rows if r[7]=="⭐")}只')
+print(f'有今日信号: {sum(1 for r in all_table_rows if r[6]=="⭐")}只')
 print(f'总耗时: {total_elapsed:.0f}s')
 if errs:
     print(f'错误: {len(errs)}只')
