@@ -44,7 +44,8 @@ print([s['code'] for s in json.load(open('data/watchlist.json'))['stocks']])
 
 数据已存在则跳过。新增股票需先跑：
 ```bash
-bash tools/refresh_all.sh 002531 300699  # 子集刷新
+# 2026-08-31 refresh_all.sh 已删, t_analyze_all.py 自动 sync + 并发
+T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py
 ```
 
 ### Step 3: 信号扫描 + MD 渲染（一次性）

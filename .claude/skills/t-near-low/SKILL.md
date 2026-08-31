@@ -94,8 +94,8 @@ PYEOF
 
 **批量入口** (深挖多只, 避免 N 次 sync):
 ```bash
-# 1 次 sync + 4 worker 并发 analyze+render
-bash tools/refresh_all.sh 002531 300699 600515 688522 000858 --workers 5
+# 1 次 sync + 4 worker 并发 analyze+render (2026-08-31 refresh_all.sh 已删, 用 t-analyze --all 替代)
+T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py
 ```
 
 ## 每周自动跑 (cron)

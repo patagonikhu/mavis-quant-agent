@@ -74,12 +74,13 @@ AnalysisEngine.analyze_history = verbose_analyze_history
 
 print(f'=== t-analyze --all (verbose) | {len(stocks)} 只 | {datetime.datetime.now().strftime("%H:%M:%S")} ===', flush=True)
 
-# 增量同步最新 K 线 (跟 find_near_low / bb_obv_scan 对齐)
-# 手动传 target_date, 否则增量逻辑看不到未来日期
+# 阶段 1: 增量同步 K 线 + dump 详情 (EPS/fflow/股本)
+# 跟 find_near_low / bb_obv_scan 一致, 走 DataStore.get_ctx 单入口
+# EPS/fflow/moneyflow 已经在 DataStore.get_ctx 里读本地 cache
 try:
     from tools.kline_history_backfill import sync_incremental
     today_str = datetime.datetime.now().strftime('%Y%m%d')
-    print(f'  增量同步 K 线 (sync_incremental, target_date={today_str})...', flush=True)
+    print(f'  [阶段 1] 增量同步 (sync_incremental, target_date={today_str})...', flush=True)
     sync_incremental(target_date=today_str)
 except Exception as e:
     print(f'  [WARN] sync_incremental 失败: {e}', flush=True)
