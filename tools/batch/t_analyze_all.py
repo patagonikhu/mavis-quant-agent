@@ -124,14 +124,16 @@ for i, s in enumerate(stocks, 1):
         result = history[dates[-1]]
         print(f'    [render] {code}: building MD...', flush=True)
         data = RenderData.from_result(ctx, result)
-        data.factor_history_rows = list(history.values())
+        # factor_history_rows 用 compute_factor_history 输出 (list[dict], render 期望)
+        # 跟 signal table 用同一份, 避免重复
+        data.factor_history_rows = compute_factor_history(ctx, step=1, lookback=120)
         md = render_report(data)
         md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
         md_path.parent.mkdir(parents=True, exist_ok=True)
         md_path.write_text(md, encoding='utf-8')
         md_written += 1
-        # signal table
-        rows = compute_factor_history(ctx, step=1, lookback=120)
+        # signal table (复用 data.factor_history_rows, 不再重复算)
+        rows = data.factor_history_rows
         if len(rows) >= 2:
             r = rows[-1]
             changes = diff_rows(rows[-2], rows[-1])

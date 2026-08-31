@@ -1394,11 +1394,12 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     """
     if not data.ctx:
         return "> ⚠️ ctx 未设置，无法计算历史\n"
-    try:
-        from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows
-        rows = compute_factor_history(data.ctx, step=1, lookback=lookback)
-    except Exception as e:
-        return f"> ❌ 历史计算失败: {e}\n"
+    # 严格依赖 data.factor_history_rows (调用方必须传)
+    # 不再 fallback 调 compute_factor_history, 避免重复计算 + 防止调用方忘传
+    from tools.analysis.analysis_result_signals import diff_rows
+    rows = data.factor_history_rows or []
+    if not rows:
+        return "> ⚠️ factor_history_rows 未传, 请调用方传 list[dict]\n"
 
     if not rows:
         return "> 数据不足\n"
