@@ -34,7 +34,7 @@ allowed-tools:
 ## 执行
 
 ```bash
-# 检查本地数据（< 400 只需先跑 kline_history_backfill）
+# 检查本地数据（< 400 只需先跑 kline_store）
 bash tools/with_venv.sh python3 -c "from tools.kline_store import DataStore; print(f'本地: {len(DataStore.list_codes())} 只')"
 
 # 后台跑（8 worker, ~10s）
@@ -94,7 +94,7 @@ PYEOF
 
 **批量入口** (深挖多只, 避免 N 次 sync):
 ```bash
-# 1 次 sync + 4 worker 并发 analyze+render (2026-08-31 refresh_all.sh 已删, 用 t-analyze --all 替代)
+# 1 次 sync + 4 worker 并发 analyze+render (用 t-analyze --all 替代)
 T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py
 ```
 

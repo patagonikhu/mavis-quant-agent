@@ -16,7 +16,7 @@
 
 ```
 ✅ tools/sync_stock.py {code}                                # 单只拉数据 (只 sync, 不计算)
-✅ tools/refresh_all.sh                                     # watchlist 全刷 (4 worker, 启动跑 4 核心模块 import smoke test)
+✅ tools/batch/t_analyze_all.py                              # watchlist 全刷 (sync + 4 worker analyze + render)
 ✅ tools/with_venv.sh python -m tools.sync_watchlist_fresh --watchlist   # 检查新鲜度
 ✅ tools/fetch/data_source.py 统一入口函数
 ❌ 任何 curl 直连 WAF 拒接域

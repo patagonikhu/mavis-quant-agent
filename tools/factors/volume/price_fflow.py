@@ -15,7 +15,7 @@ factor 函数里. 这样:
   3. 出报告时 render 层可独立读 fflow_result / obv_result
 
 输入数据: moneyflow_list (dump['tushare']['money_flow']) / closes+vols (K线) —
-          都由 sync_stock.py 预拉, factor 层只做计算。
+          都由 sync_watchlist_fresh.py 预拉, factor 层只做计算。
 """
 from pathlib import Path
 import sys

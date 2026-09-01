@@ -21,7 +21,6 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent  # tools/fetch/ → 项目根
 WHITELIST = {
     "tools/fetch/tushare_fetcher.py",  # 单一权威 (Tushare 直连入口)
     "tools/kline_store.py",  # parquet 缓存主路径
-    "tools/kline_history_backfill.py",  # parquet 读写 (sync_incremental)
     "tools/fetch/data_fetcher.py",  # 旧入口, 已 deprecate, 仅保留兼容
     "tools/fetch/check_data_sources.py",  # 本检查脚本
     "tools/sync_watchlist_fresh.py",  # 缓存检查

@@ -1,6 +1,6 @@
 {
   "version": "1.4",
-  "last_updated": "2026-08-28",
+  "last_updated": "2026-09-01",
   "description": "关注清单 + 你手填的笔记。LLM 用这些笔记 + 训练知识 + 框架 doc 出报告。每周花 10 分钟改一下。v1.2 加 rating_history 字段追踪评级变化。 v1.2 批量导入 docs/analyze-*.md 所有标的。",
   "stocks": [
     {
@@ -494,6 +494,139 @@
       "sector": "白酒",
       "list_type": "持仓",
       "notes": "[2026-08-31] 加进 watchlist, 之前用 refresh_all.sh 单独跑, 现在批量自动处理"
+    },
+    {
+      "code": "600262",
+      "name": "北方股份",
+      "sector": "专用机械",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #1] ROC=717.7% (rank 2) EY=9.60% (rank 5) 综合=3.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "300551",
+      "name": "古鳌科技",
+      "sector": "软件服务",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #2] ROC=224.2% (rank 6) EY=10.00% (rank 4) 综合=5.0 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "300475",
+      "name": "香农芯创",
+      "sector": "元器件",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #3] ROC=350.4% (rank 4) EY=7.30% (rank 10) 综合=7.0 / PEG 0.09 (🟢, g=180%) / DCF L=81亿 L/E3=0.7x L/可达=58/75=0.77x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "300456",
+      "name": "赛微电子",
+      "sector": "半导体",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #4] ROC=135.0% (rank 14) EY=10.90% (rank 1) 综合=7.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002546",
+      "name": "新联电子",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #5] ROC=152.2% (rank 10) EY=8.30% (rank 6) 综合=8.0 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002602",
+      "name": "世纪华通",
+      "sector": "互联网",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #6] ROC=888.3% (rank 1) EY=5.70% (rank 20) 综合=10.5 / PEG 0.40 (🟢, g=29%) / DCF L=101亿 L/E3=0.8x L/可达=72/134=0.53x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002555",
+      "name": "三七互娱",
+      "sector": "互联网",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #7] ROC=136.8% (rank 12) EY=5.40% (rank 26) 综合=19.0 / PEG 1.64 (🟠, g=8%) / DCF L=45亿 L/E3=1.2x L/可达=32/46=0.69x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002346",
+      "name": "柘中股份",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #8] ROC=136.0% (rank 13) EY=5.00% (rank 32) 综合=22.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002452",
+      "name": "长高电气",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #9] ROC=45.3% (rank 53) EY=10.30% (rank 3) 综合=28.0 / PEG 0.64 (🟢, g=20%) / DCF L=8亿 L/E3=1.4x L/可达=6/8=0.70x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000997",
+      "name": "新大陆",
+      "sector": "IT设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #10] ROC=89.7% (rank 18) EY=4.90% (rank 38) 综合=28.0 / PEG 0.82 (🟢, g=22%) / DCF L=24亿 L/E3=1.3x L/可达=17/17=0.98x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000889",
+      "name": "中嘉博创",
+      "sector": "通信设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #12] ROC=166.4% (rank 9) EY=3.40% (rank 75) 综合=42.0 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "688525",
+      "name": "佰维存储",
+      "sector": "半导体",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #13] ROC=35.1% (rank 71) EY=6.90% (rank 13) 综合=42.0 / PEG 0.10 (🟢, g=130%) / DCF L=120亿 L/E3=1.2x L/可达=85/129=0.66x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "001309",
+      "name": "德明利",
+      "sector": "半导体",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #14] ROC=33.9% (rank 73) EY=6.40% (rank 15) 综合=44.0 / PEG 0.06 (🟢, g=144%) / DCF L=97亿 L/E3=1.0x L/可达=69/174=0.40x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002264",
+      "name": "新华都",
+      "sector": "互联网",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #15] ROC=50.0% (rank 47) EY=4.70% (rank 41) 综合=44.0 / PEG 2.62 (🔴, g=10%) / DCF L=7亿 L/E3=3.0x L/可达=5/3=1.68x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "300750",
+      "name": "宁德时代",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #16] ROC=70.0% (rank 29) EY=3.60% (rank 65) 综合=47.0 / PEG 0.68 (🟢, g=26%) / DCF L=1937亿 L/E3=1.4x L/可达=1381/1437=0.96x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "603031",
+      "name": "安孚科技",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #17] ROC=58.8% (rank 32) EY=3.50% (rank 70) 综合=51.0 / PEG 0.84 (🟢, g=40%) / DCF L=22亿 L/E3=3.7x L/可达=16/7=2.40x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "001395",
+      "name": "亚联机械",
+      "sector": "专用机械",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #18] ROC=28.9% (rank 84) EY=5.60% (rank 23) 综合=53.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "688036",
+      "name": "传音控股",
+      "sector": "通信设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #19] ROC=41.8% (rank 55) EY=3.80% (rank 59) 综合=57.0 / PEG 0.54 (🟢, g=34%) / DCF L=74亿 L/E3=1.2x L/可达=52/54=0.98x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "603508",
+      "name": "思维列控",
+      "sector": "IT设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-01 Magic Top20 #20] ROC=25.6% (rank 98) EY=5.40% (rank 24) 综合=61.0 / PEG 0.88 (🟢, g=14%) / DCF L=8亿 L/E3=1.0x L/可达=6/10=0.60x | 卡点⭐ 待 LLM 补"
     }
   ],
   "changelog": [
@@ -521,6 +654,11 @@
     {
       "date": "2026-08-13",
       "change": "删除 rating + rating_history 字段（57 只股票，共 114 处），实战改读 report 5 方法矩阵\"行动\"信号"
+    },
+    {
+      "date": "2026-09-01",
+      "change": "加 19 只 Magic Top 20 (list_type=Magic初筛, 跳过 1 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名 H1 2026)"
     }
   ]
 }

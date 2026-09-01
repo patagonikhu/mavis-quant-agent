@@ -204,7 +204,7 @@ def _section_t_frame(data: RenderData) -> str:
 - **阶段:** {phase}
 - **信号强度:** {strength}
 - **操作建议:** {action}"""
-    return "> **数据状态:** ⚠️ T 框架未生成，需在 data/events.json 添加事件后重新 sync_stock\n"
+    return "> **数据状态:** ⚠️ T 框架未生成，需在 data/events.json 添加事件后重新 sync_watchlist_fresh\n"
 
 
 def _section_ga_factor(data: RenderData) -> str:
@@ -308,6 +308,41 @@ def _section_dcf(data: RenderData) -> str:
     return """> **数据状态:** ⚠️ DCF L 已具备数据, 等待 mavis 算
 """
 
+def _section_magic_formula(data: RenderData) -> str:
+
+    """Greenblatt Magic Formula (ROC + EY), 跟 PEG / DCF 同位置"""
+    if data.magic_formula_detail:
+        m = data.magic_formula_detail
+        skip = m.get("skip_reason")
+        if skip:
+            return f"""> **数据状态:** ⚠️ Magic Formula 跳过 ({skip})
+> **行业:** {m.get('industry', '—')} (银行/保险/地产/公用/亏损 不算)
+"""
+        roc_pct = m.get("roc", "—")
+        ey_pct  = m.get("ey", "—")
+        ev_yi   = m.get("ev_yi", "—")
+        industry = m.get("industry", "—")
+        ev_str = f"{ev_yi:,.0f}" if isinstance(ev_yi, (int, float)) else "—"
+        return f"""| 指标 | 数值 | 说明 |
+|---|---|---|
+| 行业 | {industry} | — |
+| EBIT (H1 2026) | {m.get('ebit_yi', '—')} 亿 | Tushare fina_indicator |
+| 净营运资本 + 固定资产 | {m.get('capital_yi', '—')} 亿 | NWC + FA |
+| **ROC (Return on Capital)** | **{roc_pct}%** | EBIT / (NWC + FA) |
+| 市值 | {m.get('market_cap_yi', '—')} 亿 | Tushare daily_basic |
+| 净债务 | {m.get('netdebt_yi', '—')} 亿 | Tushare fina_indicator |
+| **EV (企业价值)** | **{ev_str} 亿** | 市值 + 净债务 |
+| **EY (Earnings Yield)** | **{ey_pct}%** | EBIT / EV |
+
+**Magic Formula 判定 (Greenblatt 原版):**
+- ROC 越高越好 (高资本效率)
+- EY 越高越好 (盈利对 EV 回报高)
+- 联合排名: ROC 排名 + EY 排名, 取均值小者
+"""
+    return """> **数据状态:** ⚠️ Magic Formula 数据未拉取 (financials parquet 没数据)
+> **降级:** 先跑 `python -m tools.kline_store` 触发 sync_financials
+"""
+
 
 def _section_fundamental(data: RenderData) -> str:
     if not data.fundamental or "error" in data.fundamental:
@@ -406,7 +441,7 @@ def _section_sector_overheat(data: RenderData) -> str:
 """
     if not data.can_calc_sector_overheat():
         return "> **数据状态:** ❌ 板块过热无法计算 (K线不足 90 天)\n"
-    return "> **数据状态:** ⚠️ 板块过热数据具备但未生成，需重新 sync_stock\n"
+    return "> **数据状态:** ⚠️ 板块过热数据具备但未生成，需重新 sync_watchlist_fresh\n"
 
 
 def _section_take_profit(data: RenderData) -> str:
@@ -465,7 +500,7 @@ def _section_position_layer(data: RenderData) -> str:
                   f"- **波动仓 20-25%:** {wave}",
                   f"\n**综合:** {summary}"]
         return "\n".join(lines) + "\n"
-    return "> **数据状态:** ⚠️ 3 层仓位策略未生成，需重新 sync_stock\n"
+    return "> **数据状态:** ⚠️ 3 层仓位策略未生成，需重新 sync_watchlist_fresh\n"
 
 
 def _fmt_date(d: str) -> str:
@@ -1178,7 +1213,7 @@ def _section_monitor(data: RenderData) -> str:
 - **清仓触发:** {clear}
 - **时间触发:** {time_t}
 """
-    return "> **数据状态:** ⚠️ 监控触发点未生成，需重新 sync_stock\n"
+    return "> **数据状态:** ⚠️ 监控触发点未生成，需重新 sync_watchlist_fresh\n"
 
 
 def _section_four_q_short(data: RenderData) -> str:
@@ -1358,6 +1393,86 @@ def _has_signal(row: dict) -> bool:
     )
 
 
+# 因子历史走势 — 14 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MA偏离(日/周) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW |"
+FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+
+
+def _format_factor_row(rows: list[dict], idx: int) -> str | None:
+    """单行因子历史 markdown 表格行 (14 列, header 跟 _section_factor_history 完全一致)
+
+    Args:
+        rows: compute_factor_history 输出, 按日期升序 (含 ma20_slope 字段)
+        idx:  当前行索引
+
+    Returns:
+        "| date | ¥close | ... | 14 列" markdown 行 (无错位防护, 调用方负责)
+        数据不足返 None
+    """
+    from tools.analysis.analysis_result_signals import diff_rows, format_signals_for_render
+    if not rows or idx < 0 or idx >= len(rows):
+        return None
+    row = rows[idx]
+    changes = diff_rows(rows[idx - 1], row) if idx > 0 else {}
+
+    wy  = f"{row['wyckoff_daily'][0]}/{row['wyckoff_weekly'][0]}"
+    def se_short(s):
+        if not s or s == "—":
+            return "—"
+        return s.split(" (")[0]
+    se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
+
+    # 买卖点列只显示当天首次出现的信号 (new_bsp_daily/weekly = diff 新出现)
+    bsp_parts = []
+    for k, lbl in (("new_bsp_daily", "日"), ("new_bsp_weekly", "周")):
+        new_pts = changes.get(k, {})
+        for l in _bsp_str(new_pts).split():
+            if l and l != "—":
+                bsp_parts.append(f"{l}({lbl})")
+    b3 = " ".join(bsp_parts) if bsp_parts else "—"
+
+    chg = format_signals_for_render(changes)
+    chg = [c for c in chg if not c.startswith('📊MA')]
+    chg_str = ' '.join(chg) or '—'
+
+    ad = row.get('accum_days_daily', 0)
+    aw = row.get('accum_days_weekly', 0)
+    accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
+
+    # MA 分两列: MA偏离(日/周) + MA20斜率
+    ma_d = row.get('ma_dev_daily')
+    ma_w = row.get('ma_dev_weekly')
+    ma_parts = []
+    for v in (ma_d, ma_w):
+        if v is not None:
+            ma_parts.append(f"{v:+.1f}%")
+    ma_s = " / ".join(ma_parts) if ma_parts else "—"
+
+    # MA20 斜率 (从 row['ma20_slope'] 读, 由 compute_factor_history 预算好, 0 重算)
+    slope = row.get('ma20_slope')
+    if slope is not None:
+        if slope > 0.05:    arrow = "↗"
+        elif slope < -0.05: arrow = "↘"
+        else:               arrow = "→"
+        slope_s = f"{arrow}{slope:+.2f}%/日"
+    else:
+        slope_s = "—"
+
+    line = (
+        f"| {row['date']} | ¥{row['close']:.1f} "
+        f"| {ma_s} | {slope_s} "
+        f"| {wy} | {se} "
+        f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
+        f"| {b3} | {chg_str} | {accum_str} "
+        f"| {obv_label(row)} |"
+    )
+    bpct  = row.get('boll_pct')
+    bwid  = row.get('boll_width')
+    bpct_s = f"{bpct:.0f}%"  if bpct  is not None else "—"
+    bwid_s = f"{bwid:.1f}%"  if bwid  is not None else "—"
+    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} |"
+
+
 def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     """因子历史走势 — 每天一行，全部显示
 
@@ -1376,89 +1491,15 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
     if not rows:
         return "> 数据不足\n"
 
-    HEADER = "| 日期 | 收盘 | MA偏离(日/周) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW |"
-    SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    HEADER = FACTOR_HISTORY_HEADER  # 模块级常量, t-analyze-all 等 batch 入口复用
+    SEP    = FACTOR_HISTORY_SEP
     HEADER_N = HEADER.count("|") - 1
     lines = [HEADER, SEP]
 
-    # MA20 5日斜率: 在循环外算一次, 按日期索引
-    # 斜率 = (MA20[d] - MA20[d-5]) / MA20[d-5] / 5 * 100
-    # 通过 close 和 ma_dev_daily 反算 MA20: close / (1 + ma_dev_daily/100)
-    ma20_by_date = {}
-    for r in rows:
-        d_str = r.get("date")
-        c = r.get("close")
-        md = r.get("ma_dev_daily")
-        if d_str and c is not None and md is not None:
-            ma20_by_date[d_str] = c / (1 + md / 100)
-    sorted_dates = sorted(ma20_by_date.keys())
-    slope_by_date = {}
-    for i, d in enumerate(sorted_dates):
-        if i >= 5 and ma20_by_date[sorted_dates[i-5]] > 0:
-            slope = (ma20_by_date[d] - ma20_by_date[sorted_dates[i-5]]) / ma20_by_date[sorted_dates[i-5]] / 5 * 100
-            slope_by_date[d] = slope
-
     for i, row in enumerate(rows):
-        changes = diff_rows(rows[i-1], row) if i > 0 else {}
-
-        wy  = f"{row['wyckoff_daily'][0]}/{row['wyckoff_weekly'][0]}"
-        def se_short(s):
-            if not s or s == "—": return "—"
-            return s.split(" (")[0]
-        se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
-        # 买卖点列只显示当天首次出现的信号 (new_bsp_daily/weekly = diff 新出现)
-        # 持续状态信号（3买持续5天）只在触发当天显示，后续在变化列的 🆕 已有记录
-        bsp_parts = []
-        for k, lbl in (("new_bsp_daily", "日"), ("new_bsp_weekly", "周")):
-            new_pts = changes.get(k, {})
-            for l in _bsp_str(new_pts).split():
-                if l and l != "—":
-                    bsp_parts.append(f"{l}({lbl})")
-        b3 = " ".join(bsp_parts) if bsp_parts else "—"
-
-        from tools.analysis.analysis_result_signals import format_signals_for_render
-        chg = format_signals_for_render(changes)
-        chg = [c for c in chg if not c.startswith('📊MA')]
-        chg_str = ' '.join(chg) or '—'
-
-        ad = row.get('accum_days_daily', 0)
-        aw = row.get('accum_days_weekly', 0)
-        accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
-
-        # MA 分两列: MA偏离(日/周) + MA20斜率
-        ma_d = row.get('ma_dev_daily')
-        ma_w = row.get('ma_dev_weekly')
-        ma_parts = []
-        for v in (ma_d, ma_w):
-            if v is not None:
-                ma_parts.append(f"{v:+.1f}%")
-        ma_s = " / ".join(ma_parts) if ma_parts else "—"
-
-        # MA20 斜率 (%, 带方向箭头)
-        slope = slope_by_date.get(row.get("date"))
-        if slope is not None:
-            if slope > 0.05:    arrow = "↗"
-            elif slope < -0.05: arrow = "↘"
-            else:               arrow = "→"
-            slope_s = f"{arrow}{slope:+.2f}%/日"
-        else:
-            slope_s = "—"
-
-        line = (
-            f"| {row['date']} | ¥{row['close']:.1f} "
-            f"| {ma_s} | {slope_s} "
-            f"| {wy} | {se} "
-            f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
-            f"| {b3} | {chg_str} | {accum_str} "
-            f"| {obv_label(row)} |"
-        )
-        bpct  = row.get('boll_pct')
-        bwid  = row.get('boll_width')
-        bpct_s  = f"{bpct:.0f}%"  if bpct  is not None else "—"
-        bwid_s  = f"{bwid:.1f}%"  if bwid  is not None else "—"
-        line = line.rstrip(" |") + f" | {bpct_s} | {bwid_s} |"
-        # 2026-08-01: markdown 表格 cell 错位防护
-        # cell 计数必须 == 表头 cell 数, 否则下游 batch_summary 解析会错位
+        line = _format_factor_row(rows, i)
+        if line is None:
+            continue
         n_cells = line.count("|") - 1
         if n_cells != HEADER_N:
             # 自动把多出的 '|' 替换成 '/' (只对 cell 内部)
@@ -1575,7 +1616,7 @@ def _section_buy_sell_points(data: RenderData) -> str:
     """🟢 三买三卖操作点 (来自 buy_sell_points)"""
     bsp = data.buy_sell_points
     if not bsp:
-        return "> **数据状态:** ⚠️ 买卖点数据未生成，需重新 sync_stock\n"
+        return "> **数据状态:** ⚠️ 买卖点数据未生成，需重新 sync_watchlist_fresh\n"
 
     lines = ["| 周期 | 0买(逆势) | 1买 | 2买 | 3买 | 1卖 | 2卖 | 3卖 | 操作 |",
              "|---|---|---|---|---|---|---|---|---|"]
@@ -1651,7 +1692,7 @@ def _section_ts_basic(data: RenderData) -> str:
     float_sh = (sb.get("float_share") or 0) / 1e4
     market   = sb.get("market", "A股")
     if not sb:
-        return f"**代码:** {data.code}  **名称:** {name}  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_stock)\n"
+        return f"**代码:** {data.code}  **名称:** {name}  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_watchlist_fresh)\n"
     return (f"**代码:** {data.code}  **名称:** {name}  "
             f"**行业:** {industry}  **上市日期:** {list_date}  "
             f"**总股本:** {total_sh:.2f}亿股  **流通股本:** {float_sh:.2f}亿股  **市场:** {market}\n\n"
@@ -1803,6 +1844,9 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 {_section_dcf(data)}
 
 ---
+## 💎 Magic Formula (Greenblatt ROC + EY)
+{_section_magic_formula(data)}
+
 
 ## 💎 基本面 (4 维) — 自动评估
 {_section_fundamental(data)}

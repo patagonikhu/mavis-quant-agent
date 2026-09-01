@@ -703,11 +703,11 @@ def status_emoji(status: str) -> str:
 
 
 # ============================================================
-# 批量拉取 (sync_stock.py 调用这个)
+# 批量拉取 (sync_watchlist_fresh.py 调用这个)
 # ============================================================
 
 def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
-    """一键拉所有 tushare 段, 返回 dict 给 sync_stock.py 拼装
+    """一键拉所有 tushare 段, 返回 dict 给 sync_watchlist_fresh.py 拼装
 
     段: stock_basic / daily_basic / weekly / north_flow / margin / top_list
         / income / fina_indicator / dividend / money_flow / forecast

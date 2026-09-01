@@ -429,6 +429,7 @@ class RenderData:
     t_frame: Optional[dict] = None
     peg_detail: Optional[dict] = None
     dcf_detail: Optional[dict] = None
+    magic_formula_detail: Optional[dict] = None  # Greenblatt ROC + EY
     signal_5cat: Optional[dict] = None
     xgboost_prob: Optional[float] = None
     sector_overheat: Optional[dict] = None
@@ -600,6 +601,8 @@ class RenderData:
                          f"={self.peg_detail.get('peg')}" if self.peg_detail else "未计算")
         report["DCF L"] = ("✅" if self.dcf_detail else "❓",
                            f"L={self.dcf_detail.get('L_r8')}" if self.dcf_detail else "未计算")
+        report["Magic"] = ("✅" if self.magic_formula_detail else "❓",
+                           f"ROC={self.magic_formula_detail.get('roc')}% EY={self.magic_formula_detail.get('ey')}%" if self.magic_formula_detail else "未计算")
         report["5类信号"] = ("✅" if self.signal_5cat else "❓", "OK" if self.signal_5cat else "未计算")
         report["板块过热"] = ("✅" if self.sector_overheat else "❓", "OK" if self.sector_overheat else "未计算")
         report["缠论补充"] = ("✅" if self.supplement else "❓", "OK" if self.supplement else "未计算")

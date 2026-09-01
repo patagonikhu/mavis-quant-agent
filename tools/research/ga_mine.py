@@ -41,7 +41,7 @@ def fetch_features(code: str = "300274") -> pd.DataFrame:
     from tools.kline_store import DataStore
     ctx = DataStore.get_ctx(code)
     if not ctx.kline:
-        raise FileNotFoundError(f"本地无K线: {code}，先跑 python -m tools.kline_history_backfill --init")
+        raise FileNotFoundError(f"本地无K线: {code}，先跑 python -m tools.kline_store --init")
 
     kline = ctx.kline
     df = pd.DataFrame({

@@ -66,7 +66,7 @@ def dump_one(code: str, force: bool = False, max_age: int = 3600) -> bool:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
     result = subprocess.run(
-        [sys.executable, "-m", "tools.sync_stock", code],
+        [sys.executable, "-m", "tools.sync_watchlist_fresh", code],
         capture_output=True, text=True, env=env
     )
     if result.returncode == 0:

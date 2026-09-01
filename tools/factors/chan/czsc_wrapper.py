@@ -193,7 +193,7 @@ if __name__ == "__main__":
     sys.path.insert(0, '/Users/I514959/workspace/mavis-quant-agent')
 
     from tools.kline_store import DataStore
-    from tools.kline_history_backfill import read_kline
+    from tools.kline_store import read_kline
     from tools.kline_store import _to_ts_code
 
     code = '603893'

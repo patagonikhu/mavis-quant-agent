@@ -199,7 +199,7 @@ def main():
 
     # 增量同步最新 K 线 (跟 find_near_low.py 一致, 拉今天或昨天的新数据)
     try:
-        from tools.kline_history_backfill import sync_incremental
+        from tools.kline_store import sync_incremental
         print(f"  增量同步 K 线 (sync_incremental)...", flush=True)
         sync_incremental()
     except Exception as e:
@@ -245,7 +245,7 @@ def main():
             # 4. 排除日成交额 < 5000 万的票 (流动性差, 主力难控盘)
             #    amount 单位: 千元 (Tushare 默认), 5000 万 = 5e4 千元
             try:
-                from tools.kline_history_backfill import HISTORY_DIR
+                from tools.kline_store import HISTORY_DIR
                 import duckdb
                 files = sorted(HISTORY_DIR.glob("*.parquet"))
                 if files:

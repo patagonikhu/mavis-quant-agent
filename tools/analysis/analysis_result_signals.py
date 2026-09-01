@@ -101,6 +101,28 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
                 count = 0
             row[out_key] = count
 
+    # post-process: MA20 5日斜率 (per-row, 行内字段 ma20_slope)
+    # 斜率 = (MA20[i] - MA20[i-5]) / MA20[i-5] / 5 * 100
+    # MA20 通过 close / (1 + ma_dev_daily/100) 反算 (跟 render 端同算法)
+    # 不足 5 天的行 (含首 5 行) 写 None
+    for i, row in enumerate(rows):
+        if i < 5:
+            row['ma20_slope'] = None
+            continue
+        c0  = row.get('close')
+        md0 = row.get('ma_dev_daily')
+        c5  = rows[i - 5].get('close')
+        md5 = rows[i - 5].get('ma_dev_daily')
+        if not (c0 and md0 is not None and c5 and md5 is not None and c5 > 0 and md5 != 0):
+            row['ma20_slope'] = None
+            continue
+        try:
+            ma0 = c0 / (1 + md0 / 100)
+            ma5 = c5 / (1 + md5 / 100)
+            row['ma20_slope'] = (ma0 - ma5) / ma5 / 5 * 100 if ma5 > 0 else None
+        except (ZeroDivisionError, TypeError):
+            row['ma20_slope'] = None
+
     return rows
 
 
@@ -232,7 +254,7 @@ def obv_label(row: dict) -> str:
       - obv5/obv_trend 任一为 1 时附 "吸筹" 标注
 
     复用方:
-      - tools/batch/batch_summary.py: signal-watchlist.md OBV 列
+      - tools/t-analyze-all.sh: signal-watchlist.md OBV 列
       - tools/render/report_renderer.py: analyze-*.md 因子历史走势表 OBV 列
     """
     # 兼容嵌套 (AnalysisResult.raw["obv"]) 和 flat (compute_factor_history 输出) 两种结构

@@ -108,7 +108,7 @@ def main():
     drop_max_th = args.drop_max / 100.0
 
     from tools.kline_store import DataStore, _to_ts_code
-    from tools.kline_history_backfill import sync_incremental
+    from tools.kline_store import sync_incremental
     sync_incremental()
     all_codes = DataStore.list_codes()
     print(f"Loaded: {len(all_codes)} 只股票 (本地历史库)")

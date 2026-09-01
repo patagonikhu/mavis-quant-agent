@@ -27,7 +27,7 @@ print(f'=== t-analyze --all | {len(stocks)} 只 | {datetime.datetime.now().strft
 # 跟 find_near_low / bb_obv_scan 一致, 走 DataStore.get_ctx 单入口
 # EPS/fflow/moneyflow 已经在 DataStore.get_ctx 里读本地 cache
 try:
-    from tools.kline_history_backfill import sync_incremental
+    from tools.kline_store import sync_incremental
     today_str = datetime.datetime.now().strftime('%Y%m%d')
     print(f'  [阶段 1] 增量同步 (sync_incremental, target_date={today_str})...', flush=True)
     sync_incremental(target_date=today_str)
@@ -49,7 +49,7 @@ def process_one(s):
             # 单只级 sync 兜底
             try:
                 from tools.fetch.tushare_fetcher import get_daily
-                from tools.kline_history_backfill import _append_records, _to_ts_code
+                from tools.kline_store import _append_records, _to_ts_code
                 from datetime import datetime, timedelta
                 ts_code = _to_ts_code(code)
                 end_str = datetime.now().strftime('%Y%m%d')

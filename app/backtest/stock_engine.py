@@ -69,7 +69,7 @@ class StockBacktestEngine:
     def _dump_code(self, code: str) -> None:
         logger.info("强制重拉 dump: %s", code)
         subprocess.run(
-            ["bash", str(WITH_VENV), "python", "-m", "tools.sync_stock", code],
+            ["bash", str(WITH_VENV), "python", "-m", "tools.sync_watchlist_fresh", code],
             check=True,
         )
 
@@ -99,7 +99,7 @@ class StockBacktestEngine:
         # 建立 date→kline_index 映射（用于收益计算）
         date_to_idx = {bar["trade_date"]: i for i, bar in enumerate(kline)}
 
-        # 复用 engine.analyze_history 结果 (跟 t_analyze_all / batch_summary 模式一致)
+        # 复用 engine.analyze_history 结果 (跟 t-analyze-all 模式一致)
         try:
             all_dates = [k['trade_date'].replace('-','')[:8] for k in kline]
             lookback_dates = all_dates[-self.lookback_days:]

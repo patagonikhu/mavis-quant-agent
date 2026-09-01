@@ -70,7 +70,7 @@ def dumps():
         except Exception:
             pass
     if not loaded:
-        pytest.skip(f"没找到任何本地K线数据, 先跑: python -m tools.sync_stock {TEST_CODES[0]}")
+        pytest.skip(f"没找到任何本地K线数据, 先跑: python -m tools.sync_watchlist_fresh {TEST_CODES[0]}")
     return loaded
 
 

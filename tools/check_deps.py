@@ -2,7 +2,7 @@
 依赖检查 + 自动安装 (2026-07-24 固化)
 
 目的: 解决 "No module named 'tushare'" 反复忘装问题
-用法: 在 ensure_fresh / sync_stock / render_report 等数据入口的开头 import 一次
+用法: 在 ensure_fresh / sync_watchlist_fresh / render_report 等数据入口的开头 import 一次
       from tools.check_deps import ensure
       ensure()
 效果: 检查 tushare 是否装, 缺则 pip install (静默)

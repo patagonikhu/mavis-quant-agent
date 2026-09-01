@@ -632,7 +632,7 @@ def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
         "_source": "local",
     }
 
-    from tools.kline_history_backfill import read_kline
+    from tools.kline_store import read_kline
     from tools.eps_consensus_cache import get_daily_basic, get_stock_basic, get_eps
 
     ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"

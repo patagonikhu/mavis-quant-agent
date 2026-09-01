@@ -207,7 +207,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
         warnings.append("🔴 缺 '总分' 字段 (跨周期公式必填)")
 
     # === 升级: 占位符检测 (2026-07-22 加, 防止"数据丢"漏检) ===
-    # 2026-07-23 加: 3 个特定占位符 (sync_stock 之前埋的坑, 实算后必须消失)
+    # 2026-07-23 加: 3 个特定占位符 (sync_watchlist_fresh 之前埋的坑, 实算后必须消失)
     placeholder_patterns = [
         ("未填", "数据未填实"),
         ("未生成", "占位符未生成"),
@@ -221,8 +221,8 @@ def lint_report(md_path: str) -> dict[str, Any]:
         # === 2026-08-15: 实算失败的硬性残行 (factor_history bug 期间 render 留下的脏数据) ===
         # 背景: analysis_result_signals.py 字典字面量塞赋值时, render 阶段不依赖此模块也能成功,
         # 留下 "❌ 历史计算失败: ..." 残行在 57 份 md 报告里, 直到下一次 render 才覆盖
-        # 防护: 任何 md 里出现"历史计算失败"→ 立即 FAIL, 强制重跑 refresh_all
-        ("历史计算失败", "factor_history 实算失败残行 (必须重跑 refresh_all.sh)"),
+        # 防护: 任何 md 里出现"历史计算失败"→ 立即 FAIL, 强制重跑 batch analyze
+        ("历史计算失败", "factor_history 实算失败残行 (必须重跑 batch/t_analyze_all.py)"),
     ]
     for pattern, desc in placeholder_patterns:
         # 排除合法的"未触发"等业务术语

@@ -14,7 +14,6 @@ import time
 import sqlite3
 import argparse
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -22,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 from tools.kline_store import DataStore
 from tools.factors.kline_arrays import sliding_ma
+from tools.batch_runner import run_batch
 
 DB = ROOT / "data" / "analysis_cache.db"
 ds = DataStore()
@@ -104,16 +104,19 @@ def main():
     codes = ds.list_codes()
     print(f"开始 backfill: {len(codes)} 只, year={args.year or 'all'}")
 
-    total = 0
-    done = 0
     t0 = time.time()
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futs = {ex.submit(backfill_one, code, args.year): code for code in codes}
-        for fut in as_completed(futs):
-            done += 1
-            total += fut.result()
-            if done % 200 == 0:
-                print(f"  [{done}/{len(codes)}] 累计 {total} 行")
+    total = 0
+    def on_result(code, n_updated):
+        nonlocal total
+        total += n_updated
+
+    run_batch(
+        items=codes,
+        worker_fn=lambda c: backfill_one(c, args.year),
+        workers=args.workers,
+        desc=f"OBV backfill (year={args.year or 'all'})",
+        on_result=on_result,
+    )
 
     print(f"完成: {total} 行, 耗时 {time.time()-t0:.1f}s")
 

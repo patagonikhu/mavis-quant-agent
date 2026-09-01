@@ -15,7 +15,7 @@ allowed-tools:
 > ❌ 禁止用 `c_d` (close) 当 `hist` 参数调背驰函数（必须用 `_calc_macd_hist(c_d)`）
 
 > 🚨 **拉数据铁律 (2026-08-23 v3.6)**
-> 跑这个 skill 前，先调 `t-pull` skill 走 `tools/sync_stock.py` 拉数据（也可不调，前提是 parquet 已有数据）
+> 跑这个 skill 前，先调 `t-pull` skill 走 `tools/sync_watchlist_fresh.py` 拉数据（也可不调，前提是 parquet 已有数据）
 
 ## 入口判断
 
@@ -44,7 +44,7 @@ print([s['code'] for s in json.load(open('data/watchlist.json'))['stocks']])
 
 数据已存在则跳过。新增股票需先跑：
 ```bash
-# 2026-08-31 refresh_all.sh 已删, t_analyze_all.py 自动 sync + 并发
+# 2026-08-31 起 t_analyze_all.py 自动 sync + 并发
 T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py
 ```
 
@@ -92,7 +92,7 @@ SIG_CODES: 000001, 002475, ...
 
 ```bash
 # Step A: 拉数据（可选，parquet 已有则跳过）
-bash tools/with_venv.sh python -m tools.sync_stock {code}
+bash tools/with_venv.sh python -m tools.sync_watchlist_fresh {code}
 
 # Step B: 分析 + 渲染 MD
 bash tools/with_venv.sh python3 << 'PYEOF'

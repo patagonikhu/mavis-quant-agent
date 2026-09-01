@@ -121,7 +121,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 ├── tools/                                 # 核心引擎
 │   ├── sync_stock.py                      # 单只拉数据 (DataStore)
 │   ├── sync_watchlist_fresh.py            # 批量同步新鲜度
-│   ├── refresh_all.sh                     # 1 键刷 watchlist (sync + analyze + render)
+│   ├── batch/t_analyze_all.py             # 1 键刷 watchlist (sync + 4 worker analyze + render)
 │   ├── kline_store.py                     # DataStore (parquet reader)
 │   ├── with_venv.sh                       # venv 包装 (必须走这个)
 │   │
@@ -303,7 +303,7 @@ cp .env.example .env
 
 # 4. 拉数据 (单只 / 批量)
 bash tools/with_venv.sh python -m tools.sync_stock 600089
-bash tools/refresh_all.sh                # 全部 watchlist
+bash tools/with_venv.sh python tools/batch/t_analyze_all.py  # 全部 watchlist
 
 # 5. 跑 skill
 /t-analyze 600089 特变电工
@@ -795,7 +795,7 @@ pip install -r requirements.txt  # 详见下
 ```bash
 手动创建 .env
 # 编辑 .env, 填 TUSHARE_TOKEN (注册: https://tushare.pro/register)
-python3 tools/refresh_all.sh    # 一键刷全 watchlist
+python3 tools/batch/t_analyze_all.py    # 一键刷全 watchlist
 ```
 
 ### requirements.txt 依赖清单
