@@ -135,6 +135,7 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     smc_raw    = raw.get("smc",             {}) or {}
     fflow_raw  = raw.get("fflow",           {}) or {}
     obv_raw    = raw.get("obv",             {}) or {}
+    val_raw    = raw.get("valuation",       {}) or {}  # 2026-09-02 新 (PEG+DCF+Magic 合并)
     p3         = wy_raw.get("3period") or {}
 
     pos_raw = raw.get("position", {}) or {}
@@ -190,6 +191,10 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "obv5":                obv_raw.get("obv5", 0),
         "obv_trend":           obv_raw.get("obv_trend", 0),
         "obv_strategy_score": obv_raw.get("score", 0),
+
+        # 估值时序 (ValuationStrategy 算的 4 指标, 2026-09-02 新)
+        "ey_daily":  val_raw.get("magic_ey_series", {}).get(date.replace("-", "")[:8]),
+        "roc_daily": val_raw.get("magic_roc_series", {}).get(date.replace("-", "")[:8]),
     }
 
 

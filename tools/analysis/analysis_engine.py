@@ -774,7 +774,7 @@ class ChanStrategy:
 
 
 class PegStrategy:
-    """PEG 估值 → 分数"""
+    """PEG 估值 → 分数 (DEPRECATED: 合并进 ValuationStrategy, 2026-09-02 保留兼容)"""
     name = "peg"
 
     def analyze(self, ctx: RawContext) -> dict:
@@ -787,10 +787,6 @@ class PegStrategy:
         score = 0.0
         summary = "—"
         if peg_real is not None and isinstance(peg_real, (int, float)):
-            # PEG < 0.5 = 低估 (强买)
-            # PEG 0.5-1 = 合理 (持有)
-            # PEG 1-2 = 偏贵
-            # PEG > 2 = 高估 (卖)
             if peg_real < 0.5:
                 score = 1.0
             elif peg_real < 1.0:
@@ -817,21 +813,115 @@ class PegStrategy:
         result = self.analyze(ctx)
         return {d: result for d in dates}
 
+
+class ValuationStrategy:
+    """PEG + DCF + Magic (ROC + EY) — 4 指标共享 1 次 daily_basic 读
+
+    输入:  daily_basic 时序 + EPS + financials
+    输出:  4 指标最新值 + 时序 + period_label
+
+    2026-09-02 重构: 之前 PEG 单独 PegStrategy, Magic 在 tools/factors/valuation/magic_formula.py
+    (ValuationStrategy 调不到), 合并到这里。
+    """
+    name = "valuation"
+
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """逐日算 PEG + DCF + ROC + EY
+
+        dates 长度 60-120, 内部 1 次 daily_basic 批量读, 1 次 financials 读, 4 个指标全算
+        """
+        from tools.analysis.valuation import calc_magic_one_day, find_full_year_financials
+        from tools.factors.valuation.multi import PegFactor, DcfFactor
+
+        # 1) 批量读 daily_basic 1 次 (6ms 248 天)
+        from tools.kline_store import batch_load_daily_basic
+        dates_clean = [d.replace("-", "")[:8] for d in dates]
+        db_index = batch_load_daily_basic(ctx.code, dates_clean)  # {date: dict}
+
+        # 2) 读 financials (跨多季)
+        from tools.kline_store import DataStore
+        financials = DataStore.get_financials(ctx.code, lookback_quarters=4)
+
+        # 3) 读 EPS (PEG / DCF 用)
+        eps_table = ctx.eps_table or DataStore.get_eps(ctx.code)
+
+        # 4) 算当天的 4 个指标 (用 latest 1 天, 时序算全 dates)
+        # 4a) PEG (单点, 时序: same as today, 因为只算 latest)
+        peg_factor = PegFactor()
+        latest_db = db_index.get(dates_clean[-1], {}) if db_index else {}
+        latest_price = latest_db.get("close") or ctx.current_price
+        peg_today = peg_factor(df=None, eps_table=eps_table, current_price=latest_price) or {}
+
+        # 4b) DCF (单点, 时序: same as today)
+        dcf_factor = DcfFactor()
+        market_cap_yi = (latest_db.get("total_mv") or 0) / 1e4 if latest_db.get("total_mv") else ctx.market_cap_yi
+        dcf_today = dcf_factor(df=None, eps_table=eps_table,
+                               current_price=latest_price, market_cap_yi=market_cap_yi) or {}
+
+        # 4c) Magic 时序 (每个 date 算 ROC + EY)
+        ey_series = {}
+        roc_series = {}
+        latest_magic = None
+        for d_clean in dates_clean:
+            if not financials:
+                continue
+            db = db_index.get(d_clean)
+            if not db or not db.get("total_mv"):
+                continue
+            # 找 ≤ d_clean 的最新全年
+            fin = find_full_year_financials(financials, d_clean)
+            if not fin:
+                continue
+            # 用 find 出的 fin 当 fin_periods, 内部 _ttm_ebit 自动取
+            magic = calc_magic_one_day([fin], d_clean, db["total_mv"])
+            if magic.get("roc") is not None:
+                roc_series[d_clean] = magic["roc"]
+            if magic.get("ey") is not None:
+                ey_series[d_clean] = magic["ey"]
+            if d_clean == dates_clean[-1]:
+                latest_magic = magic
+
+        # 5) 拼结果
+        magic_summary = f"ROC {latest_magic.get('roc', '—')}% | EY {latest_magic.get('ey', '—')}%" if latest_magic else "Magic 数据不足"
+
+        return {d: {
+            "score":   0.0,  # 估值不参与 total_score
+            "signals": [f"PEG {peg_today.get('PEG_真实', '—')}",
+                        f"DCF r=10% L={dcf_today.get('r_10%', {}).get('L_隐含(亿)', '—')}",
+                        magic_summary],
+            "summary": f"PEG {peg_today.get('PEG_真实', '—')} | ROC {latest_magic.get('roc', '—') if latest_magic else '—'}% | EY {latest_magic.get('ey', '—') if latest_magic else '—'}%",
+
+            # PEG 字段 (跟 PegFactor 兼容)
+            "PEG_真实": peg_today.get("PEG_真实"),
+            "fwd_pe":   peg_today.get("Forward PE"),
+            "g":        peg_today.get("g_CAGR"),
+            "verdict":  peg_today.get("PEG_判定"),
+
+            # DCF 字段 (跟 DcfFactor 兼容)
+            "L_r8":     dcf_today.get("r_8%", {}).get("L_隐含(亿)"),
+            "L_r10":    dcf_today.get("r_10%", {}).get("L_隐含(亿)"),
+            "L_r12":    dcf_today.get("r_12%", {}).get("L_隐含(亿)"),
+            "L_E3_r10": dcf_today.get("r_10%", {}).get("L/E3(每share)"),
+            "L_achievable": dcf_today.get("L_achievable", ""),  # 旧 _derive_dcf 字段
+
+            # Magic 字段 (新)
+            "roc":       latest_magic.get("roc") if latest_magic else None,
+            "ey":        latest_magic.get("ey") if latest_magic else None,
+            "ev_yi":     latest_magic.get("ev_yi") if latest_magic else None,
+            "period_label":     latest_magic.get("period_label") if latest_magic else "no_data",
+            "seasonal_warning": latest_magic.get("seasonal_warning", False) if latest_magic else False,
+
+            # 时序 (新, 给回测/排名稳定性)
+            "magic_ey_series":  ey_series,
+            "magic_roc_series": roc_series,
+        } for d in dates}
+
 # ============================================================
 # 3. Phase2 派生函数 (weight=0, 纯数据提取)
 #    参数: (ctx: RawContext, raw: dict) → dict
 #    key = 函数名去掉 "_derive_" 前缀
 # ============================================================
-
-def _derive_dcf(ctx: RawContext, raw: dict) -> dict:
-    """DCF 折现估值 (3 档 r=8/10/12%)"""
-    from tools.factors.valuation.multi import DcfFactor
-    try:
-        return DcfFactor()(df=None, eps_table=ctx.eps_table,
-                           current_price=ctx.current_price,
-                           market_cap_yi=ctx.market_cap_yi) or {}
-    except Exception:
-        return {}
+# _derive_dcf 删除: DCF 已合并到 ValuationStrategy (Phase1), 2026-09-02
 
 
 def _derive_sector_overheat(ctx: RawContext, raw: dict) -> dict:
@@ -963,18 +1053,19 @@ def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
 # ============================================================
 
 # Phase1 策略类列表 (顺序重要: ChanStrategy 先跑, ObvStrategy 在 FflowStrategy 之前)
+# 2026-09-02: PegStrategy → ValuationStrategy (合并 PEG + DCF + Magic 4 指标)
 PHASE1_STRATEGY_CLASSES = [
     ChanStrategy,
     WyckoffStrategy,
     SmcStrategy,
     ObvStrategy,
     FflowStrategy,
-    PegStrategy,
+    ValuationStrategy,
 ]
 
 # Phase2 派生函数列表
+# 2026-09-02: 删 _derive_dcf (合并到 ValuationStrategy)
 PHASE2_FUNCTIONS = [
-    _derive_dcf,
     _derive_sector_overheat,
     _derive_five_categories,
     _derive_buy_sell_points,
@@ -985,13 +1076,14 @@ PHASE2_FUNCTIONS = [
 ]
 
 # Phase1 权重 (用于 total_score 加权)
+# 2026-09-02: "peg" → "valuation" (ValuationStrategy name)
 _STRATEGY_WEIGHTS: dict[str, float] = {
-    "chan":     0.20,
-    "wyckoff": 0.20,
-    "smc":     0.10,
-    "obv":     0.10,
-    "fflow":   0.10,
-    "peg":     0.15,
+    "chan":      0.20,
+    "wyckoff":   0.20,
+    "smc":       0.10,
+    "obv":       0.10,
+    "fflow":     0.10,
+    "valuation": 0.15,  # 之前 "peg": 0.15, 跟 ValuationStrategy 同权重
 }
 
 # 向后兼容别名 (旧代码 import PHASE1_STRATEGIES / PHASE2_STRATEGIES)

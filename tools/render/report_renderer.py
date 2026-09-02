@@ -46,13 +46,55 @@ from tools.analysis.analysis_result_signals import obv_label
 # ============================================================
 
 def _section_eps(data: RenderData) -> str:
-    if not data.eps_table:
-        return "> **数据状态:** ❌ EPS 预测未拉取\n> **降级路径:** PEG/DCF 无法计算，标 N/A\n"
-    rows = ["| 年份 | EPS | 净利(亿) | 营收(亿) | ROE |",
-            "|---|---|---|---|---|"]
-    for r in data.eps_table:
-        rows.append(f"| {r.year} | {r.eps:.2f} | {r.net_profit_yi:.1f} | {r.revenue_yi:.1f} | {r.roe:.1f}% |")
-    return "\n".join(rows)
+    """EPS + 财务数据 + Magic Formula (Greenblatt ROC + EY)
+    三块数据都是"基本面估值"维度, 合一个 section 信息密度更高
+    """
+    parts = []
+
+    # 1) EPS 表格
+    if data.eps_table:
+        rows = ["| 年份 | EPS | 净利(亿) | 营收(亿) | ROE |",
+                "|---|---|---|---|---|"]
+        for r in data.eps_table:
+            rows.append(f"| {r.year} | {r.eps:.2f} | {r.net_profit_yi:.1f} | {r.revenue_yi:.1f} | {r.roe:.1f}% |")
+        parts.append("\n".join(rows))
+    else:
+        parts.append("> **EPS 预测:** ❌ 未拉取 (PEG/DCF 无法计算, 标 N/A)")
+
+    # 2) Magic Formula (Greenblatt ROC + EY) — 2026-09-02 改读 valuation_data
+    _val = data.valuation_data or {}
+    if _val:
+        skip = _val.get("skip_reason")
+        if skip:
+            parts.append(
+                f"\n\n### 💎 Magic Formula (Greenblatt ROC + EY)\n"
+                f"> **跳过原因:** {skip} ({_val.get('industry', '—')})\n"
+                f"> 行业失真 / 数据缺, 不参与排序"
+            )
+        else:
+            roc_pct = _val.get("roc", "—")
+            ey_pct  = _val.get("ey", "—")
+            ev_yi   = _val.get("ev_yi", "—")
+            industry = _val.get("industry", "—")
+            period_label = _val.get("period_label", "—")
+            seasonal = " ⚠️ 季节性 proxy" if _val.get("seasonal_warning") else ""
+            ev_str = f"{ev_yi:,.0f}" if isinstance(ev_yi, (int, float)) else "—"
+            parts.append(
+                f"\n\n### 💎 Magic Formula (Greenblatt ROC + EY) (来源: {period_label}{seasonal})\n"
+                f"| 指标 | 数值 | 说明 |\n"
+                f"|---|---|---|\n"
+                f"| 行业 | {industry} | — |\n"
+                f"| EBIT (TTM) | {_val.get('ebit_yi', '—')} 亿 | Tushare fina_indicator |\n"
+                f"| 净营运资本 + 固定资产 | {_val.get('capital_yi', '—')} 亿 | NWC + FA |\n"
+                f"| **ROC (Return on Capital)** | **{roc_pct}%** | EBIT / (NWC + FA) |\n"
+                f"| 市值 | {_val.get('market_cap_yi', '—')} 亿 | Tushare daily_basic |\n"
+                f"| 净债务 | {_val.get('netdebt_yi', '—')} 亿 | Tushare fina_indicator |\n"
+                f"| **EV (企业价值)** | **{ev_str} 亿** | 市值 + 净债务 |\n"
+                f"| **EY (Earnings Yield)** | **{ey_pct}%** | EBIT / EV |\n"
+                f"\n**判定:** ROC 越高越好 (高资本效率), EY 越高越好 (盈利对 EV 回报高), 联合排名 (Greenblatt 原版)"
+            )
+
+    return "\n".join(parts)
 
 
 def _section_ma(data: RenderData) -> str:
@@ -268,80 +310,38 @@ def _section_ga_factor(data: RenderData) -> str:
 
 
 def _section_peg(data: RenderData) -> str:
-    if data.peg_detail:
-        p = data.peg_detail
-        return f"""| 步骤 | 数值 | 来源 |
-|---|---|---|
-| 当前价 | ¥{p.get('price', '—')} | {p.get('price_src', '—')} |
-| E0 (本年实际) | {p.get('E0', '—')} | datacenter |
-| E1 (NTM) | {p.get('E1', '—')} | 一致预期 |
-| E2 | {p.get('E2', '—')} | 一致预期 |
-| E3 | {p.get('E3', '—')} | 一致预期 |
-| Forward PE | {p.get('fwd_pe', '—')} | 价/E1 |
-| g (CAGR) | {p.get('g', '—')}% | (E3/E0)^(1/n)-1 |
-| **PEG_真实** | **{p.get('peg', '—')}** | {p.get('peg_verdict', '—')} |"""
-    if not data.can_calc_peg():
-        return """> **数据状态:** ❌ PEG 无法计算 (EPS 数据不足)
-> **降级:** 用 PE_TTM 替代, 标 ⚠️
+    # 2026-09-02 改: 读 data.valuation_data (ValuationStrategy 输出)
+    _v = data.valuation_data or {}
+    if _v.get("PEG_真实") is not None and _v.get("PEG_真实") != "数据不足":
+        return f"""| 指标 | 数值 |
+|---|---|
+| **PEG_真实** | **{_v.get('PEG_真实')}** ({_v.get('verdict', '—')}) |
+| Forward PE | {_v.get('fwd_pe', '—')} |
+| g (稳态 CAGR) | {_v.get('g', '—')} |
 """
-    return """> **数据状态:** ⚠️ PEG 已具备数据, 等待 mavis (LLM) 计算
-> **说明:** 由 LLM 跑 Bash + Python 算, 5 步全展示
+    return """> **数据状态:** ⚠️ PEG 未计算 (ValuationStrategy 缺 EPS 数据)
+> **降级:** 用 PE_TTM 替代, 标 ⚠️
 """
 
 
 def _section_dcf(data: RenderData) -> str:
-    if data.dcf_detail:
-        d = data.dcf_detail
-        return f"""| 折现率 r | 隐含终局利润 L | L/E3 | g/年 |
-|---|---|---|---|
-| 8% | {d.get('L_r8', '—')} 亿 | {d.get('L_E3_r8', '—')}x | {d.get('g_r8', '—')}% |
-| 10% | {d.get('L_r10', '—')} 亿 | {d.get('L_E3_r10', '—')}x | {d.get('g_r10', '—')}% |
-| 12% | {d.get('L_r12', '—')} 亿 | {d.get('L_E3_r12', '—')}x | {d.get('g_r12', '—')}% |
-
-**校正 (r=8% ≈ 真实市场隐含 L):** ¥{d.get('L_actual', '—')} 亿
-
-**L / 可达利润:** {d.get('L_achievable', '—')} → {d.get('verdict', '—')}
-"""
-    if not data.can_calc_dcf():
-        return """> **数据状态:** ❌ DCF L 无法计算 (E 数据 < 2 年)
-"""
-    return """> **数据状态:** ⚠️ DCF L 已具备数据, 等待 mavis 算
-"""
-
-def _section_magic_formula(data: RenderData) -> str:
-
-    """Greenblatt Magic Formula (ROC + EY), 跟 PEG / DCF 同位置"""
-    if data.magic_formula_detail:
-        m = data.magic_formula_detail
-        skip = m.get("skip_reason")
-        if skip:
-            return f"""> **数据状态:** ⚠️ Magic Formula 跳过 ({skip})
-> **行业:** {m.get('industry', '—')} (银行/保险/地产/公用/亏损 不算)
-"""
-        roc_pct = m.get("roc", "—")
-        ey_pct  = m.get("ey", "—")
-        ev_yi   = m.get("ev_yi", "—")
-        industry = m.get("industry", "—")
-        ev_str = f"{ev_yi:,.0f}" if isinstance(ev_yi, (int, float)) else "—"
-        return f"""| 指标 | 数值 | 说明 |
+    # 2026-09-02 改: 读 data.valuation_data
+    _v = data.valuation_data or {}
+    if _v.get("L_r10") is not None:
+        return f"""| 折现率 r | 隐含终局利润 L | L/E3 |
 |---|---|---|
-| 行业 | {industry} | — |
-| EBIT (H1 2026) | {m.get('ebit_yi', '—')} 亿 | Tushare fina_indicator |
-| 净营运资本 + 固定资产 | {m.get('capital_yi', '—')} 亿 | NWC + FA |
-| **ROC (Return on Capital)** | **{roc_pct}%** | EBIT / (NWC + FA) |
-| 市值 | {m.get('market_cap_yi', '—')} 亿 | Tushare daily_basic |
-| 净债务 | {m.get('netdebt_yi', '—')} 亿 | Tushare fina_indicator |
-| **EV (企业价值)** | **{ev_str} 亿** | 市值 + 净债务 |
-| **EY (Earnings Yield)** | **{ey_pct}%** | EBIT / EV |
+| 8% | {_v.get('L_r8', '—')} 亿 | — |
+| 10% | {_v.get('L_r10', '—')} 亿 | {_v.get('L_E3_r10', '—')}x |
+| 12% | {_v.get('L_r12', '—')} 亿 | — |
+"""
+    return """> **数据状态:** ⚠️ DCF L 未计算 (ValuationStrategy 缺 EPS 数据)
+"""
 
-**Magic Formula 判定 (Greenblatt 原版):**
-- ROC 越高越好 (高资本效率)
-- EY 越高越好 (盈利对 EV 回报高)
-- 联合排名: ROC 排名 + EY 排名, 取均值小者
-"""
-    return """> **数据状态:** ⚠️ Magic Formula 数据未拉取 (financials parquet 没数据)
-> **降级:** 先跑 `python -m tools.kline_store` 触发 sync_financials
-"""
+def _section_magic_formula_unused(data: RenderData) -> str:
+    """2026-09-02 废弃: Magic 合并到 _section_eps, 这个函数保留只是占位避免引用错误。
+    实际主模板不再调用, 报告渲染从 _section_eps 拿 data.valuation_data。
+    """
+    return ""
 
 
 def _section_fundamental(data: RenderData) -> str:
@@ -1220,13 +1220,15 @@ def _section_four_q_short(data: RenderData) -> str:
     """报告头的简短四问 + 评级"""
     if data.four_questions:
         fq = data.four_questions
-        # peg_summary 可能没有，从 peg_detail 取
+        # 2026-09-02 改: 读 data.valuation_data.PEG_真实 (旧 peg_detail 字段已合并)
         peg_str = fq.get('peg_summary')
-        if not peg_str and data.peg_detail:
-            peg_val = data.peg_detail.get('peg_real') or data.peg_detail.get('peg')
-            peg_str = f"{peg_val:.2f}" if peg_val else "未算"
-        elif not peg_str:
-            peg_str = "未算"
+        if not peg_str:
+            _v = data.valuation_data or {}
+            peg_val = _v.get('PEG_真实')
+            if isinstance(peg_val, (int, float)):
+                peg_str = f"{peg_val:.2f}"
+            else:
+                peg_str = "未算"
         return f"""**评级:** {fq.get('verdict', '待判定')} | **龙头:** {fq.get('leader_score', '?')}/14 | **PEG:** {peg_str}"""
     return "**评级:** ⏳ 等待四问评分"
 
@@ -1394,8 +1396,9 @@ def _has_signal(row: dict) -> bool:
 
 
 # 因子历史走势 — 14 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MA偏离(日/周) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW |"
-FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+# 2026-09-02 加 2 列: ROC% + EY% (ValuationStrategy 时序, 给回测用)
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MA偏离(日/周) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | ROC% | EY% |"
+FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
@@ -1470,7 +1473,14 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     bwid  = row.get('boll_width')
     bpct_s = f"{bpct:.0f}%"  if bpct  is not None else "—"
     bwid_s = f"{bwid:.1f}%"  if bwid  is not None else "—"
-    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} |"
+
+    # 2026-09-02 加 2 列: ROC% + EY% (ValuationStrategy 时序)
+    roc  = row.get('roc_daily')
+    ey   = row.get('ey_daily')
+    roc_s = f"{roc:.0f}%" if roc is not None else "—"
+    ey_s  = f"{ey:.1f}%" if ey is not None else "—"
+
+    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {roc_s} | {ey_s} |"
 
 
 def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
@@ -1844,9 +1854,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 {_section_dcf(data)}
 
 ---
-## 💎 Magic Formula (Greenblatt ROC + EY)
-{_section_magic_formula(data)}
-
 
 ## 💎 基本面 (4 维) — 自动评估
 {_section_fundamental(data)}

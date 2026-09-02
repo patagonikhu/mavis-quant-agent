@@ -427,9 +427,8 @@ class RenderData:
     chan_status: Optional[DataStatus] = None
     four_questions: Optional[dict] = None
     t_frame: Optional[dict] = None
-    peg_detail: Optional[dict] = None
-    dcf_detail: Optional[dict] = None
-    magic_formula_detail: Optional[dict] = None  # Greenblatt ROC + EY
+    # 2026-09-02 合并: peg_detail / dcf_detail / magic_formula_detail → valuation_data 1 个
+    valuation_data: Optional[dict] = None  # ValuationStrategy 输出 (PEG + DCF + Magic)
     signal_5cat: Optional[dict] = None
     xgboost_prob: Optional[float] = None
     sector_overheat: Optional[dict] = None
@@ -567,7 +566,34 @@ class RenderData:
             exit_signals=_mech_exit_signals(signals_5, ma_table),
             monitor_triggers=_mech_monitor_triggers(signals_5, ma_table),
             market_cap_yi=ctx.market_cap_yi,
+            # Magic Formula: 跟 PEG/DCF 一样, 在 from_result 里直接算, 不留 N/A
+            # market_cap 入参单位"万" (跟 Tushare daily_basic 一致), 内部 / 1e4 转亿
+            # 2026-09-02 改: 删 magic_formula_detail, 用 valuation_data 1 个字段
+            valuation_data=cls._compute_valuation(ctx, result),
         )
+
+    @classmethod
+    def _compute_magic(cls, ctx: "RawContext") -> Optional[dict]:
+        """旧 _compute_magic: 2026-09-02 保留兼容, 实际数据从 valuation_data 读。
+
+        报告渲染层已经从 data.valuation_data 读 (合并 PEG+DCF+Magic)。
+        这个方法保持存在但不再被 from_result 调用, 避免删了破坏向后兼容。
+        """
+        return None  # 已废弃, 用 _compute_valuation 替代
+
+    @classmethod
+    def _compute_valuation(cls, ctx: "RawContext", result) -> Optional[dict]:
+        """从 AnalysisResult.raw["valuation"] 拿 ValuationStrategy 算的 4 指标 (2026-09-02 新)
+
+        返回: {PEG_真实, fwd_pe, g, verdict, L_r8/r10/r12, L_E3_r10, roc, ey, ev_yi,
+                period_label, seasonal_warning, magic_ey_series, magic_roc_series}
+        """
+        try:
+            if not result or not result.raw:
+                return None
+            return result.raw.get("valuation", {}) or None
+        except Exception:
+            return None
 
     # ============================================================
     # 完整性
@@ -597,12 +623,17 @@ class RenderData:
         report["缠论"] = ("✅" if self.chan_data else "❓", "OK" if self.chan_data else "未计算")
         report["四问"] = ("✅" if self.four_questions else "❓", "OK" if self.four_questions else "未计算")
         report["T框架"] = ("✅" if self.t_frame else "❓", "OK" if self.t_frame else "未计算")
-        report["PEG"] = ("✅" if self.peg_detail else "❓",
-                         f"={self.peg_detail.get('peg')}" if self.peg_detail else "未计算")
-        report["DCF L"] = ("✅" if self.dcf_detail else "❓",
-                           f"L={self.dcf_detail.get('L_r8')}" if self.dcf_detail else "未计算")
-        report["Magic"] = ("✅" if self.magic_formula_detail else "❓",
-                           f"ROC={self.magic_formula_detail.get('roc')}% EY={self.magic_formula_detail.get('ey')}%" if self.magic_formula_detail else "未计算")
+        # 2026-09-02 改: 合并 PEG/DCF/Magic 1 个 valuation_data
+        _val = self.valuation_data or {}
+        peg_ok = _val.get("PEG_真实") is not None and _val.get("PEG_真实") != "数据不足"
+        dcf_ok = _val.get("L_r10") is not None
+        magic_ok = _val.get("roc") is not None or _val.get("ey") is not None
+        report["PEG"] = ("✅" if peg_ok else "❓",
+                         f"={_val.get('PEG_真实')}" if peg_ok else "未计算")
+        report["DCF L"] = ("✅" if dcf_ok else "❓",
+                           f"L={_val.get('L_r10')}亿" if dcf_ok else "未计算")
+        report["Magic"] = ("✅" if magic_ok else "❓",
+                           f"ROC={_val.get('roc')}% EY={_val.get('ey')}%" if magic_ok else "未计算")
         report["5类信号"] = ("✅" if self.signal_5cat else "❓", "OK" if self.signal_5cat else "未计算")
         report["板块过热"] = ("✅" if self.sector_overheat else "❓", "OK" if self.sector_overheat else "未计算")
         report["缠论补充"] = ("✅" if self.supplement else "❓", "OK" if self.supplement else "未计算")

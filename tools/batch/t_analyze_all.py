@@ -80,6 +80,12 @@ def process_one(s):
         # signal table
         rows = data.factor_history_rows
         signals = []
+        # 2026-09-02 加 list_type 标签 (持仓/自选/Magic初筛)
+        tag = {
+            '持仓': '🟢',
+            'Magic初筛': '💎',
+        }.get(list_type_label, '·')
+        code_tagged = f"{tag} {code}"
         if len(rows) >= 2:
             r = rows[-1]
             changes = diff_rows(rows[-2], rows[-1])
@@ -89,12 +95,12 @@ def process_one(s):
             hub_str = f"¥{hub_d.get('low',0):.0f}~{hub_d.get('high',0):.0f}{(hub_d.get('pos') or '')[:2]}" if hub_d.get('valid') else '—'
             has_sig = '⭐' if sig_fmtd else ''
             for _, detail, direction in sigs:
-                signals.append((direction, code, name, detail))
-            table_row = (code, name, (r.get('wyckoff_daily') or '?')[:10],
+                signals.append((direction, code_tagged, name, detail))
+            table_row = (code_tagged, name, (r.get('wyckoff_daily') or '?')[:10],
                          f"{r.get('ma_dev_daily') or 0:+.1f}%", hub_str,
                          ' '.join(sig_fmtd) if sig_fmtd else '—', has_sig)
         else:
-            table_row = (code, name, '?', '0.0%', '—', '—', '')
+            table_row = (code_tagged, name, '?', '0.0%', '—', '—', '')
 
         elapsed = time.time() - t0
         return ('ok', code, {'md_path': md_path, 'elapsed': elapsed, 'len': len(md),
@@ -134,7 +140,11 @@ for r in results:
 total_elapsed = time.time() - t_total
 
 # write summary
-lines = [f"# 全量扫描 {today}\n\n> {len(stocks)} 只 | DataStore | {datetime.datetime.now().strftime('%H:%M:%S')}\n\n"]
+# 2026-09-02 加: 按 list_type 分类统计 (持仓/自选/Magic初筛)
+from collections import Counter
+_lt_counter = Counter(s.get("list_type", "自选") for s in stocks)
+_lt_summary = " | ".join(f"{k} {v}" for k, v in sorted(_lt_counter.items(), key=lambda x: -x[1]))
+lines = [f"# 全量扫描 {today}\n\n> {len(stocks)} 只 ({_lt_summary}) | DataStore | {datetime.datetime.now().strftime('%H:%M:%S')}\n\n"]
 lines.append("## 底部信号（buy）\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
 for code, name, detail in buy_rows:
     lines.append(f"| {code} | {name} | {detail} |\n")

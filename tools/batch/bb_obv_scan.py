@@ -100,14 +100,25 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
         from tools.analysis.analysis_engine import AnalysisEngine
         engine = AnalysisEngine(strategies=[WyckoffStrategy, ObvStrategy])
         history_raw = engine.analyze_history(ctx, dates_window)
+        # BOLL 字段 (boll_pct/boll_width) 存在 ctx.kline_arrs 里 (kline_arrays.py 算),
+        # wyckoff strategy 没注入到 raw['wyckoff'], 修复: 直接从 ctx.kline_arrs 读
+        arrs = ctx.kline_arrs or {}
+        boll_pct_arr  = arrs.get('boll_pct')   # numpy array 按 all_dates 顺序
+        boll_width_arr = arrs.get('boll_width')
+        # date -> index 映射
+        date_to_idx = {d: i for i, d in enumerate(all_dates)}
         # 简化字段访问: 拼一个 flat dict, 只装 bb_obv_scan 用的字段
-        history = {d.replace('-','')[:8] if '-' in d else d: {
-            'close':          r.current_price,
-            'boll_pct':       (r.raw.get('wyckoff') or {}).get('boll_pct'),
-            'boll_width':     (r.raw.get('wyckoff') or {}).get('boll_width'),
-            'obv5':           (r.raw.get('obv') or {}).get('obv5', 0),
-            'obv_trend':      (r.raw.get('obv') or {}).get('obv_trend', 0),
-        } for d, r in history_raw.items()}
+        history = {}
+        for d, r in history_raw.items():
+            d_key = d.replace('-', '')[:8] if '-' in d else d
+            idx = date_to_idx.get(d_key)
+            history[d_key] = {
+                'close':       r.current_price,
+                'boll_pct':    float(boll_pct_arr[idx]) if (boll_pct_arr is not None and idx is not None) else None,
+                'boll_width':  float(boll_width_arr[idx]) if (boll_width_arr is not None and idx is not None) else None,
+                'obv5':        (r.raw.get('obv') or {}).get('obv5', 0),
+                'obv_trend':   (r.raw.get('obv') or {}).get('obv_trend', 0),
+            }
 
         # 找距今 ≤ window 天 的最近一个交易日 满足 BOLL AND BBW
         trigger = None

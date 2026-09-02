@@ -1,6 +1,6 @@
 {
   "version": "1.4",
-  "last_updated": "2026-09-01",
+  "last_updated": "2026-09-02",
   "description": "关注清单 + 你手填的笔记。LLM 用这些笔记 + 训练知识 + 框架 doc 出报告。每周花 10 分钟改一下。v1.2 加 rating_history 字段追踪评级变化。 v1.2 批量导入 docs/analyze-*.md 所有标的。",
   "stocks": [
     {
@@ -627,6 +627,76 @@
       "sector": "IT设备",
       "list_type": "Magic初筛",
       "notes": "[2026-09-01 Magic Top20 #20] ROC=25.6% (rank 98) EY=5.40% (rank 24) 综合=61.0 / PEG 0.88 (🟢, g=14%) / DCF L=8亿 L/E3=1.0x L/可达=6/10=0.60x | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "300724",
+      "name": "捷佳伟创",
+      "sector": "专用机械",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top3] ROC=136.9% (rank 18) EY=17.40% (rank 6) 综合=12.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "688332",
+      "name": "中科蓝讯",
+      "sector": "半导体",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top5] ROC=162.1% (rank 16) EY=9.20% (rank 26) 综合=21.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "300360",
+      "name": "炬华科技",
+      "sector": "电器仪表",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top8] ROC=63.6% (rank 47) EY=18.50% (rank 4) 综合=25.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "688080",
+      "name": "映翰通",
+      "sector": "通信设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top10] ROC=88.8% (rank 35) EY=8.70% (rank 28) 综合=31.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "688819",
+      "name": "天能股份",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top11] ROC=56.0% (rank 63) EY=13.90% (rank 9) 综合=36.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002249",
+      "name": "大洋电机",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top13] ROC=58.4% (rank 57) EY=8.40% (rank 32) 综合=44.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002056",
+      "name": "横店东磁",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top15] ROC=57.1% (rank 59) EY=8.50% (rank 31) 综合=45.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "600268",
+      "name": "国电南自",
+      "sector": "电气设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top16] ROC=48.4% (rank 75) EY=9.50% (rank 22) 综合=48.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "603100",
+      "name": "川仪股份",
+      "sector": "电器仪表",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top18] ROC=43.5% (rank 83) EY=9.70% (rank 21) 综合=52.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002690",
+      "name": "美亚光电",
+      "sector": "专用机械",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-02 Magic Top20] ROC=119.6% (rank 21) EY=6.10% (rank 88) 综合=54.5 | 卡点⭐ 待 LLM 补"
     }
   ],
   "changelog": [
@@ -659,6 +729,11 @@
       "date": "2026-09-01",
       "change": "加 19 只 Magic Top 20 (list_type=Magic初筛, 跳过 1 只已存在)",
       "source": "docs/magic-top20.md (Greenblatt 联合排名 H1 2026)"
+    },
+    {
+      "date": "2026-09-02",
+      "change": "加 10 只 Magic Top 20 (list_type=Magic初筛, 跳过 10 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
     }
   ]
 }
