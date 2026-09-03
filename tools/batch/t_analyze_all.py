@@ -1,5 +1,10 @@
 """
-t-analyze --all 批量分析: sync K线 + 4-8 worker 并发 analyze+render, 输出 signal-watchlist.md
+t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-watchlist.md
+
+2026-09-03 v6.0 改造:
+  - 不再偷偷调 sync_incremental (改走 /t-sync skill, 入口 tools/sync.py)
+  - 缺数据时直接报"请先 /t-sync", 不再调单只兜底
+  - 跑前用户先 `python -m tools.sync --all-data`
 """
 import json, sys, datetime, time, os
 from pathlib import Path
@@ -22,17 +27,7 @@ md_written = 0
 errs = []
 
 print(f'=== t-analyze --all | {len(stocks)} 只 | {datetime.datetime.now().strftime("%H:%M:%S")} ===', flush=True)
-
-# 阶段 1: 增量同步 K 线 + dump 详情 (EPS/fflow/股本)
-# 跟 find_near_low / bb_obv_scan 一致, 走 DataStore.get_ctx 单入口
-# EPS/fflow/moneyflow 已经在 DataStore.get_ctx 里读本地 cache
-try:
-    from tools.kline_store import sync_incremental
-    today_str = datetime.datetime.now().strftime('%Y%m%d')
-    print(f'  [阶段 1] 增量同步 (sync_incremental, target_date={today_str})...', flush=True)
-    sync_incremental(target_date=today_str)
-except Exception as e:
-    print(f'  [WARN] sync_incremental 失败: {e}', flush=True)
+print(f'  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync --all-data', flush=True)
 
 t_total = time.time()
 
@@ -46,22 +41,8 @@ def process_one(s):
     try:
         ctx = DataStore.get_ctx(code)
         if not ctx.kline:
-            # 单只级 sync 兜底
-            try:
-                from tools.fetch.tushare_fetcher import get_daily
-                from tools.kline_store import _append_records, _to_ts_code
-                from datetime import datetime, timedelta
-                ts_code = _to_ts_code(code)
-                end_str = datetime.now().strftime('%Y%m%d')
-                start_str = (datetime.now() - timedelta(days=365*5)).strftime('%Y%m%d')
-                data, status = get_daily(ts_code, start_date=start_str, end_date=end_str)
-                if data:
-                    _append_records(data)
-                    ctx = DataStore.get_ctx(code)
-            except Exception as e:
-                pass
-            if not ctx.kline:
-                return ('err', code, '无K线 (sync + 兜底都失败)')
+            # v6.0 改: 不再兜底拉数据, 报"请先 /t-sync"
+            return ('err', code, '无K线, 请先跑 /t-sync')
 
         all_dates = [k['trade_date'].replace('-', '')[:8] for k in ctx.kline]
         dates = all_dates[-120:]

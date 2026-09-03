@@ -851,17 +851,25 @@ def _fin_load_industry_map(codes: list[str]) -> dict[str, str]:
         return {}
 
 
+def _fin_load_all_codes() -> list[str]:
+    """全市场代码名单 (2026-09-03 改: 不再过滤科技股, VIP 1 次返 6451 全市场, 客户端筛省事)
+
+    从 stock_basic.parquet 读所有 ts_code → 截掉后缀 → code。
+    跟 _safe_call 返的 df_all['code'] 字段 (str.split('.').str[0]) 对齐。
+    """
+    import pandas as pd
+    if not STOCK_BASIC_PARQUET.exists():
+        return []
+    df = pd.read_parquet(STOCK_BASIC_PARQUET)
+    return df["ts_code"].str.split(".").str[0].tolist()
+
+
 def _fin_load_tech_codes() -> list[str]:
-    """科技股名单 (从 stock_basic.parquet 申万行业关键词 match, 跟 signal_cache_warmup 一致)"""
-    try:
-        from tools.batch.signal_cache_warmup import _load_tech_codes as _wl_tech
-        # 直接复用 signal_cache_warmup 的版本 (单一定义)
-        return _wl_tech()
-    except Exception as exc:
-        print(f"  ⚠️ 科技股 filter 失败: {exc}, 降级用 watchlist")
-        import json
-        wl = json.load(open("data/watchlist.json"))["stocks"]
-        return [s["code"] for s in wl]
+    """⚠️ 2026-09-03 废弃: 之前过滤科技股逻辑, 现在 sync_financials 默认走 _fin_load_all_codes
+
+    保留函数防止外部 import 引用崩, 返回全市场代替。
+    """
+    return _fin_load_all_codes()
 
 
 def sync_financials(period: str, codes: list[str] = None, force: bool = False) -> int:
@@ -873,7 +881,7 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
 
     Args:
         period: Tushare 原生 '20250630' / '20251231' 格式
-        codes:  默认 None = 用科技股名单 (从 stock_basic.parquet 关键词 match)
+        codes:  默认 None = 全市场 (2026-09-03 改, 之前是科技股过滤名单)
         force:  True = 强刷, 全部 to_pull (不查 status), 覆盖已 ok 的
 
     Returns:
@@ -883,7 +891,7 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
     import pandas as pd
 
     if codes is None:
-        codes = _fin_load_tech_codes()
+        codes = _fin_load_all_codes()
     if not codes:
         print(f"  ⚠️ sync_financials {period}: 没有 codes")
         return 0

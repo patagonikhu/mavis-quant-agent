@@ -29,8 +29,9 @@ os.chdir(_PROJECT)
 
 from tools.analysis.signal_cache import _DB, _init
 from tools.kline_store import (
-    DataStore, _to_ts_code, sync_incremental,
+    DataStore, _to_ts_code,
 )
+# v6.0 改: 不再 import sync_incremental (sync 走 /t-sync, 本脚本 0 网络)
 from tools.analysis.valuation import (
     find_full_year_financials, calc_ey_at_date, calc_roc_at_date,
 )

@@ -14,8 +14,9 @@ allowed-tools:
 > ❌ 禁止绕过 `Engine.analyze_history()` 入口自己写算法
 > ❌ 禁止用 `c_d` (close) 当 `hist` 参数调背驰函数（必须用 `_calc_macd_hist(c_d)`）
 
-> 🚨 **拉数据铁律 (2026-08-23 v3.6)**
-> 跑这个 skill 前，先调 `t-pull` skill 走 `tools/sync_watchlist_fresh.py` 拉数据（也可不调，前提是 parquet 已有数据）
+> 🚨 **拉数据铁律 (2026-09-03 v6.0)**
+> 跑这个 skill 前，先调 `/t-sync` 走 `tools/sync.py` 拉数据（也可不调，前提是 parquet 已有数据）。
+> 默认推荐 `python -m tools.sync --all-data` 一次补齐。
 
 ## 入口判断
 
@@ -92,7 +93,7 @@ SIG_CODES: 000001, 002475, ...
 
 ```bash
 # Step A: 拉数据（可选，parquet 已有则跳过）
-bash tools/with_venv.sh python -m tools.sync_watchlist_fresh {code}
+bash tools/with_venv.sh python -m tools.sync --codes {code}
 
 # Step B: 分析 + 渲染 MD
 bash tools/with_venv.sh python3 << 'PYEOF'
