@@ -225,8 +225,9 @@ def detect_stale_flags() -> dict[str, bool]:
             if max_d_clean:
                 last = datetime.strptime(max_d_clean, "%Y%m%d")
                 gap = (today - last).days
-                # 距今天 > 1 天 (考虑周末, 距 2 个工作日仍 OK)
-                if gap > 1:
+                # 距今天 >= 1 天 → 拉 (9/3 vs 9/2 gap=1, 也要拉)
+                # 但 daily_basic 取最新一天, gap=0 当天已拉够, 不重跑
+                if gap >= 1:
                     flags["kline"] = True
         else:
             flags["kline"] = True  # 没数据
