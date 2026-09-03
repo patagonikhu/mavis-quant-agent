@@ -36,7 +36,7 @@ import time
 import argparse
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 WATCHLIST = ROOT / "data" / "watchlist.json"

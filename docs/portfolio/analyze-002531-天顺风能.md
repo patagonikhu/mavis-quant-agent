@@ -807,9 +807,7 @@ OBV 🟡偏进货
 
 <!-- id:ts_basic -->
 ## 📊 基础信息 (Tushare)
-**代码:** 002531  **名称:** 天顺风能  **行业:** 未知  **上市日期:**   **总股本:** 0.00亿股  **流通股本:** 0.00亿股  **市场:** 
-
-> **数据源:** Tushare.stock_basic (dump)
+**代码:** 002531  **名称:** 天顺风能  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_watchlist_fresh)
 
 
 ---
