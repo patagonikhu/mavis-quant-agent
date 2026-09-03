@@ -61,8 +61,8 @@ allowed-tools:
 ### Step 1: 同步财务数据 (Tushare fina_indicator_vip, 1 次 API 拿全市场)
 
 ```bash
-# 默认同步最新季 (H1 2026)
-bash tools/with_venv.sh python -c "from tools.storage.store import sync_financials; sync_financials()"
+# 推荐: 走 sync_data 唯一入口 (v6.2.3)
+bash tools/with_venv.sh python -m tools.storage.sync --financials
 # 续跑: 0 API (status='ok'/'skip' 跳过)
 # 首次全量: 1.2 秒
 ```

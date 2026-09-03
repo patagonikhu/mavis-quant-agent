@@ -21,7 +21,7 @@
 | T框架 | ✅ | OK |
 | PEG | ✅ | =E1 无效 |
 | DCF L | ✅ | L=77.5亿 |
-| Magic | ❌ | ROC/EY=no_data |
+| Magic | ❌ | ROC/EY=loss |
 | 板块过热 | ✅ | OK |
 | 缠论补充 | ✅ | OK |
 | 止盈止损 | ✅ | OK |
@@ -40,7 +40,7 @@
 | 2028E | 0.01 | 0.2 | 62.6 | 0.1% |
 
 
-### 💎 Magic Formula (Greenblatt ROC + EY) (来源: no_data)
+### 💎 Magic Formula (Greenblatt ROC + EY) (来源: loss)
 | 指标 | 数值 | 说明 |
 |---|---|---|
 | 行业 | — | — |

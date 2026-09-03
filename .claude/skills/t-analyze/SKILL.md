@@ -14,9 +14,13 @@ allowed-tools:
 > ❌ 禁止绕过 `Engine.analyze_history()` 入口自己写算法
 > ❌ 禁止用 `c_d` (close) 当 `hist` 参数调背驰函数（必须用 `_calc_macd_hist(c_d)`）
 
-> 🚨 **拉数据铁律 (2026-09-03 v6.1)**
-> 跑这个 skill 前，先调 `/t-sync-data` 走 `tools/sync_data.py` 拉数据（也可不调，前提是 parquet 已有数据）。
-> 默认 `python -m tools.sync_data` 走 `--auto` 智能检测 stale, 只跑需跑的; 强制全跑用 `python -m tools.sync_data --all-data`。
+> 🚨 **拉数据铁律 (2026-09-03 v6.2.3)**
+> 跑这个 skill 前，先调 `/t-sync-data` 走 `tools/storage/sync.py` 拉数据（也可不调，前提是 parquet 已有数据）。
+> 默认 `python -m tools.storage.sync` 走 `--auto` 智能检测 stale, 只跑需跑的; 强制全跑用 `python -m tools.storage.sync --all-data`。
+
+> 📂 **数据层依赖 (v6.2.2 架构守门)**
+> 读数据走 `DataStore` (`tools.storage.store.DataStore`) 或 `caches/analysis` 公开接口, **不直连 db/网络**。
+> 完整 storage/ 目录结构见 `t-sync-data/SKILL.md`。
 
 ## 入口判断
 
@@ -93,7 +97,7 @@ SIG_CODES: 000001, 002475, ...
 
 ```bash
 # Step A: 拉数据（可选，parquet 已有则跳过）
-bash tools/with_venv.sh python -m tools.sync_data --codes {code}
+bash tools/with_venv.sh python -m tools.storage.sync --codes {code}
 
 # Step B: 分析 + 渲染 MD
 bash tools/with_venv.sh python3 << 'PYEOF'

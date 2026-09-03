@@ -34,7 +34,7 @@ allowed-tools:
 ## 执行
 
 ```bash
-# 检查本地数据（< 400 只需先跑 kline_store）
+# 检查本地数据 (用 DataStore 唯一接口)
 bash tools/with_venv.sh python3 -c "from tools.storage.store import DataStore; print(f'本地: {len(DataStore.list_codes())} 只')"
 
 # 后台跑（8 worker, ~10s）
