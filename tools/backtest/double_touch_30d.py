@@ -45,18 +45,11 @@ def scan_one(code):
 
         n = len(closes)
 
-        # 尝试从 signal_cache 读 boll_bpct
+        # 尝试从 signal_cache 读 boll_bpct (2026-09-03 v6.2.2 改: 走 get_boll_bpct)
         bp_map = {}
         try:
-            from tools.storage.caches.analysis import _conn
-            conn = _conn()
-            placeholders = ','.join(['?'] * len(dates))
-            rows_db = conn.execute(
-                f"SELECT date_str, boll_bpct FROM analysis_cache WHERE code=? AND date_str IN ({placeholders})",
-                [code] + dates
-            ).fetchall()
-            conn.close()
-            bp_map = {r[0]: r[1] for r in rows_db if r[1] is not None}
+            from tools.storage.caches.analysis import get_boll_bpct
+            bp_map = {k: v for k, v in get_boll_bpct(code, dates).items() if v is not None}
         except Exception:
             pass
 
@@ -148,15 +141,11 @@ def main():
     print(f"  布林≤{BOLL}%  30d max_upside>{WIN_THRESHOLD}% 胜率（仅 signal_cache 覆盖的股票）")
     print("=" * 60)
 
-    from tools.storage.caches.analysis import _conn
+    from tools.storage.caches.analysis import get_boll_bpct_all
     from tools.storage.store import DataStore
 
-    # 一次性从 cache 读所有 boll_bpct
-    conn = _conn()
-    rows = conn.execute(
-        "SELECT code, date_str, boll_bpct FROM analysis_cache WHERE boll_bpct IS NOT NULL ORDER BY code, date_str"
-    ).fetchall()
-    conn.close()
+    # 一次性从 cache 读所有 boll_bpct (2026-09-03 v6.2.2 改: 走 get_boll_bpct_all)
+    rows = get_boll_bpct_all()
 
     # 按 code 分组
     from collections import defaultdict

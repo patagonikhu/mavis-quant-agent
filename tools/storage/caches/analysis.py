@@ -434,6 +434,41 @@ def update_obv_batch(rows: list[dict]) -> int:
     except Exception as e:
         print(f"  ⚠️ update_obv_batch 失败: {e}", file=__import__("sys").stderr)
         return 0
+
+
+def get_boll_bpct(code: str, dates: list[str]) -> dict[str, float]:
+    """返 code 在指定 dates 里的 boll_bpct (2026-09-03 v6.2.2 加, 替代 double_touch_30d 直连 db)
+
+    Returns: {date_str: boll_bpct or None} (None 表示 cache 里有但字段空)
+    """
+    if not dates:
+        return {}
+    try:
+        conn = _conn()
+        placeholders = ",".join(["?"] * len(dates))
+        rows = conn.execute(
+            f"SELECT date_str, boll_bpct FROM analysis_cache "
+            f"WHERE code=? AND date_str IN ({placeholders})",
+            [code] + dates,
+        ).fetchall()
+        conn.close()
+        return {r[0]: r[1] for r in rows}
+    except Exception:
+        return {}
+
+
+def get_boll_bpct_all() -> list[tuple[str, str, float]]:
+    """返所有 (code, date_str, boll_bpct) 字段 (2026-09-03 v6.2.2 加, 替代 double_touch_30d 直连 db)"""
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT code, date_str, boll_bpct FROM analysis_cache "
+            "WHERE boll_bpct IS NOT NULL ORDER BY code, date_str"
+        ).fetchall()
+        conn.close()
+        return [(r[0], r[1], r[2]) for r in rows]
+    except Exception:
+        return []
     finally:
         conn.close()
 
