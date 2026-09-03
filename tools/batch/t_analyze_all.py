@@ -2,9 +2,9 @@
 t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-watchlist.md
 
 2026-09-03 v6.0 改造:
-  - 不再偷偷调 sync_incremental (改走 /t-sync skill, 入口 tools/sync.py)
+  - 不再偷偷调 sync_incremental (改走 /t-sync skill, 入口 tools/datasync.py)
   - 缺数据时直接报"请先 /t-sync", 不再调单只兜底
-  - 跑前用户先 `python -m tools.sync --all-data`
+  - 跑前用户先 `python -m tools.datasync --all-data`
 """
 import json, sys, datetime, time, os
 from pathlib import Path
@@ -27,7 +27,7 @@ md_written = 0
 errs = []
 
 print(f'=== t-analyze --all | {len(stocks)} 只 | {datetime.datetime.now().strftime("%H:%M:%S")} ===', flush=True)
-print(f'  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync --all-data', flush=True)
+print(f'  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.datasync --all-data', flush=True)
 
 t_total = time.time()
 

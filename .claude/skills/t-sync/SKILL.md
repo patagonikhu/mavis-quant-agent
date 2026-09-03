@@ -1,6 +1,6 @@
 ---
 name: t-sync
-description: 唯一数据同步入口 (2026-09-03 新)。所有 sync 行为 (K线/财务/EPS/fflow/cache/元数据) 都在 `tools/sync.py`,7 个正交 flag 控制,默认全关,显式开才跑。用户说"同步数据"、"补数据"、"拉K线"、"拉财务"、"拉EPS"、"sync cache"、"sync"都走这个 skill,替代原 sync_watchlist_fresh。
+description: 唯一数据同步入口 (2026-09-03 新)。所有 sync 行为 (K线/财务/EPS/fflow/cache/元数据) 都在 `tools/datasync.py` (v6.1 改名), 7 个正交 flag 控制, 默认走 `--auto` 智能检测 stale flag (解决"忘记 sync"问题)。用户说"同步数据"、"补数据"、"拉K线"、"拉财务"、"拉EPS"、"sync cache"、"sync"都走这个 skill,替代原 sync_watchlist_fresh。
 user-invocable: true
 allowed-tools:
   - Bash
@@ -14,21 +14,26 @@ allowed-tools:
 ## 用法 (一图流)
 
 ```bash
+# 智能模式 (推荐, 解决"忘记 sync"问题)
+python -m tools.datasync                 # 默认 --auto: 智能检测 stale, 只跑需跑的
+python -m tools.datasync --auto-dry      # 试运行, 只显示会跑什么
+python -m tools.datasync --auto-force    # 强刷所有 stale
+
 # 7 个正交 flag, 全部默认关, 显式开才跑
-python -m tools.sync --kline          # 增量 K 线 (含 daily_basic + 6 指数)
-python -m tools.sync --stock-basic    # 股票基础 (行业/名称, 每月 1 次)
-python -m tools.sync --financials     # 财务 5 季度 (fina_indicator_vip 全市场)
-python -m tools.sync --eps            # EPS 机构预期 (datacenter.consensus)
-python -m tools.sync --fflow          # 主力资金 (Tushare.money_flow)
-python -m tools.sync --cache          # signal_cache 缓存 (分析结果缓存)
-python -m tools.sync --meta           # 板块/事件 元数据
-python -m tools.sync --all-data       # [一键] kline + stock-basic + financials
+python -m tools.datasync --kline          # 增量 K 线 (含 daily_basic + 6 指数)
+python -m tools.datasync --stock-basic    # 股票基础 (行业/名称, 每月 1 次)
+python -m tools.datasync --financials     # 财务 5 季度 (fina_indicator_vip 全市场)
+python -m tools.datasync --eps            # EPS 机构预期 (datacenter.consensus)
+python -m tools.datasync --fflow          # 主力资金 (Tushare.money_flow)
+python -m tools.datasync --cache          # signal_cache 缓存 (分析结果缓存)
+python -m tools.datasync --meta           # 板块/事件 元数据
+python -m tools.datasync --all-data       # [一键] kline + stock-basic + financials
 
 # 范围 (3 选 1, 默认 --watchlist)
-python -m tools.sync --kline                 # 默认: watchlist 101 只
-python -m tools.sync --kline --all           # 全市场 5549 只
-python -m tools.sync --kline --codes 002371 300750  # 指定
-python -m tools.sync --status                # 看现状, 不拉数据
+python -m tools.datasync --kline                 # 默认: watchlist 101 只
+python -m tools.datasync --kline --all           # 全市场 5549 只
+python -m tools.datasync --kline --codes 002371 300750  # 指定
+python -m tools.datasync --status                # 看现状, 不拉数据
 ```
 
 ## 7 个 flag 设计 (正交)
@@ -60,15 +65,19 @@ python -m tools.sync --status                # 看现状, 不拉数据
 ## 实战节奏
 
 ```bash
-# 周一早上 (跑分析前)
-python -m tools.sync --kline --financials        # 周一 1 次, 2-3 分钟
-python -m tools.sync --cache --watchlist         # 缓存最近数据
+# 周一早上 (跑分析前, 推荐 --auto 智能检测)
+python -m tools.datasync                          # 智能检测, 只跑 stale 的 (多数情况 0 网络)
+python -m tools.datasync --kline --financials     # 强制跑 (不在乎检测)
+python -m tools.datasync --cache --watchlist      # 缓存最近数据
 
 # 季报出后 (4月/8月/10月底)
-python -m tools.sync --all-data --all            # 全市场 5-10 分钟
+python -m tools.datasync --all-data --all         # 全市场 5-10 分钟
 
 # 跑回测前
-python -m tools.sync --cache --all               # 全市场缓存, 慢
+python -m tools.datasync --cache --all            # 全市场缓存, 慢
+
+# 试运行 (看会跑啥, 不真跑)
+python -m tools.datasync --auto-dry
 ```
 
 ## 历史
@@ -77,19 +86,23 @@ python -m tools.sync --cache --all               # 全市场缓存, 慢
   + `kline_store.py` (sync_incremental/sync_stock_basic/sync_financials)
   + 5 个 batch 脚本偷偷调 sync
 - 2026-09-03 v6.0 改造: 全部合并到 `tools/sync.py`,7 个正交 flag
+- 2026-09-03 v6.1 改造: 改名 `tools/datasync.py` + 加 `--auto` 智能检测 stale flag
 - 旧 `sync_watchlist_fresh.py` 删除 (合并到 sync.py)
 
 ## 执行
 
 ```bash
-# 单次执行 (默认 watchlist K 线, 0 网络因为默认全关)
-bash tools/with_venv.sh python -m tools.sync --kline
+# 推荐: 智能检测 (--auto), 多数情况 0 网络
+bash tools/with_venv.sh python -m tools.datasync
+
+# 试运行 (看会跑什么)
+bash tools/with_venv.sh python -m tools.datasync --auto-dry
 
 # 一次性补全
-bash tools/with_venv.sh python -m tools.sync --all-data
+bash tools/with_venv.sh python -m tools.datasync --all-data
 
 # 后台跑 (5+ 分钟用 background, 不用 timeout)
-bash tools/with_venv.sh python -m tools.sync --all-data --all
+bash tools/with_venv.sh python -m tools.datasync --all-data --all
 ```
 
 ## 输出示例

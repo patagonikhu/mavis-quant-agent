@@ -108,8 +108,8 @@ def main():
     drop_max_th = args.drop_max / 100.0
 
     from tools.kline_store import DataStore, _to_ts_code
-    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.sync --kline`
-    print("  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync --kline", flush=True)
+    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.datasync --kline`
+    print("  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.datasync --kline", flush=True)
     all_codes = DataStore.list_codes()
     print(f"Loaded: {len(all_codes)} 只股票 (本地历史库)")
 

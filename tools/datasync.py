@@ -181,6 +181,126 @@ def action_status() -> int:
     return 0
 
 
+def detect_stale_flags() -> dict[str, bool]:
+    """自动检测哪些 flag 该跑 (2026-09-03 改造, 解决"用户忘记跑 sync"问题)
+
+    返回: {flag_name: True/False} — True 表示该跑
+    """
+    import duckdb
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    from tools.kline_store import HISTORY_DIR, DAILY_BASIC_DIR, FIN_DIR, STOCK_BASIC_PARQUET
+
+    today = datetime.now()
+    today_str = today.strftime("%Y%m%d")
+    flags = {
+        "kline": False,         # K线距今天 > 1 天
+        "stock_basic": False,   # 距上次 > 30 天
+        "financials": False,    # 缺最新季
+        "eps": False,           # 暂不自动 (用户主动)
+        "fflow": False,         # 暂不自动
+        "cache": False,         # 暂不自动
+        "meta": False,          # 暂不自动
+    }
+
+    # 1. K线 (每天必跑, 距今天 > 1 天就拉)
+    try:
+        files = list(HISTORY_DIR.glob("*.parquet"))
+        if files:
+            max_d = duckdb.execute(
+                f"SELECT MAX(trade_date) FROM read_parquet('{HISTORY_DIR}/*.parquet')"
+            ).fetchone()[0]
+            max_d_clean = max_d.replace("-", "") if max_d else ""
+            if max_d_clean:
+                last = datetime.strptime(max_d_clean, "%Y%m%d")
+                gap = (today - last).days
+                # 距今天 > 1 天 (考虑周末, 距 2 个工作日仍 OK)
+                if gap > 1:
+                    flags["kline"] = True
+        else:
+            flags["kline"] = True  # 没数据
+    except Exception:
+        flags["kline"] = True  # 异常 → 拉
+
+    # 2. stock_basic (1 月 1 次, 距上次 > 30 天)
+    try:
+        if not STOCK_BASIC_PARQUET.exists():
+            flags["stock_basic"] = True
+        else:
+            import os
+            mtime = datetime.fromtimestamp(STOCK_BASIC_PARQUET.stat().st_mtime)
+            if (today - mtime).days > 30:
+                flags["stock_basic"] = True
+    except Exception:
+        pass
+
+    # 3. financials (缺最新季: 季报出后 ~1 周, 取最新季 < 90 天前)
+    try:
+        files = sorted(FIN_DIR.glob("*.parquet"))
+        if not files:
+            flags["financials"] = True
+        else:
+            latest = files[-1]
+            # 最新季文件 stem 形如 2026Q2
+            q_label = latest.stem  # "2026Q2"
+            year, q = q_label[:4], q_label[5:]
+            # 季末
+            quarter_end = {
+                "Q1": "0331", "Q2": "0630", "Q3": "0930", "Q4": "1231",
+            }[q]
+            end_dt = datetime.strptime(f"{year}{quarter_end}", "%Y%m%d")
+            if (today - end_dt).days > 100:  # 100 天没新季
+                flags["financials"] = True
+    except Exception:
+        pass
+
+    return flags
+
+
+def action_auto(force: bool = False, quiet: bool = False) -> int:
+    """自动检测 stale 并跑 (--auto / 默认行为)
+
+    Args:
+        force: True = 强刷, 不看检测结果
+        quiet: True = 只打印会跑什么, 不真跑
+    """
+    flags = detect_stale_flags()
+    if force:
+        flags = {k: True for k in flags}
+        if not quiet:
+            print("  ⚠️  --force, 全部 7 个 flag 强刷")
+    if quiet:
+        # dry-run 模式: 也要打印结果 (这是 dry 的全部意义)
+        print("\n🔍 自动检测 (dry-run, 不真跑):")
+        for k, v in flags.items():
+            mark = "🟡 会跑" if v else "✅ 跳过"
+            print(f"  {mark}  --{k}")
+        return 0
+    print("\n🔍 自动检测结果:")
+    for k, v in flags.items():
+        mark = "🟡 需跑" if v else "✅ 跳过"
+        print(f"  {mark}  --{k}")
+    if not any(flags.values()):
+        print("\n✨ 全 fresh, 不用 sync")
+        return 0
+    # 真跑 (复用 main() 的 flag 逻辑)
+    print("\n🚀 跑 stale 的 flag:")
+    if flags["kline"]:
+        print("  [1/7] --kline")
+        action_kline(_last_codes)
+    if flags["stock_basic"]:
+        print("  [2/7] --stock-basic")
+        action_stock_basic(_last_codes)
+    if flags["financials"]:
+        print("  [3/7] --financials")
+        action_financials(_last_codes)
+    return 0
+
+
+# 全局保存 codes 供 action_auto 用
+_last_codes: list[str] = []
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -208,7 +328,8 @@ def main():
                        help="指定代码列表 (例: --codes 002371 300750)")
 
     # 7 个正交 flag (全部默认关, 显式开才跑, 符合"正交控制"原则)
-    actions = parser.add_argument_group("Sync 行为 (7 个正交, 全部默认关)")
+    # 但: 不传任何 sync flag → 默认走 --auto (智能检测 stale, 只跑需跑的)
+    actions = parser.add_argument_group("Sync 行为 (7 个正交, 全部默认关; 不传任何 flag → 自动检测)")
     actions.add_argument("--kline", action="store_true",
                          help="增量 K 线 + daily_basic + 6 指数")
     actions.add_argument("--stock-basic", action="store_true",
@@ -229,13 +350,41 @@ def main():
     # Misc
     parser.add_argument("--status", action="store_true",
                         help="看现状, 不拉任何数据")
+    parser.add_argument("--auto", action="store_true", default=False,
+                        help="[默认行为] 自动检测 stale flag, 只跑需跑的 (解决'忘记 sync'问题)")
+    parser.add_argument("--auto-force", action="store_true",
+                        help="自动检测 + 强刷所有 stale flag")
+    parser.add_argument("--auto-dry", action="store_true",
+                        help="只打印会跑什么, 不真跑 (--auto + 试运行)")
     parser.add_argument("--period", help="财务指定季度 (例: 20251231, 跟 --financials 一起用)")
 
     args = parser.parse_args()
 
+    # 缓存 codes 给 action_auto
+    global _last_codes
+
     # Status 短路
     if args.status:
         return action_status()
+
+    # --auto / --auto-force / --auto-dry 短路 (忽略其他 flag)
+    if args.auto or args.auto_force or args.auto_dry:
+        # 先解析 codes
+        if args.codes:
+            _last_codes = [c.zfill(6) for c in args.codes]
+        elif args.all:
+            _last_codes = _get_codes("all", None, all_market=True)
+        else:
+            _last_codes = _get_codes("watchlist", None, all_market=False)
+        scope = f"watchlist {len(_last_codes)} 只" if not (args.codes or args.all) else (
+            f"指定 {len(_last_codes)} 只" if args.codes else f"全市场 {len(_last_codes)} 只"
+        )
+        mode = "auto-force" if args.auto_force else ("auto-dry" if args.auto_dry else "auto")
+        print(f"=== Mavis datasync (scope: {scope}) [{mode}] ===")
+        return action_auto(
+            force=args.auto_force,
+            quiet=args.auto_dry,
+        )
 
     # Scope 解析
     if args.codes and args.all:
@@ -250,6 +399,16 @@ def main():
     else:
         codes = _get_codes("watchlist", None, all_market=False)
         scope_label = f"watchlist {len(codes)} 只"
+    _last_codes = codes
+
+    # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
+    any_sync_flag = any([
+        args.kline, args.stock_basic, args.financials,
+        args.eps, args.fflow, args.cache, args.meta, args.all_data,
+    ])
+    if not any_sync_flag:
+        print(f"=== Mavis sync (scope: {scope_label}) [默认 --auto 智能检测] ===")
+        return action_auto(force=False, quiet=False)
 
     print(f"=== Mavis sync (scope: {scope_label}) ===")
     start = time.time()
