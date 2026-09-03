@@ -459,14 +459,15 @@ def _section_take_profit(data: RenderData) -> str:
 
 
 def _section_stop_loss(data: RenderData) -> str:
-    if data.stop_loss:
-        sl = data.stop_loss
+    # 2026-09-03 改: stop_loss 字段不存在, 读 take_profit 里的 s1_price/s2_price/...
+    sl = data.take_profit or {}
+    if sl and sl.get("s1_price"):
         return f"""| 跌幅 | 触发价 | 操作 |
 |---|---|---|
-| -10% | ¥{sl.get('s1_price', '—')} | ⚠️ 检查基本面 |
-| -15% | ¥{sl.get('s2_price', '—')} | 卖 1/3 |
-| -25% | ¥{sl.get('s3_price', '—')} | 减半仓 |
-| -35% | ¥{sl.get('s4_price', '—')} | 🛑 清仓 |
+| -3% | ¥{sl.get('s1_price', '—')} | ⚠️ 检查基本面 |
+| -5% | ¥{sl.get('s2_price', '—')} | 卖 1/3 |
+| -8% | ¥{sl.get('s3_price', '—')} | 减半仓 |
+| -10% | ¥{sl.get('s4_price', '—')} | 🛑 清仓 |
 """
     return """> **数据状态:** ⚠️ 止损 4 档未计算
 """
@@ -1050,8 +1051,10 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
             try:
                 rng = bar.high - bar.low
                 lower_shadow = (min(bar.open, bar.close) - bar.low) / rng if rng > 0 else 0
-                vol_ma20 = sum(k.vol for k in kl[-21:-1]) / 20 if len(kl) >= 21 else 0
-                shrink = bar.vol < vol_ma20 * 0.85 if vol_ma20 > 0 else False
+                # 2026-09-03 修: KLineBar 字段是 volume 不是 vol
+                vol_attr = getattr(bar, 'volume', None) or getattr(bar, 'vol', 0)
+                vol_ma20 = sum(getattr(k, 'volume', None) or getattr(k, 'vol', 0) for k in kl[-21:-1]) / 20 if len(kl) >= 21 else 0
+                shrink = vol_attr < vol_ma20 * 0.85 if vol_ma20 > 0 else False
                 long_lower = lower_shadow > 0.40
                 sigs = []
                 if shrink: sigs.append("✅缩量")

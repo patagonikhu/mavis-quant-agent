@@ -53,22 +53,34 @@ class PegFactor(Factor):
         if not eps_table or len(eps_table) < 4 or not current_price:
             return {"PEG_真实": "数据不足", "Forward PE": "—", "g": "—"}
 
-        E0 = eps_table[0].get("eps", 0)
-        E1 = eps_table[1].get("eps", 0)
-        E2 = eps_table[2].get("eps", 0)
-        E3 = eps_table[3].get("eps", 0)
-        fwd_pe = current_price / E1 if E1 else 0
-        g = (E3 / E0 - 1) / 3 if E0 and E0 > 0 else 0
-        if g < 0 and E0 > 0:
-            g = abs(g)
-        peg = fwd_pe / (g * 100) if g > 0 else 0
+        E0 = eps_table[0].get("eps", 0) or 0
+        E1 = eps_table[1].get("eps", 0) or 0
+        E2 = eps_table[2].get("eps", 0) or 0
+        E3 = eps_table[3].get("eps", 0) or 0
+
+        # 边界修复 2026-09-03: E1≤0 → 数据无效 (1 年前半导体 EPS=0.01 误选就是这个 bug)
+        if E1 <= 0:
+            return {"PEG_真实": "E1 无效", "Forward PE": "—", "g": "—",
+                    "E0_本年": E0, "E1_NTM": E1, "E2": E2, "E3": E3}
+
+        fwd_pe = current_price / E1
+        # E0/E3 ≤ 0 → 没 g
+        if E0 <= 0 or E3 <= 0:
+            return {"PEG_真实": "无 g", "Forward PE": round(fwd_pe, 2), "g": "—",
+                    "E0_本年": E0, "E1_NTM": E1, "E2": E2, "E3": E3}
+        g = (E3 / E0 - 1) / 3
+        if g <= 0:
+            return {"PEG_真实": "g ≤0", "Forward PE": round(fwd_pe, 2),
+                    "g": f"{g*100:.1f}%",
+                    "E0_本年": E0, "E1_NTM": E1, "E2": E2, "E3": E3}
+        peg = fwd_pe / (g * 100)
 
         return {
             "E0_本年": E0, "E1_NTM": E1, "E2": E2, "E3": E3,
             "Forward PE": round(fwd_pe, 2),
             "g_CAGR": f"{g*100:.1f}%",
             "PEG_真实": round(peg, 2),
-            "PEG_判定": "✅ Lynch 买入区" if peg < 1.0 else ("🟡 合理" if peg < 1.5 else "🟠 偏贵"),
+            "PEG_判定": "✅ Lynch 买入区" if peg < 1.0 else ("🟡 合理" if peg < 1.5 else ("🟠 偏贵" if peg < 2.0 else "🔴 高估")),
         }
 
 

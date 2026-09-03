@@ -521,6 +521,11 @@ def compute_strategy_signals(indicators: dict) -> dict:
 def compute_peg(eps_table: list[dict], current_price: Optional[float] = None) -> dict:
     """
     PEG 实算 (Phase 1 自动化, 不再占位)
+
+    边界修复 (2026-09-03):
+    - E0/E1/E3 ≤ 0 或缺失 → 返 {"error": "..."}, 不算 PEG
+    - g_pct 算出后再算 PEG, 缺 g 直接返错误
+    - 避免 1 年前半导体 EPS=0.01 → PEG=0.01 误选
     """
     if not eps_table or not current_price:
         return {"error": "数据不足"}
@@ -531,24 +536,38 @@ def compute_peg(eps_table: list[dict], current_price: Optional[float] = None) ->
     if not actuals or not estimates:
         return {"error": "需要 actual + estimate 数据"}
 
-    e0 = actuals[-1]["eps"]  # 最新 actual
-    e1 = estimates[0]["eps"] if estimates else 0  # NTM
-    e2 = estimates[1]["eps"] if len(estimates) >= 2 else 0
-    e3 = estimates[2]["eps"] if len(estimates) >= 3 else 0
+    e0 = actuals[-1].get("eps", 0) or 0  # 最新 actual
+    e1 = estimates[0].get("eps", 0) or 0 if estimates else 0  # NTM
+    e2 = estimates[1].get("eps", 0) or 0 if len(estimates) >= 2 else 0
+    e3 = estimates[2].get("eps", 0) or 0 if len(estimates) >= 3 else 0
 
+    # 边界: E1 必须 > 0 (1 年前半导体 EPS=0.01 误选就是这个 bug)
     if e1 <= 0:
-        return {"error": "E1 数据无效"}
+        return {"error": "E1 数据无效 (≤0 或缺失)"}
 
     fwd_pe = current_price / e1
     # g = (E3/E0)^(1/n) - 1, 默认 n=3
-    if e0 > 0 and e3 > 0:
-        n = 3
-        g_pct = (((e3 / e0) ** (1.0 / n)) - 1) * 100
-    else:
-        g_pct = 0
+    # 边界: E0 或 E3 ≤ 0 → 没 g, 不算 PEG
+    if e0 <= 0 or e3 <= 0:
+        return {
+            "price": current_price, "E0": e0, "E1": e1, "E2": e2, "E3": e3,
+            "fwd_pe": round(fwd_pe, 2),
+            "g": None, "peg": None, "verdict": "— 数据不足 (E0/E3 缺)",
+            "error": "no_growth",
+        }
 
-    peg = fwd_pe / g_pct if g_pct > 0 else 999
+    n = 3
+    g_pct = (((e3 / e0) ** (1.0 / n)) - 1) * 100
+    # 边界: g <= 0 (公司下滑) → PEG 不可信
+    if g_pct <= 0:
+        return {
+            "price": current_price, "E0": e0, "E1": e1, "E2": e2, "E3": e3,
+            "fwd_pe": round(fwd_pe, 2),
+            "g": round(g_pct, 1), "peg": None, "verdict": "— 增长 ≤0",
+            "error": "negative_growth",
+        }
 
+    peg = fwd_pe / g_pct
     if peg < 1.0:
         verdict = "🟢 健康 (Lynch 买入区, <1.0)"
     elif peg < 1.5:

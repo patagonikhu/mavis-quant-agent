@@ -101,7 +101,13 @@ def _init():
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
         for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER"),
                              ("boll_bwidth", "REAL"),
-                             ("obv5", "INTEGER"), ("obv_trend", "INTEGER")]:
+                             ("obv5", "INTEGER"), ("obv_trend", "INTEGER"),
+                             # 2026-09-02 加: 估值 4 列 (Magic Formula 回测用)
+                             ("roc", "REAL"),       # Greenblatt ROC % (TTM)
+                             ("ey", "REAL"),        # Greenblatt EY % (TTM)
+                             ("peg", "REAL"),       # Forward PE / CAGR
+                             ("dcf_l", "REAL"),     # DCF r=10% 隐含 L/E3
+                             ]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
 

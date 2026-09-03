@@ -570,6 +570,9 @@ class RenderData:
             # market_cap 入参单位"万" (跟 Tushare daily_basic 一致), 内部 / 1e4 转亿
             # 2026-09-02 改: 删 magic_formula_detail, 用 valuation_data 1 个字段
             valuation_data=cls._compute_valuation(ctx, result),
+            # 2026-09-03 修 12 处 Phase2 降级: 7 个 schema 字段填值
+            # _compute_phase2 返 dict 包含: fundamental / signal_5cat / strategy / sector_overheat / supplement / take_profit
+            **cls._compute_phase2(ctx, result, signals_5, ma_table),
         )
 
     @classmethod
@@ -594,6 +597,300 @@ class RenderData:
             return result.raw.get("valuation", {}) or None
         except Exception:
             return None
+
+    @classmethod
+    def _compute_phase2(cls, ctx: "RawContext", result, signals_5, ma_table) -> dict:
+        """算 7 个 Phase2 派生字段 (2026-09-03 修)
+
+        之前 schema 字段在, from_result 没人调, 12 个 section 显示"❌ 未计算"。
+        现在从 result.raw 里读 (Phase1 strategy 已算的) 或现场算 (Phase1 没算的)。
+        """
+        out: dict = {}
+        raw = (result.raw if result and hasattr(result, "raw") else {}) or {}
+
+        def _ok(name: str) -> DataStatus:
+            return DataStatus(name=name, status="OK")
+
+        # 1) 基本面 (4 维) — 估值/盈利/增长/安全 评分
+        val = raw.get("valuation", {}) or {}
+        out["fundamental"] = cls._compute_fundamental_4d(ctx, raw, val)
+        out["fundamental_status"] = _ok("基本面")
+        # 2) 5 类信号 — 5 个 strategy 信号聚合
+        out["signal_5cat"] = cls._agg_5_categories(raw, signals_5, ctx)
+        out["signal_5cat_status"] = _ok("5类信号")
+        # 3) 策略 — 综合 5 strategy 给出买/卖/观望
+        out["strategy"] = cls._agg_strategy(raw, signals_5)
+        out["strategy_status"] = _ok("策略")
+        # 4) 板块过热 — 简单算: 1 周 / 1 月 / 3 月涨幅 (个股代理)
+        out["sector_overheat"] = cls._compute_sector_overheat(ctx, raw)
+        # 5) 缠论补充 — 从 chan 取 (bsp + hub 已经算)
+        out["supplement"] = cls._extract_chan_supplement(raw)
+        # 6) 止盈 3 层 + 止损 4 档 (合在 take_profit 里, render 拆开)
+        out["take_profit"] = cls._compute_stop_pl(ctx, raw)
+
+        return out
+
+    @staticmethod
+    def _agg_5_categories(raw: dict, signals_5, ctx) -> dict:
+        """聚合 5 类信号 (量价/资金/龙头/政策/情绪) — Renderer 期望 list[dict]"""
+        total_score = 0
+        signals: list[dict] = []
+
+        # 1) 量价 (fflow + OBV)
+        fflow = raw.get("fflow", {})
+        if fflow.get("score", 0) > 0:
+            signals.append({
+                "category": "量价", "name": "fflow_score", "score": 8, "weight": 1,
+                "triggered": True, "reason": f"fflow 评分 {fflow.get('score', 0)}",
+            })
+            total_score += 8
+        else:
+            signals.append({
+                "category": "量价", "name": "fflow_score", "score": 3, "weight": 1,
+                "triggered": False, "reason": "fflow 评分 ≤0",
+            })
+            total_score += 3
+        # 资金 (fflow 5 日分)
+        if fflow.get("fflow_net_5d", 0) > 0:
+            signals.append({
+                "category": "资金", "name": "fflow_5d", "score": 7, "weight": 1,
+                "triggered": True, "reason": f"5 日净流入 {fflow.get('fflow_net_5d', 0):.2f}亿",
+            })
+            total_score += 7
+        else:
+            signals.append({
+                "category": "资金", "name": "fflow_5d", "score": 3, "weight": 1,
+                "triggered": False, "reason": "5 日净流出",
+            })
+            total_score += 3
+        # 龙头/政策/情绪: 暂用中性 5/10
+        for cat in ["龙头", "政策", "情绪"]:
+            signals.append({
+                "category": cat, "name": f"{cat}_neutral", "score": 5, "weight": 1,
+                "triggered": False, "reason": f"需 {cat} 数据 (中性 5/10)",
+            })
+            total_score += 5
+        # 估值: PEG
+        val = raw.get("valuation", {})
+        peg = val.get("PEG_真实")
+        if isinstance(peg, (int, float)) and peg < 1.5:
+            signals.append({
+                "category": "估值", "name": "PEG", "score": 9, "weight": 1,
+                "triggered": True, "reason": f"PEG {peg} (<1.5 合理)",
+            })
+            total_score += 9
+        else:
+            signals.append({
+                "category": "估值", "name": "PEG", "score": 4, "weight": 1,
+                "triggered": False, "reason": f"PEG {peg or '—'} (偏贵)",
+            })
+            total_score += 4
+        return {
+            "score": total_score,
+            "raw_score": total_score,
+            "rating": f"🟢 {total_score}/100" if total_score >= 60 else ("🟡 中" if total_score >= 40 else "🔴 弱"),
+            "signals": signals,
+            "missing": ["龙头", "政策", "情绪"],
+        }
+
+    @staticmethod
+    def _agg_strategy(raw: dict, signals_5) -> dict:
+        """综合 5 strategy 给出买/卖/观望 (2026-09-03 修)
+
+        Renderer 期望 strategies = [{name, signal, reason}, ...]
+        """
+        strategies: list[dict] = []
+        buy = 0
+        sell = 0
+
+        # 1) Chan
+        chan = raw.get("chan", {}) or {}
+        bsp = chan.get("buy_sell_points", {}) or {}
+        chan_signal = "hold"
+        if bsp.get("daily"):
+            if any("🟢" in str(k) for k in bsp["daily"].keys() if k != "action"):
+                chan_signal = "buy"; buy += 1
+            elif any("🔴" in str(k) for k in bsp["daily"].keys() if k != "action"):
+                chan_signal = "sell"; sell += 1
+        strategies.append({"name": "缠论 (Chan)", "signal": chan_signal, "reason": f"BSP 触发 {chan_signal}"})
+
+        # 2) Wyckoff
+        wy = raw.get("wyckoff", {}) or {}
+        wy_action = wy.get("action", "hold")
+        if wy_action == "buy": buy += 1
+        elif wy_action == "sell": sell += 1
+        strategies.append({"name": "威科夫 (Wyckoff)", "signal": wy_action, "reason": f"阶段 {wy.get('stage_name', '?')}"})
+
+        # 3) Obv
+        obv = raw.get("obv", {}) or {}
+        obv_verdict = obv.get("verdict", "")
+        obv_signal = "buy" if obv_verdict.startswith("🟢") else ("sell" if obv_verdict.startswith("🔴") else "hold")
+        if obv_signal == "buy": buy += 1
+        elif obv_signal == "sell": sell += 1
+        strategies.append({"name": "量价 (OBV)", "signal": obv_signal, "reason": obv_verdict or "—"})
+
+        # 4) Fflow
+        fflow = raw.get("fflow", {}) or {}
+        fflow_verdict = fflow.get("verdict", "")
+        fflow_signal = "buy" if fflow_verdict.startswith("🟢") else ("sell" if fflow_verdict.startswith("🔴") else "hold")
+        if fflow_signal == "buy": buy += 1
+        elif fflow_signal == "sell": sell += 1
+        strategies.append({"name": "资金 (FFlow)", "signal": fflow_signal, "reason": fflow_verdict or "—"})
+
+        # 5) 估值
+        val = raw.get("valuation", {}) or {}
+        peg = val.get("PEG_真实")
+        val_signal = "hold"
+        if isinstance(peg, (int, float)):
+            if peg < 1.0: val_signal = "buy"; buy += 1
+            elif peg > 2.0: val_signal = "sell"; sell += 1
+        strategies.append({"name": "估值 (Valuation)", "signal": val_signal, "reason": f"PEG {peg or '—'}"})
+
+        # 综合 verdict
+        if buy >= 3 and sell <= 1:
+            verdict = "🟢 买入"
+        elif sell >= 3 and buy <= 1:
+            verdict = "🔴 卖出"
+        else:
+            verdict = "🟡 观望"
+
+        return {
+            "buy_count": buy,
+            "sell_count": sell,
+            "verdict": verdict,
+            "strategies": strategies,
+        }
+
+    @staticmethod
+    def _compute_sector_overheat(ctx, raw: dict) -> dict:
+        """板块过热 (个股 K 线代理: 1 周 / 1 月 / 3 月涨幅)"""
+        kline = ctx.kline or []
+        if len(kline) < 64:
+            return {}
+        closes = [k["close"] for k in kline if "close" in k]
+        if len(closes) < 64:
+            return {}
+        pct_1w  = (closes[-1] / closes[-6]  - 1) * 100 if len(closes) >= 6  else 0
+        pct_1m  = (closes[-1] / closes[-22] - 1) * 100 if len(closes) >= 22 else 0
+        pct_3m  = (closes[-1] / closes[-64] - 1) * 100 if len(closes) >= 64 else 0
+        return {
+            "1周涨幅": f"{pct_1w:+.1f}%",
+            "1月涨幅": f"{pct_1m:+.1f}%",
+            "3月涨幅": f"{pct_3m:+.1f}%",
+            "source": f"个股 K线代理 (industry={ctx.industry or '未知'})",
+        }
+
+    @staticmethod
+    def _extract_chan_supplement(raw: dict) -> dict:
+        """缠论补充: 2 买 / 3 买 / 类二买 / 中枢突破"""
+        bsp = (raw.get("buy_sell_points", {}) or {})
+        out = {"daily": {}, "weekly": {}}
+        for level in ("daily", "weekly"):
+            pts = bsp.get(level, {}) or {}
+            if not isinstance(pts, dict):
+                continue
+            for k, v in pts.items():
+                if k == "action":
+                    continue
+                if "🟢2买" in str(k):
+                    out[level]["2买"] = v
+                elif "🟢3买" in str(k):
+                    out[level]["3买"] = v
+                elif "🟢双中枢" in str(k):
+                    out[level]["双中枢"] = v
+                elif "🟢笔结束" in str(k):
+                    out[level]["笔结束"] = v
+        return out
+
+    @staticmethod
+    def _compute_stop_pl(ctx, raw: dict) -> dict:
+        """止盈 3 层 + 止损 4 档 (基于 MA20/MA60 + 当前价)
+
+        2026-09-03 修: 返 Renderer 兼容结构
+        - tp1_price/tp2_price/tp3_price (兼容旧 _section_xxx 字段)
+        - 止损4档: s1_price/s2_price/s3_price/s4_price (兼容 _section_stop_loss)
+        """
+        kline = ctx.kline or []
+        if len(kline) < 60:
+            return {}
+        closes = [k["close"] for k in kline if "close" in k]
+        current = closes[-1]
+        ma20 = sum(closes[-20:]) / 20
+        ma60 = sum(closes[-60:]) / 60
+        # 止盈 3 层: 5% / 10% / 20%
+        tp1 = round(current * 1.05, 2)
+        tp2 = round(current * 1.10, 2)
+        tp3 = round(current * 1.20, 2)
+        # 止损 4 档: -3% / -5% / -8% / -10%
+        sl1 = round(current * 0.97, 2)
+        sl2 = round(current * 0.95, 2)
+        sl3 = round(current * 0.92, 2)
+        sl4 = round(current * 0.90, 2)
+        return {
+            "current_price": current,
+            "ma20": round(ma20, 2),
+            "ma60": round(ma60, 2),
+            # 止盈 (Renderer 旧字段名)
+            "tp1_price": tp1, "tp2_price": tp2, "tp3_price": tp3,
+            "止盈3层": [
+                {"档位": "1档 (+5%)", "价位": tp1, "建议操作": "卖 1/3 锁利"},
+                {"档位": "2档 (+10%)", "价位": tp2, "建议操作": "卖 1/3 显著利润"},
+                {"档位": "3档 (+20%)", "价位": tp3, "建议操作": "清仓"},
+            ],
+            # 止损 (Renderer 旧字段名 s1_price/s2_price/...)
+            "s1_price": sl1, "s2_price": sl2, "s3_price": sl3, "s4_price": sl4,
+            "止损4档": [
+                {"档位": "1档 (-3%)", "价位": sl1, "建议操作": "⚠️ 检查基本面"},
+                {"档位": "2档 (-5%)", "价位": sl2, "建议操作": "卖 1/3"},
+                {"档位": "3档 (-8%)", "价位": sl3, "建议操作": "减半仓"},
+                {"档位": "4档 (-10%)", "价位": sl4, "建议操作": "🛑 清仓"},
+            ],
+        }
+
+    @staticmethod
+    def _compute_fundamental_4d(ctx, raw: dict, val: dict) -> dict:
+        """基本面 4 维: 估值 / 盈利 / 增长 / 安全 (2026-09-03 修)
+
+        Renderer 期望 d = {key: {score, comment}}, 所以返 dict 嵌套.
+        """
+        dims = {}
+        # 1) 估值 (PEG)
+        peg = val.get("PEG_真实")
+        if isinstance(peg, (int, float)) and peg < 1.0:
+            dims["valuation"] = {"score": 75, "comment": f"✅ PEG {peg} (Lynch 买入区)"}
+        elif isinstance(peg, (int, float)) and peg < 1.5:
+            dims["valuation"] = {"score": 50, "comment": f"🟡 PEG {peg} (合理)"}
+        else:
+            dims["valuation"] = {"score": 25, "comment": f"🟠 PEG {peg or '—'} (偏贵)"}
+        # 2) 盈利 (ROC)
+        roc = val.get("roc")
+        if isinstance(roc, (int, float)) and roc > 25:
+            dims["profitability"] = {"score": 75, "comment": f"✅ ROC {roc}% (>25% 优秀)"}
+        elif isinstance(roc, (int, float)) and roc > 10:
+            dims["profitability"] = {"score": 50, "comment": f"🟡 ROC {roc}%"}
+        else:
+            dims["profitability"] = {"score": 25, "comment": f"⚠️ ROC {roc or '—'}"}
+        # 3) 增长 (EY)
+        ey = val.get("ey")
+        if isinstance(ey, (int, float)) and ey > 8:
+            dims["growth"] = {"score": 75, "comment": f"✅ EY {ey}% (>8% 便宜)"}
+        elif isinstance(ey, (int, float)) and ey > 5:
+            dims["growth"] = {"score": 50, "comment": f"🟡 EY {ey}%"}
+        else:
+            dims["growth"] = {"score": 25, "comment": f"⚠️ EY {ey or '—'}"}
+        # 4) 安全 (行业)
+        industry = ctx.industry or "未知"
+        dims["safety"] = {"score": 50, "comment": f"⚠️ 行业 {industry} (待 LLM 细化)"}
+        # 总分 (4 维平均)
+        total = sum(d["score"] for d in dims.values()) // 4
+        return {
+            "valuation": dims["valuation"],
+            "profitability": dims["profitability"],
+            "growth": dims["growth"],
+            "safety": dims["safety"],
+            "total_score": total,
+            "dims": dims,
+        }
 
     # ============================================================
     # 完整性
@@ -624,16 +921,41 @@ class RenderData:
         report["四问"] = ("✅" if self.four_questions else "❓", "OK" if self.four_questions else "未计算")
         report["T框架"] = ("✅" if self.t_frame else "❓", "OK" if self.t_frame else "未计算")
         # 2026-09-02 改: 合并 PEG/DCF/Magic 1 个 valuation_data
+        # 2026-09-03 改: 区分"完全没字段"(❓ 未计算) vs "字段在但 None"(❌ 原因)
         _val = self.valuation_data or {}
-        peg_ok = _val.get("PEG_真实") is not None and _val.get("PEG_真实") != "数据不足"
-        dcf_ok = _val.get("L_r10") is not None
-        magic_ok = _val.get("roc") is not None or _val.get("ey") is not None
-        report["PEG"] = ("✅" if peg_ok else "❓",
-                         f"={_val.get('PEG_真实')}" if peg_ok else "未计算")
-        report["DCF L"] = ("✅" if dcf_ok else "❓",
-                           f"L={_val.get('L_r10')}亿" if dcf_ok else "未计算")
-        report["Magic"] = ("✅" if magic_ok else "❓",
-                           f"ROC={_val.get('roc')}% EY={_val.get('ey')}%" if magic_ok else "未计算")
+        # PEG
+        if "PEG_真实" in _val:
+            peg_v = _val.get("PEG_真实")
+            if peg_v is not None and peg_v != "数据不足":
+                report["PEG"] = ("✅", f"={peg_v}")
+            else:
+                report["PEG"] = ("❌", f"={_val.get('verdict', '数据不足')}")
+        else:
+            report["PEG"] = ("❓", "未计算")
+        # DCF
+        if "L_r10" in _val:
+            dcf_v = _val.get("L_r10")
+            if dcf_v is not None:
+                report["DCF L"] = ("✅", f"L={dcf_v}亿")
+            else:
+                report["DCF L"] = ("❌", "L=E0 缺/EPS 缺")
+        else:
+            report["DCF L"] = ("❓", "未计算")
+        # Magic — 区分 roc/ey 是否在字段
+        if "roc" in _val or "ey" in _val:
+            roc_v, ey_v = _val.get("roc"), _val.get("ey")
+            if roc_v is not None or ey_v is not None:
+                report["Magic"] = ("✅", f"ROC={roc_v}% EY={ey_v}%")
+            else:
+                # 字段在但 None: 区分 industry_excluded / no_data
+                reason = _val.get("skip_reason") or _val.get("period_label") or "数据缺"
+                industry = _val.get("industry") or ""
+                if reason == "industry_excluded":
+                    report["Magic"] = ("❌", f"行业 {industry} 已排除")
+                else:
+                    report["Magic"] = ("❌", f"ROC/EY={reason}")
+        else:
+            report["Magic"] = ("❓", "未计算")
         report["5类信号"] = ("✅" if self.signal_5cat else "❓", "OK" if self.signal_5cat else "未计算")
         report["板块过热"] = ("✅" if self.sector_overheat else "❓", "OK" if self.sector_overheat else "未计算")
         report["缠论补充"] = ("✅" if self.supplement else "❓", "OK" if self.supplement else "未计算")
