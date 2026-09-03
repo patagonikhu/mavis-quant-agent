@@ -69,9 +69,9 @@ def _mech_four_questions(raw, signals_5) -> dict:
 
 
 def _mech_t_frame(raw) -> dict:
-    """机械 T 框架占位 (实际 T 位置需 LLM 查 events.json 算)"""
+    """机械 T 框架占位 (v6.2 起: T 位置由 LLM 从外部源补, 不依赖本地 events.json)"""
     return {
-        "T_position": "T-? (机械占位, 待 LLM 查 events.json 算 T 位置)",
+        "T_position": "T-? (v6.2 占位, 待 LLM 查年报/新闻/公告补)",
         "phase": "🟡 待判定",
         "action": "待 mavis LLM 算 T 位置",
     }

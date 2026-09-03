@@ -213,10 +213,10 @@ def dcf_sensitivity_matrix(e1, e2, e3, sector_name, custom_assumptions=None):
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "add":
-        # 用法: python3 sector_assumptions.py add {code} {sector_name}
+        # 用法 (v6.2 起已废弃): 之前 python3 sector_assumptions.py add {code} {sector_name}
         # 例: python3 sector_assumptions.py add 688041 AI 芯片
-        # 2026-09-03 v6.2 删 add_stock_to_sector (写 sectors.json, 文件已删)
-        print("⚠️  v6.2 删 sectors.json: add 命令已失效")
+        # v6.2 起: 板块细分走 SECTOR_DCF_ASSUMPTIONS 字典 (本文件 line 40), 不写 sectors.json
+        print("⚠️  v6.2: add 命令已废弃, 板块假设走 SECTOR_DCF_ASSUMPTIONS 字典")
         print(f"   已知板块: {list(SECTOR_DCF_ASSUMPTIONS.keys())}")
         print(f"   新板块: 在 SECTOR_DCF_ASSUMPTIONS 加一行 (WACC, FCF_factor, g)")
         sys.exit(0)

@@ -1,10 +1,10 @@
 """
-risk/monitor_triggers.py - 监控触发点因子 (Day D5, 2026-07-27)
+risk/monitor_triggers.py - 监控触发点因子 (Day D5, 2026-07-27, v6.2 改)
 
 把 老 data 工具.calc_monitor_triggers (原 line 568-634, 67 行) 提炼成独立 factor
 
 监控 6 个触发: 缠论 60分底背/止跌/60分顶背/综合 + fflow 5日出货/今日进货 + 中枢突破/跌破
-+ 时间触发 (从 events.json)
++ 时间触发 (events 参数由调用方传, 不再读 data/events.json)
 
 输入: price, chan_d, fflow, events, code, chan_signals
 输出: dict (9 个触发器 + 时间触发)
@@ -20,7 +20,7 @@ class MonitorTriggersFactor(Factor):
       - 缠论_60分底背/止跌信号/60分顶背/综合判定: 4 个缠论触发
       - fflow_5日_出货30亿/今日进货: 2 个 fflow 触发
       - 中枢_突破上沿/跌破下沿: 2 个中枢位触发
-      - 时间触发: list (从 events.json 找)
+      - 时间触发: list (events 参数, v6.2 起调用方传)
     """
 
     name = "monitor_triggers"
@@ -38,7 +38,7 @@ class MonitorTriggersFactor(Factor):
         code = kwargs.get("code", "")
         chan_signals = kwargs.get("chan_signals") or {}
 
-        # 从 events.json 找时间触发
+        # 从 events 参数 (调用方传) 找时间触发
         time_triggers = []
         for ev in events:
             if ev.get("code") == code:

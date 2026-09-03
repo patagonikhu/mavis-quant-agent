@@ -246,7 +246,7 @@ def _section_t_frame(data: RenderData) -> str:
 - **阶段:** {phase}
 - **信号强度:** {strength}
 - **操作建议:** {action}"""
-    return "> **数据状态:** ⚠️ T 框架未生成 (v6.2 删 events.json, T 事件由 LLM 外部查)\n"
+    return "> **数据状态:** ⚠️ T 框架未生成 (T 位置由 LLM 从外部源补: 年报/新闻/公告)\n"
 
 
 def _section_ga_factor(data: RenderData) -> str:
@@ -1718,15 +1718,9 @@ def _section_ts_basic(data: RenderData) -> str:
 
 
 def _section_t_events(data: RenderData) -> str:
-    """🎯 T 框架事件 (2026-09-03 v6.2 改: 删 events.json 依赖)
-
-    之前读 data/events.json 找 code 匹配的事件.
-    v6.2 删 events.json, 统一返'未配置'占位 (LLM 后续从外部查).
-    """
+    """🎯 T 框架事件 (T 位置由 LLM 从外部源补: 年报/新闻/公告)"""
     return (
-        f"> **数据状态:** ⚠️ {data.code} T 框架事件未配置\n"
-        f">\n"
-        f"> v6.2 删 events.json, T 事件需 LLM 从外部查 (财报/新闻/公告). 报告里这块留空占位.\n"
+        f"> **数据状态:** ⚠️ {data.code} T 框架事件待 LLM 补 (年报/新闻/公告)\n"
     )
 
 
