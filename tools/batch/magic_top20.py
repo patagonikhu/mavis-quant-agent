@@ -394,7 +394,11 @@ def _add_to_watchlist(top_n: list[dict], period: str):
 # ============================================================
 
 def get_eps_for_summary(code: str) -> list[dict]:
-    """绕开 watchlist gate 拿 EPS (走 datacenter.eastmoney.com, 写本地 cache)"""
+    """EPS 摘要 (2026-09-03 v6.1.1 改: 只读本地 cache, 不直连 datacenter)
+
+    之前: 走 datacenter.eastmoney.com 写本地 cache (违反 sync_data 唯一入口)
+    现在: 只读本地 EPS_DIR/{code}.json; 缺数据时返空, 提示先跑 /t-sync-data --eps
+    """
     import json
     from tools.eps_consensus_cache import EPS_DIR
     path = EPS_DIR / f"{code}.json"
@@ -403,14 +407,7 @@ def get_eps_for_summary(code: str) -> list[dict]:
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             pass
-    try:
-        from tools.fetch.data_fetcher import _build_eps_table
-        table, _src = _build_eps_table(code)
-        if table:
-            path.write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
-            return table
-    except Exception:
-        pass
+    # 缺数据: 不偷偷拉, 提示用户先跑 /t-sync-data
     return []
 
 

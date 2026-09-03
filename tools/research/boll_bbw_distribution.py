@@ -41,9 +41,9 @@ mask = df_basic["industry"].isin(TECH_INDUSTRIES)
 codes = df_basic.loc[mask, "ts_code"].str[:6].tolist()
 print(f"科技股池: {len(codes)} 只")
 
-# 2) 同步全量 (确保 20260901 数据在)
-from tools.kline_store import sync_incremental
-sync_incremental(target_date="20260901")
+# 2) 同步全量 (确保 20260901 数据在) — v6.1.1 改: 走 /t-sync-data, 不直接调 sync_incremental
+# 跑前用户先: python -m tools.sync_data --kline
+print("  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync_data --kline", flush=True)
 
 # 3) 取最近 2 个交易日
 all_dates = sorted(Path("data/history/daily").glob("*.parquet"))[-1:]

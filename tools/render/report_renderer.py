@@ -1649,31 +1649,36 @@ def _section_buy_sell_points(data: RenderData) -> str:
 
 
 def _section_market_context(data: RenderData) -> str:
-    """🌍 大盘 + 美股背景 (2026-08-26: 内联 fetch_index_quote, 删 data_source 间接层)"""
+    """🌍 大盘 + 美股背景 (2026-09-03 v6.1.1 改: 读本地 parquet, 不直连 tushare)
+
+    之前: from tools.fetch.tushare_fetcher import _safe_call; _safe_call("index_daily", ...)
+    现在: read_kline(ts_code, limit=2) 走本地 parquet
+    """
     try:
-        from tools.fetch.tushare_fetcher import _safe_call
+        from tools.kline_store import read_kline
     except Exception:
-        return "> **数据状态:** ⚠️ tushare_fetcher 不可用\n"
+        return "> **数据状态:** ⚠️ kline_store 不可用\n"
     indices = [("000001.SH", "上证指数"), ("000300.SH", "沪深300"),
                ("399006.SZ", "创业板指"), ("399001.SZ", "深证成指")]
     rows = ["| 指数 | 价格 | 涨跌幅 | 状态 |", "|---|---|---|---|"]
     for tc, iname in indices:
         try:
-            rows_data, st = _safe_call("index_daily", ts_code=tc, limit=2)
-            if rows_data and len(rows_data) >= 1:
-                cur = rows_data[0]
-                prev = rows_data[1] if len(rows_data) > 1 else {}
+            bars = read_kline(tc, limit=2)
+            if bars and len(bars) >= 1:
+                cur = bars[0]
+                prev = bars[1] if len(bars) > 1 else {}
                 cur_close = float(cur.get("close", 0) or 0)
                 prev_close = float(prev.get("close", 0) or cur.get("pre_close", 0) or 0)
                 pct = ((cur_close / prev_close - 1) * 100) if prev_close else 0
                 emoji = "🟢" if pct > 0 else "🔴" if pct < 0 else "⬜"
                 rows.append(f"| {iname} | {cur_close:.2f} | {pct:+.2f}% | {emoji} |")
             else:
-                rows.append(f"| {iname} | — | — | ❌ {st or 'EMPTY'} |")
-        except Exception as e:
+                rows.append(f"| {iname} | — | — | ❌ EMPTY (本地无指数) |")
+        except Exception:
             rows.append(f"| {iname} | — | — | ❌ EXC |")
     rows += ["\n**美股:** | 指数 | 状态 |", "|---|---|",
-             "| 纳斯达克 | ⚠️ 需 Yahoo Finance |", "| 标普500 | ⚠️ 需 Yahoo Finance |"]
+             "| 纳斯达克 | ⚠️ 需 /t-sync-data (未来加 us index sync) |",
+             "| 标普500 | ⚠️ 需 /t-sync-data (未来加 us index sync) |"]
     return "\n".join(rows) + "\n"
 
 

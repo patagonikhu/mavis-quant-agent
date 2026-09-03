@@ -908,21 +908,18 @@ SECTOR_ETF_MAP: dict[str, str] = {
 def compute_sector_overheat(sector: str, kline_fetcher=None) -> dict:
     """
     板块过热预警。
-    kline_fetcher: callable(symbol) -> list[float] closes，不传则用内置 curl 实现。
+
+    2026-09-03 v6.1.1 改: 不再直连 tushare_fetcher.get_daily (违反 sync_data 唯一入口)
+    - 必须传 kline_fetcher, 否则返 error
+    - 数据从本地 parquet 读, 走 /t-sync-data 补
     """
-    import json, subprocess, statistics
+    import statistics
 
     def _fetch_closes(symbol: str) -> list[float]:
         if kline_fetcher:
             return kline_fetcher(symbol)
-        # 2026-08-26: 删 data_source 间接层, 走 tushare_fetcher.get_daily 直连
-        try:
-            from tools.fetch.tushare_fetcher import get_daily
-            bars, st = get_daily(symbol, limit=120)
-            if st == "OK" and bars:
-                return [float(b.get("close", 0) or 0) for b in bars]
-        except Exception:
-            pass
+        # v6.1.1 改: 不再 fallback 到网络, 强制要求 kline_fetcher 注入
+        # 主路径走 render_data._compute_sector_overheat (本地 K 线), 不会调到这里
         return []
 
     # 匹配 ETF
