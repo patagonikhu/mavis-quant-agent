@@ -20,13 +20,13 @@
 | 四问 | ✅ | OK |
 | T框架 | ✅ | OK |
 | PEG | ✅ | =E1 无效 |
-| DCF L | ✅ | L=77.5亿 |
-| Magic | ❌ | ROC/EY=loss |
+| DCF L | ❌ | L=E0 缺/EPS 缺 |
+| Magic | ❌ | ROC/EY=no_data |
 | 板块过热 | ✅ | OK |
 | 缠论补充 | ✅ | OK |
 | 止盈止损 | ✅ | OK |
 
-**完整度:** 94% (16/17 项)
+**完整度:** 88% (15/17 项)
 
 ---
 
@@ -40,7 +40,7 @@
 | 2028E | 0.01 | 0.2 | 62.6 | 0.1% |
 
 
-### 💎 Magic Formula (Greenblatt ROC + EY) (来源: loss)
+### 💎 Magic Formula (Greenblatt ROC + EY) (来源: no_data)
 | 指标 | 数值 | 说明 |
 |---|---|---|
 | 行业 | — | — |
@@ -653,11 +653,7 @@ OBV 🟡偏进货
 
 <!-- id:dcf -->
 ## 📊 DCF L 实算
-| 折现率 r | 隐含终局利润 L | L/E3 |
-|---|---|---|
-| 8% | 62.0 亿 | — |
-| 10% | 77.5 亿 | 469.0x |
-| 12% | 93.0 亿 | — |
+> **数据状态:** ⚠️ DCF L 未计算 (ValuationStrategy 缺 EPS 数据)
 
 
 ---
@@ -825,7 +821,7 @@ OBV 🟡偏进货
 
 <!-- id:linter -->
 ## 🔍 Linter 校验报告 (增强模式自动追加)
-- **完整度:** 94% (16/17 项)
-- **缺失项:** Magic
+- **完整度:** 88% (15/17 项)
+- **缺失项:** DCF L, Magic
 
 > 本报告由 `tools/render/report_renderer.render_report()` 全量渲染生成
