@@ -607,7 +607,7 @@ OBV ⬜中性
 ---
 
 ## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
-> ⚠️ GA 因子计算失败: 'KLineBar' object has no attribute 'date'
+> ⚠️ alpha_ga_001 factor 未注册
 
 
 ---
@@ -803,7 +803,9 @@ OBV ⬜中性
 
 <!-- id:ts_basic -->
 ## 📊 基础信息 (Tushare)
-**代码:** 000001  **名称:** 上证指数  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_watchlist_fresh)
+**代码:** 000001  **名称:** 平安银行  **行业:** 未知  **上市日期:** 19910403  **总股本:** 0.00亿股  **流通股本:** 0.00亿股  **市场:** 主板
+
+> **数据源:** Tushare.stock_basic (dump)
 
 
 ---
