@@ -46,21 +46,21 @@ from tools.eps_consensus_cache import EPS_DIR
 def _load_daily_basic_window(codes: list[str], dates: list[str]) -> dict[str, dict[str, float]]:
     """批量读 1 年 daily_basic (1 次 SQL, 6ms × 1205 票)
 
+    2026-09-03 v6.1.1 改: 走 DataStore.load_all_daily_basic, pandas filter
+    不再直接 duckdb.execute + read_parquet
+
     Returns: {code: {date: {total_mv, pe_ttm}}}
     """
     if not codes or not dates:
         return {}
     try:
-        import duckdb
-        from tools.kline_store import DAILY_BASIC_DIR
-        codes_str = ",".join(f"'{_to_ts_code(c)}'" for c in codes)
-        dates_str = ",".join(f"'{d}'" for d in dates)
-        df = duckdb.execute(f"""
-            SELECT ts_code, trade_date, total_mv, pe_ttm, close
-            FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet')
-            WHERE ts_code IN ({codes_str})
-              AND trade_date IN ({dates_str})
-        """).df()
+        from tools.kline_store import DataStore, _to_ts_code
+        codes_ts = {_to_ts_code(c) for c in codes}
+        dates_clean = {d.replace("-", "")[:8] for d in dates}
+        df = DataStore.load_all_daily_basic()
+        if df.empty:
+            return {}
+        df = df[df["ts_code"].isin(codes_ts) & df["trade_date"].isin(dates_clean)]
         out: dict[str, dict[str, float]] = {}
         for _, r in df.iterrows():
             code = r["ts_code"][:6]  # 600262.SH → 600262
@@ -86,16 +86,13 @@ def _load_financials_window(codes: list[str]) -> dict[str, list[dict]]:
     if not codes:
         return {}
     try:
-        import duckdb
-        from tools.kline_store import FIN_DIR
-        codes_str = ",".join(f"'{_to_ts_code(c)}'" for c in codes)
-        df = duckdb.execute(f"""
-            SELECT ts_code, end_date, ebit, networking_capital, fixed_assets, netdebt, industry
-            FROM read_parquet('{FIN_DIR}/*.parquet')
-            WHERE ts_code IN ({codes_str})
-              AND fetch_status = 'ok'
-            ORDER BY end_date
-        """).df()
+        from tools.kline_store import DataStore, _to_ts_code
+        codes_ts = {_to_ts_code(c) for c in codes}
+        df = DataStore.load_all_financials()
+        if df.empty:
+            return {}
+        df = df[df["ts_code"].isin(codes_ts) & (df["fetch_status"] == "ok")]
+        df = df.sort_values("end_date")
         out: dict[str, list[dict]] = {}
         for _, r in df.iterrows():
             code = r["ts_code"][:6]
@@ -222,15 +219,15 @@ def main():
     print(f"📊 股票池: {len(codes)} 只 (科技股)")
 
     # 2) 日期范围
-    import duckdb
-    from tools.kline_store import DAILY_BASIC_DIR
-    dates_df = duckdb.execute(f"""
-        SELECT DISTINCT trade_date FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet')
-        WHERE trade_date >= '{args.start}' AND trade_date <= '{args.end}'
-        ORDER BY trade_date
-    """).df()
-    dates = [d.replace("-", "")[:8] for d in dates_df["trade_date"].tolist()]
-    print(f"📅 日期范围: {dates[0]} → {dates[-1]} ({len(dates)} 天)")
+    from tools.kline_store import DataStore
+    df = DataStore.load_all_daily_basic()
+    if df.empty:
+        dates = []
+    else:
+        mask = (df["trade_date"] >= args.start) & (df["trade_date"] <= args.end)
+        dates = sorted(df.loc[mask, "trade_date"].unique().tolist())
+        dates = [d.replace("-", "")[:8] for d in dates]
+    print(f"📅 日期范围: {dates[0] if dates else 'N/A'} → {dates[-1] if dates else 'N/A'} ({len(dates)} 天)")
 
     # 3) 预读 daily_basic (1 次 SQL, 估 100ms)
     print(f"🔄 批量读 daily_basic ({len(codes)} 票 × {len(dates)} 天)...")

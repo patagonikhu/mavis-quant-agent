@@ -106,20 +106,24 @@ class AnalysisCacheData(DataLayer):
             return df_val
         df_val = df_val.rename(columns={"date_str": "date"})
 
-        # 2) 1 次 SQL 查 close (daily K线 parquet)
-        import duckdb
-        kline_glob = f"{self.kline_dir}/*.parquet"
+        # 2) 拿 close (v6.1.1 改: 走 DataStore.load_all_kline, 不直接 duckdb)
+        from tools.kline_store import DataStore, _to_ts_code
+        all_kl = DataStore.load_all_kline(years=10)  # 取多, 后面 filter start/end
+        if not all_kl:
+            return df_val
         if codes:
-            codes_ts = ",".join(f"'{c}.SH'" if c.startswith(('6','5','9')) or c.startswith('0') and len(c)==6 and int(c[0]) in (0,1,2,3) else f"'{c}.SZ'" for c in codes)
-            codes_clause = f" AND ts_code IN ({codes_ts})"
+            codes_ts = {_to_ts_code(c) for c in codes}
         else:
-            codes_clause = ""
-        sql_k = f"""
-            SELECT ts_code, trade_date, close
-            FROM read_parquet('{kline_glob}')
-            WHERE trade_date >= '{start}' AND trade_date <= '{end}'{codes_clause}
-        """
-        df_kl = duckdb.execute(sql_k).df()
+            codes_ts = set(all_kl.keys())
+        rows = []
+        for ts, bars in all_kl.items():
+            if ts not in codes_ts:
+                continue
+            for b in bars:
+                td = str(b.get("trade_date", "")).replace("-", "")[:8]
+                if start <= td <= end:
+                    rows.append({"ts_code": ts, "trade_date": td, "close": b.get("close")})
+        df_kl = pd.DataFrame(rows)
         if df_kl.empty:
             return df_val
         df_kl["code"] = df_kl["ts_code"].str[:6]

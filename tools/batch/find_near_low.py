@@ -72,23 +72,11 @@ def count_bounces(closes, threshold=0.30, window=3):
 
 def load_all_kline_5y() -> dict[str, list[dict]]:
     """1 次 SQL 拉全市场 daily K线 (动态 5.5y cutoff, 不 hardcode)。
-    替代每只股票单独 read_kline (5783 次 query → 1 次 query)。
+
+    2026-09-03 v6.1.1 改: 走 DataStore.load_all_kline, 不直接 duckdb.execute
     """
-    import duckdb
-    df = duckdb.execute("""
-        WITH max_d AS (
-            SELECT MAX(STRPTIME(trade_date, '%Y%m%d')) AS d
-            FROM read_parquet('data/history/daily/*.parquet')
-        )
-        SELECT d.ts_code, d.trade_date, d.open, d.high, d.low, d.close
-        FROM read_parquet('data/history/daily/*.parquet') d, max_d m
-        WHERE STRPTIME(d.trade_date, '%Y%m%d') >= m.d - INTERVAL '5.5 year'
-        ORDER BY d.ts_code, d.trade_date
-    """).df()
-    return {
-        code: g[["trade_date", "open", "high", "low", "close"]].to_dict("records")
-        for code, g in df.groupby("ts_code")
-    }
+    from tools.kline_store import DataStore
+    return DataStore.load_all_kline(years=5.5)
 
 
 def main():

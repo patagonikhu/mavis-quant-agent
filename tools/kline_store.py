@@ -1206,6 +1206,151 @@ class DataStore:
             return []
 
     @classmethod
+    def load_stock_basic(cls) -> "pd.DataFrame":
+        """全市场 stock_basic 1 次 SQL (替代 boll_bbw 等散落)
+
+        Returns:
+            DataFrame: columns = [ts_code, name, industry, ...]
+        """
+        try:
+            import duckdb
+            import pandas as pd
+            if not STOCK_BASIC_PARQUET.exists():
+                return pd.DataFrame()
+            return duckdb.execute(
+                f"SELECT * FROM read_parquet('{STOCK_BASIC_PARQUET}')"
+            ).df()
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    # ============================================================
+    # 4 个 bulk 接口 (2026-09-03 v6.1.1 改造, 解决"读 parquet 散落"问题)
+    #
+    # 原则: 任何分析代码读数据只能调 DataStore 接口, 不允许自己读 parquet / 调网络
+    # 之前: 7 个 batch / research 脚本散落 duckdb.execute + read_parquet, 共 ~15 处违规
+    # 现在: 全部走下面 4 个接口
+    # ============================================================
+
+    @classmethod
+    def load_all_daily_basic_lite(cls) -> "pd.DataFrame":
+        """全市场 K 线 1 次 SQL (含 amount, 供流动性过滤用)
+
+        Returns:
+            DataFrame: columns = [ts_code, trade_date, close, vol, amount]
+            跟 load_all_kline 区别: 这个返回 DataFrame (按需列), 不 groupby
+        """
+        try:
+            import duckdb
+            import pandas as pd
+            files = list(HISTORY_DIR.glob("*.parquet"))
+            if not files:
+                return pd.DataFrame()
+            return duckdb.execute(f"""
+                SELECT ts_code, trade_date, close, vol, amount
+                FROM read_parquet('{HISTORY_DIR}/*.parquet')
+                WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('{HISTORY_DIR}/*.parquet'))
+            """).df()
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    @classmethod
+    def load_all_kline(cls, years: float = 5.5) -> dict[str, list[dict]]:
+        """全市场 K 线 1 次 SQL (替代 find_near_low / boll_bbw 等散落实现)
+
+        Returns:
+            dict[ts_code, list[{trade_date, open, high, low, close, vol, ...}]]
+            注意: key 是 ts_code (e.g. '300750.SZ'), 不是 6 位 code
+        """
+        try:
+            import duckdb
+            files = list(HISTORY_DIR.glob("*.parquet"))
+            if not files:
+                return {}
+            sql = f"""
+                WITH max_d AS (
+                    SELECT MAX(STRPTIME(trade_date, '%Y%m%d')) AS d
+                    FROM read_parquet('{HISTORY_DIR}/*.parquet')
+                )
+                SELECT d.ts_code, d.trade_date, d.open, d.high, d.low, d.close, d.vol
+                FROM read_parquet('{HISTORY_DIR}/*.parquet') d, max_d m
+                WHERE STRPTIME(d.trade_date, '%Y%m%d') >= m.d - INTERVAL '{years} year'
+                ORDER BY d.ts_code, d.trade_date
+            """
+            df = duckdb.execute(sql).df()
+            return {
+                code: g[["trade_date", "open", "high", "low", "close", "vol"]].to_dict("records")
+                for code, g in df.groupby("ts_code")
+            }
+        except Exception:
+            return {}
+
+    @classmethod
+    def load_all_daily_basic(cls) -> "pd.DataFrame":
+        """全市场 daily_basic 1 次 SQL (替代 backfill_magic_cache / bb_obv_scan 散落)
+
+        Returns:
+            DataFrame: columns = [ts_code, trade_date, total_mv, close, pe, pe_ttm, pb, ...]
+        """
+        try:
+            import duckdb
+            import pandas as pd
+            files = list(DAILY_BASIC_DIR.glob("*.parquet"))
+            if not files:
+                return pd.DataFrame()
+            return duckdb.execute(
+                f"SELECT * FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet')"
+            ).df()
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    @classmethod
+    def load_financials_period(cls, period: str) -> "pd.DataFrame":
+        """1 季度全市场财务 (替代 magic_top20 散落)
+
+        Args:
+            period: '2025Q4' / '2026Q2' 格式 (file stem)
+
+        Returns:
+            DataFrame: columns = [ts_code, end_date, ebit, fixed_assets,
+                                  networking_capital, interestdebt, netdebt,
+                                  code, industry, fetch_status, ...]
+        """
+        try:
+            import duckdb
+            import pandas as pd
+            path = FIN_DIR / f"{period}.parquet"
+            if not path.exists():
+                return pd.DataFrame()
+            return duckdb.execute(
+                f"SELECT * FROM read_parquet('{path}')"
+            ).df()
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    @classmethod
+    def load_all_financials(cls) -> "pd.DataFrame":
+        """5+ 季度全市场财务 (替代 backfill_magic_cache 散落)
+
+        Returns:
+            DataFrame: 5 季度合并, ~27745 行
+        """
+        try:
+            import duckdb
+            import pandas as pd
+            if not FIN_DIR.exists():
+                return pd.DataFrame()
+            return duckdb.execute(
+                f"SELECT * FROM read_parquet('{FIN_DIR}/*.parquet')"
+            ).df()
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    @classmethod
     def watchlist_codes(cls) -> list[str]:
         """返回 watchlist.json 里的股票代码列表。"""
         try:

@@ -251,24 +251,15 @@ def main():
             # 4. 排除日成交额 < 5000 万的票 (流动性差, 主力难控盘)
             #    amount 单位: 千元 (Tushare 默认), 5000 万 = 5e4 千元
             try:
-                from tools.kline_store import HISTORY_DIR
-                import duckdb
-                files = sorted(HISTORY_DIR.glob("*.parquet"))
-                if files:
-                    files_glob = str(HISTORY_DIR) + "/*.parquet"
-                    amt_df = duckdb.execute(f"""
-                        SELECT ts_code, amount
-                        FROM read_parquet('{files_glob}')
-                        WHERE trade_date = (
-                            SELECT MAX(trade_date) FROM read_parquet('{files_glob}')
-                        )
-                    """).fetchdf()
-                    if len(amt_df) > 0:
-                        amt_df["code"] = amt_df["ts_code"].str.split(".").str[0]
-                        low_liq = set(amt_df[amt_df["amount"] < 50000]["code"].tolist())  # <5000万
-                        n_pre = len(codes)
-                        codes = [c for c in codes if c not in low_liq]
-                        print(f"  流动性过滤: {n_pre} → {len(codes)} (排除日成交额<5000万)")
+                from tools.kline_store import DataStore
+                # 流动性过滤需要 amount (K 线字段, 不在 daily_basic)
+                amt_df = DataStore.load_all_daily_basic_lite()
+                if not amt_df.empty and "amount" in amt_df.columns:
+                    amt_df["code"] = amt_df["ts_code"].str.split(".").str[0]
+                    low_liq = set(amt_df[amt_df["amount"] < 50000]["code"].tolist())  # <5000万
+                    n_pre = len(codes)
+                    codes = [c for c in codes if c not in low_liq]
+                    print(f"  流动性过滤: {n_pre} → {len(codes)} (排除日成交额<5000万)")
             except Exception as e:
                 print(f"  [WARN] 流动性过滤失败: {e}")
             print(f"  垃圾股过滤: {n_before} → {len(codes)} (排除 ST/北交所/<50亿/<20亿流通/<5000万成交)")

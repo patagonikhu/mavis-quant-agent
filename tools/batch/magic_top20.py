@@ -227,25 +227,28 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # 1) 找财务文件
-    fin_dir = _TOOLS.parent / "data" / "history" / "financials"
-    parquet_files = sorted(fin_dir.glob("*.parquet"))
-    if not parquet_files:
-        print(f"❌ 财务数据空: {fin_dir} 没 parquet")
-        print("   先跑: bash tools/with_venv.sh python -c \"from tools.kline_store import sync_financials; sync_financials()\"")
-        return 1
-
+    # 1) 找财务文件 (v6.1.1 改: 走 DataStore.load_financials_period, 不读 parquet)
+    from tools.kline_store import DataStore
     if args.period:
-        fin_file = fin_dir / f"{args.period}.parquet"
-        if not fin_file.exists():
-            print(f"❌ 找不到 {fin_file}, 现有: {[p.name for p in parquet_files]}")
+        df = DataStore.load_financials_period(args.period)
+        if df.empty:
+            print(f"❌ 找不到 {args.period} 季度财务, 请先跑: python -m tools.sync_data --financials --period {args.period}")
             return 1
     else:
-        fin_file = parquet_files[-1]
-        args.period = fin_file.stem  # e.g. "2026Q2"
+        # 取最新季: load_all_financials 找 max end_date
+        all_fin = DataStore.load_all_financials()
+        if all_fin.empty:
+            print("❌ 财务数据空, 请先跑: python -m tools.sync_data --financials")
+            return 1
+        latest_end = all_fin["end_date"].max()
+        # end_date '20251231' → 季度 '2025Q4' (跟 parquet file stem 对齐)
+        y, m = latest_end[:4], latest_end[4:6]
+        quarter = {"03": "Q1", "06": "Q2", "09": "Q3", "12": "Q4"}.get(m, "Q4")
+        latest_period = f"{y}{quarter}"
+        df = DataStore.load_financials_period(latest_period)
+        args.period = latest_period
 
-    print(f"📂 财务文件: {fin_file.name}  |  读股票池...")
-    df = pd.read_parquet(fin_file)
+    print(f"📂 财务文件: {args.period}  |  读股票池...")
     df_ok = df[df["fetch_status"] == "ok"]
     codes = df_ok["code"].tolist()
     print(f"   {len(codes)} 只 (fetch_status=ok)")

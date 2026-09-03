@@ -51,20 +51,12 @@ def _load_index_state(min_date: str, code: str = "000688.SH") -> dict:
       bear  (<-0.3%/日): 熊市, 关闭
     """
     try:
-        files = sorted(glob.glob(str(ROOT / "data/history/daily/*.parquet")))
-        if not files:
+        from tools.kline_store import read_kline
+        idx = read_kline(code, start_date=min_date)
+        if not idx or len(idx) < 25:
             return {}
-        df = pd.concat([pq.read_table(f).to_pandas() for f in files])
-        idx = df[df["ts_code"] == code].sort_values("trade_date")
-        if idx.empty:
-            return {}
-        idx = idx.copy()
-        idx["trade_date"] = idx["trade_date"].astype(str).str.replace("-", "").str[:8]
-        idx = idx[idx["trade_date"] >= min_date]
-        if len(idx) < 25:
-            return {}
-        closes = idx["close"].astype(float).tolist()
-        dates = idx["trade_date"].tolist()
+        closes = [float(b.get("close", 0) or 0) for b in idx]
+        dates = [str(b.get("trade_date", "")).replace("-", "")[:8] for b in idx]
         n = len(closes)
         # MA20
         ma20 = [None] * n
