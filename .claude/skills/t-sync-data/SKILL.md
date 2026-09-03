@@ -1,6 +1,6 @@
 ---
-name: t-sync
-description: 唯一数据同步入口 (2026-09-03 新, v6.1.1)。所有 sync 行为 (K线/财务/EPS/fflow/cache/元数据) 都在 `tools/sync_data.py`, 7 个正交 flag (`--kline/--stock-basic/--financials/--eps/--fflow/--cache/--meta`) 控制, 默认走 `--auto` 智能检测 stale flag (解决"忘记 sync"问题)。用户说"同步数据"、"补数据"、"拉K线"、"拉财务"、"拉EPS"、"sync cache"、"sync"、"sync_data"、"datasync"、"sync-wiki"、"sync watchlist" 都走这个 skill, 替代原 sync_watchlist_fresh。
+name: t-sync-data
+description: 唯一数据同步入口 (2026-09-03 新, v6.1.1)。所有 sync 行为 (K线/财务/EPS/fflow/cache/元数据) 都在 `tools/sync_data.py`, 7 个正交 flag (`--kline/--stock-basic/--financials/--eps/--fflow/--cache/--meta`) 控制, 默认走 `--auto` 智能检测 stale flag (解决"忘记 sync"问题)。用户说"同步数据"、"补数据"、"拉K线"、"拉财务"、"拉EPS"、"sync cache"、"sync"、"sync_data"、"datasync"、"sync-data" 都走这个 skill, 替代原 sync_watchlist_fresh。
 user-invocable: true
 allowed-tools:
   - Bash
@@ -9,12 +9,12 @@ allowed-tools:
 
 > **sync 和 analyze 严格分离**。
 > 5 个分析 skill (t-analyze/t-bb-obv/t-near-low/t-magic/t-backtest) 全改"只读",
-> 缺数据时直接报"请先 /t-sync", 不再偷偷调 sync 函数。
+> 缺数据时直接报"请先 /t-sync-data", 不再偷偷调 sync 函数。
 
 ## 别名 / 触发词
 
-用户用以下任何说法都触发 t-sync:
-- `/t-sync` / `/sync-data` / `/sync_data` / `/datasync`
+用户用以下任何说法都触发 t-sync-data:
+- `/t-sync-data` / `/t-sync` / `/sync-data` / `/sync_data` / `/datasync`
 - "同步数据" / "补数据" / "拉数据" / "拉K线" / "拉财务" / "拉EPS" / "拉fflow" / "sync cache"
 - "更新本地数据" / "刷新数据" / "补缓存" / "sync一下"
 
@@ -65,7 +65,7 @@ python -m tools.sync_data --status                # 看现状, 不拉数据
 
 | skill | 偷偷 sync? | 缺数据时 |
 |---|---|---|
-| `/t-analyze` | ❌ 改成只读 | 报"请先 /t-sync" |
+| `/t-analyze` | ❌ 改成只读 | 报"请先 /t-sync-data" |
 | `/t-bb-obv` | ❌ 改成只读 | 同上 |
 | `/t-near-low` | ❌ 改成只读 | 同上 |
 | `/t-magic` | ❌ 改成只读 | 同上 |
