@@ -81,15 +81,13 @@ def backfill_one(code: str, year_filter: str = None) -> int:
         if not updates:
             return 0
 
-        conn = sqlite3.connect(str(DB))
-        cur = conn.cursor()
-        cur.executemany(
-            "UPDATE analysis_cache SET obv=?, obv5=?, obv_trend=? "
-            "WHERE code=? AND date_str=?",
-            updates,
-        )
-        conn.commit()
-        conn.close()
+        # 2026-09-03 v6.2.1 改: 走 caches/analysis.update_obv_batch
+        from tools.storage.caches.analysis import update_obv_batch
+        rows = [
+            {"obv": u[0], "obv5": u[1], "obv_trend": u[2], "code": u[3], "date_str": u[4]}
+            for u in updates
+        ]
+        return update_obv_batch(rows)
         return len(updates)
     except Exception:
         return 0

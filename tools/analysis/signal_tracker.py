@@ -49,32 +49,31 @@ if str(ROOT) not in sys.path:
 
 
 def fetch_price(code):
-    """拉今日价格 (走 tushare_fetcher 直连, 2026-08-26 删 data_source 间接层)"""
+    """拉今日价格 (2026-09-03 v6.2.1 改: 走 DataStore.get_daily_basic, 不直连 tushare)"""
     try:
-        from tools.storage.sources.tushare import get_daily_basic
-        rows, status = get_daily_basic(code, limit=1)
-        if status != "OK" or not rows:
+        from tools.storage.store import DataStore
+        b = DataStore.get_daily_basic(code)
+        if not b:
             return None
-        r = rows[0]
         return {
-            'price': float(r.get('close', 0) or 0),
+            'price': float(b.get('close', 0) or 0),
             # Tushare.daily_basic 没给 prev_close/open/high/low/pct, 标 0
             'prev_close': 0, 'open': 0, 'high': 0, 'low': 0, 'pct': 0,
         }
-    except Exception as e:
+    except Exception:
         return None
 
 
 def fetch_kline_range(code, start_date, end_date):
-    """拉 start_date 到 end_date 之间的 K 线 (走 tushare_fetcher, 2026-08-26 删 data_source 间接层)"""
+    """拉 start_date 到 end_date 之间的 K 线 (2026-09-03 v6.2.1 改: 走 DataStore.get_ctx)"""
     try:
-        from tools.storage.sources.tushare import get_daily
-        bars, status = get_daily(code, limit=400)
-        if status != "OK" or not bars:
+        from tools.storage.store import DataStore
+        ctx = DataStore.get_ctx(code)
+        if not ctx.kline:
             return []
         result = []
-        for b in bars:
-            dt = b.get("trade_date", "")
+        for b in ctx.kline:
+            dt = str(b.get("trade_date", "")).replace("-", "")[:8]
             if start_date <= dt <= end_date:
                 result.append({
                     'date': dt,

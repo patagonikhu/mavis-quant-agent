@@ -44,11 +44,9 @@ from tools.storage.caches.analysis import get_cached, write_batch, get_stats
 ds = DataStore()
 
 if args.all:
-    # --all: db 里有 cache 的所有股票 (1830 只, 不限于 watchlist)
-    import sqlite3
-    conn = sqlite3.connect("data/analysis_cache.db")
-    CODES = [r[0] for r in conn.execute("SELECT DISTINCT code FROM analysis_cache").fetchall()]
-    conn.close()
+    # --all: db 里有 cache 的所有股票 (2026-09-03 v6.2.1 改: 走 caches/analysis 接口)
+    from tools.storage.caches.analysis import get_cached_codes
+    CODES = sorted(get_cached_codes())
     print(f"--all: cache 全部 {len(CODES)} 只")
 elif args.codes:
     CODES = args.codes

@@ -21,7 +21,7 @@
 | T框架 | ✅ | OK |
 | PEG | ❌ | =None |
 | DCF L | ❌ | L=E0 缺/EPS 缺 |
-| Magic | ❌ | ROC/EY=loss |
+| Magic | ❌ | ROC/EY=no_data |
 | 板块过热 | ✅ | OK |
 | 缠论补充 | ✅ | OK |
 | 止盈止损 | ✅ | OK |
@@ -39,7 +39,7 @@
 | 2025A | -0.77 | -2.6 | 1.5 | -56.1% |
 
 
-### 💎 Magic Formula (Greenblatt ROC + EY) (来源: loss)
+### 💎 Magic Formula (Greenblatt ROC + EY) (来源: no_data)
 | 指标 | 数值 | 说明 |
 |---|---|---|
 | 行业 | — | — |

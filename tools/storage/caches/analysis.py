@@ -302,6 +302,138 @@ def write_batch(code: str, kline: list[dict], results: dict[str, dict]):
     except Exception:
         conn.rollback()
         raise
+
+
+def get_cached_codes() -> set[str]:
+    """返所有已 cache 的 code (2026-09-03 v6.2.1 加, 替代直连 db)"""
+    try:
+        conn = _conn()
+        rows = conn.execute("SELECT DISTINCT code FROM analysis_cache").fetchall()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
+
+
+def get_cached_dates(code: str) -> list[str]:
+    """返单只已 cache 的所有 dates (2026-09-03 v6.2.1 加, 替代直连 db)"""
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT date_str FROM analysis_cache WHERE code = ? ORDER BY date_str"
+        , (code,)).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def get_codes_with_obv(min_date: str = "") -> list[str]:
+    """返有 obv5/obv_trend 的 codes (2026-09-03 v6.2.1 加, 替代 bb_obv_backtest 直连 db)
+
+    Args:
+        min_date: 只返该日期之后的 cache (空 = 不限)
+    """
+    try:
+        conn = _conn()
+        if min_date:
+            rows = conn.execute(
+                "SELECT DISTINCT code FROM analysis_cache "
+                "WHERE obv5 IS NOT NULL AND date_str >= ?",
+                (min_date,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT DISTINCT code FROM analysis_cache WHERE obv5 IS NOT NULL"
+            ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def get_latest_cache_date() -> str | None:
+    """返 cache 中最新日期 (2026-09-03 v6.2.1 加, 替代 bb_obv_backtest 直连 db)"""
+    try:
+        conn = _conn()
+        row = conn.execute("SELECT MAX(date_str) FROM analysis_cache").fetchone()
+        return row[0] if row and row[0] else None
+    except Exception:
+        return None
+
+
+def get_existing_valuation_pairs() -> set[tuple[str, str]]:
+    """返 (code, date) 已有 valuation 的对 (2026-09-03 v6.2.1 加, 替代 backfill_magic_cache 直连 db)
+
+    "valuation" = roc / ey / peg / dcf_l 任一非空
+    """
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT code, date_str FROM analysis_cache "
+            "WHERE roc IS NOT NULL OR ey IS NOT NULL OR peg IS NOT NULL OR dcf_l IS NOT NULL"
+        ).fetchall()
+        conn.close()
+        return {(r[0], r[1]) for r in rows}
+    except Exception:
+        return set()
+
+
+def get_valuation_coverage() -> dict:
+    """返 4 个 valuation 字段的覆盖率统计 (2026-09-03 v6.2.1 加)
+
+    Returns:
+        {"roc": int, "ey": int, "peg": int, "dcf_l": int}  (非空行数)
+    """
+    try:
+        conn = _conn()
+        out = {}
+        for col in ("roc", "ey", "peg", "dcf_l"):
+            row = conn.execute(
+                f"SELECT COUNT(*) FROM analysis_cache WHERE {col} IS NOT NULL"
+            ).fetchone()
+            out[col] = row[0] if row else 0
+        conn.close()
+        return out
+    except Exception:
+        return {"roc": 0, "ey": 0, "peg": 0, "dcf_l": 0}
+
+
+def get_codes_since(min_date: str) -> list[str]:
+    """返 min_date 之后有 cache 的 code (2026-09-03 v6.2.1 加, 替代 rolling/near_low_backtest 直连 db)"""
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT DISTINCT code FROM analysis_cache WHERE date_str >= ?",
+            (min_date,),
+        ).fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def update_obv_batch(rows: list[dict]) -> int:
+    """批量更新 obv/obv5/obv_trend 字段 (2026-09-03 v6.2.1 加, 替代 backfill_obv 直连 db)
+
+    Args:
+        rows: list of {"code", "date_str", "obv", "obv5", "obv_trend"}
+    Returns:
+        写入行数
+    """
+    if not rows:
+        return 0
+    try:
+        conn = _conn()
+        conn.executemany(
+            "UPDATE analysis_cache SET obv=?, obv5=?, obv_trend=? "
+            "WHERE code=? AND date_str=?",
+            [(r["obv"], r["obv5"], r["obv_trend"], r["code"], r["date_str"]) for r in rows],
+        )
+        conn.commit()
+        n = conn.total_changes
+        conn.close()
+        return n
+    except Exception as e:
+        print(f"  ⚠️ update_obv_batch 失败: {e}", file=__import__("sys").stderr)
+        return 0
     finally:
         conn.close()
 

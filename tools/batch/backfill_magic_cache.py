@@ -247,14 +247,9 @@ def main():
     n_eps = sum(1 for v in eps_window.values() if v)
     print(f"   覆盖 {n_eps}/{len(codes)} 票 (没 EPS 是常见, 机构不覆盖小盘)")
 
-    # 6) 检查 db 已有的 (code, date_str) 对, 跳过
-    con = sqlite3.connect(str(_DB))
-    existing_pairs = set(
-        (r[0], r[1]) for r in con.execute(
-            "SELECT code, date_str FROM analysis_cache "
-            "WHERE roc IS NOT NULL OR ey IS NOT NULL OR peg IS NOT NULL OR dcf_l IS NOT NULL"
-        ).fetchall()
-    )
+    # 6) 检查 db 已有的 (code, date_str) 对, 跳过 (2026-09-03 v6.2.1 改: 走 caches/analysis 接口)
+    from tools.storage.caches.analysis import get_existing_valuation_pairs
+    existing_pairs = get_existing_valuation_pairs()
     print(f"📂 db 已有 4 列非空: {len(existing_pairs):,} 对 (跳过重算)")
 
     # 7) 算所有 (code, date) 对
@@ -312,13 +307,10 @@ def main():
     print(f"✅ 完成: {done:,} 对, 耗时 {elapsed:.0f}s ({done/elapsed:.0f}/s)")
 
     # 9) 统计
-    con = sqlite3.connect(str(_DB))
-    n_roc = con.execute("SELECT COUNT(*) FROM analysis_cache WHERE roc IS NOT NULL").fetchone()[0]
-    n_ey  = con.execute("SELECT COUNT(*) FROM analysis_cache WHERE ey  IS NOT NULL").fetchone()[0]
-    n_peg = con.execute("SELECT COUNT(*) FROM analysis_cache WHERE peg IS NOT NULL").fetchone()[0]
-    n_dcf = con.execute("SELECT COUNT(*) FROM analysis_cache WHERE dcf_l IS NOT NULL").fetchone()[0]
-    print(f"📊 覆盖率: roc={n_roc:,} ey={n_ey:,} peg={n_peg:,} dcf_l={n_dcf:,}")
-    con.close()
+    # 2026-09-03 v6.2.1 改: 走 caches/analysis.get_valuation_coverage()
+    from tools.storage.caches.analysis import get_valuation_coverage
+    cov = get_valuation_coverage()
+    print(f"📊 覆盖率: roc={cov['roc']:,} ey={cov['ey']:,} peg={cov['peg']:,} dcf_l={cov['dcf_l']:,}")
     return 0
 
 

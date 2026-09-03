@@ -270,12 +270,9 @@ def _load_all_basic() -> dict:
 
 
 def _load_codes_with_cache(min_date: str) -> list:
-    conn = sqlite3.connect(str(DB))
-    rows = conn.execute(
-        "SELECT DISTINCT code FROM analysis_cache WHERE date_str >= ?",
-        (min_date,),
-    ).fetchall()
-    conn.close()
+    # 2026-09-03 v6.2.1 改: 走 caches/analysis.get_codes_since
+    from tools.storage.caches.analysis import get_codes_since
+    rows = [(c,) for c in get_codes_since(min_date)]
     return [r[0] for r in rows]
 
 

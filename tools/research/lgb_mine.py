@@ -68,26 +68,26 @@ DOCS_DIR = PROJECT_ROOT / "docs"
 
 # === 1. 基础特征工程 (8 维) ===
 def build_features(code: str) -> dict:
-    """拉 8 个特征, 拼成一行 (走 fetch_all 获取最新数据)"""
-    from tools.storage.sources.eastmoney import fetch_all
-    raw = fetch_all(code)
-    kline = raw.get("kline", [])
+    """拉 8 个特征, 拼成一行 (2026-09-03 v6.2.1 改: 走 DataStore.get_ctx, 不直连 eastmoney)"""
+    from tools.storage.store import DataStore
+    ctx = DataStore.get_ctx(code)
+    kline = ctx.kline
     if not kline or len(kline) < 60:
         return None
 
     closes = pd.Series([k["close"] for k in kline])
     vols = pd.Series([k.get("vol", k.get("volume", 0)) for k in kline])
 
-    # 1. PEG (从 dump 拿现成的)
-    peg = raw.get("peg", {})
-    peg = peg.get("PEG_真实") if isinstance(peg.get("PEG_真实"), (int, float)) else 0
-    peg = peg if peg > 0 else 2.0  # 无数据时填 2 (中性偏贵)
+    # 1. PEG (从 DataStore valuation_data 取)
+    val = ctx.valuation_data or {}
+    peg_raw = val.get("PEG_真实")
+    peg = peg_raw if isinstance(peg_raw, (int, float)) and peg_raw > 0 else 2.0
 
     # 2. PE_TTM
-    pe_ttm = raw.get("pe_ttm", 0) or 0
+    pe_ttm = val.get("pe_ttm", 0) or 0
 
     # 3. PB
-    pb = raw.get("pb", 0) or 0
+    pb = val.get("pb", 0) or 0
 
     # 4. MA20 偏离
     ma20 = closes.rolling(20).mean().iloc[-1]

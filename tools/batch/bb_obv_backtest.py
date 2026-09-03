@@ -30,15 +30,9 @@ from tools.storage.store import DataStore
 
 
 def _load_codes_with_obv(min_date: str) -> list[str]:
-    """从 cache 查有 obv5/obv_trend 的代码"""
-    conn = sqlite3.connect(str(DB))
-    rows = conn.execute(
-        "SELECT DISTINCT code FROM analysis_cache "
-        "WHERE obv5 IS NOT NULL AND date_str >= ?",
-        (min_date,),
-    ).fetchall()
-    conn.close()
-    return [r[0] for r in rows]
+    """从 cache 查有 obv5/obv_trend 的代码 (2026-09-03 v6.2.1 改: 走 caches/analysis 接口)"""
+    from tools.storage.caches.analysis import get_codes_with_obv
+    return get_codes_with_obv(min_date)
 
 
 def _load_index_state(min_date: str, code: str = "000688.SH") -> dict:
@@ -328,9 +322,8 @@ def main():
         print(f"    大盘过滤: 科创板指数 (000688.SH) MA20 斜率 (bull>0.3%/日, flat ±0.3%, bear<-0.3%/日)")
         print(f"    bull/flat: 启用, bear: 关闭")
 
-    last_db_date = sqlite3.connect(str(DB)).execute(
-        "SELECT MAX(date_str) FROM analysis_cache"
-    ).fetchone()[0]
+    from tools.storage.caches.analysis import get_latest_cache_date
+    last_db_date = get_latest_cache_date()
     min_date = (datetime.strptime(last_db_date, "%Y%m%d")
                 - timedelta(days=args.lookback * 365)).strftime("%Y%m%d")
     print(f"回看窗口: {min_date} ~ {last_db_date} ({args.lookback}y)")
