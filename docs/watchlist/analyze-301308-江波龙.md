@@ -807,7 +807,9 @@ OBV ⬜中性
 
 <!-- id:ts_basic -->
 ## 📊 基础信息 (Tushare)
-**代码:** 301308  **名称:** 江波龙  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_watchlist_fresh)
+**代码:** 301308  **名称:** 江波龙  **行业:** 未知  **上市日期:** 20220805  **总股本:** 0.00亿股  **流通股本:** 0.00亿股  **市场:** 创业板
+
+> **数据源:** Tushare.stock_basic (dump)
 
 
 ---

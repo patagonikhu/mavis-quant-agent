@@ -1,22 +1,26 @@
 # A股量化智能投顾 Agent (LLM-driven)
 
-> 5 个 Claude Code Skill + 单次 O(n) 因子引擎 = 你在终端的投资分析师。
-> 数据走本地 parquet (Tushare 同步) + LLM 训练知识 + 你手维护的 watchlist。
+> 6 个 Claude Code Skill (v6.2.3) + 单次 O(n) 因子引擎 = 你在终端的投资分析师。
+> 数据走本地 parquet (Tushare 同步) + LLM 训练知识 + 你手维护的 watchlist (101 只: 20 持仓 + 52 自选 + 29 Magic 初筛)。
 
 ---
 
-## 1. 5 个 Slash 命令
+## 1. 6 个 Slash 命令 (v6.2.3)
 
 所有 skill 都在 `.claude/skills/` 下, 直接在终端敲命令触发。
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
 | `/t-analyze <code> [name]` | 单只详报 (22 section: 投资四问 + T 框架 + PEG + DCF + 缠论 4 级别) | `/t-analyze 688017 绿的谐波` |
-| `/t-analyze --all` | 批量扫 watchlist 全部 (71 只, 含 4 指数), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
-| `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
-| `/t-sync-cache` | 增量补全科技股 signal_cache.db (10分钟断点续跑) | `/t-sync-cache --portfolio` |
-| `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单 | `/t-near-low --gap 2` |
+| `/t-analyze --all` | 批量扫 watchlist 全部 (101 只: 20 持仓 + 52 自选 + 29 Magic 初筛), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
+| `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.3)** — 7 flag 正交: --kline/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
+| `/t-magic` | 跑 Magic Formula 排名 (Greenblatt ROC+EY 联合), Top 20 写到 docs/magic-top20.md, 可选加到 watchlist (29 只 Magic 初筛来源) | `/t-magic` |
+| `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单, 写 docs/oversold-watchlist.md | `/t-near-low --gap 2` |
 | `/t-bb-obv` | 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 三重确认 (每天 0-2 只) | `/t-bb-obv --window 5` |
+| `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
+| `/t-sync-cache` (deprecated) | ⚠️ 已并入 `/t-sync-data --cache`, 不要再用 | — |
+
+> 6 个 skill, 加上历史 `t-sync-cache` (deprecated alias) = 共 7 个 skill 文件
 
 ### 1.1 典型用法
 
@@ -108,15 +112,19 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   ├── backtest-*.md                     # 回测报告
 │   └── signal-watchlist.md               # 全量扫描信号表
 │
-├── data/                                  # 静态数据 (你/Claude 维护)
-│   ├── events.json                        # T 事件库
-│   ├── watchlist.json                     # 关注股 + 笔记 (71 只, 19 持仓)
-│   ├── sectors.json                       # 板块/ETF → 成分股
+├── data/                                  # 静态数据 (你/Claude 维护, v6.2.3)
+│   ├── watchlist.json                     # 关注股 + 笔记 (101 只: 20 持仓 + 52 自选 + 29 Magic 初筛)
 │   ├── history/
 │   │   ├── daily/                         # 日 K 线 parquet (DataStore)
-│   │   ├── weekly/                        # 周 K 线 parquet
-│   │   └── stock_basic/                   # 股票基础信息
-│   └── analysis_cache.db                  # signal_cache (24 列 SQLite 缓存)
+│   │   ├── daily_basic/                   # 日线 PE/PB/市值 (DataStore)
+│   │   ├── financials/                     # 季报 5 季度 (DataStore, 27745 行)
+│   │   └── stock_basic/                   # 股票基础信息 (5549 只, DataStore)
+│   ├── cache/
+│   │   └── eps/                            # EPS 机构预期 JSON cache (30 天 TTL)
+│   └── analysis_cache.db                  # signal_cache (24 列 SQLite 缓存, 461MB / 166 万行)
+
+> v6.2 起 events.json + sectors.json **已删**: T 事件由 LLM 报告生成时从外部查 (年报/新闻/公告),
+> 板块分类走 stock_basic.parquet 的 industry 字段 (5549 只全覆盖).
 │
 ├── tools/                                 # 核心引擎
 │   ├── sync_stock.py                      # 单只拉数据 (DataStore)
@@ -236,7 +244,9 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 
 
 
-### 4.1 watchlist.json（1 周改 1 次，30 秒）
+### 4.1 watchlist.json (v6.2.3, 1 周改 1 次，30 秒)
+
+唯一手工维护配置, 走 `DataStore.load_watchlist()` / `add_to_watchlist()` 原子接口。
 
 ```json
 {
@@ -245,46 +255,35 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
       "code": "600089",
       "name": "特变电工",
       "sector": "电力变压器",
-      "rating": "重仓",
+      "list_type": "持仓",
       "notes": "PEG ~0.7, 龙头11分, 变压器物理瓶颈最硬, AI数据中心用电唯一解"
     }
   ]
 }
 ```
 
-### 4.2 events.json（滚动更新，LLM 主动建议）
+101 只: 20 持仓 + 52 自选 + 29 Magic 初筛 (来自 t-magic 加).
 
-```json
-{
-  "events": [
-    {
-      "code": "688017",
-      "name": "绿的谐波",
-      "event_type": "量产",
-      "event_date": "2026-07-15",
-      "description": "特斯拉 Optimus V3 量产 + 国产人形机器人万台交付",
-      "impact": "正",
-      "confidence": 0.9
-    }
-  ]
-}
-```
+### 4.2 events.json (v6.2 起 **删除**)
 
-T+0 之后信号自动折扣，T+12 之后不再作为买入参考。
+> T 事件由 LLM 报告生成时从外部源查 (年报/新闻/公告), 不再走本地配置。
+> 报告里 T 框架段固定占位, LLM 后续补。
 
-### 4.3 sectors.json（LLM 首次填充，手动维护）
+### 4.3 sectors.json (v6.2 起 **删除**)
 
-`/t-bottleneck` 发现的 Layer 2/3 公司会自动建议补充到对应板块。
+> 板块分类走 `stock_basic.parquet` 的 `industry` 字段 (5549 只全覆盖)。
+> 细分板块 → DCF 假设 (WACC/FCF/g) 走 `SECTOR_DCF_ASSUMPTIONS` 字典 (代码内 `tools/factors/valuation/dcf_engine.py`)。
 
 ---
 
-## 5. 设计原则
+## 5. 设计原则 (v6.2.3)
 
-1. **数据本地化优先** — 所有 K 线/EPS 走 parquet (`DataStore` 读)，避免运行时网络调用
-2. **三层分离** — `tools/sync_stock.py` (数据) → `tools/analysis/` (引擎) → `tools/render/` (报告)
-3. **O(n) 单次遍历** — 7 strategy 共享 `build_kline_features()` 预算层，单次遍历出全历史（无需 slice / 切片）
-4. **缓存优先** — `signal_cache` SQLite 让回测/分析秒级返回；`t-sync-cache` 增量预热
-5. **异常立即抛** — 禁止 `except Exception` 吞错；渲染失败立即 raise 停下整批
+1. **数据本地化优先** — 所有 K 线/EPS 走 parquet (`DataStore` 读), 避免运行时网络调用
+2. **三层分离** — `tools/storage/sync.py` (数据) → `tools/analysis/` (引擎) → `tools/render/` (报告)
+3. **O(n) 单次遍历** — 6 strategy 共享 `ctx.chan_result / wyckoff_result / smc_result / obv_result / fflow_result / valuation_data` 预算层, 单次遍历出全历史
+4. **缓存优先** — `analysis_cache.db` SQLite 让回测/分析秒级返回; `/t-sync-data --cache` 增量预热
+5. **架构守门 (v6.2.2)** — 所有数据/网络操作只在 `tools/storage/` 下 (DataStore / caches / sources), 不散落
+6. **异常立即抛** — 禁止 `except Exception` 吞错; 渲染失败立即 raise 停下整批
 
 ---
 

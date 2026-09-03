@@ -12,14 +12,21 @@
 
 ## 🚫 数据拉取铁律
 
-> **唯一入口**: `tools/sync_stock.py` (走 sync 路径), 所有网络调用必须经 sync 层
+> **唯一入口 (v6.2.3)**: `tools/storage/sync.py` (7 flag 正交, 全部走 storage/), 所有网络调用必须经 sync 层
 
 ```
-✅ tools/sync_stock.py {code}                                # 单只拉数据 (只 sync, 不计算)
-✅ tools/batch/t_analyze_all.py                              # watchlist 全刷 (sync + 4 worker analyze + render)
-✅ tools/with_venv.sh python -m tools.sync_watchlist_fresh --watchlist   # 检查新鲜度
-✅ tools/fetch/data_source.py 统一入口函数
+✅ bash tools/with_venv.sh python -m tools.storage.sync --kline           # 单只拉数据 (只 sync, 不计算)
+✅ bash tools/with_venv.sh python -m tools.storage.sync --auto           # 智能检测 stale, 只跑需跑的
+✅ bash tools/with_venv.sh python -m tools.storage.sync --status         # 检查新鲜度
+✅ tools/batch/t_analyze_all.py                                          # watchlist 全刷 (4 worker analyze + render)
 ❌ 任何 curl 直连 WAF 拒接域
+❌ 任何代码直连 sqlite3 / 直读 parquet (除 tools/storage/ 下的 sync / store / caches)
+```
+
+**架构守门 (v6.2.2)**: 所有数据/网络操作只在 `tools/storage/` 下:
+- 读 → `DataStore` (`tools.storage.store.DataStore`) / `caches/analysis.*`
+- 写 → `tools.storage.sync`
+- 网络 → `sources/tushare` / `sources/eastmoney` (sync 调)
 ```
 
 **WAF 拒接域 (绕道走 dump, 严禁直连):**
@@ -33,18 +40,19 @@
 
 ---
 
-## 🏗️ 三层架构铁律
+## 🏗️ 三层架构铁律 (v6.2.3)
 
-> Dump → AnalysisEngine → Render 三层严格分离, 全程零网络 (除 dump)
+> sync_data → DataStore → AnalysisEngine → RenderData → report_renderer 严格分离, 全程零网络 (除 sync)
 
 | 层 | 文件 | 职责 | 禁止 |
 |---|---|---|---|
-| **L1 Sync** | `tools/sync_stock.py` | 增量同步 K线到 parquet + 触发分析入口 | — |
-| **L2 Analysis** | `tools/analysis/analysis_engine.py` | Strategy 模式, 7 个策略各算分数 | ❌ 网络 |
-| **L2 容器** | `tools/analysis/render_data.py` | `RenderData` dataclass, 9 派生字段 (peg/dcf/sector_overheat/five_categories/buy_sell_points/exit_signals/stop_profit_loss/three_layer_position/monitor_triggers) 通过 `@property` 从 `analysis` dict 读 | ❌ 网络 |
+| **L1 Sync** | `tools/storage/sync.py` | 7 flag 正交 (--kline/--stock-basic/--financials/--eps/--fflow/--cache/--meta), 默认 --auto | — |
+| **L1 Store** | `tools/storage/store.py` | DataStore I/O, 25+ 公开方法, 6 bulk 接口 | ❌ 网络 |
+| **L2 Analysis** | `tools/analysis/analysis_engine.py` | 6 个 strategy (chan/wyckoff/smc/obv/fflow/peg) | ❌ 网络, ❌ 直读 db |
+| **L2 容器** | `tools/analysis/render_data.py` | `RenderData` dataclass, 9 派生字段 | ❌ 网络 |
 | **L3 Render** | `tools/render/report_renderer.py` | `RenderData` → Markdown | ❌ 网络 |
 
-**调用顺序:** `sync_stock` → `DataStore.get_ctx(code)` → `AnalysisEngine.analyze(ctx)` → `render_report(analysis_data)`, 全程零网络。
+**调用顺序:** `sync_data --kline` → `DataStore.get_ctx(code)` → `AnalysisEngine.analyze_history(ctx)` → `render_report(RenderData)`, 全程零网络。
 
 ### 并发设计铁律
 
@@ -135,7 +143,7 @@ ObvStrategy.analyze_history(ctx, dates)
 ## 🐍 Python 环境固化
 
 ```bash
-bash tools/with_venv.sh python -m tools.sync_stock 002371   # 拉数据
+bash tools/with_venv.sh python -m tools.storage.sync --codes 002371   # 拉数据
 bash tools/with_venv.sh                                    # 进 REPL
 ```
 
@@ -242,7 +250,9 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 **🟢 fflow (主力资金净额):**
 
 ```bash
-# 项目封装: bash tools/with_venv.sh python -c "from tools.fetch.tushare_fetcher import get_money_flow; print(get_money_flow('300274'))"
+# 项目封装 (v6.2.3): 走 storage.sync, --fflow flag
+bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
+# 直查: from tools.storage.sources.tushare import get_money_flow; print(get_money_flow('300274'))
 # 字段 (Tushare money_flow 真值, 单位 万元 → 内部转亿):
 #   buy_sm_vol/amount (小单买入手数/金额), sell_sm_* (小单卖出)
 #   buy_md_vol/amount (中单), sell_md_*
