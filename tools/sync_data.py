@@ -116,22 +116,34 @@ def action_financials(codes: list[str], period: str | None = None) -> int:
 
 
 def action_eps(codes: list[str]) -> int:
-    """EPS 机构预期 (datacenter.consensus) — 数据齐后跑"""
-    from tools.fetch.data_fetcher import get_eps_consensus
+    """EPS 机构预期 (东方财富 datacenter RPT_HSF10_RESPREDICT_COUNTSTATISTICS)
+
+    真实接口: tools/fetch/data_fetcher.py::_build_eps_table
+    走 datacenter.eastmoney.com (主) → Tushare 自建 NTM (备) → EMPTY
+    """
+    from tools.fetch.data_fetcher import _build_eps_table
     ok = 0
+    sources = {"datacenter_consensus": 0, "tushare_built_ntm": 0, "EMPTY": 0}
     for c in codes:
         try:
-            data = get_eps_consensus(c)
+            data, source = _build_eps_table(c)
+            sources[source] = sources.get(source, 0) + 1
             if data:
                 ok += 1
         except Exception as e:
             print(f"  ⚠️ {c} EPS 拉取失败: {e}")
-    print(f"  ✅ EPS consensus: {ok}/{len(codes)} 只")
+    print(f"  ✅ EPS consensus: {ok}/{len(codes)} 只 (datacenter {sources['datacenter_consensus']} / "
+          f"tushare 自建 {sources.get('tushare_built_ntm', 0)} / EMPTY {sources['EMPTY']})")
     return ok
 
 
 def action_fflow(codes: list[str]) -> int:
-    """主力资金流 (Tushare money_flow) — 最近 10-20 日"""
+    """主力资金流 (Tushare money_flow) — 最近 10-20 日
+
+    真实接口: tools/fetch/tushare_fetcher.py::get_money_flow
+    字段: buy_lg_*/buy_elg_* (大单/特大单买), sell_lg_*/sell_elg_* (卖), net_mf_amount (净流入, 万元)
+    2000 积分档可用 (Tushare 官方)
+    """
     from tools.fetch.tushare_fetcher import get_money_flow
     ok = 0
     for c in codes:
