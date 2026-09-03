@@ -1359,6 +1359,86 @@ class DataStore:
         except Exception:
             return []
 
+    # ============================================================
+    # 7 个 schema 接口 (2026-09-03 v6.2 加, 解决 watchlist/sectors/events 散落读)
+    # ============================================================
+
+    _WATCHLIST_PATH = Path("data/watchlist.json")
+
+    @classmethod
+    def load_watchlist(cls) -> dict:
+        """读整个 watchlist.json (顶层含 version/last_updated/stocks/changelog)
+
+        替代 7 处散落 json.load(open("data/watchlist.json"))
+        """
+        try:
+            return json.loads(cls._WATCHLIST_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {"version": "1.0", "stocks": []}
+
+    @classmethod
+    def save_watchlist(cls, data: dict) -> bool:
+        """原子写回 watchlist.json (写 tmp + rename, 避免半写状态)
+
+        Returns:
+            True 成功 / False 失败
+        """
+        try:
+            cls._WATCHLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cls._WATCHLIST_PATH.with_suffix(".json.tmp")
+            tmp.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            tmp.replace(cls._WATCHLIST_PATH)
+            return True
+        except Exception as e:
+            print(f"  ⚠️ save_watchlist 失败: {e}", file=__import__("sys").stderr)
+            return False
+
+    @classmethod
+    def add_to_watchlist(cls, code: str, name: str, sector: str = "",
+                          list_type: str = "自选", notes: str = "") -> bool:
+        """原子加股票到 watchlist (跳过已存在)
+
+        替代 magic_top20.py:353 _add_to_watchlist 散落实现
+        """
+        d = cls.load_watchlist()
+        existing = {s["code"] for s in d.get("stocks", [])}
+        if code in existing:
+            return False
+        d.setdefault("stocks", []).append({
+            "code": code,
+            "name": name,
+            "sector": sector,
+            "list_type": list_type,
+            "notes": notes,
+        })
+        d["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+        return cls.save_watchlist(d)
+
+    @classmethod
+    def remove_from_watchlist(cls, code: str) -> bool:
+        """原子删股票 from watchlist"""
+        d = cls.load_watchlist()
+        before = len(d.get("stocks", []))
+        d["stocks"] = [s for s in d.get("stocks", []) if s.get("code") != code]
+        if len(d["stocks"]) == before:
+            return False
+        d["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+        return cls.save_watchlist(d)
+
+    @classmethod
+    def update_watchlist_note(cls, code: str, note: str) -> bool:
+        """原子更新单只股票 note"""
+        d = cls.load_watchlist()
+        for s in d.get("stocks", []):
+            if s.get("code") == code:
+                s["notes"] = note
+                d["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+                return cls.save_watchlist(d)
+        return False
+
 
 # ============================================================
 # CLI 入口

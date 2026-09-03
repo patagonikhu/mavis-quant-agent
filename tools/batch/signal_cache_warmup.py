@@ -51,7 +51,7 @@ def _load_tech_codes() -> list[str]:
         return sorted(tech_codes & all_local)
     except Exception as exc:
         print(f"⚠️  科技股过滤失败: {exc}，降级到 watchlist")
-        wl = json.load(open("data/watchlist.json"))["stocks"]
+        wl = DataStore.load_watchlist()["stocks"]
         return [s["code"] for s in wl]
 
 
@@ -133,7 +133,7 @@ def main():
     elif args.codes:
         CODES = args.codes
     elif args.portfolio:
-        wl = json.load(open("data/watchlist.json"))["stocks"]
+        wl = DataStore.load_watchlist()["stocks"]
         CODES = [s["code"] for s in wl if s.get("list_type") == "持仓"]
         print(f"持仓: {len(CODES)} 只")
     else:

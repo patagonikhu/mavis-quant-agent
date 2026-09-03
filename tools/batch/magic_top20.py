@@ -28,7 +28,7 @@ magic_top20.py — Magic Formula 排名 + 摘要 + 加 watchlist (3 合 1, 2026-
 输出:
     1) docs/magic-top20.md              (Top N 表 + 统计)
     2) docs/magic-top20-summary.md      (Top N + PEG/DCF/Magic 4 项摘要, 卡点⭐ N/A)
-    3) data/watchlist.json              (加 list_type="Magic初筛", 跳已存在)
+    3) data/watchlist.json (via DataStore.load_watchlist)              (加 list_type="Magic初筛", 跳已存在)
     4) stdout: Top 5 速览
 """
 from __future__ import annotations
@@ -350,46 +350,36 @@ def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
 
 
 def _add_to_watchlist(top_n: list[dict], period: str):
-    """把 Top N 加到 data/watchlist.json (list_type=Magic初筛)"""
-    import json
-    watchlist_path = _TOOLS.parent / "data" / "watchlist.json"
-    wl = json.loads(watchlist_path.read_text(encoding="utf-8"))
-    existing = {s["code"] for s in wl["stocks"]}
+    """把 Top N 加到 data/watchlist.json (via DataStore.load_watchlist) (list_type=Magic初筛)
+
+    2026-09-03 v6.2 改: 走 DataStore.add_to_watchlist, 不直接 json 写
+    """
+    from tools.storage.store import DataStore
     today = datetime.now().strftime("%Y-%m-%d")
 
     added, skipped = 0, 0
     for r in top_n:
         code = r["code"]
-        if code in existing:
-            skipped += 1
-            continue
         notes = (
             f"[{today} Magic Top{r['rank']}] "
             f"ROC={r['roc']:.1f}% (rank {r['roc_rank']}) "
             f"EY={r['ey']:.2f}% (rank {r['ey_rank']}) "
             f"综合={r['combined_rank']} | 卡点⭐ 待 LLM 补"
         )
-        wl["stocks"].append({
-            "code": code,
-            "name": r["name"],
-            "sector": r["industry"],
-            "list_type": "Magic初筛",
-            "notes": notes,
-        })
-        existing.add(code)
-        added += 1
+        if DataStore.add_to_watchlist(code, r["name"], r["industry"], "Magic初筛", notes):
+            added += 1
+        else:
+            skipped += 1
 
-    wl["last_updated"] = today
-    wl.setdefault("changelog", []).append({
+    # changelog 单独 append (DataStore.add_to_watchlist 不管 changelog)
+    d = DataStore.load_watchlist()
+    d.setdefault("changelog", []).append({
         "date": today,
         "change": f"加 {added} 只 Magic Top 20 (list_type=Magic初筛, 跳过 {skipped} 只已存在)",
         "source": "docs/magic-top20.md (Greenblatt 联合排名)",
     })
-    watchlist_path.write_text(
-        json.dumps(wl, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    print(f"   加 {added} 只, 跳过 {skipped} 只, 现总 {len(wl['stocks'])} 只")
+    DataStore.save_watchlist(d)
+    print(f"   加 {added} 只, 跳过 {skipped} 只, 现总 {len(d['stocks'])} 只")
 
 
 # ============================================================

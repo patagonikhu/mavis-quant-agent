@@ -17,7 +17,7 @@ from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report
 
 
-wl = json.load(open('data/watchlist.json'))['stocks']
+wl = DataStore.load_watchlist()['stocks']
 stocks = wl
 today = datetime.date.today().isoformat()
 output_path = Path('docs/signal-watchlist.md')

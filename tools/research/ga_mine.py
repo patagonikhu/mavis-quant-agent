@@ -171,7 +171,7 @@ def run_ga(code: str = "300274", generations: int = None, pop: int = None):
     md_path = out_dir / f"ga_results_{code}_{datetime.now().strftime('%Y%m%d')}.md"
 
     with open(md_path, "w") as f:
-        f.write(f"""# GA 挖掘结果 — {code} {json.load(open('data/watchlist.json'))['watchlist'][0]['name'] if False else ''}
+        f.write(f"""# GA 挖掘结果 — {code} 
 
 **跑参**: {generations}代 × {pop}种群 | **耗时**: {(t1-t0):.0f}s
 **数据**: {len(df)} 根 K 线 | {df.index[0].date()} → {df.index[-1].date()}

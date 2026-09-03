@@ -84,6 +84,25 @@ def get_assumptions(sector_name: str):
     if not sector_name:
         return DEFAULT_ASSUMPTIONS
 
+
+
+def get_sector_from_code(code: str) -> list:
+    """从 stock code 反查所属板块 (2026-09-03 v6.2 改: 走 DataStore.get_ctx().industry)
+
+    之前读 sectors.json 的 sector_index_map, 76 个 code → sector 反转.
+    现在改从 stock_basic parquet 读 (industry 字段, 5549 只全覆盖, 跟 stock_basic 同步).
+
+    Args:
+        code: 6 位股票代码
+    Returns:
+        list of sector names (1 个, 旧版支持多板块归属)
+    """
+    try:
+        from tools.storage.store import DataStore
+        ctx = DataStore.get_ctx(code)
+        return [ctx.industry] if ctx.industry else []
+    except Exception:
+        return []
     # 精确匹配
     if sector_name in SECTOR_DCF_ASSUMPTIONS:
         return SECTOR_DCF_ASSUMPTIONS[sector_name]
@@ -95,94 +114,6 @@ def get_assumptions(sector_name: str):
 
     return DEFAULT_ASSUMPTIONS
 
-
-def get_sector_from_code(code: str, sectors_data: dict) -> list:
-    """从 stock code 找所有归属板块
-
-    Args:
-        code: 6 位股票代码
-        sectors_data: dict, sectors.json 的内容 (含 sector_index_map)
-
-    Returns:
-        list of sector names (空列表表示未找到)
-    """
-    if not sectors_data:
-        return []
-    index_map = sectors_data.get("sector_index_map", {})
-    return index_map.get(code, [])
-
-
-def add_stock_to_sector(code: str, sector_name: str):
-    """一键加股票到 sectors.json (板块 + 反转索引)
-
-    用法:
-        python3 tools/factors/valuation/dcf_engine.py add {code} {sector_name}
-
-    示例:
-        python3 tools/factors/valuation/dcf_engine.py add 688041 AI 芯片
-        python3 tools/factors/valuation/dcf_engine.py add 002747 人形机器人
-
-    行为:
-        1. 在 sectors["{sector_name}"]["codes"] 中加入 {code}
-        2. 在 sector_index_map[{code}] 中加入 {sector_name}
-        3. 保存到 data/sectors.json
-        4. 提示该板块的 DCF 假设 (来自 SECTOR_DCF_ASSUMPTIONS)
-    """
-    import json
-    from pathlib import Path
-
-    sectors_path = Path(__file__).parent.parent.parent.parent / "data/sectors.json"
-
-    # 加载
-    with open(sectors_path) as f:
-        data = json.load(f)
-
-    # 校验板块名
-    if sector_name not in SECTOR_DCF_ASSUMPTIONS and sector_name not in data["sectors"]:
-        print(f"⚠️ 警告: 板块 '{sector_name}' 既不在 SECTOR_DCF_ASSUMPTIONS 也不在 sectors.json")
-        print(f"   已知板块: {list(SECTOR_DCF_ASSUMPTIONS.keys())}")
-        print(f"   提示: 新板块需要在 SECTOR_DCF_ASSUMPTIONS 加一行 (WACC, FCF_factor, g)")
-        return False
-
-    # 加到 sectors["板块"]["codes"]
-    if sector_name not in data["sectors"]:
-        data["sectors"][sector_name] = {
-            "name": sector_name,
-            "codes": []
-        }
-
-    if code not in data["sectors"][sector_name]["codes"]:
-        data["sectors"][sector_name]["codes"].append(code)
-        print(f"✅ {sector_name}['codes'] 加入 {code}")
-    else:
-        print(f"  {sector_name}['codes'] 已存在 {code}, 跳过")
-
-    # 加到 sector_index_map
-    if "sector_index_map" not in data:
-        data["sector_index_map"] = {}
-
-    if code not in data["sector_index_map"]:
-        data["sector_index_map"][code] = []
-
-    if sector_name not in data["sector_index_map"][code]:
-        data["sector_index_map"][code].append(sector_name)
-        print(f"✅ sector_index_map[{code}] 加入 {sector_name}")
-    else:
-        print(f"  sector_index_map[{code}] 已存在 {sector_name}, 跳过")
-
-    # 写回
-    with open(sectors_path, "w") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"✅ 已保存到 {sectors_path}")
-
-    # 显示 DCF 假设
-    wacc, fcf, g = get_assumptions(sector_name)
-    print(f"\n📊 {sector_name} 的 DCF 假设 (用于 v9.1 DCF 矩阵):")
-    print(f"   WACC = {wacc*100:.1f}%")
-    print(f"   FCF_factor = {fcf} (净利润 → 自由现金流的转化系数)")
-    print(f"   永续 g = {g*100:.1f}%")
-
-    return True
 
 
 def dcf_calculate(e1, e2, e3, wacc, fcf_factor, g, growth_years=5):
@@ -284,12 +215,10 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "add":
         # 用法: python3 sector_assumptions.py add {code} {sector_name}
         # 例: python3 sector_assumptions.py add 688041 AI 芯片
-        if len(sys.argv) != 4:
-            print("用法: python3 sector_assumptions.py add {code} {sector_name}")
-            print(f"已 hardcode 板块: {list(SECTOR_DCF_ASSUMPTIONS.keys())}")
-            sys.exit(1)
-        code, sector = sys.argv[2], sys.argv[3]
-        add_stock_to_sector(code, sector)
+        # 2026-09-03 v6.2 删 add_stock_to_sector (写 sectors.json, 文件已删)
+        print("⚠️  v6.2 删 sectors.json: add 命令已失效")
+        print(f"   已知板块: {list(SECTOR_DCF_ASSUMPTIONS.keys())}")
+        print(f"   新板块: 在 SECTOR_DCF_ASSUMPTIONS 加一行 (WACC, FCF_factor, g)")
         sys.exit(0)
 
     # 自测
@@ -318,11 +247,10 @@ if __name__ == "__main__":
         cells = "  ".join(f"¥{v:.0f}亿" for v in row)
         print(f"{w*100:.1f}%   ", cells)
 
-    print("\n=== get_sector_from_code 反查 ===")
+    print("\n=== get_sector_from_code 反查 (2026-09-03 v6.2 改: 不再读 sectors.json) ===")
     test_codes = ["002475", "300274", "002371", "601138", "999999"]
-    sectors_data = json.load(open(Path(__file__).parent.parent.parent.parent / "data/sectors.json"))
     for c in test_codes:
-        s = get_sector_from_code(c, sectors_data)
+        s = get_sector_from_code(c)
         if s:
             print(f"  {c}: {s}")
         else:

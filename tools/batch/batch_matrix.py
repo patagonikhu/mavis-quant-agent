@@ -26,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-WATCHLIST_JSON = PROJECT_ROOT / "data" / "watchlist.json"
+
 DOCS_DIR = PROJECT_ROOT / "docs"
 
 # 默认 6 只持仓 (跟 watchlist 持仓顺序一致)
@@ -40,11 +40,11 @@ def _resolve_codes(args) -> list[str]:
     if args.holdings:
         return DEFAULT_HOLDINGS
     if args.all:
-        wl = json.load(open(WATCHLIST_JSON))
+        wl = DataStore.load_watchlist()
         return [s['code'] for s in wl.get('stocks', [])]
     if args.sector:
         # 板块筛选: 从 watchlist 找 industry / note 匹配的
-        wl = json.load(open(WATCHLIST_JSON))
+        wl = DataStore.load_watchlist()
         codes = []
         sector_kw = args.sector  # e.g. "CPO", "光模块"
         for s in wl.get('stocks', []):

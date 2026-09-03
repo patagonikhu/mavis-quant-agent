@@ -53,7 +53,7 @@ if args.all:
 elif args.codes:
     CODES = args.codes
 else:
-    wl = json.load(open("data/watchlist.json"))["stocks"]
+    wl = DataStore.load_watchlist()["stocks"]
     CODES = [s["code"] for s in wl if s.get("list_type") == "持仓"]
 
 print(f"[{len(CODES)} 只] 回看 {args.lookback}y | 持仓 {args.days}d | 阈值 {args.threshold}%")

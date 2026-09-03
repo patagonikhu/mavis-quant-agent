@@ -246,7 +246,7 @@ def _section_t_frame(data: RenderData) -> str:
 - **阶段:** {phase}
 - **信号强度:** {strength}
 - **操作建议:** {action}"""
-    return "> **数据状态:** ⚠️ T 框架未生成，需在 data/events.json 添加事件后重新 sync_watchlist_fresh\n"
+    return "> **数据状态:** ⚠️ T 框架未生成 (v6.2 删 events.json, T 事件由 LLM 外部查)\n"
 
 
 def _section_ga_factor(data: RenderData) -> str:
@@ -1718,36 +1718,16 @@ def _section_ts_basic(data: RenderData) -> str:
 
 
 def _section_t_events(data: RenderData) -> str:
-    """🎯 T 框架事件"""
-    import json as _json
-    from pathlib import Path
-    from datetime import datetime as _dt
-    events_path = Path("data/events.json")
-    events = []
-    if events_path.exists():
-        try:
-            all_ev = _json.loads(events_path.read_text(encoding="utf-8"))
-            events = [e for e in all_ev.get("events", []) if e.get("code") == data.code]
-        except Exception:
-            pass
-    if not events:
-        return f"> **数据状态:** ⚠️ {data.code} 无 T 框架事件，可在 data/events.json 手动添加\n"
-    today = _dt.now()
-    lines = ["| 事件 | 日期 | 性质 | 影响 | 距今 |", "|---|---|---|---|---|"]
-    for e in events[:10]:
-        try:
-            ev_date = e.get("event_date") or e.get("date", "")
-            delta = (_dt.strptime(ev_date, "%Y-%m-%d") - today).days if ev_date else 0
-            delta_str = f"T{delta//30:+d}月" if abs(delta) > 30 else f"T{delta:+d}天"
-        except Exception:
-            delta_str = "未知"
-            ev_date = e.get("event_date") or e.get("date", "未知")
-        name = e.get("description") or e.get("name") or e.get("event_type", "未知")
-        impact = e.get("impact", "中性")
-        etype = e.get("event_type") or e.get("type", "未知")
-        impact_emoji = "🟢" if impact == "正" else "🔴" if impact == "负" else "⬜"
-        lines.append(f"| {name[:30]} | {ev_date} | {etype} | {impact_emoji}{impact} | {delta_str} |")
-    return "\n".join(lines) + "\n\n> **数据源:** data/events.json\n"
+    """🎯 T 框架事件 (2026-09-03 v6.2 改: 删 events.json 依赖)
+
+    之前读 data/events.json 找 code 匹配的事件.
+    v6.2 删 events.json, 统一返'未配置'占位 (LLM 后续从外部查).
+    """
+    return (
+        f"> **数据状态:** ⚠️ {data.code} T 框架事件未配置\n"
+        f">\n"
+        f"> v6.2 删 events.json, T 事件需 LLM 从外部查 (财报/新闻/公告). 报告里这块留空占位.\n"
+    )
 
 
 # 2026-08-31: 删除 _section_ts_money_flow, fflow section 整体停用

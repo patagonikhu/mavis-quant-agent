@@ -55,6 +55,7 @@ _LGB_CFG = _load_lgb_config()
 import json
 import time
 from datetime import datetime
+from tools.storage.store import DataStore
 
 import numpy as np
 import pandas as pd
@@ -62,7 +63,6 @@ import lightgbm as lgb
 
 # === 跨机器路径 (2026-07-27) ===
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-WATCHLIST_JSON = PROJECT_ROOT / "data" / "watchlist.json"
 DOCS_DIR = PROJECT_ROOT / "docs"
 
 
@@ -136,7 +136,7 @@ def main(train_codes: list = None, predict_codes: list = None, out_path: str = N
                                   "600089", "600362", "601138", "002371", "002463",
                                   "002472", "002475", "688012", "688082", "688120",
                                   "300990", "000725"]
-    watchlist = json.load(open(WATCHLIST_JSON))["stocks"]
+    watchlist = DataStore.load_watchlist()["stocks"]
     predict_codes = predict_codes or [w["code"] for w in watchlist]
 
     print(f"🧮 LightGBM 多因子打分骨架")
