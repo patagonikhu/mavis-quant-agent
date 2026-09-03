@@ -170,7 +170,7 @@ def backtest_one(code: str):
             from_cache = True
             rows = cached
         # 缺失的日期不重算（回测是只读, 重算会触发 SQLite 写锁竞争）
-        # 想要全量数据请先跑: tools/batch/signal_cache_warmup.py
+        # 想要全量数据请先跑: tools.storage.sync --cache
 
     # 匹配信号
     hits = []

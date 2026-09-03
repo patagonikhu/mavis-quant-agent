@@ -355,4 +355,183 @@ def get_stats() -> dict:
     return {"rows": total, "codes": codes, "size_mb": round(size, 2)}
 
 
+# ============================================================
+# warmup_cache — sync_data --cache 唯一入口 (2026-09-03 v6.2.1 合并)
+# 之前在 tools/batch/signal_cache_warmup.py, 删 batch 文件, 搬这里
+# ============================================================
+
+def _load_tech_codes() -> list[str]:
+    """从 stock_basic.parquet 取申万科技行业股票，与本地 parquet 取交集。
+
+    2026-09-03 v6.2.1 改: 走 DataStore.load_stock_basic, 不直读 parquet
+    """
+    try:
+        from tools.storage.store import DataStore
+        df = DataStore.load_stock_basic()
+        if df.empty:
+            return []
+        TECH_KW = [
+            "半导体", "软件服务", "通信设备", "电子元件", "电子信息",
+            "计算机设备", "电气设备", "电器仪表", "光学光电子",
+            "互联网", "军工", "航天", "航空", "汽车电子", "机器人", "新能源",
+            "元器件", "专用机械", "IT设备", "新型电力",
+        ]
+        mask = df["industry"].fillna("").apply(
+            lambda x: any(kw in x for kw in TECH_KW)
+        )
+        tech_codes = set(df[mask]["ts_code"].apply(lambda c: c.split(".")[0]))
+        all_local = set(DataStore.list_codes())
+        return sorted(tech_codes & all_local)
+    except Exception as exc:
+        print(f"⚠️  科技股过滤失败: {exc}，降级到 watchlist")
+        from tools.storage.store import DataStore
+        wl = DataStore.load_watchlist()["stocks"]
+        return [s["code"] for s in wl]
+
+
+def _calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
+    """Phase1: 找最老的缺失段（最多 batch_size 根），只算那一段。
+
+    策略：
+    - 扫全量 K 线（5年），找所有 stale 日期
+    - 取最老的连续缺失段，最多 batch_size 根
+    - 计算时往前加 120 根缠论上下文缓冲
+    """
+    import time as _t
+    t0 = _t.time()
+    try:
+        from tools.storage.store import DataStore
+        ctx = DataStore.get_ctx(code)
+        if not ctx.kline:
+            return code, None, None, 0, _t.time() - t0
+
+        kline = ctx.kline
+        all_dates = [k["trade_date"].replace("-", "")[:8] for k in kline]
+
+        if full:
+            stale_dates = all_dates[:batch_size] if batch_size < len(all_dates) else all_dates
+            skipped = 0
+        else:
+            stale_map = check_stale_batch(code, all_dates, kline)
+            all_stale = [d for d in all_dates if stale_map.get(d, True)]
+            skipped = len(all_dates) - len(all_stale)
+            if not all_stale:
+                return code, {}, kline, skipped, _t.time() - t0
+            stale_dates = all_stale[:batch_size]
+
+        if not stale_dates:
+            return code, {}, kline, skipped, _t.time() - t0
+
+        first_stale_idx = next((i for i, d in enumerate(all_dates) if d == stale_dates[0]), 0)
+        last_stale_idx  = next((i for i, d in enumerate(all_dates) if d == stale_dates[-1]), first_stale_idx)
+        buf_start = max(0, first_stale_idx - 120)
+        compute_dates = all_dates[buf_start : last_stale_idx + 1]
+
+        from tools.analysis.analysis_engine import AnalysisEngine
+        history = AnalysisEngine().analyze_history(ctx, compute_dates)
+        stale_set = set(stale_dates)
+        to_write = {}
+        for d in compute_dates:
+            result = history.pop(d, None)
+            if d not in stale_set or result is None:
+                continue
+            to_write[d] = result
+        return code, to_write, kline, skipped, _t.time() - t0
+    except Exception:
+        return code, None, None, 0, _t.time() - t0
+
+
+def warmup_cache(codes: list[str] | None = None,
+                 scope: str = "tech",  # 'tech' | 'all' | 'portfolio' | 'codes'
+                 timeout: int = 600,
+                 workers: int = 2,
+                 batch_size: int = 250,
+                 full: bool = False) -> dict:
+    """预热 analysis_cache.db (sync_data --cache 唯一入口)
+
+    Args:
+        codes: 显式 codes 列表 (scope='codes' 时用)
+        scope: 股票池选择
+        timeout: 超时秒数
+        workers: 并发数
+        batch_size: 每次每只股票最多补多少根K线
+        full: 强制重算最老段 (不判断 stale)
+
+    Returns:
+        {"written": int, "skipped": int, "elapsed": float}
+    """
+    import time as _t
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from tools.storage.store import DataStore
+
+    # ── 收集 codes ──
+    if scope == "all":
+        CODES = DataStore.list_codes()
+        print(f"全市场: {len(CODES)} 只")
+    elif scope == "portfolio":
+        wl = DataStore.load_watchlist()["stocks"]
+        CODES = [s["code"] for s in wl if s.get("list_type") == "持仓"]
+        print(f"持仓: {len(CODES)} 只")
+    elif scope == "codes" and codes:
+        CODES = codes
+    else:
+        CODES = _load_tech_codes()
+        print(f"科技股: {len(CODES)} 只 (申万行业筛选 ∩ 本地K线)")
+
+    mode = "全量重算最老段" if full else "增量(从最老缺口补)"
+    print(f"预热 {len(CODES)} 只 | batch_size={batch_size}根/只 | {workers}并发 | {mode} | timeout={timeout}s")
+    print(f"初始缓存: {get_stats()}")
+    t0 = _t.time()
+
+    # ── Phase1: 并发算 (不写 DB) ──
+    results_map: dict[str, tuple] = {}
+    done = 0
+    total = len(CODES)
+    recent_times: list[float] = []
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_calc_signals_for_code, code, full, batch_size, 1): code
+                for code in CODES}
+        for fut in as_completed(futs):
+            code = futs[fut]
+            _, to_write, kline, skipped, elapsed = fut.result()
+            done += 1
+            results_map[code] = (to_write, kline, skipped, elapsed)
+            recent_times.append(elapsed)
+            if len(recent_times) > 20:
+                recent_times.pop(0)
+            avg = sum(recent_times) / len(recent_times)
+            remaining = total - done
+            eta = remaining * avg / workers
+            eta_str = f"{int(eta//60)}m{int(eta%60):02d}s" if eta < 9999 else "--"
+            tag = "⏭" if to_write == {} else ("❌" if to_write is None else f"+{len(to_write or {})}")
+            if done % 10 == 0 or to_write is None or (to_write and len(to_write) > 0):
+                pct = done / total * 100
+                print(f"  [{done:4d}/{total}] {pct:5.1f}%  ETA {eta_str}  {tag:>4} {code} {elapsed:.1f}s", flush=True)
+            if _t.time() - t0 >= timeout:
+                print(f"⏰ timeout {timeout}s 到，取消剩余 {remaining} 个任务，写已完成结果...")
+                for f in futs:
+                    f.cancel()
+                break
+
+    # ── Phase2: 串行写 (主线程, 无锁竞争) ──
+    print("\n── Phase2: 写缓存 ──")
+    total_written = total_skipped = 0
+    for code in CODES:
+        to_write, kline, skipped, elapsed = results_map.get(code, (None, None, 0, 0))
+        if to_write is None:
+            print(f"  ❌ {code}: 无数据")
+            continue
+        if to_write:
+            write_batch(code, kline, to_write)
+        total_written += len(to_write)
+        total_skipped += skipped
+
+    elapsed_total = _t.time() - t0
+    print(f"\n完成: 写{total_written:,}行 / 跳{total_skipped:,}行 / {done}只 / {elapsed_total:.0f}s")
+    final = get_stats()
+    print(f"缓存总: {final['rows']:,} 行 | {final['codes']} 只 | {final['size_mb']:.1f}MB")
+    return {"written": total_written, "skipped": total_skipped, "elapsed": elapsed_total}
+
+
 _init()

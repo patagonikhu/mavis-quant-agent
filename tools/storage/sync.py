@@ -13,7 +13,7 @@ tools/sync_data.py — 唯一 sync 入口 (2026-09-03 改造)
 历史: 之前 sync 逻辑散落在 5+ 文件:
   - tools/sync_watchlist_fresh.py (148 行, dump_one 有递归子进程 bug)
   - tools/kline_store.py (sync_incremental/sync_stock_basic/sync_financials)
-  - tools/batch/signal_cache_warmup.py
+  - tools.storage.sync --cache
   - 5 个 batch 脚本里偷偷调 sync_incremental
 现在全部走这里, 旧 sync_watchlist_fresh.py 在 v6.0 删除。
 
@@ -158,15 +158,14 @@ def action_fflow(codes: list[str]) -> int:
 
 
 def action_cache(codes: list[str]) -> int:
-    """signal_cache 缓存 (analysis_cache.db) — 分析结果缓存, 跑回测前必须先有"""
-    from tools.batch import signal_cache_warmup
-    # 走 signal_cache_warmup 的 main()
-    print(f"  ℹ️  调 signal_cache_warmup (codes={len(codes)} 只)...")
-    sys.argv = ["signal_cache_warmup", "--codes", *codes]
-    try:
-        signal_cache_warmup.main()
-    except SystemExit:
-        pass
+    """signal_cache 缓存 (analysis_cache.db) — 分析结果缓存, 跑回测前必须先有
+
+    2026-09-03 v6.2.1 改: 走 tools.storage.caches.analysis.warmup_cache
+    之前 subprocess 调 tools.storage.sync --cache (已删, 合并到 caches/)
+    """
+    from tools.storage.caches.analysis import warmup_cache
+    scope = "codes" if codes else "tech"
+    warmup_cache(codes=codes, scope=scope)
     return 0
 
 
@@ -353,7 +352,7 @@ def main():
     actions.add_argument("--fflow", action="store_true",
                          help="主力资金流 (Tushare.money_flow)")
     actions.add_argument("--cache", action="store_true",
-                         help="signal_cache 缓存 (signal_cache_warmup)")
+                         help="signal_cache 缓存 (analysis_cache.db)")
     actions.add_argument("--meta", action="store_true",
                          help="板块 / 事件元数据")
     actions.add_argument("--all-data", action="store_true",
