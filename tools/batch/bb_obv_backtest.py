@@ -18,7 +18,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
-import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DB = ROOT / "data" / "analysis_cache.db"

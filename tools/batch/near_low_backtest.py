@@ -237,12 +237,10 @@ def scan_one(code: str, lookback_years: int, drop: float, drop_max: float, gap: 
 
 
 def _load_all_basic() -> dict:
+    """加载 stock_basic + daily_basic (2026-09-03 v6.1.1 改: 走 DataStore)"""
     try:
-        import pyarrow.parquet as pq
-        tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
-        df = tbl.to_pandas()
-        # 市值从 daily_basic 拉 (total_share 字段在 basic 里全是 0)
-        # 1 次拉全市场 daily_basic 最新 1 条
+        from tools.kline_store import DataStore
+        df = DataStore.load_stock_basic()
         result = {}
         for _, row in df.iterrows():
             result[row["code"]] = {
@@ -251,10 +249,11 @@ def _load_all_basic() -> dict:
                 "market_cap": 0.0,  # 后面补
             }
         try:
-            db = pq.read_table("data/history/daily_basic/2026Q3.parquet").to_pandas()
-            db_latest = db.sort_values("trade_date").groupby("ts_code").tail(1)
-            for _, r in db_latest.iterrows():
-                # 600000.SH -> 600000
+            db = DataStore.load_all_daily_basic()
+            if not db.empty:
+                db_latest = db.sort_values("trade_date").groupby("ts_code").tail(1)
+                for _, r in db_latest.iterrows():
+                    # 600000.SH -> 600000
                 code = str(r["ts_code"]).split(".")[0]
                 total_share = float(r.get("total_share", 0) or 0)  # 万股
                 close = float(r.get("close", 0) or 0)

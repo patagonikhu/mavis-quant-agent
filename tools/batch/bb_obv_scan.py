@@ -31,11 +31,12 @@ if str(ROOT) not in sys.path:
 
 
 def _load_tech_codes() -> set:
-    """一次性加载科技股代码集合"""
+    """一次性加载科技股代码集合 (2026-09-03 v6.1.1 改: 走 DataStore.load_stock_basic)"""
     try:
-        import pyarrow.parquet as pq
-        tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
-        df = tbl.to_pandas()
+        from tools.kline_store import DataStore
+        df = DataStore.load_stock_basic()
+        if df.empty:
+            return set()
         TECH_KW = ["半导体", "软件服务", "通信设备", "电子", "计算机设备",
                     "电气设备", "电器仪表", "光学光电子", "互联网", "航空",
                     "军工", "航天", "汽车电子", "机器人", "新能源"]
@@ -52,9 +53,10 @@ def _load_all_basic() -> dict:
         {code: {"name": ..., "industry": ...}, ...}
     """
     try:
-        import pyarrow.parquet as pq
-        tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
-        df = tbl.to_pandas()
+        from tools.kline_store import DataStore
+        df = DataStore.load_stock_basic()
+        if df.empty:
+            return {}
         return {
             row["code"]: {"name": row.get("name", "") or "", "industry": row.get("industry", "") or ""}
             for _, row in df.iterrows()
@@ -219,10 +221,12 @@ def main():
     # 垃圾股过滤: ST/退市风险/北交所/小盘股 (从 stock_basic 拿名称 + 市值)
     if not args.no_junk_filter:
         try:
-            import pyarrow.parquet as pq
-            tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
-            sb = tbl.to_pandas()
-            sb_map = {row["code"]: row for _, row in sb.iterrows()}
+            from tools.kline_store import DataStore
+            sb = DataStore.load_stock_basic()
+            if sb.empty:
+                sb_map = {}
+            else:
+                sb_map = {row["code"]: row for _, row in sb.iterrows()}
             n_before = len(codes)
             codes_filtered = []
             for c in codes:

@@ -28,11 +28,15 @@ from tools.analysis.signal_cache import write_batch, get_stats, check_stale_batc
 
 
 def _load_tech_codes() -> list[str]:
-    """从 stock_basic.parquet 取申万科技行业股票，与本地 parquet 取交集。"""
+    """从 stock_basic.parquet 取申万科技行业股票，与本地 parquet 取交集。
+
+    2026-09-03 v6.1.1 改: 走 DataStore.load_stock_basic, 不直读 parquet
+    """
     try:
-        import pyarrow.parquet as pq
-        tbl = pq.read_table("data/history/stock_basic/stock_basic.parquet")
-        df = tbl.to_pandas()
+        from tools.kline_store import DataStore
+        df = DataStore.load_stock_basic()
+        if df.empty:
+            return []
         TECH_KW = [
             "半导体", "软件服务", "通信设备", "电子元件", "电子信息",
             "计算机设备", "电气设备", "电器仪表", "光学光电子",

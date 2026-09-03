@@ -131,7 +131,7 @@ def add_stock_to_sector(code: str, sector_name: str):
     import json
     from pathlib import Path
 
-    sectors_path = Path("/Users/kurt/workspace/mavis-quant-agent/data/sectors.json")
+    sectors_path = Path(__file__).parent.parent.parent.parent / "data/sectors.json"
 
     # 加载
     with open(sectors_path) as f:
@@ -320,7 +320,7 @@ if __name__ == "__main__":
 
     print("\n=== get_sector_from_code 反查 ===")
     test_codes = ["002475", "300274", "002371", "601138", "999999"]
-    sectors_data = json.load(open("/Users/kurt/workspace/mavis-quant-agent/data/sectors.json"))
+    sectors_data = json.load(open(Path(__file__).parent.parent.parent.parent / "data/sectors.json"))
     for c in test_codes:
         s = get_sector_from_code(c, sectors_data)
         if s:
