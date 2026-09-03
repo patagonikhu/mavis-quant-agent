@@ -15,7 +15,7 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
 使用方式 (必须先走 dump 层):
   # Step 1: dump 层拉数据 (唯一网络入口)
   # Step 2: 读数据 + 算 factor
-  from tools.kline_store import DataStore
+  from tools.storage.store import DataStore
   from tools.analysis.analysis_engine import AnalysisEngine
   from tools.analysis.render_data import RenderData
 
@@ -1651,11 +1651,11 @@ def _section_buy_sell_points(data: RenderData) -> str:
 def _section_market_context(data: RenderData) -> str:
     """🌍 大盘 + 美股背景 (2026-09-03 v6.1.1 改: 读本地 parquet, 不直连 tushare)
 
-    之前: from tools.fetch.tushare_fetcher import _safe_call; _safe_call("index_daily", ...)
+    之前: from tools.storage.sources.tushare import _safe_call; _safe_call("index_daily", ...)
     现在: read_kline(ts_code, limit=2) 走本地 parquet
     """
     try:
-        from tools.kline_store import read_kline
+        from tools.storage.store import read_kline
     except Exception:
         return "> **数据状态:** ⚠️ kline_store 不可用\n"
     indices = [("000001.SH", "上证指数"), ("000300.SH", "沪深300"),
@@ -1701,7 +1701,7 @@ def _section_data_sources(data: RenderData) -> str:
 
 def _section_ts_basic(data: RenderData) -> str:
     """📊 基础信息 (Tushare) — 从 DataStore 读"""
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     sb = DataStore.get_stock_basic(data.code)
     name     = sb.get("name")     or data.name or "未知"
     industry = sb.get("industry") or data.industry if hasattr(data, "industry") else "未知"
@@ -1959,7 +1959,7 @@ if __name__ == "__main__":
 
     test_code = sys.argv[1] if len(sys.argv) > 1 else "002371"
 
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.render_data import RenderData
     ctx    = DataStore.get_ctx(test_code)

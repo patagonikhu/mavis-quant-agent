@@ -33,7 +33,7 @@ if str(ROOT) not in sys.path:
 def _load_tech_codes() -> set:
     """一次性加载科技股代码集合 (2026-09-03 v6.1.1 改: 走 DataStore.load_stock_basic)"""
     try:
-        from tools.kline_store import DataStore
+        from tools.storage.store import DataStore
         df = DataStore.load_stock_basic()
         if df.empty:
             return set()
@@ -53,7 +53,7 @@ def _load_all_basic() -> dict:
         {code: {"name": ..., "industry": ...}, ...}
     """
     try:
-        from tools.kline_store import DataStore
+        from tools.storage.store import DataStore
         df = DataStore.load_stock_basic()
         if df.empty:
             return {}
@@ -74,7 +74,7 @@ def scan_one(code: str, window: int, boll_th: float, bbw_th: float,
     """
     t0 = time.time()
     try:
-        from tools.kline_store import DataStore
+        from tools.storage.store import DataStore
         from tools.analysis.analysis_engine import WyckoffStrategy, ObvStrategy
         # 科技股过滤
         if tech_codes is not None and code not in tech_codes:
@@ -210,18 +210,18 @@ def main():
         tech_codes = _load_tech_codes()
         scope = f"科技股 ({len(tech_codes)} 只)" if tech_codes else "科技股 (加载失败)"
 
-    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.sync_data --kline`
-    print(f"  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync_data --kline", flush=True)
+    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.storage.sync --kline`
+    print(f"  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.storage.sync --kline", flush=True)
 
     # 读代码列表: 直接走 DataStore (K线 parquet), 不走 analysis_cache.db (那是回测用的)
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     codes = DataStore.list_codes()
     print(f"  DataStore 加载: {len(codes)} 只 (K线 parquet, 0 网络)")
 
     # 垃圾股过滤: ST/退市风险/北交所/小盘股 (从 stock_basic 拿名称 + 市值)
     if not args.no_junk_filter:
         try:
-            from tools.kline_store import DataStore
+            from tools.storage.store import DataStore
             sb = DataStore.load_stock_basic()
             if sb.empty:
                 sb_map = {}
@@ -255,7 +255,7 @@ def main():
             # 4. 排除日成交额 < 5000 万的票 (流动性差, 主力难控盘)
             #    amount 单位: 千元 (Tushare 默认), 5000 万 = 5e4 千元
             try:
-                from tools.kline_store import DataStore
+                from tools.storage.store import DataStore
                 # 流动性过滤需要 amount (K 线字段, 不在 daily_basic)
                 amt_df = DataStore.load_all_daily_basic_lite()
                 if not amt_df.empty and "amount" in amt_df.columns:

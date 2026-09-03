@@ -75,7 +75,7 @@ def load_all_kline_5y() -> dict[str, list[dict]]:
 
     2026-09-03 v6.1.1 改: 走 DataStore.load_all_kline, 不直接 duckdb.execute
     """
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     return DataStore.load_all_kline(years=5.5)
 
 
@@ -95,9 +95,9 @@ def main():
     drop_th = args.drop / 100.0
     drop_max_th = args.drop_max / 100.0
 
-    from tools.kline_store import DataStore, _to_ts_code
-    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.sync_data --kline`
-    print("  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync_data --kline", flush=True)
+    from tools.storage.store import DataStore, _to_ts_code
+    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.storage.sync --kline`
+    print("  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.storage.sync --kline", flush=True)
     all_codes = DataStore.list_codes()
     print(f"Loaded: {len(all_codes)} 只股票 (本地历史库)")
 

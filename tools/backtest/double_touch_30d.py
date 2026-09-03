@@ -25,8 +25,8 @@ COOLDOWN = 30  # 同一只票最少间隔天数，避免重复计数
 def scan_one(code):
     """单只票: 优先读 signal_cache（boll_bpct），没有缓存才回退到 K 线计算"""
     try:
-        from tools.kline_store import read_kline
-        from tools.kline_store import _to_ts_code
+        from tools.storage.store import read_kline
+        from tools.storage.store import _to_ts_code
         rows = read_kline(_to_ts_code(code), limit=300)
         if len(rows) < 130:
             return []
@@ -48,7 +48,7 @@ def scan_one(code):
         # 尝试从 signal_cache 读 boll_bpct
         bp_map = {}
         try:
-            from tools.analysis.signal_cache import _conn
+            from tools.storage.caches.analysis import _conn
             conn = _conn()
             placeholders = ','.join(['?'] * len(dates))
             rows_db = conn.execute(
@@ -148,8 +148,8 @@ def main():
     print(f"  布林≤{BOLL}%  30d max_upside>{WIN_THRESHOLD}% 胜率（仅 signal_cache 覆盖的股票）")
     print("=" * 60)
 
-    from tools.analysis.signal_cache import _conn
-    from tools.kline_store import DataStore
+    from tools.storage.caches.analysis import _conn
+    from tools.storage.store import DataStore
 
     # 一次性从 cache 读所有 boll_bpct
     conn = _conn()
@@ -169,8 +169,8 @@ def main():
     # 读 K 线（只用 close + amount，不算 boll）
     def scan_one_cache(code):
         try:
-            from tools.kline_store import read_kline
-            from tools.kline_store import _to_ts_code
+            from tools.storage.store import read_kline
+            from tools.storage.store import _to_ts_code
             krows = read_kline(_to_ts_code(code), limit=300)
             if len(krows) < 130:
                 return []
@@ -249,8 +249,8 @@ def main():
 
     def scan_bsp(code):
         try:
-            from tools.kline_store import read_kline
-            from tools.kline_store import _to_ts_code
+            from tools.storage.store import read_kline
+            from tools.storage.store import _to_ts_code
             krows = read_kline(_to_ts_code(code), limit=300)
             if len(krows) < 30:
                 return []

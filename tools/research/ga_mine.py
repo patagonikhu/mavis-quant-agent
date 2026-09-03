@@ -38,10 +38,10 @@ from gplearn.genetic import SymbolicRegressor
 
 def fetch_features(code: str = "300274") -> pd.DataFrame:
     """从本地历史库读K线，算 7 个 factor 输出 + 基础 OHLCV"""
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     ctx = DataStore.get_ctx(code)
     if not ctx.kline:
-        raise FileNotFoundError(f"本地无K线: {code}，先跑 python -m tools.kline_store --init")
+        raise FileNotFoundError(f"本地无K线: {code}，先跑 python -m tools.storage.store --init")
 
     kline = ctx.kline
     df = pd.DataFrame({

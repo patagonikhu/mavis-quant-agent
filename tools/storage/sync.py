@@ -48,7 +48,7 @@ def _get_codes(scope: str, codes_arg: list[str], all_market: bool) -> list[str]:
         return [c.zfill(6) for c in codes_arg]
     if all_market:
         import pandas as pd
-        from tools.kline_store import STOCK_BASIC_PARQUET
+        from .store import STOCK_BASIC_PARQUET
         if not STOCK_BASIC_PARQUET.exists():
             print(f"  ⚠️ stock_basic.parquet 不存在, 先跑 --stock-basic")
             return []
@@ -67,7 +67,7 @@ def _get_codes(scope: str, codes_arg: list[str], all_market: bool) -> list[str]:
 
 def action_kline(codes: list[str], target_date: str | None = None) -> int:
     """增量 K 线 (含 daily_basic + 6 个指数) — sync_incremental 是全局操作, 不按 codes 过滤"""
-    from tools.kline_store import sync_incremental
+    from .store import sync_incremental
     n = sync_incremental(target_date=target_date)
     print(f"  ✅ K 线: {n} 条新增")
     return n
@@ -75,7 +75,7 @@ def action_kline(codes: list[str], target_date: str | None = None) -> int:
 
 def action_stock_basic(codes: list[str]) -> int:
     """股票基础信息 (行业/名称) — 一次性, 每月跑 1 次"""
-    from tools.kline_store import sync_stock_basic
+    from .store import sync_stock_basic
     n = sync_stock_basic()
     print(f"  ✅ stock_basic: {n} 行")
     return n
@@ -83,7 +83,7 @@ def action_stock_basic(codes: list[str]) -> int:
 
 def action_financials(codes: list[str], period: str | None = None) -> int:
     """财务 (5 季度全市场) — 季报出后跑 1 次"""
-    from tools.kline_store import sync_financials
+    from .store import sync_financials
     if period:
         n = sync_financials(period, codes=codes if codes else None)
         print(f"  ✅ financials {period}: {n} 行")
@@ -121,7 +121,7 @@ def action_eps(codes: list[str]) -> int:
     真实接口: tools/fetch/data_fetcher.py::_build_eps_table
     走 datacenter.eastmoney.com (主) → Tushare 自建 NTM (备) → EMPTY
     """
-    from tools.fetch.data_fetcher import _build_eps_table
+    from ..sources.eastmoney import _build_eps_table
     ok = 0
     sources = {"datacenter_consensus": 0, "tushare_built_ntm": 0, "EMPTY": 0}
     for c in codes:
@@ -144,7 +144,7 @@ def action_fflow(codes: list[str]) -> int:
     字段: buy_lg_*/buy_elg_* (大单/特大单买), sell_lg_*/sell_elg_* (卖), net_mf_amount (净流入, 万元)
     2000 积分档可用 (Tushare 官方)
     """
-    from tools.fetch.tushare_fetcher import get_money_flow
+    from ..sources.tushare import get_money_flow
     ok = 0
     for c in codes:
         try:
@@ -188,7 +188,7 @@ def action_meta(codes: list[str]) -> int:
 
 def action_status() -> int:
     """看现状, 不拉任何数据"""
-    from tools.kline_store import print_status_report
+    from .store import print_status_report
     print_status_report()
     return 0
 
@@ -201,7 +201,7 @@ def detect_stale_flags() -> dict[str, bool]:
     import duckdb
     from datetime import datetime, timedelta
     from pathlib import Path
-    from tools.kline_store import HISTORY_DIR, DAILY_BASIC_DIR, FIN_DIR, STOCK_BASIC_PARQUET
+    from .store import HISTORY_DIR, DAILY_BASIC_DIR, FIN_DIR, STOCK_BASIC_PARQUET
 
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")

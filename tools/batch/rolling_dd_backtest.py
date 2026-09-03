@@ -27,7 +27,7 @@ DB = ROOT / "data" / "analysis_cache.db"
 # 模块顶层 import
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 
 
 def find_max_drawdown_window(closes, dates, lookback_days=None):
@@ -197,7 +197,7 @@ def scan_one(code: str, lookback_years: int, drop: float, recent_drop: float,
 def _load_all_basic() -> dict:
     """加载 stock_basic + daily_basic (2026-09-03 v6.1.1 改: 走 DataStore)"""
     try:
-        from tools.kline_store import DataStore
+        from tools.storage.store import DataStore
         df = DataStore.load_stock_basic()
         result = {}
         for _, row in df.iterrows():

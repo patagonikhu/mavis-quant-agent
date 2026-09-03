@@ -62,7 +62,7 @@ allowed-tools:
 
 ```bash
 # 默认同步最新季 (H1 2026)
-bash tools/with_venv.sh python -c "from tools.kline_store import sync_financials; sync_financials()"
+bash tools/with_venv.sh python -c "from tools.storage.store import sync_financials; sync_financials()"
 # 续跑: 0 API (status='ok'/'skip' 跳过)
 # 首次全量: 1.2 秒
 ```

@@ -67,7 +67,7 @@ def render_one_matrix(code: str) -> str:
     v5.10.30 改: 走 AnalysisEngine.analyze_dump_to_dict() (内含 factor.* 3 周期桥接)
     v5.10.42 改: 删 RenderData.signals_5method property 兼容层 (5 处全部改读 data.analysis)
     """
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
 
     ctx = DataStore.get_ctx(code)

@@ -74,7 +74,7 @@ def get_eps(code: str, force: bool = False) -> list[dict]:
 
 def _fetch_eps_one(code: str) -> list[dict] | None:
     try:
-        from tools.fetch.data_fetcher import _build_eps_table
+        from ..sources.eastmoney import _build_eps_table
         table, source = _build_eps_table(code)
         if table:
             print(f"    EPS {code}: {len(table)} 条 (source={source})")

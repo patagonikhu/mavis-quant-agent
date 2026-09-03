@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pandas as pd
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 
 
 def load_data(code: str) -> pd.DataFrame:

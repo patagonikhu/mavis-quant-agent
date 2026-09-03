@@ -100,7 +100,7 @@ bash tools/with_venv.sh python3 << 'PYEOF'
 import sys, json
 from pathlib import Path
 sys.path.insert(0, '.')
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.render_data import RenderData
 from tools.analysis.analysis_result_signals import diff_rows, extract_signals

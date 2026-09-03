@@ -208,7 +208,7 @@ def calc_magic_score(code: str, market_cap: float) -> dict:
         dict 含 roc, ey, industry, skip_reason, ev_yi, seasonal_warning, period_label,
         ebit_yi, capital_yi, netdebt_yi, market_cap_yi
     """
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     financials = DataStore.get_financials(code, lookback_quarters=4)
     if not financials:
         return {
@@ -230,7 +230,7 @@ def batch_magic_scores(codes: list[str], with_market_cap: bool = True) -> list[d
         codes: 票列表
         with_market_cap: True (从 DataStore.get_daily_basic 拿市值), False (只算 ROC)
     """
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     results = []
     for code in codes:
         sb = DataStore.get_stock_basic(code)

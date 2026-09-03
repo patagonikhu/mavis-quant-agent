@@ -27,7 +27,7 @@ DB = ROOT / "data" / "analysis_cache.db"
 # 模块顶层 import (ThreadPool worker 需要)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 
 

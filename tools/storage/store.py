@@ -4,16 +4,16 @@ tools/kline_store.py — 统一数据访问层 + sync 工具 (合并自 kline_hi
 所有代码通过这里访问数据，不直接读文件。
 
 用法:
-    from tools.kline_store import DataStore, sync_incremental, read_kline
+    # (self import - same file)
 
     raw = DataStore.get_raw("002371")       # 替代 json.load(dump)
     ctx = DataStore.get_ctx("002371")       # 替代 RawContext.from_dump(dump)
     kline = DataStore.get_kline("002371")   # 单独取 K线
 
 CLI:
-    bash tools/with_venv.sh python -m tools.kline_store --init
-    bash tools/with_venv.sh python -m tools.kline_store            # 增量同步
-    bash tools/with_venv.sh python -m tools.kline_store --date 20260822
+    bash tools/with_venv.sh python -m tools.storage.sync --init
+    bash tools/with_venv.sh python -m tools.storage.sync            # 增量同步
+    bash tools/with_venv.sh python -m tools.storage.sync --date 20260822
 
 存储:
     data/history/daily/YYYYQN.parquet         # K 线 (按季切)
@@ -23,7 +23,7 @@ CLI:
 
 内部依赖:
     tools/eps_consensus_cache.py  — 低频缓存 (data/cache/eps/)
-    tools.fetch.tushare_fetcher    — Tushare 接口
+    ..sources.tushare    — Tushare 接口
 """
 
 from __future__ import annotations
@@ -391,7 +391,7 @@ def sync_incremental(target_date: str | None = None) -> int:
     之前 bug: 4 worker → 4 次 sync_incremental → Tushare 限流 + 重复拉数据
     修法: flock 跨进程互斥 + 进程内标志, 重复调用秒返回
     """
-    from tools.fetch.tushare_fetcher import get_daily_by_date, get_index_daily
+    from .sources.tushare import get_daily_by_date, get_index_daily
 
     # 进程内单次保护 (同进程内多次调)
     global _synced_in_process
@@ -435,7 +435,7 @@ def sync_incremental(target_date: str | None = None) -> int:
 
 def _do_sync_incremental(target_date: str | None = None) -> int:
     """实际 sync 逻辑 (被 sync_incremental 调用)"""
-    from tools.fetch.tushare_fetcher import get_daily_by_date, get_index_daily
+    from .sources.tushare import get_daily_by_date, get_index_daily
 
     today = target_date or _today()
     max_local = _get_local_max_date()
@@ -510,7 +510,7 @@ def sync_init(start_year: int = 2020) -> int:
     - 每月积攒完写一次文件（减少 IO）
     - 已有日期自动跳过（幂等），限流时先写盘再退出
     """
-    from tools.fetch.tushare_fetcher import get_daily_by_date
+    from .sources.tushare import get_daily_by_date
     from collections import defaultdict
 
     today = _today()
@@ -619,7 +619,7 @@ def sync_daily_basic(target_date: str | None = None) -> int:
 
     Returns: 新增的 bar 数量
     """
-    from tools.fetch.tushare_fetcher import get_daily_basic_by_date
+    from .sources.tushare import get_daily_basic_by_date
 
     today = target_date or _today()
     max_local = _get_db_max_date()
@@ -735,7 +735,7 @@ def sync_stock_basic() -> int:
             return 0
 
     print("  📥 stock_basic 全市场建档...")
-    from tools.fetch.tushare_fetcher import _safe_call
+    from .sources.tushare import _safe_call
     data, status = _safe_call(
         "stock_basic", exchange="", list_status="L",
         fields="ts_code,name,industry,list_date,market,total_share,float_share",
@@ -887,7 +887,7 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
     Returns:
         写入行数 (新增 + 覆盖)
     """
-    from tools.fetch.tushare_fetcher import _safe_call
+    from .sources.tushare import _safe_call
     import pandas as pd
 
     if codes is None:
@@ -1110,7 +1110,7 @@ class DataStore:
     @classmethod
     def get_weekly(cls, code: str, limit: int = 0) -> list[dict]:
         """周线，从日线聚合，升序。"""
-        from tools.fetch.data_fetcher import _synthesize_weekly
+        from .sources.eastmoney import _synthesize_weekly
         kline = cls.get_kline(code, limit=limit * 5 if limit else 0)
         return _synthesize_weekly(kline)
 
@@ -1127,7 +1127,7 @@ class DataStore:
     @classmethod
     def get_eps(cls, code: str) -> list[dict]:
         """EPS 机构一致预期表（每月更新）。"""
-        from tools.eps_consensus_cache import get_eps
+        from .caches.eps import get_eps
         return get_eps(code)
 
     @classmethod
@@ -1138,7 +1138,7 @@ class DataStore:
         limit: K线条数上限，0=使用 config 默认值（kline_days）。
         """
         from tools.analysis.analysis_engine import RawContext
-        from tools.fetch.data_fetcher import _synthesize_weekly
+        from .sources.eastmoney import _synthesize_weekly
 
         kline  = cls.get_kline(code, limit=limit)
         weekly = _synthesize_weekly(kline)

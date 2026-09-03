@@ -20,7 +20,7 @@ def main():
     ap.add_argument("--out", default=None, help="输出文件 (默认 stdout)")
     args = ap.parse_args()
 
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.render_data import RenderData
     from tools.render.report_renderer import _section_factor_history

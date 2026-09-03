@@ -69,7 +69,7 @@ DOCS_DIR = PROJECT_ROOT / "docs"
 # === 1. 基础特征工程 (8 维) ===
 def build_features(code: str) -> dict:
     """拉 8 个特征, 拼成一行 (走 fetch_all 获取最新数据)"""
-    from tools.fetch.data_fetcher import fetch_all
+    from tools.storage.sources.eastmoney import fetch_all
     raw = fetch_all(code)
     kline = raw.get("kline", [])
     if not kline or len(kline) < 60:

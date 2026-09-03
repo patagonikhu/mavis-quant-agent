@@ -228,17 +228,17 @@ def main() -> int:
     args = parser.parse_args()
 
     # 1) 找财务文件 (v6.1.1 改: 走 DataStore.load_financials_period, 不读 parquet)
-    from tools.kline_store import DataStore
+    from tools.storage.store import DataStore
     if args.period:
         df = DataStore.load_financials_period(args.period)
         if df.empty:
-            print(f"❌ 找不到 {args.period} 季度财务, 请先跑: python -m tools.sync_data --financials --period {args.period}")
+            print(f"❌ 找不到 {args.period} 季度财务, 请先跑: python -m tools.storage.sync --financials --period {args.period}")
             return 1
     else:
         # 取最新季: load_all_financials 找 max end_date
         all_fin = DataStore.load_all_financials()
         if all_fin.empty:
-            print("❌ 财务数据空, 请先跑: python -m tools.sync_data --financials")
+            print("❌ 财务数据空, 请先跑: python -m tools.storage.sync --financials")
             return 1
         latest_end = all_fin["end_date"].max()
         # end_date '20251231' → 季度 '2025Q4' (跟 parquet file stem 对齐)
@@ -321,10 +321,10 @@ def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
         # EPS 走 datacenter (绕开 watchlist gate, 写本地 cache)
         eps_table = get_eps_for_summary(code)
         # ctx 准备: 只用 EPS + current_price, 不需要 K线全量
-        from tools.kline_store import DataStore
+        from tools.storage.store import DataStore
         db = DataStore.get_daily_basic(code)
         market_cap_yi = (db.get("total_mv") or 0) / 1e4 if db else None
-        from tools.kline_store import DataStore as _DS
+        from tools.storage.store import DataStore as _DS
         ctx = _DS.get_ctx(code)
         current_price = ctx.current_price or (db.get("close") if db else None) or 0
 
@@ -403,7 +403,7 @@ def get_eps_for_summary(code: str) -> list[dict]:
     现在: 只读本地 EPS_DIR/{code}.json; 缺数据时返空, 提示先跑 /t-sync-data --eps
     """
     import json
-    from tools.eps_consensus_cache import EPS_DIR
+    from tools.storage.caches.eps import EPS_DIR
     path = EPS_DIR / f"{code}.json"
     if path.exists() and path.stat().st_size > 10:
         try:

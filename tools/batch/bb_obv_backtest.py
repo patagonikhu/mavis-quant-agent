@@ -26,7 +26,7 @@ DB = ROOT / "data" / "analysis_cache.db"
 import sys
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 
 
 def _load_codes_with_obv(min_date: str) -> list[str]:
@@ -50,7 +50,7 @@ def _load_index_state(min_date: str, code: str = "000688.SH") -> dict:
       bear  (<-0.3%/日): 熊市, 关闭
     """
     try:
-        from tools.kline_store import read_kline
+        from tools.storage.store import read_kline
         idx = read_kline(code, start_date=min_date)
         if not idx or len(idx) < 25:
             return {}

@@ -22,7 +22,7 @@ data_fetcher.py — 统一数据抓取层 (v4.0, 2026-07-22)
 保留但已无调用, 后续清理。
 
 使用方式:
-  from tools.fetch.data_fetcher import get_realtime_price
+  from tools.storage.sources.eastmoney import get_realtime_price
   data, status = get_realtime_price("002371")
   if status == "OK":
       print(data["price"])
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 import pathlib as _pl
 try:
     import yaml as _yaml
-    _CFG_PATH = _pl.Path(__file__).parent.parent.parent / "config" / "project.yaml"
+    _CFG_PATH = _pl.Path(__file__).parent.parent.parent.parent / "config" / "project.yaml"
     with open(_CFG_PATH, encoding="utf-8") as _f:
         _PROJECT_CFG = _yaml.safe_load(_f) or {}
 except FileNotFoundError:
@@ -244,7 +244,7 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
     历史 (v3.1): web.ifzq 腾讯备源 WAF 频发, 已移除
     """
     try:
-        from tools.fetch.tushare_fetcher import get_daily as _ts_daily
+        from .tushare import get_daily as _ts_daily
     except Exception as e:
         return None, f"IMPORT_FAIL_{type(e).__name__}"
 
@@ -283,7 +283,7 @@ def get_fund_flow(code: str, days: int = 10) -> tuple[list[dict] | None, str]:
     历史: Tushare.money_flow 直接调, 2026-07-22 整合
     """
     try:
-        from tools.fetch.tushare_fetcher import get_money_flow as _ts_mf
+        from .tushare import get_money_flow as _ts_mf
     except Exception as e:
         return None, f"IMPORT_FAIL_{type(e).__name__}"
 
@@ -333,7 +333,7 @@ def _build_eps_table(code: str) -> tuple[list[dict] | None, str]:
       tushare 自建: E0=1.12 / E1=1.232 / ... (Q1 单季 EPS 推全年, 错 6 倍)
       → 优先 datacenter!
     """
-    from tools.fetch.tushare_fetcher import _code_to_ts as _to_ts_code
+    from .tushare import _code_to_ts as _to_ts_code
     try:
         import urllib.request
         import urllib.parse
@@ -411,7 +411,7 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     """
     from datetime import datetime
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from tools.fetch.tushare_fetcher import (
+    from .tushare import (
         get_stock_basic as _ts_sb,
         get_daily as _ts_daily,
         get_daily_basic as _ts_db,
@@ -632,8 +632,8 @@ def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
         "_source": "local",
     }
 
-    from tools.kline_store import read_kline
-    from tools.eps_consensus_cache import get_daily_basic, get_stock_basic, get_eps
+    from ..store import read_kline
+    from ..caches.eps import get_daily_basic, get_stock_basic, get_eps
 
     ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"
 

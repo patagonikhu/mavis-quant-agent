@@ -35,7 +35,7 @@ allowed-tools:
 
 ```bash
 # 检查本地数据（< 400 只需先跑 kline_store）
-bash tools/with_venv.sh python3 -c "from tools.kline_store import DataStore; print(f'本地: {len(DataStore.list_codes())} 只')"
+bash tools/with_venv.sh python3 -c "from tools.storage.store import DataStore; print(f'本地: {len(DataStore.list_codes())} 只')"
 
 # 后台跑（8 worker, ~10s）
 bash tools/with_venv.sh python3 tools/batch/find_near_low.py --write-md
@@ -75,7 +75,7 @@ bash tools/with_venv.sh python3 tools/batch/find_near_low.py --write-md
 ```bash
 bash tools/with_venv.sh python3 << 'PYEOF'
 import sys; sys.path.insert(0, '.')
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report

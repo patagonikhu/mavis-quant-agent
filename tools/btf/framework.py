@@ -107,7 +107,7 @@ class AnalysisCacheData(DataLayer):
         df_val = df_val.rename(columns={"date_str": "date"})
 
         # 2) 拿 close (v6.1.1 改: 走 DataStore.load_all_kline, 不直接 duckdb)
-        from tools.kline_store import DataStore, _to_ts_code
+        from tools.storage.store import DataStore, _to_ts_code
         all_kl = DataStore.load_all_kline(years=10)  # 取多, 后面 filter start/end
         if not all_kl:
             return df_val

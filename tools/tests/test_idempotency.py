@@ -3,7 +3,7 @@ test_idempotency.py — render_report 幂等性测试
 用法: PYTHONPATH=. python3 tools/test_idempotency.py [code]
 """
 import hashlib, sys
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report

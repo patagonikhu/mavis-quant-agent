@@ -121,5 +121,5 @@ if __name__ == "__main__":
         print(f"  {file}:{line}")
         print(f"    违规: {desc}")
         print(f"    代码: {text}")
-        print(f"    改法: 改用 tools.fetch.tushare_fetcher.get_*() 或 DataStore\n")
+        print(f"    改法: 改用 tools.storage.sources.tushare.get_*() 或 DataStore\n")
     sys.exit(1)

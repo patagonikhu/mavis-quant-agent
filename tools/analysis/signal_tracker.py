@@ -51,7 +51,7 @@ if str(ROOT) not in sys.path:
 def fetch_price(code):
     """拉今日价格 (走 tushare_fetcher 直连, 2026-08-26 删 data_source 间接层)"""
     try:
-        from tools.fetch.tushare_fetcher import get_daily_basic
+        from tools.storage.sources.tushare import get_daily_basic
         rows, status = get_daily_basic(code, limit=1)
         if status != "OK" or not rows:
             return None
@@ -68,7 +68,7 @@ def fetch_price(code):
 def fetch_kline_range(code, start_date, end_date):
     """拉 start_date 到 end_date 之间的 K 线 (走 tushare_fetcher, 2026-08-26 删 data_source 间接层)"""
     try:
-        from tools.fetch.tushare_fetcher import get_daily
+        from tools.storage.sources.tushare import get_daily
         bars, status = get_daily(code, limit=400)
         if status != "OK" or not bars:
             return []

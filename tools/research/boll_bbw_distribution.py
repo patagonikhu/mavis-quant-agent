@@ -17,7 +17,7 @@ import os
 os.chdir(_PROJECT)
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
 import pandas as pd
 
@@ -42,14 +42,14 @@ codes = df_basic.loc[mask, "ts_code"].str[:6].tolist()
 print(f"科技股池: {len(codes)} 只")
 
 # 2) 同步全量 (确保 20260901 数据在) — v6.1.1 改: 走 /t-sync-data, 不直接调 sync_incremental
-# 跑前用户先: python -m tools.sync_data --kline
-print("  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync_data --kline", flush=True)
+# 跑前用户先: python -m tools.storage.sync --kline
+print("  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.storage.sync --kline", flush=True)
 
 # 3) 取最近 2 个交易日 (v6.1.1 改: 走 DataStore.load_all_daily_basic, 不直读 parquet)
-from tools.kline_store import DataStore
+from tools.storage.store import DataStore
 db = DataStore.load_all_daily_basic()
 if db.empty:
-    print("❌ 无 daily_basic, 请先跑: python -m tools.sync_data --kline")
+    print("❌ 无 daily_basic, 请先跑: python -m tools.storage.sync --kline")
     sys.exit(1)
 last_dates = sorted(db["trade_date"].drop_duplicates().tail(2).tolist())
 print(f"最近 2 个交易日: {last_dates}")

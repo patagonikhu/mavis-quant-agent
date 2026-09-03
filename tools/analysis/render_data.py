@@ -14,7 +14,7 @@ render_data.py — 分析数据契约 (v1.0, 2026-07-21)
   5. 零依赖: 用标准库 dataclass, 不需要 pydantic
 
 使用方式:
-  from tools.kline_store import DataStore
+  from tools.storage.store import DataStore
   from tools.analysis.analysis_engine import AnalysisEngine
   from tools.analysis.render_data import RenderData
 
@@ -476,7 +476,7 @@ class RenderData:
                         deviation=round((current / ma - 1) * 100, 2),
                     ))
             try:
-                from tools.fetch.data_fetcher import compute_indicators
+                from tools.storage.sources.eastmoney import compute_indicators
                 technical = compute_indicators(kline_raw)
             except Exception as e:
                 technical = {"error": str(e)}
