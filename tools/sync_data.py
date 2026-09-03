@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/sync.py — 唯一 sync 入口 (2026-09-03 改造)
+tools/sync_data.py — 唯一 sync 入口 (2026-09-03 改造)
 
 设计原则:
   1. 唯一入口, 7 个 flag 正交控制, 互不耦合
@@ -380,7 +380,7 @@ def main():
             f"指定 {len(_last_codes)} 只" if args.codes else f"全市场 {len(_last_codes)} 只"
         )
         mode = "auto-force" if args.auto_force else ("auto-dry" if args.auto_dry else "auto")
-        print(f"=== Mavis datasync (scope: {scope}) [{mode}] ===")
+        print(f"=== Mavis sync_data (scope: {scope}) [{mode}] ===")
         return action_auto(
             force=args.auto_force,
             quiet=args.auto_dry,
@@ -407,10 +407,10 @@ def main():
         args.eps, args.fflow, args.cache, args.meta, args.all_data,
     ])
     if not any_sync_flag:
-        print(f"=== Mavis sync (scope: {scope_label}) [默认 --auto 智能检测] ===")
+        print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")
         return action_auto(force=False, quiet=False)
 
-    print(f"=== Mavis sync (scope: {scope_label}) ===")
+    print(f"=== Mavis sync_data (scope: {scope_label}) ===")
     start = time.time()
 
     # --all-data 是个 alias, 相当于 --kline --stock-basic --financials

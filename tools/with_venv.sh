@@ -2,12 +2,12 @@
 # tools/with_venv.sh — 自动激活 .venv 跑项目命令 (固化环境, 避免每次 source)
 #
 # 用法:
-#   bash tools/with_venv.sh python -m tools.datasync --codes 002371
+#   bash tools/with_venv.sh python -m tools.sync_data --codes 002371
 #   bash tools/with_venv.sh python3 tools/analyze_data.py
 #   bash tools/with_venv.sh bash tools/pull_all.sh
 #
 # 等价于:
-#   source .venv/bin/activate && python -m tools.datasync --codes 002371
+#   source .venv/bin/activate && python -m tools.sync_data --codes 002371
 #
 # 自动 fallback: 如果 .venv 不存在, 跑 tools/setup_venv.sh 一键建 (uv sync + uv pip install)
 #   整个流程 < 60s, 任何机器一气呵成
@@ -41,7 +41,7 @@ source .venv/bin/activate
 # 3. 没参数 → 进 REPL
 if [ $# -eq 0 ]; then
     echo "✅ .venv 已激活 ($(python3 --version))"
-    echo "💡 提示: 不传参数进 REPL, 或传命令 (如 python -m tools.datasync --codes 002371)"
+    echo "💡 提示: 不传参数进 REPL, 或传命令 (如 python -m tools.sync_data --codes 002371)"
     exec python3
 fi
 

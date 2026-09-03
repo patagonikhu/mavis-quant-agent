@@ -208,8 +208,8 @@ def main():
         tech_codes = _load_tech_codes()
         scope = f"科技股 ({len(tech_codes)} 只)" if tech_codes else "科技股 (加载失败)"
 
-    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.datasync --kline`
-    print(f"  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.datasync --kline", flush=True)
+    # v6.0 改: 不再偷偷 sync, 跑前用户先 `python -m tools.sync_data --kline`
+    print(f"  ℹ️  本脚本 0 网络, 缺数据请先跑: python -m tools.sync_data --kline", flush=True)
 
     # 读代码列表: 直接走 DataStore (K线 parquet), 不走 analysis_cache.db (那是回测用的)
     from tools.kline_store import DataStore

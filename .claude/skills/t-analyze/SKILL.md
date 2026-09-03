@@ -15,8 +15,8 @@ allowed-tools:
 > ❌ 禁止用 `c_d` (close) 当 `hist` 参数调背驰函数（必须用 `_calc_macd_hist(c_d)`）
 
 > 🚨 **拉数据铁律 (2026-09-03 v6.1)**
-> 跑这个 skill 前，先调 `/t-sync` 走 `tools/datasync.py` 拉数据（也可不调，前提是 parquet 已有数据）。
-> 默认 `python -m tools.datasync` 走 `--auto` 智能检测 stale, 只跑需跑的; 强制全跑用 `python -m tools.datasync --all-data`。
+> 跑这个 skill 前，先调 `/t-sync` 走 `tools/sync_data.py` 拉数据（也可不调，前提是 parquet 已有数据）。
+> 默认 `python -m tools.sync_data` 走 `--auto` 智能检测 stale, 只跑需跑的; 强制全跑用 `python -m tools.sync_data --all-data`。
 
 ## 入口判断
 
@@ -93,7 +93,7 @@ SIG_CODES: 000001, 002475, ...
 
 ```bash
 # Step A: 拉数据（可选，parquet 已有则跳过）
-bash tools/with_venv.sh python -m tools.datasync --codes {code}
+bash tools/with_venv.sh python -m tools.sync_data --codes {code}
 
 # Step B: 分析 + 渲染 MD
 bash tools/with_venv.sh python3 << 'PYEOF'
