@@ -475,15 +475,16 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
 
 ---
 
-## 五个 Slash 命令 (2026-08-28 清理后)
+## 六个 Slash 命令 (2026-08-28 清理后)
 
 | 命令 | 用途 |
 |---|---|
 | `/t-analyze <code> [name] [--no-news]` | 单标的完整分析 (22 section 详报, 写 docs/portfolio/ 或 docs/watchlist/) |
 | `/t-analyze --all` | 批量扫 watchlist (71 只, 含 4 指数), 后台 ~90s 跑完 |
 | `/t-backtest <signal>` | 信号回测 (5 年历史, 走 signal_cache 命中 O(1) 读) |
-| `/t-sync-cache [--portfolio]` | 增量补全 signal_cache.db (5 年, 断点续跑) |
+| `/t-sync-data [--all / --codes X / --kline / --fflow / --cache / --financials / --eps / --stock-basic / --stk-factor]` | 7 flag 正交 sync, 默认 `--auto` 智能检测 stale |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 <3%"清单 |
 | `/t-bb-obv [--window 5]` | 科技股扫 BOLL<15% + BBW<10% + OBV 5日/趋势 (compute_factor_history **直算**, 不走 cache) |
+| `/t-magic [--top N] [--period 2026Q2] [--skip-watchlist]` | Magic Formula 排名 (Greenblatt ROC+EY 双优), 0 网络, 追加到 watchlist |
 
 **已删除** (过时的): `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking`
