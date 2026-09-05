@@ -22,7 +22,7 @@ CLI:
     data/history/financials/YYYYQN.parquet    # 财务指标 (Magic Formula 用)
 
 内部依赖:
-    tools/eps_consensus_cache.py  — 低频缓存 (data/cache/eps/)
+    tools/eps_consensus_cache.py  — 低频缓存 (data/history/eps/, parquet)
     ..sources.tushare    — Tushare 接口
 """
 
@@ -42,8 +42,12 @@ from pathlib import Path
 HISTORY_DIR = Path("data/history/daily")
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
-DAILY_BASIC_DIR = Path("data/history/daily_basic")
-DAILY_BASIC_DIR.mkdir(parents=True, exist_ok=True)
+# v6.2.4 改: 路径名 daily_basic → stk_factor
+# 实际数据是 stk_factor_pro 拉的 (16 列, 含 ps/dv_ratio/float_share/turnover_rate_f)
+# 保留 DAILY_BASIC_DIR 别名给老代码用, 优先用 STK_FACTOR_DIR
+STK_FACTOR_DIR = Path("data/history/stk_factor")
+STK_FACTOR_DIR.mkdir(parents=True, exist_ok=True)
+DAILY_BASIC_DIR = STK_FACTOR_DIR  # v6.2.4 兼容别名, 后续可删
 
 STOCK_BASIC_DIR = Path("data/history/stock_basic")
 STOCK_BASIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -492,7 +496,10 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
             time.sleep(0.3)
 
     # 同步 daily_basic（PE/PB/市值）
-    sync_daily_basic(target_date)
+    # v6.2.4 修: sync_daily_basic 不再被 sync_incremental 调, 改由 --stk-factor 接管
+    # 之前 sync_daily_basic 写 11 列 (缺 ps/dv/float_share/turnover_rate_f)
+    # 现在 daily_basic 走 stk_factor_pro 16 列, 单独由 action_stk_factor 写
+    # sync_daily_basic(target_date)  # ⚠️ v6.2.4 弃用, 走 --stk-factor
 
     # 同步 stock_basic（名称/行业，30天内不重拉）
     sync_stock_basic()
@@ -725,6 +732,9 @@ def sync_stock_basic() -> int:
     """一次拉全市场 stock_basic，存 parquet。30天内不重拉。
 
     Returns: 股票数量
+
+    v6.2.4 修: 跨积分档 stock_basic 都不返 total_share/float_share, 落盘后读出 0
+    解决: 落盘前用 stk_factor_pro (按 trade_date=最近 1 日) 补 total_share/float_share
     """
     import pandas as pd
 
@@ -746,6 +756,43 @@ def sync_stock_basic() -> int:
 
     df = pd.DataFrame(data)
     df["code"] = df["ts_code"].str.split(".").str[0]
+
+    # 2026-09-04 修: 跨积分档 stock_basic 都不返 total_share, 用本地 stk_factor_pro parquet 兜底
+    # 注意: 不能用 _latest_trade_date, 今天 (盘后) stk_factor_pro 还没出
+    # 用本地 parquet 最新一天 (一定有数据, 除非全新 sync 第一次)
+    try:
+        import duckdb as _dd
+        # 从本地 daily_basic 找最新一天 (1 次 SQL, 0 网络)
+        local_date = _dd.execute("""
+            SELECT MAX(trade_date) FROM read_parquet('data/history/daily_basic/*.parquet')
+        """).fetchone()[0]
+        if not local_date:
+            raise RuntimeError("本地 daily_basic parquet 空")
+        print(f"  📊 用本地 daily_basic@{local_date} 补 total_share/circ_share...")
+        db_df = _dd.execute(f"""
+            SELECT ts_code, total_share, circ_mv
+            FROM read_parquet('data/history/daily_basic/*.parquet')
+            WHERE trade_date = '{local_date}'
+        """).df()
+        db_df["code"] = db_df["ts_code"].str.split(".").str[0]
+        # circ_mv 是流通市值 (万元), 股价 (元) → 流通股数 (万股)
+        # 万股 = 万元 / 元 (1万 = 1元 × 1万股 = 1万元市值)
+        # 示例: 25244873 万 / 159.02 元 = 158753 万股 = 15.88 亿股 ✅
+        price_df = _dd.execute(f"""
+            SELECT ts_code, close FROM read_parquet('data/history/daily_basic/*.parquet')
+            WHERE trade_date = '{local_date}'
+        """).df()
+        db_df = db_df.merge(price_df, on="ts_code", how="left")
+        db_df["float_share"] = (db_df["circ_mv"] / db_df["close"]).round(2)  # 万股
+        db_df = db_df.drop(columns=["circ_mv", "close"], errors="ignore")
+        # merge: 覆盖 stock_basic 的 total_share/float_share (NaN 来自跨积分档都缺)
+        df = df.drop(columns=["total_share", "float_share"], errors="ignore")
+        df = df.merge(db_df[["code", "total_share", "float_share"]], on="code", how="left")
+        n_filled = df["total_share"].notna().sum()
+        print(f"  ✅ 补 {n_filled}/{len(df)} 只股本")
+    except Exception as e:
+        print(f"  ⚠️ daily_basic 兜底失败: {e}")
+
     import duckdb
     duckdb.execute(f"COPY (SELECT * FROM df) TO '{STOCK_BASIC_PARQUET}' (FORMAT PARQUET)")
     print(f"  ✅ stock_basic 建档完成: {len(df)} 只 → {STOCK_BASIC_PARQUET}")
@@ -919,13 +966,15 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
         return 0   # DB 全 ok 或全 skip, 0 次 API
 
     # Phase 2: 1 次 VIP API 拿全市场 (5000 积分档, 不限流)
+    # v6.2.4 改: fina_indicator_vip 跨积分档不返 eps, 拿掉避免返空
+    # EPS 走 datacenter.eastmoney.com (--eps flag, 独立渠道)
     print(f"  📡 fina_indicator_vip period={period} (目标 {len(to_pull)} 只)")
     data, status = _safe_call(
         "fina_indicator_vip",
         period=period,
         fields=(
             "ts_code,end_date,ebit,fixed_assets,networking_capital,"
-            "interestdebt,netdebt,eps"
+            "interestdebt,netdebt"
         ),
     )
     if not data:
@@ -954,13 +1003,17 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
     df_hit = df_all[df_all["code"].isin(to_pull)].copy()
 
     # Phase 4: 标记 industry + fetched_at + 改字段名 (Tushare 'eps' → 我们 'eps_period')
+    # v6.2.4 改: fields 不再含 eps, eps_period 直接 None (EPS 走 datacenter 单独渠道)
     industry_map = _fin_load_industry_map(to_pull)
     df_hit["industry"] = df_hit["code"].map(industry_map).fillna("")
     df_hit["fetched_at"] = _fin_now()
     df_hit["fetch_status"] = "ok"
     df_hit["error_msg"] = None
-    df_hit["eps_period"] = df_hit["eps"]
-    df_hit = df_hit.drop(columns=["eps"])
+    if "eps" in df_hit.columns:
+        df_hit["eps_period"] = df_hit["eps"]
+        df_hit = df_hit.drop(columns=["eps"])
+    else:
+        df_hit["eps_period"] = None
 
     # Phase 5: VIP 没返的票, 标 skip (永久不再拉)
     hit_codes = set(df_hit["code"].tolist())

@@ -66,11 +66,136 @@ def _get_codes(scope: str, codes_arg: list[str], all_market: bool) -> list[str]:
 # ============================================================
 
 def action_kline(codes: list[str], target_date: str | None = None) -> int:
-    """增量 K 线 (含 daily_basic + 6 个指数) — sync_incremental 是全局操作, 不按 codes 过滤"""
+    """增量 K 线 (含 6 个指数) — sync_incremental 是全局操作, 不按 codes 过滤"""
     from .store import sync_incremental
     n = sync_incremental(target_date=target_date)
     print(f"  ✅ K 线: {n} 条新增")
     return n
+
+
+# v6.2.4 加: stk_factor_pro 替代 daily_basic, 16 列 (含 ps/dv_ratio/free_float_turnover)
+STK_FACTOR_PROGRESS = Path("data/history/.stk_factor_progress.json")
+STK_FACTOR_FIELDS = (
+    "ts_code,trade_date,close,"
+    "pe,pe_ttm,pb,ps,ps_ttm,"
+    "dv_ratio,dv_ttm,"
+    "total_mv,circ_mv,"
+    "turnover_rate,turnover_rate_f,volume_ratio,"
+    "total_share,float_share"
+)
+
+
+def action_stk_factor(force: bool = False) -> int:
+    """重拉 5 季 stk_factor_pro (16 列, 写到 data/history/stk_factor/)
+
+    行为:
+      1. 删旧 5 季 daily_basic parquet (force=True 强制, False 智能)
+      2. 拉 240 trade_date x 1 API = 8 分钟 (30/分限频, sleep 2.0秒)
+      3. 按 trade_date 写季度 parquet (5 季: 25Q3 25Q4 26Q1 26Q2 26Q3)
+      4. 进度文件: data/history/.stk_factor_progress.json (断点续跑)
+
+    默认 force=False: 已完成的 trade_date 跳过, 支持中断后接着跑
+    """
+    from .sources.tushare import get_stk_factor_by_date
+    from .store import HISTORY_DIR
+    import json, time
+    from datetime import datetime, timedelta
+
+    # 1) 加载进度
+    progress = {}
+    if STK_FACTOR_PROGRESS.exists():
+        try:
+            progress = json.loads(STK_FACTOR_PROGRESS.read_text())
+            print(f"  📋 续跑: 已完成 {len(progress.get('done', []))} 个 trade_date")
+        except Exception:
+            progress = {}
+
+    # 2) 算要拉的 trade_date 列表 (5 季, 2025Q3 ~ 2026Q3)
+    #    从 2025-07-01 (2025Q3 第一天) 到今天
+    start_date = datetime(2025, 7, 1)
+    today = datetime.now()
+    # 用 Tushare trade_cal 拿交易日 (避免节假日)
+    from .sources.tushare import _safe_call
+    cal_data, _ = _safe_call(
+        "trade_cal", exchange="SSE", is_open="1",
+        start_date=start_date.strftime("%Y%m%d"),
+        end_date=today.strftime("%Y%m%d"),
+        fields="cal_date",
+    )
+    all_dates = sorted([c["cal_date"] for c in (cal_data or [])])
+    done = set(progress.get("done", []))
+    pending = [d for d in all_dates if d not in done]
+    print(f"  📅 总交易日: {len(all_dates)}  已完成: {len(done)}  待拉: {len(pending)}")
+
+    if not pending and not force:
+        print(f"  ✅ 全部完成, 无需重拉")
+        return 0
+
+    # 3) 删旧 stk_factor parquet (5 季) — 写 STK_FACTOR_DIR, 不动 HISTORY_DIR (K 线!)
+    # v6.2.4 修: 之前用错 HISTORY_DIR 覆盖了 K 线 5 季 (大事故)
+    from .store import STK_FACTOR_DIR
+    STK_FACTOR_DIR.mkdir(parents=True, exist_ok=True)
+    for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]:
+        old = STK_FACTOR_DIR / f"{q}.parquet"
+        if old.exists():
+            old.unlink()
+            print(f"  🗑️  删旧 stk_factor/{old.name}")
+
+    # 4) 按 trade_date 逐个拉 (30/分限频 → sleep 2s)
+    #    按季写盘
+    quarter_of = lambda d: (
+        "2025Q3" if "202507" <= d[:6] <= "202509" else
+        "2025Q4" if "202510" <= d[:6] <= "202512" else
+        "2026Q1" if "202601" <= d[:6] <= "202603" else
+        "2026Q2" if "202604" <= d[:6] <= "202606" else
+        "2026Q3"
+    )
+
+    quarter_data: dict[str, list[dict]] = {q: [] for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
+    t0 = time.time()
+    n_total = 0
+    for i, d in enumerate(pending, 1):
+        data, status = get_stk_factor_by_date(d)
+        if not data:
+            print(f"  ⚠️ {d}: 拉取失败 ({status})")
+            continue
+        q = quarter_of(d)
+        quarter_data[q].extend(data)
+        done.add(d)
+        n_total += len(data)
+        # 进度
+        if i % 10 == 0 or i == len(pending):
+            elapsed = time.time() - t0
+            speed = i / elapsed if elapsed > 0 else 0
+            eta = (len(pending) - i) / speed if speed > 0 else 0
+            print(f"  📡 [{i}/{len(pending)}] {d}: {len(data)} 只  "
+                  f"速度 {speed:.2f}/s  ETA {eta/60:.1f} 分钟")
+            # 写进度
+            STK_FACTOR_PROGRESS.write_text(json.dumps({
+                "done": sorted(done),
+                "updated_at": datetime.now().isoformat(),
+            }))
+        time.sleep(2.0)  # 30/分限频
+
+    # 5) 按季写 parquet (写到 STK_FACTOR_DIR, 不再写 HISTORY_DIR)
+    import pandas as pd
+    for q, rows in quarter_data.items():
+        if not rows:
+            continue
+        df = pd.DataFrame(rows)
+        # 强制 16 列 schema (即使某列全是 None)
+        for col in STK_FACTOR_FIELDS.split(","):
+            if col not in df.columns:
+                df[col] = None
+        df = df[STK_FACTOR_FIELDS.split(",")]
+        # 去重 (同一 trade_date 不应该出现多次)
+        df = df.drop_duplicates(subset=["ts_code", "trade_date"])
+        out = STK_FACTOR_DIR / f"{q}.parquet"
+        df.to_parquet(out, index=False)
+        print(f"  ✅ 写 stk_factor/{q}: {len(df)} 行, 16 列")
+
+    print(f"  🎉 完成: {n_total} 行 总耗时 {(time.time()-t0)/60:.1f} 分钟")
+    return n_total
 
 
 def action_stock_basic(codes: list[str]) -> int:
@@ -82,23 +207,40 @@ def action_stock_basic(codes: list[str]) -> int:
 
 
 def action_financials(codes: list[str], period: str | None = None) -> int:
-    """财务 (5 季度全市场) — 季报出后跑 1 次"""
-    from .store import sync_financials
+    """财务 (5 季度全市场) — 季报出后跑 1 次
+
+    v6.2.4 改: 默认 scope 强制全市场 (codes=空时拉 5555 只)
+    原因: Magic 排名需要全市场 5555 只财务, 之前默认 watchlist=121 只缺 95% 数据
+    """
+    from .store import sync_financials, _fin_load_all_codes
+    # financials 强制全市场 (忽略 --watchlist, 除非用户显式 --codes)
+    # 但尊重用户传的 --codes (小批调试用)
+    if not codes:
+        all_codes = _fin_load_all_codes()
+        if all_codes:
+            codes = all_codes
+            print(f"  🔄 financials 默认全市场: {len(codes)} 只 (覆盖 --watchlist 默认)")
     if period:
         n = sync_financials(period, codes=codes if codes else None)
         print(f"  ✅ financials {period}: {n} 行")
         return n
-    # 默认拉最近 5 季度
+    # 默认拉最近 5 年 (10 季: 5 H1 + 5 全年) — Magic 回测需要
     from datetime import datetime
     today = datetime.now()
     quarters = []
     # 季报出表规则: Q1 4月底, Q2 8月底, Q3 10月底, Q4 4月底次年
+    # 5 年回测需要每年的 H1 + 全年 (10 季, 跨 6 个自然年)
     candidates = [
         (today.year - 1, "1231"),
         (today.year - 1, "0630"),
         (today.year, "0331"),
         (today.year - 2, "1231"),
         (today.year - 2, "0630"),
+        (today.year - 3, "1231"),
+        (today.year - 3, "0630"),
+        (today.year - 4, "1231"),
+        (today.year - 4, "0630"),
+        (today.year - 5, "1231"),
     ]
     # 去重
     seen = set()
@@ -120,8 +262,11 @@ def action_eps(codes: list[str]) -> int:
 
     真实接口: tools/fetch/data_fetcher.py::_build_eps_table
     走 datacenter.eastmoney.com (主) → Tushare 自建 NTM (备) → EMPTY
+
+    v6.2.4 改: parquet 写入 data/history/eps/{code}.parquet (跟 financials 同目录)
     """
-    from ..sources.eastmoney import _build_eps_table
+    from .sources.eastmoney import _build_eps_table
+    from .caches.eps import EPS_DIR, _write_parquet
     ok = 0
     sources = {"datacenter_consensus": 0, "tushare_built_ntm": 0, "EMPTY": 0}
     for c in codes:
@@ -129,6 +274,9 @@ def action_eps(codes: list[str]) -> int:
             data, source = _build_eps_table(c)
             sources[source] = sources.get(source, 0) + 1
             if data:
+                out = EPS_DIR / f"{c}.parquet"
+                out.parent.mkdir(parents=True, exist_ok=True)
+                _write_parquet(out, c, data)
                 ok += 1
         except Exception as e:
             print(f"  ⚠️ {c} EPS 拉取失败: {e}")
@@ -142,7 +290,7 @@ def action_fflow(codes: list[str]) -> int:
 
     真实接口: tools/fetch/tushare_fetcher.py::get_money_flow
     字段: buy_lg_*/buy_elg_* (大单/特大单买), sell_lg_*/sell_elg_* (卖), net_mf_amount (净流入, 万元)
-    2000 积分档可用 (Tushare 官方)
+    5000 积分档可用 (Tushare 官方)
     """
     from ..sources.tushare import get_money_flow
     ok = 0
@@ -189,6 +337,94 @@ def action_status() -> int:
     """看现状, 不拉任何数据"""
     from .store import print_status_report
     print_status_report()
+
+
+def print_data_freshness_summary() -> None:
+    """打印本地各数据源最新一天 (2026-09-04 加, 用户问"最新是哪天")
+
+    一次性 SQL 查 parquet, 0 网络
+    """
+    import duckdb
+    from pathlib import Path
+    from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR
+    from .caches.eps import EPS_DIR
+
+    def _max_date(path: Path) -> str:
+        if not path.exists():
+            return "—"
+        try:
+            # K 线 / daily_basic / financials 都是 1 次 SQL 拿最新 trade_date
+            if path.is_dir():
+                files = list(path.glob("*.parquet"))
+                if not files:
+                    return "—"
+                # 取文件 mtime 最新的
+                latest_file = max(files, key=lambda p: p.stat().st_mtime)
+                df = duckdb.execute(f"SELECT MAX(trade_date) FROM read_parquet('{latest_file}')").fetchone()
+            else:
+                # 单文件 (e.g. stock_basic.parquet)
+                df = duckdb.execute(f"SELECT MAX(trade_date) FROM read_parquet('{path}')").fetchone()
+            return str(df[0]) if df and df[0] else "—"
+        except Exception as e:
+            return f"❌ {type(e).__name__}"
+
+    # K 线 / daily_basic 走 parquet, EPS 走 parquet, financials 走 max end_date, stock_basic 走 mtime
+    def _max_end_date(path: Path) -> str:
+        if not path.exists():
+            return "—"
+        try:
+            files = list(path.glob("*.parquet")) if path.is_dir() else [path]
+            if not files:
+                return "—"
+            latest_file = max(files, key=lambda p: p.stat().st_mtime)
+            # financials 用 end_date 字段 (不是 trade_date)
+            df = duckdb.execute(f"SELECT MAX(end_date) FROM read_parquet('{latest_file}')").fetchone()
+            return str(df[0]) if df and df[0] else "—"
+        except Exception:
+            return "—"
+
+    def _file_mtime(path: Path) -> str:
+        if not path.exists():
+            return "—"
+        from datetime import datetime
+        mtime = path.stat().st_mtime
+        return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+
+    print("\n📊 本地数据新鲜度 (最新一天):")
+    print(f"  K线 (OHLCV)        : {_max_date(HISTORY_DIR)}")
+    print(f"  stk_factor (估值)  : {_max_date(STK_FACTOR_DIR)}")
+    print(f"  financials (季报)  : {_max_end_date(FIN_DIR)}")
+    # EPS parquet 特殊: 列名是 year/year_mark/eps/..., 没 trade_date
+    # 用 fetched_at (Tushare 写入时间) 代替 "最新"
+    try:
+        if EPS_DIR.exists() and list(EPS_DIR.glob("*.parquet")):
+            df = duckdb.execute(f"SELECT MAX(fetched_at) FROM read_parquet('{EPS_DIR}/*.parquet')").fetchone()
+            from datetime import datetime
+            ts = int(df[0]) if df and df[0] else 0
+            if ts > 1e12:  # ms → s
+                ts = ts / 1000
+            print(f"  EPS (机构预期)     : {datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')}")
+        else:
+            print(f"  EPS (机构预期)     : 空")
+    except Exception as e:
+        print(f"  EPS (机构预期)     : ❌ {type(e).__name__}")
+    # fflow 走 parquet 但目录结构不一样, 简单写
+    fflow_dir = Path("data/cache/fflow")
+    if fflow_dir.exists():
+        try:
+            files = list(fflow_dir.glob("*.parquet"))
+            if files:
+                latest = max(files, key=lambda p: p.stat().st_mtime).stem
+                print(f"  fflow (资金流)     : {latest}")
+            else:
+                print(f"  fflow (资金流)     : 空")
+        except Exception:
+            print(f"  fflow (资金流)     : —")
+    else:
+        print(f"  fflow (资金流)     : 未拉过")
+    # stock_basic 特殊: 没有 trade_date, 看 mtime
+    sb_path = Path("data/history/stock_basic/stock_basic.parquet")
+    print(f"  stock_basic (静态) : mtime {_file_mtime(sb_path)}")
     return 0
 
 
@@ -200,7 +436,7 @@ def detect_stale_flags() -> dict[str, bool]:
     import duckdb
     from datetime import datetime, timedelta
     from pathlib import Path
-    from .store import HISTORY_DIR, DAILY_BASIC_DIR, FIN_DIR, STOCK_BASIC_PARQUET
+    from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR, STOCK_BASIC_PARQUET
 
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
@@ -287,6 +523,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
         for k, v in flags.items():
             mark = "🟡 会跑" if v else "✅ 跳过"
             print(f"  {mark}  --{k}")
+        print_data_freshness_summary()
         return 0
     print("\n🔍 自动检测结果:")
     for k, v in flags.items():
@@ -294,6 +531,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
         print(f"  {mark}  --{k}")
     if not any(flags.values()):
         print("\n✨ 全 fresh, 不用 sync")
+        print_data_freshness_summary()
         return 0
     # 真跑 (复用 main() 的 flag 逻辑)
     print("\n🚀 跑 stale 的 flag:")
@@ -306,6 +544,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
     if flags["financials"]:
         print("  [3/7] --financials")
         action_financials(_last_codes)
+    print_data_freshness_summary()
     return 0
 
 
@@ -344,6 +583,8 @@ def main():
     actions = parser.add_argument_group("Sync 行为 (7 个正交, 全部默认关; 不传任何 flag → 自动检测)")
     actions.add_argument("--kline", action="store_true",
                          help="增量 K 线 + daily_basic + 6 指数")
+    actions.add_argument("--stk-factor", action="store_true",
+                         help="[v6.2.4 重构] 重拉 stk_factor_pro 16 列 (替代旧 daily_basic, 8 分钟)")
     actions.add_argument("--stock-basic", action="store_true",
                          help="股票基础信息 (行业/名称)")
     actions.add_argument("--financials", action="store_true",
@@ -415,7 +656,7 @@ def main():
 
     # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
     any_sync_flag = any([
-        args.kline, args.stock_basic, args.financials,
+        args.kline, args.stk_factor, args.stock_basic, args.financials,
         args.eps, args.fflow, args.cache, args.meta, args.all_data,
     ])
     if not any_sync_flag:
@@ -435,12 +676,19 @@ def main():
     if args.kline:
         print("\n[1/7] --kline (增量 K 线)")
         action_kline(codes)
+    if args.stk_factor:
+        # v6.2.4 重构: 替代 daily_basic, 16 列, 8 分钟重拉
+        print("\n[1.5/7] --stk-factor (重拉 16 列 stk_factor_pro, 替代 daily_basic)")
+        action_stk_factor(force=False)
     if args.stock_basic:
         print("\n[2/7] --stock-basic (股票基础)")
         action_stock_basic(codes)
     if args.financials:
         print("\n[3/7] --financials (财务 5 季度)")
-        action_financials(codes, period=args.period)
+        # v6.2.4 改: financials 强制全市场 (传 None, action_financials 内部会拉 5555 只)
+        # 只有用户显式 --codes 时才用 codes (小批调试)
+        fin_codes = codes if args.codes else None
+        action_financials(fin_codes, period=args.period)
     if args.eps:
         print("\n[4/7] --eps (机构预期)")
         action_eps(codes)
@@ -462,6 +710,7 @@ def main():
 
     elapsed = time.time() - start
     print(f"\n=== 完成, 耗时 {elapsed:.1f} 秒 ===")
+    print_data_freshness_summary()
     return 0
 
 

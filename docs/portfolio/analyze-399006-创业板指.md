@@ -1,4 +1,4 @@
-# 399006 创业板指 | 2026-09-03
+# 399006 创业板指 | 2026-09-04
 
 **板块:** — | **股价:** ¥3312.54 | **评级:** 🥈 标准 (机械算基础分, LLM 待精调) | **龙头:** 0/14/14 | **PEG:** 未算
 
@@ -38,12 +38,12 @@
 ### 💎 Magic Formula (Greenblatt ROC + EY) (来源: no_data)
 | 指标 | 数值 | 说明 |
 |---|---|---|
-| 行业 | — | — |
-| EBIT (TTM) | — 亿 | Tushare fina_indicator |
-| 净营运资本 + 固定资产 | — 亿 | NWC + FA |
+| 行业 | None | — |
+| EBIT (TTM) | None 亿 | Tushare fina_indicator |
+| 净营运资本 + 固定资产 | None 亿 | NWC + FA |
 | **ROC (Return on Capital)** | **None%** | EBIT / (NWC + FA) |
-| 市值 | — 亿 | Tushare daily_basic |
-| 净债务 | — 亿 | Tushare fina_indicator |
+| 市值 | None 亿 | Tushare daily_basic |
+| 净债务 | None 亿 | Tushare fina_indicator |
 | **EV (企业价值)** | **— 亿** | 市值 + 净债务 |
 | **EY (Earnings Yield)** | **None%** | EBIT / EV |
 
@@ -602,7 +602,7 @@ OBV ⬜中性
 ---
 
 ## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
-> ⚠️ alpha_ga_001 factor 未注册
+> ⚠️ GA 因子计算失败: 'KLineBar' object has no attribute 'date'
 
 
 ---

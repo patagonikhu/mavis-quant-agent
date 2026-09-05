@@ -1,4 +1,4 @@
-# 000001 上证指数 | 2026-09-03
+# 000001 上证指数 | 2026-09-04
 
 **板块:** — | **股价:** ¥3942.09 | **评级:** 🥈 标准 (机械算基础分, LLM 待精调) | **龙头:** 0/14/14 | **PEG:** 783.51
 
@@ -43,12 +43,12 @@
 ### 💎 Magic Formula (Greenblatt ROC + EY) (来源: no_data)
 | 指标 | 数值 | 说明 |
 |---|---|---|
-| 行业 | — | — |
-| EBIT (TTM) | — 亿 | Tushare fina_indicator |
-| 净营运资本 + 固定资产 | — 亿 | NWC + FA |
+| 行业 | None | — |
+| EBIT (TTM) | None 亿 | Tushare fina_indicator |
+| 净营运资本 + 固定资产 | None 亿 | NWC + FA |
 | **ROC (Return on Capital)** | **None%** | EBIT / (NWC + FA) |
-| 市值 | — 亿 | Tushare daily_basic |
-| 净债务 | — 亿 | Tushare fina_indicator |
+| 市值 | None 亿 | Tushare daily_basic |
+| 净债务 | None 亿 | Tushare fina_indicator |
 | **EV (企业价值)** | **— 亿** | 市值 + 净债务 |
 | **EY (Earnings Yield)** | **None%** | EBIT / EV |
 
@@ -607,7 +607,7 @@ OBV ⬜中性
 ---
 
 ## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
-> ⚠️ alpha_ga_001 factor 未注册
+> ⚠️ GA 因子计算失败: 'KLineBar' object has no attribute 'date'
 
 
 ---
@@ -803,7 +803,9 @@ OBV ⬜中性
 
 <!-- id:ts_basic -->
 ## 📊 基础信息 (Tushare)
-**代码:** 000001  **名称:** 上证指数  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_watchlist_fresh)
+**代码:** 000001  **名称:** 平安银行  **行业:** 银行  **上市日期:** 19910403  **总股本:** 194.06亿股  **流通股本:** 194.06亿股  **市场:** 主板
+
+> **数据源:** Tushare.stock_basic (dump)
 
 
 ---

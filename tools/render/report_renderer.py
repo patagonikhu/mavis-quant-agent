@@ -1700,11 +1700,19 @@ def _section_data_sources(data: RenderData) -> str:
 
 
 def _section_ts_basic(data: RenderData) -> str:
-    """📊 基础信息 (Tushare) — 从 DataStore 读"""
+    """📊 基础信息 (Tushare) — 从 DataStore 读
+
+    v6.2.4 修: 表达式优先级 bug — `sb.get(...) or data.industry if hasattr(...) else "未知"`
+    Python 优先级实际是 `(sb.get(...) or data.industry) if hasattr(...) else "未知"`,
+    永远走 else 分支 → 行业/总股本/流通股本全显示"未知/0.00"
+
+    现在拆成显式 if/else, 优先用 stock_basic 真实值
+    """
     from tools.storage.store import DataStore
     sb = DataStore.get_stock_basic(data.code)
-    name     = sb.get("name")     or data.name or "未知"
-    industry = sb.get("industry") or data.industry if hasattr(data, "industry") else "未知"
+    # 行业: 优先 stock_basic, fallback data.industry, fallback "未知"
+    industry = sb.get("industry") or "未知"
+    name     = sb.get("name") or getattr(data, "name", None) or "未知"
     list_date= sb.get("list_date", "未知")
     total_sh = (sb.get("total_share") or 0) / 1e4   # 万股 → 亿股
     float_sh = (sb.get("float_share") or 0) / 1e4

@@ -1,6 +1,6 @@
 {
   "version": "1.4",
-  "last_updated": "2026-09-02",
+  "last_updated": "2026-09-04",
   "description": "关注清单 + 你手填的笔记。LLM 用这些笔记 + 训练知识 + 框架 doc 出报告。每周花 10 分钟改一下。v1.2 加 rating_history 字段追踪评级变化。 v1.2 批量导入 docs/analyze-*.md 所有标的。",
   "stocks": [
     {
@@ -697,6 +697,195 @@
       "sector": "专用机械",
       "list_type": "Magic初筛",
       "notes": "[2026-09-02 Magic Top20] ROC=119.6% (rank 21) EY=6.10% (rank 88) 综合=54.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "601098",
+      "name": "中南传媒",
+      "sector": "出版业",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top1] ROC=4186.3% (rank 5) EY=45.00% (rank 4) 综合=4.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002668",
+      "name": "TCL智家",
+      "sector": "家用电器",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top2] ROC=983.6% (rank 16) EY=34.20% (rank 6) 综合=11.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000752",
+      "name": "*ST西发",
+      "sector": "啤酒",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top3] ROC=1338.4% (rank 9) EY=23.70% (rank 22) 综合=15.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000913",
+      "name": "钱江摩托",
+      "sector": "摩托车",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top4] ROC=292.3% (rank 29) EY=57.40% (rank 2) 综合=15.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000719",
+      "name": "中原传媒",
+      "sector": "出版业",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top6] ROC=234.6% (rank 41) EY=20.10% (rank 31) 综合=36.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "600861",
+      "name": "北京人力",
+      "sector": "文教休闲",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top7] ROC=134.4% (rank 75) EY=156.00% (rank 1) 综合=38.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "603173",
+      "name": "福斯达",
+      "sector": "机械基件",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top8] ROC=1195.7% (rank 11) EY=13.20% (rank 79) 综合=45.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000404",
+      "name": "长虹华意",
+      "sector": "家用电器",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top10] ROC=88.0% (rank 119) EY=52.00% (rank 3) 综合=61.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000915",
+      "name": "华特达因",
+      "sector": "化学制药",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top11] ROC=95.5% (rank 108) EY=24.70% (rank 19) 综合=63.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000848",
+      "name": "承德露露",
+      "sector": "软饮料",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top12] ROC=215.9% (rank 44) EY=12.90% (rank 84) 综合=64.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002612",
+      "name": "朗姿股份",
+      "sector": "服饰",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top13] ROC=160.0% (rank 65) EY=14.60% (rank 64) 综合=64.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002697",
+      "name": "红旗连锁",
+      "sector": "超市连锁",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top14] ROC=124.7% (rank 80) EY=15.20% (rank 58) 综合=69.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "002582",
+      "name": "好想你",
+      "sector": "食品",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top15] ROC=87.6% (rank 120) EY=24.10% (rank 21) 综合=70.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "600741",
+      "name": "华域汽车",
+      "sector": "汽车配件",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top16] ROC=77.9% (rank 142) EY=32.60% (rank 8) 综合=75.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "600938",
+      "name": "中国海油",
+      "sector": "石油开采",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top17] ROC=165.9% (rank 61) EY=12.50% (rank 92) 综合=76.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "601001",
+      "name": "晋控煤业",
+      "sector": "煤炭开采",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top18] ROC=76.1% (rank 146) EY=32.20% (rank 9) 综合=77.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "603551",
+      "name": "奥普科技",
+      "sector": "家居用品",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top19] ROC=262.0% (rank 34) EY=11.70% (rank 126) 综合=80.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "600066",
+      "name": "宇通客车",
+      "sector": "汽车整车",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-03 Magic Top20] ROC=997.1% (rank 15) EY=11.30% (rank 147) 综合=81.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "300919",
+      "name": "中伟新材",
+      "sector": "电气设备",
+      "list_type": "持仓",
+      "notes": "锂电正极前驱体龙头, 2026-09-03 /t-bb-obv 命中 (BOLL -9.7% 最强信号)"
+    },
+    {
+      "code": "688223",
+      "name": "晶科能源",
+      "sector": "电气设备",
+      "list_type": "自选",
+      "notes": "光伏组件全球前 3, 2026-09-03 /t-near-low 命中 (5y跌 78.8%, 反弹 52 次最多)"
+    },
+    {
+      "code": "600894",
+      "name": "广日股份",
+      "sector": "运输设备",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-04 Magic Top10] ROC=74.4% (rank 70) EY=25.70% (rank 13) 综合=41.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "601083",
+      "name": "锦江航运",
+      "sector": "水运",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-04 Magic Top12] ROC=84.4% (rank 57) EY=15.90% (rank 46) 综合=51.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "000568",
+      "name": "泸州老窖",
+      "sector": "白酒",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-04 Magic Top14] ROC=85.4% (rank 55) EY=15.30% (rank 53) 综合=54.0 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "600729",
+      "name": "重百集团",
+      "sector": "百货",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-04 Magic Top15] ROC=161.6% (rank 22) EY=12.30% (rank 91) 综合=56.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "603529",
+      "name": "爱玛科技",
+      "sector": "摩托车",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-04 Magic Top17] ROC=146.6% (rank 26) EY=12.00% (rank 101) 综合=63.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "600710",
+      "name": "苏美达",
+      "sector": "商贸代理",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-04 Magic Top19] ROC=52.9% (rank 134) EY=39.10% (rank 3) 综合=68.5 | 卡点⭐ 待 LLM 补"
+    },
+    {
+      "code": "601156",
+      "name": "东航物流",
+      "sector": "仓储物流",
+      "list_type": "Magic初筛",
+      "notes": "[2026-09-04 Magic Top20] ROC=60.3% (rank 99) EY=15.40% (rank 52) 综合=75.5 | 卡点⭐ 待 LLM 补"
     }
   ],
   "changelog": [
@@ -733,6 +922,36 @@
     {
       "date": "2026-09-02",
       "change": "加 10 只 Magic Top 20 (list_type=Magic初筛, 跳过 10 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-03",
+      "change": "加 18 只 Magic Top 20 (list_type=Magic初筛, 跳过 2 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-04",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-04",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-04",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-04",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-04",
+      "change": "加 7 只 Magic Top 20 (list_type=Magic初筛, 跳过 13 只已存在)",
       "source": "docs/magic-top20.md (Greenblatt 联合排名)"
     }
   ]

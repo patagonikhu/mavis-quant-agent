@@ -13,7 +13,7 @@ data_fetcher.py — 统一数据抓取层 (v4.0, 2026-07-22)
   ├──────────────┼─────────────────────────────────────────┤
   │ 实时价       │  Tushare.daily (close) + Tushare.daily_basic (pe_ttm/pb) │
   │ 历史 K 线    │  Tushare.daily (qfq 复权从 amount 字段推)   │
-  │ 主力资金     │  Tushare.moneyflow (2000 积分档, 24h 稳定)  │
+  │ 主力资金     │  Tushare.moneyflow (5000 积分档, 24h 稳定)  │
   │ EPS / 财务   │  Tushare.fina_indicator (ROE/EPS/CAGR 自建) │
   │ 总股本/市值  │  Tushare.stock_basic.total_share + daily_basic.total_mv │
   └──────────────┴─────────────────────────────────────────┘
@@ -233,7 +233,7 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
     v4.0 (2026-07-22): 单一源 Tushare.daily
       - 字段: trade_date / open / high / low / close / vol (amount 在 tushare 是成交额)
       - 注: Tushare.daily 默认不复权, 但 daily_basic 已经能算 MA 偏离等,
-        真要复权用 Tushare.pro_bar (另需 2000 积分), 暂用不复权
+        真要复权用 Tushare.pro_bar (另需 5000 积分), 暂用不复权
 
     v5.3 (2026-07-28): 加增量缓存 use_cache=True
       - 读 data/_old_d/{code}.json 找 kline 最后一日
@@ -277,7 +277,7 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
 
 def get_fund_flow(code: str, days: int = 10) -> tuple[list[dict] | None, str]:
     """
-    v4.0 (2026-07-22): 单一源 Tushare.moneyflow (2000 积分档, 24h 稳定)
+    v4.0 (2026-07-22): 单一源 Tushare.moneyflow (5000 积分档, 24h 稳定)
       返回值: list[dict] (字段: date / main_net(万) / small / mid / big / super_big)
 
     历史: Tushare.money_flow 直接调, 2026-07-22 整合
@@ -463,7 +463,7 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     # daily_basic 改 limit=1 (v5.10.23: 只取最新 1 行给顶层 pe_ttm/pb/total_mv 等)
     # 之前 limit=100 拉 22 年历史 5296 行 = 1253 KB/dump, 0 consumer (TrendPullback 从 market_cap_yi 顶层读)
     # 改 limit=1: dump 从 2052 KB 降到 ~800 KB, 节省 62%
-    db, db_s = _ts_db(code, 1)  # 2000 积分档单只 limit=1 (1 行 1 调用, 给顶层字段)
+    db, db_s = _ts_db(code, 1)  # 5000 积分档单只 limit=1 (1 行 1 调用, 给顶层字段)
 
     # 1. stock_basic
     if sb:
@@ -602,7 +602,7 @@ def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
       - data/history/daily/*.parquet  (由 history_sync 维护)
       - data/cache/daily_basic.json   (由 static_cache 维护)
       - data/cache/stock_basic.json   (由 static_cache 维护)
-      - data/cache/eps/{code}.json    (由 static_cache 维护)
+      - data/history/eps/{code}.parquet   (v6.2.4, 由 static_cache 维护)
 
     返回格式与 fetch_all 一致，供 老 data 工具 无缝替换。
     """

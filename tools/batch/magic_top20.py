@@ -14,9 +14,8 @@ magic_top20.py — Magic Formula 排名 + 摘要 + 加 watchlist (3 合 1, 2026-
     EY  = EBIT / EV                                ← 排名 2
     综合 = (ROC 排名 + EY 排名) / 2, 数字小的胜出
 
-数据源:
+数据源 (DataStore 0 网络读):
     1) 财务: data/history/financials/{YYYYQN}.parquet
-              (sync_financials 拉的 fina_indicator_vip 全市场)
     2) 市值: DataStore.get_daily_basic (Tushare daily_basic, 单位"万")
     3) 名称: DataStore.get_stock_basic
     4) 摘要 EPS: datacenter.eastmoney.com (绕开 watchlist gate, 直拉)
@@ -57,21 +56,39 @@ from tools.analysis.valuation import (  # noqa: E402
 # 排名
 # ============================================================
 
-def rank_magic(results: list[dict], top: int = 20) -> list[dict]:
+def rank_magic(results: list[dict], top: int = 20,
+               min_mcap: float = 0, max_roc: float = 9999, min_ebit: float = 0) -> list[dict]:
     """联合排名 (Greenblatt 原版)
 
     流程:
       1) 筛有效 (roc, ey 都非 None)
-      2) 按 roc 降序排 → roc_rank 1..N
-      3) 按 ey  降序排 → ey_rank  1..N
-      4) combined_rank = (roc_rank + ey_rank) / 2
-      5) 按 combined_rank 升序排 → top N
+      2) 小盘过滤 (2026-09-04 加, 默认关闭, 跑回测时打开)
+         - min_mcap: 最小市值 (亿), 0 = 不过滤
+         - max_roc:  ROC 上限 (%), 9999 = 不过滤 (200%+ 多为 NWC 接近 0 分母塌陷)
+         - min_ebit: 最小 EBIT (亿), 0 = 不过滤 (排除利润太薄小票)
+      3) 按 roc 降序排 → roc_rank 1..N
+      4) 按 ey  降序排 → ey_rank  1..N
+      5) combined_rank = (roc_rank + ey_rank) / 2
+      6) 按 combined_rank 升序排 → top N
 
     返回: 排序后 list[dict], 每项含 roc_rank / ey_rank / combined_rank
     """
     # 1) 过滤
     valid = [r for r in results if r.get("roc") is not None and r.get("ey") is not None]
     skipped = len(results) - len(valid)
+
+    # 1b) 小盘过滤 (v6.2.4 加)
+    n_pre = len(valid)
+    if min_mcap > 0:
+        valid = [r for r in valid if (r.get("market_cap_yi") or 0) >= min_mcap]
+    if max_roc < 9999:
+        valid = [r for r in valid if (r.get("roc") or 0) <= max_roc]
+    if min_ebit > 0:
+        valid = [r for r in valid if (r.get("ebit_yi") or 0) >= min_ebit]
+    n_filtered = n_pre - len(valid)
+    if n_filtered:
+        print(f"   🚫 小盘过滤: 排除 {n_filtered} (剩余 {len(valid)}, "
+              f"mcap>={min_mcap}亿 / ROC<={max_roc}% / EBIT>={min_ebit}亿)")
 
     if not valid:
         print(f"⚠️  0 只有效 (输入 {len(results)}, 跳过 {skipped})")
@@ -183,7 +200,7 @@ def render_markdown(top20: list[dict], period: str, skipped: int) -> str:
     lines.append("# 自定义 Top 数")
     lines.append("bash tools/with_venv.sh python -m tools.batch.magic_top20 --top 50")
     lines.append("")
-    lines.append("# 改报告期 (需先跑 sync_financials 拉对应季)")
+    lines.append("# 改报告期 (缺数据请先 /t-sync-data)")
     lines.append("bash tools/with_venv.sh python -m tools.batch.magic_top20 --period 2026Q1")
     lines.append("```")
     lines.append("")
@@ -225,6 +242,13 @@ def main() -> int:
         action="store_true",
         help="跳过加 watchlist 那步",
     )
+    # v6.2.4 加: 小盘股过滤 (避免 NWC 接近 0 导致 ROC 虚高)
+    parser.add_argument("--min-mcap", type=float, default=0, help="最小市值 (亿), 0=不过滤")
+    parser.add_argument("--max-roc", type=float, default=9999, help="ROC 上限 (%%), 9999=不过滤")
+    parser.add_argument("--min-ebit", type=float, default=0, help="最小 EBIT (亿), 0=不过滤")
+    # v6.2.5 加: 剔除 NWC+FA 太小导致的 ROC 假阳性 (例: 中南传媒 0.4 亿 → 4186% ROC)
+    parser.add_argument("--min-capital", type=float, default=5,
+                        help="最小 NWC+FA 合计 (亿), 剔除分母过小的假阳性, 0=不过滤 (默认 5)")
     args = parser.parse_args()
 
     # 1) 找财务文件 (v6.1.1 改: 走 DataStore.load_financials_period, 不读 parquet)
@@ -232,13 +256,13 @@ def main() -> int:
     if args.period:
         df = DataStore.load_financials_period(args.period)
         if df.empty:
-            print(f"❌ 找不到 {args.period} 季度财务, 请先跑: python -m tools.storage.sync --financials --period {args.period}")
+            print(f"❌ 找不到 {args.period} 季度财务, 请先 /t-sync-data --financials --period {args.period}")
             return 1
     else:
         # 取最新季: load_all_financials 找 max end_date
         all_fin = DataStore.load_all_financials()
         if all_fin.empty:
-            print("❌ 财务数据空, 请先跑: python -m tools.storage.sync --financials")
+            print("❌ 财务数据空, 请先 /t-sync-data --financials")
             return 1
         latest_end = all_fin["end_date"].max()
         # end_date '20251231' → 季度 '2025Q4' (跟 parquet file stem 对齐)
@@ -253,15 +277,19 @@ def main() -> int:
     codes = df_ok["code"].tolist()
     print(f"   {len(codes)} 只 (fetch_status=ok)")
 
-    # 2) 批量算 ROC + EY
-    print(f"🔄 跑 batch_magic_scores ({len(codes)} 只, 含 market_cap)...")
+    # 2) 批量算 ROC + EY (v6.2.5 透传 min_capital_yi, 剔除 NWC+FA 过小的 ROC 假阳性)
+    print(f"🔄 跑 batch_magic_scores ({len(codes)} 只, 含 market_cap, min_capital={args.min_capital}亿)...")
     t0 = datetime.now()
-    results = batch_magic_scores(codes, with_market_cap=True)
+    results = batch_magic_scores(codes, with_market_cap=True, min_capital_yi=args.min_capital)
     elapsed = (datetime.now() - t0).total_seconds()
     print(f"   耗时 {elapsed:.1f}s")
+    n_capital_skip = sum(1 for r in results if r.get("skip_reason") and "capital_too_small" in r.get("skip_reason", ""))
+    if n_capital_skip:
+        print(f"   🚫 过滤掉 {n_capital_skip} 只 NWC+FA<{args.min_capital}亿 (ROC 假阳性)")
 
-    # 3) 排名
-    top_n = rank_magic(results, top=args.top)
+    # 3) 排名 (v6.2.4 加 3 个小盘过滤)
+    top_n = rank_magic(results, top=args.top,
+                       min_mcap=args.min_mcap, max_roc=args.max_roc, min_ebit=args.min_ebit)
 
     # 4) 写文件 (skipped = 总池 - 有效排名, 不是 - topN)
     out_path = _TOOLS.parent / "docs" / "magic-top20.md"
@@ -387,17 +415,16 @@ def _add_to_watchlist(top_n: list[dict], period: str):
 # ============================================================
 
 def get_eps_for_summary(code: str) -> list[dict]:
-    """EPS 摘要 (2026-09-03 v6.1.1 改: 只读本地 cache, 不直连 datacenter)
+    """EPS 摘要 (v6.2.4 改: 读 parquet, 跟 financials 同目录)
 
     之前: 走 datacenter.eastmoney.com 写本地 cache (违反 sync_data 唯一入口)
-    现在: 只读本地 EPS_DIR/{code}.json; 缺数据时返空, 提示先跑 /t-sync-data --eps
+    现在: 只读本地 EPS_DIR/{code}.parquet; 缺数据时返空, 提示先跑 /t-sync-data --eps
     """
-    import json
-    from tools.storage.caches.eps import EPS_DIR
-    path = EPS_DIR / f"{code}.json"
-    if path.exists() and path.stat().st_size > 10:
+    from tools.storage.caches.eps import EPS_DIR, _read_parquet
+    path = EPS_DIR / f"{code}.parquet"
+    if path.exists() and path.stat().st_size > 100:
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            return _read_parquet(path)
         except Exception:
             pass
     # 缺数据: 不偷偷拉, 提示用户先跑 /t-sync-data

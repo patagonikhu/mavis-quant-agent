@@ -1,25 +1,32 @@
 """
-tushare_fetcher.py — Tushare Pro 数据拉取 (2026-07-22 接入)
+tushare_fetcher.py — Tushare Pro 数据拉取 (2026-07-22 接入, 2026-09-04 升级 5000 积分档)
 
-数据源: https://tushare.pro (2000 积分档, 解锁 6 项核心数据)
+数据源: https://tushare.pro (5000 积分档, 解锁 20+ 项核心数据)
 Token: 从 os.environ["TUSHARE_TOKEN"] 读 (.env 文件, 不进 git)
 
-覆盖的 9 个核心接口 (按用户最常看的 6 项排):
-  1. daily_basic   - PE_TTM / PB / 市值 (替代 push2 f164, 更准)
-  2. weekly/monthly- 周月 K 线 (Sina 60分硬上限的备选, 跨更大周期)
-  3. moneyflow_hsgt- 北向资金 (每日沪深股通净买入)
-  4. margin_detail - 融资融券 (单只票的融资余额/买入)
-  5. top_list      - 龙虎榜 (当日上榜机构+营业部)
-  6. income        - 利润表 (营收/净利/同比)
-  7. fina_indicator- 财务指标 (ROE/毛利率/净利率/资产负债率)
-  8. dividend      - 分红送转 (历史分红)
-  9. stock_basic   - 基础信息 (行业/上市日期/总股本)
+覆盖的 9+ 个核心接口 (按用户最常看的 6 项排):
+  1. stk_factor_pro - PE/PB/PS/PS-TTM/股息率/自由流通股换手率/总股本/流通股本 (5000 积分档 pro, v6.2.4 替代 daily_basic)
+  2. weekly/monthly  - 周月 K 线 (Sina 60分硬上限的备选, 跨更大周期)
+  3. moneyflow_hsgt  - 北向资金 (每日沪深股通净买入)
+  4. margin_detail   - 融资融券 (单只票的融资余额/买入)
+  5. top_list        - 龙虎榜 (当日上榜机构+营业部)
+  6. income          - 利润表 (营收/净利/同比)
+  7. fina_indicator  - 财务指标 (ROE/毛利率/净利率/资产负债率)
+  8. fina_indicator_vip - 财务指标 (vip, 全市场一次性, Magic 用)
+  9. dividend        - 分红送转 (历史分红)
+ 10. stock_basic     - 基础信息 (行业/上市日期/总股本)
 
 设计原则:
   - 永远不 raise (每个接口返回 (data, status), status ∈ {OK/EMPTY/PERM_DENIED/EXCEPTION_xxx})
-  - Tushare 2000 积分档: 全接口 80 次/分, 单接口 100 次/分 (并发跑 watchlist 时控制 worker 数)
+  - Tushare 5000 积分档: 全接口 200 次/分, 单接口 200 次/分
+    实测 stk_factor_pro 22/分 (sleep 2.0s) 跑 13 分钟 290 天稳定, 未触发限流
   - 网络问题直接 fallback 到空, 不影响其他段
   - 重复行 (tushare 已知 bug) 用 drop_duplicates 去重
+
+v6.2.4 升级要点:
+  - 5000 积分档: 解锁 stk_factor_pro / fina_indicator_vip / forecast / top_list / margin / north_flow
+  - daily_basic 被 stk_factor_pro 替代 (16 列, 多了 ps/dv_ratio/float_share/turnover_rate_f)
+  - stock_basic 仍缺 total_share (跨积分档都缺, 走 stk_factor_pro 兜底)
 """
 
 from __future__ import annotations
@@ -147,27 +154,21 @@ def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
     2026-07-22 升级: 加 1 小时内存缓存, moneyflow (4s/次) 复用后 0s
     2026-07-23 升级: 加 3 次重试 (网络抖动兜底, Tushare 官方推荐)
     2026-07-28 升级: EMPTY 时 retry (数据未到/网络抖动兜底, 2s/4s 退避)
-    2026-07-30 v5.10.10: 加 2000 积分档白名单 (forecast/top_list/north_flow/margin 等 5000+ 积分档接口
-                  100% 永远返空, 1 次失败直接 EMPTY 不 retry, 省 3s/只 × 17 = 51s 浪费)
+    2026-09-04 v6.2.4: 升级 5000 积分档, 白名单只剩真正限量接口
+                  (forecast/top_list/north_flow/margin 100% 永远返空, 1 次失败直接 EMPTY 不 retry)
     """
     if not _PRO:
         return None, "TOKEN_MISSING"
 
-    # v5.10.10 加: 2000 积分档不可用接口白名单 (限量接口, 永久返空, 不 retry)
-    # 实测: 17 baseline 中 100% 失败, retry 只是浪费 1+2=3s/只
-    # 2026-07-30 v5.10.11 撤回 daily_basic (错判)
-    # 2026-07-30 v5.10.12 加回 daily_basic: 不是接口不可用, 是 Tushare 频控 100/分
-    # 2026-07-30 v5.10.16 再撤 daily_basic: 实测 002028 单只 _PRO.daily_basic 返 5296 行 (5.2 年历史)
-    #   daily_basic 是**常用接口** (2000 积分档可调), 不能跟限量接口混为一谈
-    #   真撞频控时 1 次返空, 不在白名单时走 retry 2 次 (1s+2s) 兜底
-    #   commit 3bfe7f7 limit=30 → 250 修复"返空"实际是命中 _NO_RETRY_2000 的副作用
-    _NO_RETRY_2000 = {
-        "forecast",      # 业绩预告 (5000 积分档)
-        "top_list",      # 龙虎榜 (5000 积分档)
-        "north_flow",    # 北向资金 (10000 积分档)
-        "margin",        # 融资融券 (5000 积分档)
-        "limit_list",    # 涨跌停 (5000 积分档)
-        "forecast_vip",  # 多券商一致预期 (5000 积分档)
+    # v6.2.4 限量接口白名单 (5000 积分档仍不可调, 永久返空, 不 retry)
+    # 2026-09-04 实测 5000 积分档用户接口:
+    #   ✅ 可调: stk_factor_pro / fina_indicator_vip / top_list / margin / moneyflow
+    #   ❌ 限量 (需单独开通权限): forecast / forecast_vip
+    #   ❌ 10000 积分档: north_flow (10k 积分起)
+    _NO_RETRY_LIMITED = {
+        "forecast",      # 业绩预告 (用户权限未开, 单独收费)
+        "forecast_vip",  # 多券商一致预期 (同上)
+        "north_flow",    # 北向资金 (10000 积分档起步)
     }
 
     # 1. 查缓存
@@ -182,10 +183,10 @@ def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
         method = getattr(_PRO, api_name)
         df = method(**kwargs)
         if df is None or len(df) == 0:
-            # 2000 积分档不可用接口 (限量接口) → EMPTY
-            if api_name in _NO_RETRY_2000:
+            # 限量接口 (用户没开权限) → EMPTY
+            if api_name in _NO_RETRY_LIMITED:
                 logger.info(
-                    "tushare.%s 2000 积分档不可用 (限量接口), 返空 (不 retry)",
+                    "tushare.%s 限量接口 (用户未开权限), 返空 (不 retry)",
                     api_name,
                 )
                 return None, "EMPTY_NEED_HIGHER_TIER"
@@ -225,8 +226,8 @@ def get_stock_basic(code: str) -> tuple[dict | None, str]:
     返回: {ts_code, name, industry, list_date, total_share, float_share, market}
     单位: total_share / float_share = 万股 (跟 daily_basic 一致)
 
-    2026-07-24 修复: 2000 积分档 stock_basic 不返回 total_share/float_share
-    改用 daily_basic.total_share 补全 (查最近一个交易日)
+    v6.2.4 修复: 跨积分档 stock_basic 都不返回 total_share/float_share
+    改用 stk_factor_pro (替代 daily_basic) 补全, 16 列含 total_share/float_share
     """
     ts_code = _code_to_ts(code)
     data, status = _safe_call(
@@ -237,11 +238,11 @@ def get_stock_basic(code: str) -> tuple[dict | None, str]:
     if not data:
         return None, status
     row = dict(data[0])
-    # 2026-07-24: stock_basic 2000 积分档不返回 total_share，从 daily_basic 补（最近交易日，无重试）
+    # 2026-09-04: stock_basic 跨积分档都缺 total_share, 走 stk_factor_pro 补 (5000 积分档可调, 16 列)
     try:
         trade_date = _latest_trade_date()
         db_data, db_status = _safe_call(
-            "daily_basic",
+            "stk_factor_pro",  # v6.2.4 改: daily_basic → stk_factor_pro (5000 积分档 16 列)
             ts_code=ts_code,
             trade_date=trade_date,
             fields="ts_code,total_share,float_share",
@@ -297,15 +298,43 @@ def get_daily_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
 
 
 def get_daily_basic_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
-    """按交易日拉全市场 daily_basic，一次返回当天所有股票的 PE/PB/市值。
+    """⚠️ v6.2.4 废弃: 用 get_stk_factor_by_date 替代 (字段更全, 一次性替代 daily_basic)
+
+    保留函数签名只为兼容, 内部走 stk_factor_pro
+    """
+    return get_stk_factor_by_date(trade_date)
+
+
+def get_stk_factor_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
+    """按交易日拉全市场 stk_factor_pro (v6.2.4 起替代 daily_basic)。
 
     trade_date: YYYYMMDD
-    返回: [{ts_code, trade_date, close, pe_ttm, pb, total_mv, circ_mv, turnover_rate, volume_ratio}, ...]
+    返回 16 列: [{ts_code, trade_date, close, pe, pe_ttm, pb, total_mv, circ_mv,
+                 turnover_rate, turnover_rate_f, volume_ratio, total_share, float_share,
+                 ps, ps_ttm, dv_ratio, dv_ttm}, ...]
+
+    1 次拿全市场 5548 只 1 天 (按 trade_date 1 次 API)
+    实测 5000 积分档限频 200/分, sleep 2.0s 跑 22/分稳定 13 分钟 290 天未触发限流
+
+    字段 (5000 积分档 pro):
+      - 基础: ts_code, trade_date, close
+      - 估值: pe, pe_ttm, pb, ps, ps_ttm  ← ps/ps_ttm 是 daily_basic 没有的
+      - 股息: dv_ratio, dv_ttm
+      - 股本: total_share, float_share  ← float_share 替代了用 circ_mv/close 推算
+      - 流通: total_mv, circ_mv
+      - 换手: turnover_rate, turnover_rate_f (自由流通股换手), volume_ratio
     """
     data, status = _safe_call(
-        "daily_basic",
+        "stk_factor_pro",
         trade_date=trade_date,
-        fields="ts_code,trade_date,close,pe,pe_ttm,pb,total_mv,circ_mv,turnover_rate,volume_ratio",
+        fields=(
+            "ts_code,trade_date,close,"
+            "pe,pe_ttm,pb,ps,ps_ttm,"
+            "dv_ratio,dv_ttm,"
+            "total_mv,circ_mv,"
+            "turnover_rate,turnover_rate_f,volume_ratio,"
+            "total_share,float_share"
+        ),
     )
     return data, status
 
@@ -609,7 +638,7 @@ def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: i
           sell_sm_*/sell_md_*/sell_lg_*/sell_elg_* (对应卖出)
           net_mf_vol / net_mf_amount (净流入, 单位 万元)
 
-    Tushare 2000 积分档可用 (替代 push2delay fflow)
+    Tushare 5000 积分档可用 (替代 push2delay fflow)
 
     Args:
         code: 6 位代码
@@ -636,13 +665,14 @@ def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: i
 
 
 # ============================================================
-# 11. 业绩预告 pro.forecast (2000 积分档可用, forecast_vip 需 5000 积分)
+# 11. 业绩预告 pro.forecast (限量接口, 需用户单独开通权限)
 # ============================================================
 
 def get_forecast(code: str, recent_n: int = 4) -> tuple[list[dict] | None, str]:
     """业绩预告 (业绩预增/预减/扭亏/首亏/续亏/续盈/略增/略减)
 
-    Tushare 2000 积分档可用 (forecast_vip 需 5000 积分, 不在档内)
+    Tushare forecast 是限量接口 (用户权限未开, 永久返空, 走白名单)
+    forecast_vip 需更高积分 (不在档内)
     4 个披露期: 1/15-1/30, 4/15-4/30, 7/15-7/30, 10/15-10/30
 
     字段:
@@ -801,7 +831,7 @@ def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
     out["money_flow"] = mf
     out["statuses"]["money_flow"] = mf_s
 
-    # 11. 业绩预告 (2000 积分档可用, 4 条/年)
+    # 11. 业绩预告 (限量接口, 4 条/年, 用户权限未开)
     fc, fc_s = get_forecast(code, recent_n=4)
     out["forecast"] = fc
     out["statuses"]["forecast"] = fc_s
@@ -818,7 +848,7 @@ def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
 def get_fund_flow_combined(code: str, days: int = 10, moneyflow_list: list | None = None) -> dict:
     """
     组合方案: Tushare.money_flow 真实数据 (主力=大单+特大单)
-    - 主源: Tushare.money_flow API (2000 积分档, 24h 稳定)
+    - 主源: Tushare.money_flow API (5000 积分档, 24h 稳定)
 
     v5.10.17 改: 接受 moneyflow_list 参数 (复用 fetch_all 已拉数据)
       - 不传 moneyflow_list: 内部调 get_money_flow(code, limit=days) 拉数据
@@ -843,7 +873,7 @@ def get_fund_flow_combined(code: str, days: int = 10, moneyflow_list: list | Non
     real_column = []
     today_real = None
 
-    # 1. Tushare.money_flow 真实 (24h 稳定, 2000 积分档)
+    # 1. Tushare.money_flow 真实 (24h 稳定, 5000 积分档)
     # v5.10.17: 优先用传入的 moneyflow_list, 0 重复拉取
     if moneyflow_list is None:
         try:

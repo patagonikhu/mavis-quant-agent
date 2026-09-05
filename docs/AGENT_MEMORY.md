@@ -7,11 +7,12 @@
 ## 入口 (grep 验证过)
 
 - **项目根**: `/Users/I514959/workspace/mavis-quant-agent/`
-- **数据**: `data/history/daily/{year}.parquet` (duckdb 读)
-- **统一入口 + 同步**: `tools/kline_store.py` (DataStore + sync_incremental, 2026-09-01 合并)
-- **单只**: `tools/sync_watchlist_fresh.py` (2026-09-01 取代 sync_stock)
-- **分析引擎**: `tools/analysis/analysis_engine.py` 8 strategies
-- **5 个活 skill**: `.claude/skills/{t-bb-obv, t-analyze, t-backtest, t-near-low, t-sync-cache}/`
+- **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic,eps}/`
+- **同步**: `tools/storage/sync.py` (8 flag: kline/stk-factor/stock-basic/financials/eps/fflow/cache/meta, 默认 --auto)
+- **分析引擎**: `tools/analysis/analysis_engine.py` 6 strategies (chan/wyckoff/smc/obv/fflow/valuation)
+- **6 个活 skill**: `.claude/skills/{t-analyze, t-magic, t-sync-data, t-bb-obv, t-near-low, t-backtest}/`
+- **批量分析**: `tools/batch/t_analyze_all.py` (4 worker 并发)
+- **单只分析**: `tools/batch/t_analyze_one.py --code <code>` (新加, 829 行详报)
 
 ## 纪律 (8-24 固化)
 

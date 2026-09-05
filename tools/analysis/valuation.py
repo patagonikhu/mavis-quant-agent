@@ -90,8 +90,13 @@ def find_full_year_financials(financials: list[dict], as_of_date: str) -> Option
     return None
 
 
-def calc_roc_at_date(financials: list[dict], as_of_date: str) -> dict:
+def calc_roc_at_date(financials: list[dict], as_of_date: str, min_capital_yi: float = 5) -> dict:
     """单日 ROC (跟 _ttm_ebit 一样, 抹平季节性)
+
+    Args:
+        min_capital_yi: NWC+FA 最小阈值 (亿), 低于此值视为分母过小假阳性
+            默认 5 亿 (剔除 ROC 4000%+ 这种 NWC≈0 的出版/软件业假阳性)
+            设 0 关闭过滤
 
     Returns: {roc, ebit_yi, capital_yi, period_label, seasonal_warning, skip_reason}
     """
@@ -114,6 +119,15 @@ def calc_roc_at_date(financials: list[dict], as_of_date: str) -> dict:
     if capital <= 0:
         return {"roc": None, "industry": industry, "skip_reason": "no_data", "period_label": period_label}
 
+    # v6.2.5 加: 剔除 NWC+FA 过小导致的 ROC 假阳性
+    # 例: 中南传媒 NWC=-28.6亿 + FA=29亿 = 0.4亿, EBIT=16.6 → ROC 4186% (假)
+    # 阈值 5 亿: 滤掉这种, 不影响真实大公司 (茅台 500亿, 苹果 200亿)
+    capital_yi = capital / 1e8
+    if min_capital_yi > 0 and capital_yi < min_capital_yi:
+        return {"roc": None, "industry": industry, "capital_yi": round(capital_yi, 2),
+                "skip_reason": f"capital_too_small ({capital_yi:.1f}亿 < {min_capital_yi}亿)",
+                "period_label": period_label}
+
     roc = round(ebit_ttm / capital * 100, 1)
     return {
         "roc": roc,
@@ -121,7 +135,7 @@ def calc_roc_at_date(financials: list[dict], as_of_date: str) -> dict:
         "period_label": period_label,
         "seasonal_warning": seasonal,
         "ebit_yi": round(ebit_ttm / 1e8, 1),
-        "capital_yi": round(capital / 1e8, 2),
+        "capital_yi": round(capital_yi, 2),
     }
 
 
@@ -168,12 +182,16 @@ def calc_ey_at_date(financials: list[dict], as_of_date: str, market_cap_wan: flo
 # 合并算子 (ValuationStrategy 用, 4 指标 1 次 financials 读)
 # ============================================================
 
-def calc_magic_one_day(financials: list[dict], as_of_date: str, market_cap_wan: float) -> dict:
+def calc_magic_one_day(financials: list[dict], as_of_date: str, market_cap_wan: float,
+                        min_capital_yi: float = 5) -> dict:
     """单日 Magic (ROC + EY 1 次 financials + 1 次市场值 读)
 
     跟 calc_magic_score 区别: 不用取 daily_basic 拿市值 (ValuationStrategy 已经传进来)
+
+    Args:
+        min_capital_yi: NWC+FA 最小阈值 (亿), 透传给 calc_roc_at_date
     """
-    roc_data = calc_roc_at_date(financials, as_of_date)
+    roc_data = calc_roc_at_date(financials, as_of_date, min_capital_yi=min_capital_yi)
     ey_data  = calc_ey_at_date(financials, as_of_date, market_cap_wan)
 
     # 合并 skip_reason: 两个都失败才算 no_data
@@ -201,8 +219,12 @@ def calc_magic_one_day(financials: list[dict], as_of_date: str, market_cap_wan: 
 # batch 排名入口 (magic_top20.py 用)
 # ============================================================
 
-def calc_magic_score(code: str, market_cap: float) -> dict:
+def calc_magic_score(code: str, market_cap: float, min_capital_yi: float = 5) -> dict:
     """单只 Magic Formula 综合评分 (给 batch_magic_scores 排名用)
+
+    Args:
+        min_capital_yi: NWC+FA 最小阈值 (亿), 默认 5, 透传给 calc_magic_one_day
+           设 0 关闭过滤 (保留 ROC 假阳性 Top 5)
 
     Returns:
         dict 含 roc, ey, industry, skip_reason, ev_yi, seasonal_warning, period_label,
@@ -220,10 +242,11 @@ def calc_magic_score(code: str, market_cap: float) -> dict:
         }
     # 用最新财务日期 (没 as_of_date, 默认"今天")
     latest_date = financials[-1].get("end_date", "20251231").replace("-", "")[:8]
-    return calc_magic_one_day(financials, latest_date, market_cap)
+    return calc_magic_one_day(financials, latest_date, market_cap, min_capital_yi=min_capital_yi)
 
 
-def batch_magic_scores(codes: list[str], with_market_cap: bool = True) -> list[dict]:
+def batch_magic_scores(codes: list[str], with_market_cap: bool = True,
+                       min_capital_yi: float = 5) -> list[dict]:
     """批量算 Magic Formula 评分 (排名用)
 
     Args:

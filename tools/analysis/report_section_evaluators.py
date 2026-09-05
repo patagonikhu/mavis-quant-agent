@@ -745,7 +745,7 @@ def compute_signal_5cat(
     # north_capital / institutional / etf_subscription: 需专项 API, 暂标记
     all_signals.append({
         "name": "north_capital_anomaly", "category": "资金", "score": 5,
-        "triggered": False, "weight": 5, "reason": "北向资金 API 暂未接入 (Tushare 2000 积分档, 后续按需)",
+        "triggered": False, "weight": 5, "reason": "北向资金 API 暂未接入 (Tushare 10000 积分档, 后续按需)",
     })
     all_signals.append({
         "name": "institutional_concentration", "category": "资金", "score": 5,

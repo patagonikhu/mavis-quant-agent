@@ -116,12 +116,12 @@ def _load_eps_window(codes: list[str]) -> dict[str, list[dict]]:
     Returns: {code: eps_table (list[dict])}
     """
     out: dict[str, list[dict]] = {}
-    import json
+    from tools.storage.caches.eps import _read_parquet
     for c in codes:
-        path = EPS_DIR / f"{c}.json"
-        if path.exists() and path.stat().st_size > 10:
+        path = EPS_DIR / f"{c}.parquet"
+        if path.exists() and path.stat().st_size > 100:
             try:
-                out[c] = json.loads(path.read_text(encoding="utf-8"))
+                out[c] = _read_parquet(path)
             except Exception:
                 out[c] = []
         else:

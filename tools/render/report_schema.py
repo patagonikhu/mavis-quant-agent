@@ -271,7 +271,7 @@ REPORT_SECTIONS = [
     },
     {
         "id": "ts_forecast",
-        "title": "📊 业绩预告 (Tushare forecast, 2000 积分档) ⭐",
+        "title": "📊 业绩预告 (Tushare forecast, 限量接口) ⭐",
         "category": "📋",
         "render": "render_ts_forecast",
         "required": True,

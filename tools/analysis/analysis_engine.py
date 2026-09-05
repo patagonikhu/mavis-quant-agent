@@ -904,10 +904,15 @@ class ValuationStrategy:
             "L_E3_r10": dcf_today.get("r_10%", {}).get("L/E3(每share)"),
             "L_achievable": dcf_today.get("L_achievable", ""),  # 旧 _derive_dcf 字段
 
-            # Magic 字段 (新)
+            # Magic 字段 (新) — 2026-09-04 修: 补 5 个明细字段, render 表格不显示 —
             "roc":       latest_magic.get("roc") if latest_magic else None,
             "ey":        latest_magic.get("ey") if latest_magic else None,
             "ev_yi":     latest_magic.get("ev_yi") if latest_magic else None,
+            "industry":  latest_magic.get("industry") if latest_magic else None,
+            "ebit_yi":   latest_magic.get("ebit_yi") if latest_magic else None,
+            "capital_yi":latest_magic.get("capital_yi") if latest_magic else None,
+            "netdebt_yi":latest_magic.get("netdebt_yi") if latest_magic else None,
+            "market_cap_yi": latest_magic.get("market_cap_yi") if latest_magic else None,
             "period_label":     latest_magic.get("period_label") if latest_magic else "no_data",
             "seasonal_warning": latest_magic.get("seasonal_warning", False) if latest_magic else False,
 
