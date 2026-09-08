@@ -1,7 +1,7 @@
 {
-  "version": "1.4",
-  "last_updated": "2026-09-04",
-  "description": "关注清单 + 你手填的笔记。LLM 用这些笔记 + 训练知识 + 框架 doc 出报告。每周花 10 分钟改一下。v1.2 加 rating_history 字段追踪评级变化。 v1.2 批量导入 docs/analyze-*.md 所有标的。",
+  "version": "v2.1",
+  "last_updated": "2026-09-08",
+  "description": "21 持仓 + 33 自选 (R3 v6.2.7 命中) | 2026-09-08 用户指定替换",
   "stocks": [
     {
       "code": "000001",
@@ -39,86 +39,11 @@
       "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实0.64x+L/E3=1.66x低估+面板超跌+龙头5/14,升级观望→轻仓(待fflow转正确认)"
     },
     {
-      "code": "000970",
-      "name": "中科三环",
-      "sector": "稀土永磁",
-      "notes": "[2026-07-17 batch] PEG_真实1.50偏贵+L/E3=5.08偏贵+fflow中性+MA混乱 → 观望降一档"
-    },
-    {
-      "code": "002028",
-      "name": "思源电气",
-      "sector": "电力变压器",
-      "notes": "PEG 0.79，中性PI 3.8(市值$184亿)。ROE持续上升22%。Leader 10/14。",
-      "tech_params": {
-        "vol_high": 1.3,
-        "vol_low": 0.75,
-        "ma20_slope": 2
-      }
-    },
-    {
-      "code": "002049",
-      "name": "紫光国微",
-      "sector": "存储",
-      "notes": "[2026-07-14 板块对比] 存储板块唯一🥈: PEG_真实 1.33x, L/E3 1.89x, L/可达 1.89 (合理). 今日 -5.86% 逆势走弱,价格 ¥77. 关注 MA60 (~¥72) 支撑,跌破止损。fflow 今日不可用,等接口恢复后验证主力动向。"
-    },
-    {
-      "code": "002273",
-      "name": "水晶光电",
-      "sector": "光学薄膜-消费电子",
-      "notes": "Priced-in 0.85, 龙头 10, 光学薄膜全球 #1 + 车载激光雷达保护罩。/t-analyze 002273 2026-07-01 v3 PEG 1.9 + g 21% → 🥈 标准"
-    },
-    {
-      "code": "002371",
-      "name": "北方华创",
-      "sector": "先进封装设备",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实2.15x+L/E3=6.31x估值贵+大盘弱势维持MA120+50%+半导体设备三重卖出信号共振,应清仓",
-      "tech_params": {
-        "vol_high": 1.8,
-        "vol_low": 0.65,
-        "ma20_slope": 3
-      }
-    },
-    {
-      "code": "002463",
-      "name": "沪电股份",
-      "sector": "PCB",
-      "notes": "PCB龙头，估值合理，但fflow出货中。",
-      "tech_params": {
-        "vol_high": 1.8,
-        "vol_low": 0.65,
-        "ma20_slope": 3
-      }
-    },
-    {
-      "code": "002472",
-      "name": "双环传动",
-      "sector": "机器人-减速器",
-      "notes": "T-0.5 甜蜜窗口(2026-07-15 RV减速器进特斯拉)。PEG 1.3，市值$44亿。Leader 8/14。"
-    },
-    {
       "code": "002475",
       "name": "立讯精密",
       "sector": "消费电子-代工",
       "list_type": "持仓",
       "notes": "[2026-07-17 batch] PEG_真实0.66便宜+L/E3=1.14合理+fflow-0.3亿中性+大盘弱 → 降一档: 标准→轻仓"
-    },
-    {
-      "code": "002747",
-      "name": "埃斯顿",
-      "sector": "机器人-本体",
-      "notes": "snapshot 2026-07-17: PEG_真实 1.73x (v4 1.70x→1.73x微升) / L/E3 11.03x (v4 10.83x→11.03x) / v11 ⬜中性 / fflow 🔴偏出货 / MA拉高出货嫌疑维持 | 板块已冷却但单股高位 | 大盘弱势压力"
-    },
-    {
-      "code": "002886",
-      "name": "沃特股份",
-      "sector": "机器人-材料",
-      "notes": "snapshot 2026-07-17: PEG_真实 0.59x (v4 1.07x→0.59x, 因CAGR重算+E3跃升到0.795) / L/E3 2.36x (v4 2.64→2.36下降) / fflow ⬜中性 / T事件已过T+0.07 / RSI 21.5超卖 / 板块1月-39.6%大跌 | 维持轻仓, 不加仓"
-    },
-    {
-      "code": "300223",
-      "name": "北京君正",
-      "sector": "半导体-MCU存储",
-      "notes": "snapshot 2026-07-17: PEG_真实 1.00x (v4 1.29→1.00x, 因CAGR/E3重算) / L/E3 4.99x (v4 6.44→4.99下降) / fflow 🔴-36.5亿触发清仓 / 板块半导体存储1周-27.8%崩跌 / MA120+36%顶部区 / 维持观望, 若持仓建议减仓1/3"
     },
     {
       "code": "300274",
@@ -133,94 +58,6 @@
       }
     },
     {
-      "code": "300285",
-      "name": "国瓷材料",
-      "sector": "MLCC-粉体",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实2.50x+L/E3=7.08x接近透支,陶瓷材料板块弱势,清仓"
-    },
-    {
-      "code": "300308",
-      "name": "中际旭创",
-      "sector": "CPO",
-      "notes": "[2026-07-14 snapshot] snapshot 2026-07-14: PEG_真实 0.44x / L/E3 1.46x / v11 🟠偏出货 / MA 拉高出货 | CPO龙头，基本面强，但出货规模大。RSI极低=超卖，但fflow确认主力在卖。",
-      "tech_params": {
-        "vol_high": 2.0,
-        "vol_low": 0.65,
-        "ma20_slope": 4
-      }
-    },
-    {
-      "code": "300408",
-      "name": "三环集团",
-      "sector": "MLCC",
-      "notes": "docs/analyze-300408-三环集团-MLCC.md 已有分析报告。评级依据: 无明确信号"
-    },
-    {
-      "code": "300476",
-      "name": "胜宏科技",
-      "sector": "PCB",
-      "notes": "[2026-07-14 snapshot] snapshot 2026-07-14: PEG_真实 0.36x / L/E3 0.99x / v11 ⬜中性 / MA 拉高出货 | 短期超卖但fflow和OBV都很弱，暂不操作。"
-    },
-    {
-      "code": "300499",
-      "name": "高澜股份",
-      "sector": "AI-液冷",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG数据不足+L/E3=7.62x透支,AI液冷板块,清仓"
-    },
-    {
-      "code": "300502",
-      "name": "新易盛",
-      "sector": "CPO",
-      "notes": "PEG0.3x是板块最低，均线上方趋势好，但MA120偏+35%需注意高位。",
-      "tech_params": {
-        "vol_high": 2.0,
-        "vol_low": 0.65,
-        "ma20_slope": 4
-      }
-    },
-    {
-      "code": "300567",
-      "name": "精测电子",
-      "sector": "半导体设备-检测",
-      "notes": "[2026-07-17 v5] 大跌-17% (¥297→¥247): PEG_真实 1.68x (改善) / L/E3 9.13x / fflow +5.1亿进货 / MA120+50.2% / 半导体设备MACD死叉待触发 / v7=+1/5 | docs/analyze-300567-精测电子-半导体设备-检测.md v5"
-    },
-    {
-      "code": "300580",
-      "name": "贝斯特",
-      "sector": "机器人-丝杠",
-      "notes": "[2026-07-17 v5] 回调 -3% (¥21.24→¥20.60): PEG_真实 2.08x (微改善,仍>2.0) / L/E3 2.42x / fflow中性 / 卡点弱(丝杠非独家,龙头7/14) / MA120 -15.2% 蓄势 / v7=0/5"
-    },
-    {
-      "code": "300604",
-      "name": "长川科技",
-      "sector": "半导体设备-测试",
-      "notes": "[2026-07-17 v5] 大跌-17% (¥325→¥292): PEG_真实 1.81x / L/E3 5.01x / fflow -14.4亿出货 / MA120+55.8% / MACD死叉已触发! / v7=-2/5 / EPS上修+6% / ⚠️ 三重卖出信号共振"
-    },
-    {
-      "code": "300661",
-      "name": "圣邦股份",
-      "sector": "半导体-模拟",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实1.72x+L/E3=7.28x偏贵,半导体-模拟,降一档轻仓→观望"
-    },
-    {
-      "code": "300748",
-      "name": "金力永磁",
-      "sector": "稀土永磁",
-      "notes": "PEG 1.3，乐观PI 0.4，市值$57亿。机器人+EV双驱动。Leader 10/14。"
-    },
-    {
-      "code": "300990",
-      "name": "同飞股份",
-      "sector": "储能-温控",
-      "notes": "T-1.1 甜蜜窗口(2026-08-01 Megapack+68亿订单)。CAGR PEG 0.94 < 1，市值$25亿。Leader 8/14。"
-    },
-    {
-      "code": "301308",
-      "name": "江波龙",
-      "sector": "存储-模组",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实0.11x+L/E3=1.62x极便宜,存储模组龙头,升级观望→轻仓(等中报确认净利率)"
-    },
-    {
       "code": "600089",
       "name": "特变电工",
       "list_type": "持仓",
@@ -233,190 +70,11 @@
       }
     },
     {
-      "code": "600176",
-      "name": "中国巨石",
-      "sector": "PCB上游-玻纤",
-      "notes": "docs/analyze-600176-中国巨石-PCB上游-玻纤.md 已有分析报告。评级依据: 无明确信号"
-    },
-    {
-      "code": "600362",
-      "name": "江西铜业",
-      "sector": "有色金属-铜",
-      "notes": "[2026-07-22 /t-analyze v1] PEG真实0.68✅ Lynch买入区 + 板块超跌(-22% 1m, -30% 3m) + DCF L校准 103亿/L-E3 0.59x 合理 + 60分2买¥42.20接近(距2%) + 龙头⭐⭐⭐⭐铜生产商。但fflow Tushare未更新+缠论观望,等信号确认。"
-    },
-    {
-      "code": "600584",
-      "name": "长电科技",
-      "sector": "半导体-封测",
-      "notes": "[2026-07-17 batch 维持] PEG_真实3.17极贵+L/E3=5.74偏贵+fflow-96亿出货 → 维持不买"
-    },
-    {
-      "code": "601138",
-      "name": "工业富联",
-      "sector": "AI 服务器",
-      "notes": "[2026-07-14 snapshot] snapshot 2026-07-14: PEG_真实 0.47x / L/E3 0.99x / v11 ⬜中性 / MA 拉高出货 | H1业绩预告+93%超预期已兑现，主力在获利了结。等fflow转正+RSI<30时可以考虑轻仓。"
-    },
-    {
       "code": "601958",
       "name": "金钼股份",
       "sector": "贵金属-钼业",
       "list_type": "持仓",
       "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实1.74x+L/E3=1.97x合理,但大盘弱势钼价周期,降一档轻仓→观望"
-    },
-    {
-      "code": "603290",
-      "name": "斯达半导",
-      "sector": "SiC功率器件",
-      "notes": "[2026-07-17 batch] PEG_真实1.81偏贵+L/E3=2.67合理+fflow-5亿偏出货+RSI23极度超卖 → 观望降一档"
-    },
-    {
-      "code": "603662",
-      "name": "柯力传感",
-      "sector": "机器人-传感器",
-      "notes": "[2026-07-14 snapshot] snapshot 2026-07-14: PEG_真实 4.57x / L/E3 3.79x / v11 ⬜中性 / MA 拉高出货 | 柯力传感 机器人传感器，轻仓观察"
-    },
-    {
-      "code": "603728",
-      "name": "鸣志电器",
-      "sector": "机器人-电机",
-      "notes": "[2026-07-17 snapshot v5] 大盘弱势重评: PEG_真实 3.93x / L/E3 13.34x / v11 ⬜中性 / MA 空头排列 / 5d=-15.5% / 20d=-20.2% / fflow 5d+0.34亿中性。估值仍严重透支(PEG>2, L/E3>8)+空头排列+大盘弱势,不接飞刀。维持'不买'评级,等PEG<1.5 + 板块MA20偏<-15% + 大盘企稳再考虑。"
-    },
-    {
-      "code": "603986",
-      "name": "兆易创新",
-      "sector": "存储 (AI 产业链)",
-      "notes": "H1业绩预告+1099%超预期（已兑现），但fflow -134.9亿+OBV顶背离+出货型MA，主力在兑现利润。L/E3=6x叙事已充分定价。当前不追，等出货完成后逢低再看。"
-    },
-    {
-      "code": "688008",
-      "name": "澜起科技",
-      "sector": "半导体设计-内存接口芯片",
-      "notes": "[2026-07-17 batch] PEG_真实1.98偏贵+L/E3=4.57合理+fflow-53亿出货 → 降一档: 出货+估值贵"
-    },
-    {
-      "code": "688012",
-      "name": "中微公司",
-      "sector": "先进封装设备",
-      "notes": "[2026-07-17 batch 维持] PEG_真实1.31合理但L/E3=7.40偏贵+fflow-35亿出货 → 维持不买",
-      "tech_params": {
-        "vol_high": 1.5,
-        "vol_low": 0.7,
-        "ma20_slope": 3
-      }
-    },
-    {
-      "code": "688017",
-      "name": "绿的谐波",
-      "sector": "机器人-减速器",
-      "notes": "[2026-07-17 batch 维持] PEG_真实7.09极贵+L/E3=19.93透支 → 维持不买"
-    },
-    {
-      "code": "688019",
-      "name": "安集科技",
-      "sector": "半导体材料-CMP抛光液",
-      "notes": "安集科技 PEG0.7+Leader 11，CMP抛光液唯一国产"
-    },
-    {
-      "code": "688037",
-      "name": "芯源微",
-      "sector": "半导体设备-涂胶显影",
-      "notes": "[2026-07-17 v5] PEG_真实 8.44x ❌❌ (4年CAGR 35.6%, 避开2025低点), L/可达 10x ❌❌, fflow 5日-5.92亿出货, MA拉高出货嫌疑, 龙头9/14细分龙头. 中报8-25验证2026E净利+203%是否兑现. 等PEG<2.5x再考虑. 维持不买"
-    },
-    {
-      "code": "688041",
-      "name": "海光信息",
-      "sector": "AI 芯片",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实3.00x+L/E3=12.75x极度透支,半导体设备-测试,清仓"
-    },
-    {
-      "code": "688072",
-      "name": "拓荆科技",
-      "sector": "半导体设备-CVD",
-      "notes": "[2026-07-17 /t-analyze v5] snapshot 2026-07-17: PEG_真实 2.51x / L/E3 7.52x / L/可达 8.66x(🔴叙事透支) / v11 🔴偏出货(score=-2 MA120+58%) / MA 拉高出货嫌疑 | fflow 5d +5.43亿 🟡偏进货(7-15/16转出)| 板块 MA20 -13%安全但3月+101%透支 | 维持不买"
-    },
-    {
-      "code": "688082",
-      "name": "盛美上海",
-      "sector": "半导体设备-清洗",
-      "notes": "[2026-07-17 v5 fflow+板块预警] 价格 -20% 至¥314, 但 PEG_真实3.82x+L/可达5.27x双泡沫, fflow 5日-11.95亿连续6天出货, 板块3月+77.6%顶部+1周-16.1%回调, MACD死叉. 🛑退出信号4重共振: 立即清仓 (若有). 维持不买."
-    },
-    {
-      "code": "688099",
-      "name": "晶晨股份",
-      "sector": "半导体-SoC",
-      "notes": "[2026-07-17 snapshot v5] 今日-7.66%大跌至¥90.48, PEG真实0.64x✅/DCF校正1.43x✅(估值更便宜). 但v11🟠偏出货 + 全空头排列(MA60>MA120但P<MA5/20/60) → 维持轻仓. fflow 5d-0.75亿中性震荡(非恐慌). 升级触发: OBV底背离+fflow 2日转正+创业板RSI<35."
-    },
-    {
-      "code": "688120",
-      "name": "华海清科",
-      "sector": "半导体设备-CMP",
-      "notes": "[2026-07-17 v5] PEG_真实 1.48x✅ 但 L/可达 2.76x❌❌叙事透支 / fflow 5日-11.0亿🔴出货 / v11 score=-3 OBV强顶背离 / MA120偏离+49.8%长期顶部 / 5日暴跌-21% / 半导体设备板块1周-16.1%过热回调 / 龙头12/14真龙头但估值已透支"
-    },
-    {
-      "code": "688123",
-      "name": "聚辰股份",
-      "sector": "半导体-EEPROM",
-      "notes": "[2026-07-17 t-analyze] 688123 聚辰股份: PEG_真实 1.02x ✅ 健康 / L-可达 1.49x 🟠 / 主力 5日-9.6亿 🔴出货 / MA20偏-24.85%空头 / 评级观察"
-    },
-    {
-      "code": "688126",
-      "name": "沪硅产业",
-      "sector": "半导体材料-硅片",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实3.00x+沪硅产业亏损股+板块弱势,清仓"
-    },
-    {
-      "code": "688146",
-      "name": "中船特气",
-      "sector": "半导体材料-特种气体",
-      "notes": "[2026-07-17] 中船特气: PEG_真实5.84+L/E3 16.33+主力5日-21.9亿+MA120偏+107.7% → 估值泡沫清仓"
-    },
-    {
-      "code": "688187",
-      "name": "时代电气",
-      "sector": "SiC功率器件",
-      "notes": "[2026-07-17 batch 维持] PEG_真实1.29x合理+L/E3=0.82低估+fflow-2亿中性+RSI25超卖+空头排列 → 维持轻仓"
-    },
-    {
-      "code": "688233",
-      "name": "神工股份",
-      "sector": "半导体材料-刻蚀",
-      "notes": "[2026-07-17] 神工股份: 神工股份: 复苏股/PEG_真实1.20/L-E3 4.37/主力5日-14.3亿/5d-30.7%"
-    },
-    {
-      "code": "688249",
-      "name": "晶合集成",
-      "sector": "半导体-晶圆代工",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实2.19x+L/E3=8.58x接近透支,半导体晶圆代工,清仓"
-    },
-    {
-      "code": "688256",
-      "name": "寒武纪",
-      "sector": "AI 芯片",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实0.77x便宜但L/E3=7.86x叙事透支,AI芯片大盘弱势,降一档标准→观望"
-    },
-    {
-      "code": "688361",
-      "name": "中科飞测",
-      "sector": "半导体设备-CMP",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实2.06x+L/E3=20.05x极度透支,半导体设备-CMP,清仓"
-    },
-    {
-      "code": "688409",
-      "name": "富创精密",
-      "sector": "半导体设备-零部件",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实数据不足+L/E3=9.79x接近透支,半导体设备-零部件,清仓"
-    },
-    {
-      "code": "688766",
-      "name": "普冉股份",
-      "sector": "半导体-NOR",
-      "notes": "无2026E机构预测，无法计算PEG/DCF。fflow连续6天流出-26.5亿，MA120偏+98%高位，出货型排列。高位+连续出货=不碰。"
-    },
-    {
-      "code": "688981",
-      "name": "中芯国际",
-      "sector": "半导体-晶圆代工",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实7.13x+L/E3=22.56x极度透支,半导体晶圆代工,清仓"
     },
     {
       "code": "600765",
@@ -496,335 +154,6 @@
       "notes": "[2026-08-31] 加进 watchlist, 之前用 refresh_all.sh 单独跑, 现在批量自动处理"
     },
     {
-      "code": "600262",
-      "name": "北方股份",
-      "sector": "专用机械",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #1] ROC=717.7% (rank 2) EY=9.60% (rank 5) 综合=3.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "300551",
-      "name": "古鳌科技",
-      "sector": "软件服务",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #2] ROC=224.2% (rank 6) EY=10.00% (rank 4) 综合=5.0 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "300475",
-      "name": "香农芯创",
-      "sector": "元器件",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #3] ROC=350.4% (rank 4) EY=7.30% (rank 10) 综合=7.0 / PEG 0.09 (🟢, g=180%) / DCF L=81亿 L/E3=0.7x L/可达=58/75=0.77x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "300456",
-      "name": "赛微电子",
-      "sector": "半导体",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #4] ROC=135.0% (rank 14) EY=10.90% (rank 1) 综合=7.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002546",
-      "name": "新联电子",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #5] ROC=152.2% (rank 10) EY=8.30% (rank 6) 综合=8.0 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002602",
-      "name": "世纪华通",
-      "sector": "互联网",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #6] ROC=888.3% (rank 1) EY=5.70% (rank 20) 综合=10.5 / PEG 0.40 (🟢, g=29%) / DCF L=101亿 L/E3=0.8x L/可达=72/134=0.53x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002555",
-      "name": "三七互娱",
-      "sector": "互联网",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #7] ROC=136.8% (rank 12) EY=5.40% (rank 26) 综合=19.0 / PEG 1.64 (🟠, g=8%) / DCF L=45亿 L/E3=1.2x L/可达=32/46=0.69x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002346",
-      "name": "柘中股份",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #8] ROC=136.0% (rank 13) EY=5.00% (rank 32) 综合=22.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002452",
-      "name": "长高电气",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #9] ROC=45.3% (rank 53) EY=10.30% (rank 3) 综合=28.0 / PEG 0.64 (🟢, g=20%) / DCF L=8亿 L/E3=1.4x L/可达=6/8=0.70x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000997",
-      "name": "新大陆",
-      "sector": "IT设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #10] ROC=89.7% (rank 18) EY=4.90% (rank 38) 综合=28.0 / PEG 0.82 (🟢, g=22%) / DCF L=24亿 L/E3=1.3x L/可达=17/17=0.98x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000889",
-      "name": "中嘉博创",
-      "sector": "通信设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #12] ROC=166.4% (rank 9) EY=3.40% (rank 75) 综合=42.0 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "688525",
-      "name": "佰维存储",
-      "sector": "半导体",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #13] ROC=35.1% (rank 71) EY=6.90% (rank 13) 综合=42.0 / PEG 0.10 (🟢, g=130%) / DCF L=120亿 L/E3=1.2x L/可达=85/129=0.66x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "001309",
-      "name": "德明利",
-      "sector": "半导体",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #14] ROC=33.9% (rank 73) EY=6.40% (rank 15) 综合=44.0 / PEG 0.06 (🟢, g=144%) / DCF L=97亿 L/E3=1.0x L/可达=69/174=0.40x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002264",
-      "name": "新华都",
-      "sector": "互联网",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #15] ROC=50.0% (rank 47) EY=4.70% (rank 41) 综合=44.0 / PEG 2.62 (🔴, g=10%) / DCF L=7亿 L/E3=3.0x L/可达=5/3=1.68x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "300750",
-      "name": "宁德时代",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #16] ROC=70.0% (rank 29) EY=3.60% (rank 65) 综合=47.0 / PEG 0.68 (🟢, g=26%) / DCF L=1937亿 L/E3=1.4x L/可达=1381/1437=0.96x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603031",
-      "name": "安孚科技",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #17] ROC=58.8% (rank 32) EY=3.50% (rank 70) 综合=51.0 / PEG 0.84 (🟢, g=40%) / DCF L=22亿 L/E3=3.7x L/可达=16/7=2.40x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "001395",
-      "name": "亚联机械",
-      "sector": "专用机械",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #18] ROC=28.9% (rank 84) EY=5.60% (rank 23) 综合=53.5 / PEG缺 (无机构预期) / DCF缺 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "688036",
-      "name": "传音控股",
-      "sector": "通信设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #19] ROC=41.8% (rank 55) EY=3.80% (rank 59) 综合=57.0 / PEG 0.54 (🟢, g=34%) / DCF L=74亿 L/E3=1.2x L/可达=52/54=0.98x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603508",
-      "name": "思维列控",
-      "sector": "IT设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-01 Magic Top20 #20] ROC=25.6% (rank 98) EY=5.40% (rank 24) 综合=61.0 / PEG 0.88 (🟢, g=14%) / DCF L=8亿 L/E3=1.0x L/可达=6/10=0.60x | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "300724",
-      "name": "捷佳伟创",
-      "sector": "专用机械",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top3] ROC=136.9% (rank 18) EY=17.40% (rank 6) 综合=12.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "688332",
-      "name": "中科蓝讯",
-      "sector": "半导体",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top5] ROC=162.1% (rank 16) EY=9.20% (rank 26) 综合=21.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "300360",
-      "name": "炬华科技",
-      "sector": "电器仪表",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top8] ROC=63.6% (rank 47) EY=18.50% (rank 4) 综合=25.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "688080",
-      "name": "映翰通",
-      "sector": "通信设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top10] ROC=88.8% (rank 35) EY=8.70% (rank 28) 综合=31.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "688819",
-      "name": "天能股份",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top11] ROC=56.0% (rank 63) EY=13.90% (rank 9) 综合=36.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002249",
-      "name": "大洋电机",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top13] ROC=58.4% (rank 57) EY=8.40% (rank 32) 综合=44.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002056",
-      "name": "横店东磁",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top15] ROC=57.1% (rank 59) EY=8.50% (rank 31) 综合=45.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600268",
-      "name": "国电南自",
-      "sector": "电气设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top16] ROC=48.4% (rank 75) EY=9.50% (rank 22) 综合=48.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603100",
-      "name": "川仪股份",
-      "sector": "电器仪表",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top18] ROC=43.5% (rank 83) EY=9.70% (rank 21) 综合=52.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002690",
-      "name": "美亚光电",
-      "sector": "专用机械",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-02 Magic Top20] ROC=119.6% (rank 21) EY=6.10% (rank 88) 综合=54.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601098",
-      "name": "中南传媒",
-      "sector": "出版业",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top1] ROC=4186.3% (rank 5) EY=45.00% (rank 4) 综合=4.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002668",
-      "name": "TCL智家",
-      "sector": "家用电器",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top2] ROC=983.6% (rank 16) EY=34.20% (rank 6) 综合=11.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000752",
-      "name": "*ST西发",
-      "sector": "啤酒",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top3] ROC=1338.4% (rank 9) EY=23.70% (rank 22) 综合=15.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000913",
-      "name": "钱江摩托",
-      "sector": "摩托车",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top4] ROC=292.3% (rank 29) EY=57.40% (rank 2) 综合=15.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000719",
-      "name": "中原传媒",
-      "sector": "出版业",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top6] ROC=234.6% (rank 41) EY=20.10% (rank 31) 综合=36.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600861",
-      "name": "北京人力",
-      "sector": "文教休闲",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top7] ROC=134.4% (rank 75) EY=156.00% (rank 1) 综合=38.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603173",
-      "name": "福斯达",
-      "sector": "机械基件",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top8] ROC=1195.7% (rank 11) EY=13.20% (rank 79) 综合=45.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000404",
-      "name": "长虹华意",
-      "sector": "家用电器",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top10] ROC=88.0% (rank 119) EY=52.00% (rank 3) 综合=61.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000915",
-      "name": "华特达因",
-      "sector": "化学制药",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top11] ROC=95.5% (rank 108) EY=24.70% (rank 19) 综合=63.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000848",
-      "name": "承德露露",
-      "sector": "软饮料",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top12] ROC=215.9% (rank 44) EY=12.90% (rank 84) 综合=64.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002612",
-      "name": "朗姿股份",
-      "sector": "服饰",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top13] ROC=160.0% (rank 65) EY=14.60% (rank 64) 综合=64.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002697",
-      "name": "红旗连锁",
-      "sector": "超市连锁",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top14] ROC=124.7% (rank 80) EY=15.20% (rank 58) 综合=69.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002582",
-      "name": "好想你",
-      "sector": "食品",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top15] ROC=87.6% (rank 120) EY=24.10% (rank 21) 综合=70.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600741",
-      "name": "华域汽车",
-      "sector": "汽车配件",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top16] ROC=77.9% (rank 142) EY=32.60% (rank 8) 综合=75.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600938",
-      "name": "中国海油",
-      "sector": "石油开采",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top17] ROC=165.9% (rank 61) EY=12.50% (rank 92) 综合=76.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601001",
-      "name": "晋控煤业",
-      "sector": "煤炭开采",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top18] ROC=76.1% (rank 146) EY=32.20% (rank 9) 综合=77.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603551",
-      "name": "奥普科技",
-      "sector": "家居用品",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top19] ROC=262.0% (rank 34) EY=11.70% (rank 126) 综合=80.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600066",
-      "name": "宇通客车",
-      "sector": "汽车整车",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-03 Magic Top20] ROC=997.1% (rank 15) EY=11.30% (rank 147) 综合=81.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
       "code": "300919",
       "name": "中伟新材",
       "sector": "电气设备",
@@ -832,60 +161,235 @@
       "notes": "锂电正极前驱体龙头, 2026-09-03 /t-bb-obv 命中 (BOLL -9.7% 最强信号)"
     },
     {
-      "code": "688223",
-      "name": "晶科能源",
-      "sector": "电气设备",
+      "code": "002458",
+      "name": "益生股份",
       "list_type": "自选",
-      "notes": "光伏组件全球前 3, 2026-09-03 /t-near-low 命中 (5y跌 78.8%, 反弹 52 次最多)"
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     },
     {
-      "code": "600894",
-      "name": "广日股份",
-      "sector": "运输设备",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-04 Magic Top10] ROC=74.4% (rank 70) EY=25.70% (rank 13) 综合=41.5 | 卡点⭐ 待 LLM 补"
+      "code": "301366",
+      "name": "一博科技",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     },
     {
-      "code": "601083",
-      "name": "锦江航运",
-      "sector": "水运",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-04 Magic Top12] ROC=84.4% (rank 57) EY=15.90% (rank 46) 综合=51.5 | 卡点⭐ 待 LLM 补"
+      "code": "300613",
+      "name": "富瀚微",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     },
     {
-      "code": "000568",
-      "name": "泸州老窖",
-      "sector": "白酒",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-04 Magic Top14] ROC=85.4% (rank 55) EY=15.30% (rank 53) 综合=54.0 | 卡点⭐ 待 LLM 补"
+      "code": "001313",
+      "name": "粤海饲料",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     },
     {
-      "code": "600729",
-      "name": "重百集团",
-      "sector": "百货",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-04 Magic Top15] ROC=161.6% (rank 22) EY=12.30% (rank 91) 综合=56.5 | 卡点⭐ 待 LLM 补"
+      "code": "688255",
+      "name": "凯尔达",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     },
     {
-      "code": "603529",
-      "name": "爱玛科技",
-      "sector": "摩托车",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-04 Magic Top17] ROC=146.6% (rank 26) EY=12.00% (rank 101) 综合=63.5 | 卡点⭐ 待 LLM 补"
+      "code": "688449",
+      "name": "联芸科技",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     },
     {
-      "code": "600710",
-      "name": "苏美达",
-      "sector": "商贸代理",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-04 Magic Top19] ROC=52.9% (rank 134) EY=39.10% (rank 3) 综合=68.5 | 卡点⭐ 待 LLM 补"
+      "code": "301536",
+      "name": "星宸科技",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     },
     {
-      "code": "601156",
-      "name": "东航物流",
-      "sector": "仓储物流",
-      "list_type": "Magic初筛",
-      "notes": "[2026-09-04 Magic Top20] ROC=60.3% (rank 99) EY=15.40% (rank 52) 综合=75.5 | 卡点⭐ 待 LLM 补"
+      "code": "003032",
+      "name": "传智教育",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "301099",
+      "name": "雅创电子",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "603595",
+      "name": "ST东尼",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "002196",
+      "name": "方正电机",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "000042",
+      "name": "中洲控股",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "688135",
+      "name": "利扬芯片",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "688012",
+      "name": "中微公司",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "002841",
+      "name": "视源股份",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "001339",
+      "name": "智微智能",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "300458",
+      "name": "全志科技",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "688535",
+      "name": "华海诚科",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "001287",
+      "name": "中电港",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "000833",
+      "name": "粤桂股份",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "688620",
+      "name": "安凯微",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "002557",
+      "name": "洽洽食品",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "301085",
+      "name": "亚康股份",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "301321",
+      "name": "翰博高新",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "603068",
+      "name": "博通集成",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "002925",
+      "name": "盈趣科技",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "688256",
+      "name": "寒武纪",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "603085",
+      "name": "天成自控",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "920045",
+      "name": "蘅东光",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "300964",
+      "name": "本川智能",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "002876",
+      "name": "三利谱",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "000925",
+      "name": "众合科技",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "002479",
+      "name": "富春环保",
+      "list_type": "自选",
+      "added_at": "2026-09-08",
+      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
     }
   ],
   "changelog": [

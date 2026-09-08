@@ -526,6 +526,144 @@ def lint_summary(results: list[dict]) -> str:
 
 
 # ============================================================
+# 财务数据 section 专项检查 (v6.2.7 加)
+# ============================================================
+
+def lint_finance_section(content: str) -> list[str]:
+    """财务数据 section 格式检查 — 必须 4 季数据行 + 1 Magic 行 + 1 核心指标行, 12 列对齐
+
+    期望格式 (v6.2.7):
+        ## 财务数据
+        > **EPS 一致预期 (Tushare):** ...
+        > **最近 4 季财务 + Magic 公式** | ...
+        | 季 / 指标 | 营收 yoy | 净利 yoy | 毛利率 | ROE | 营收 (亿) | 净利 (亿) | EBIT (亿) | 总市值 (亿) | 净负债 (亿) | EV (亿) | 投入资本 (亿) |  (12 列)
+        | --- | ... |  (12 个 ---)
+        | 20250630 | or_yoy | np_yoy | gm | roe | rev_yi | np_yi | ebit_yi | — | — | — | — |  (4 季行)
+        ... 4 季
+        | **💎 Magic** (label) | — | — | — | — | — | — | ebit | mc | nd | ev | capital |  (1 Magic 行)
+        | **核心指标** | ROC **%** | EY **%** | 行业 | — | — | — | — | — | — | — | — |  (1 核心指标行)
+    """
+    warnings = []
+
+    # 1. 财务数据 section 必须存在
+    if "## 财务数据" not in content:
+        warnings.append("🔴 财务数据: 缺 ## 财务数据 section")
+        return warnings
+
+    # 2. 找 ## 财务数据 到下一个 ## 的范围
+    m = re.search(r"## 财务数据(.*?)(?=\n## |\Z)", content, re.DOTALL)
+    if not m:
+        warnings.append("🔴 财务数据: section 解析失败")
+        return warnings
+    section = m.group(1)
+
+    # 3. EPS 一致预期 必填
+    if "EPS 一致预期" not in section:
+        warnings.append("🔴 财务数据: 缺 EPS 一致预期 (PEG/DCF 必填)")
+
+    # 4. 4 季财务 + Magic 大表 必填 (12 列)
+    expected_cols = ["营收 yoy", "净利 yoy", "毛利率", "ROE",
+                     "营收 (亿)", "净利 (亿)", "EBIT (亿)",
+                     "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)"]
+
+    # 找大表 (12 列, 12 个 --- 的表头)
+    table_match = re.search(
+        r"\|\s*季\s*/\s*指标\s*\|(.+?)\|\n\|(\s*---\s*\|){11,}",
+        section
+    )
+    if not table_match:
+        # fallback: 找 12 列的表
+        table_match = re.search(
+            r"\|([^|\n]+\|){11,}\n(\|[-\s|]+\n)?",
+            section
+        )
+    if not table_match:
+        warnings.append("🔴 财务数据: 缺 12 列大表 (4 季 + Magic)")
+        return warnings
+
+    table_start = table_match.start()
+    table_section = section[table_start:]
+
+    # 5. 列检查
+    header_row = table_match.group(0).split("\n")[0]
+    cols = [c.strip() for c in header_row.split("|") if c.strip()]
+    if len(cols) < 12:
+        warnings.append(f"🔴 财务数据: 表头只有 {len(cols)} 列 (期望 ≥ 12 列)")
+
+    missing_cols = [c for c in expected_cols if c not in cols]
+    if missing_cols:
+        warnings.append(f"🔴 财务数据: 表头缺列 {missing_cols}")
+
+    # 6. 4 季数据行检查 — 应该有 4 行, 每行 12 列, 且 or_yoy/np_yoy/gm/roe/revenue_yi 不全是 —/空
+    quarter_rows = re.findall(r"^\|\s*(\d{8})\s*\|(.+?)\|$", table_section, re.MULTILINE)
+    if len(quarter_rows) != 4:
+        warnings.append(f"🔴 财务数据: 应有 4 季数据行, 实际 {len(quarter_rows)} 行")
+    else:
+        # 检查每行 4 季实际财务 (or/np/gm/roe) 不应是全部 — (表示没数据)
+        for q, row in quarter_rows:
+            cells = [c.strip() for c in row.split("|") if c.strip()]
+            if len(cells) < 8:
+                warnings.append(f"🔴 财务数据: {q} 行只有 {len(cells)} 列")
+                continue
+            # 前 7 列是 or/np/gm/roe/rev/np_yi/ebit, 应该至少前 4 有数据
+            actual_cols = cells[:7]
+            none_count = sum(1 for c in actual_cols if c in ("—", "", "N/A", "0", "0.0%"))
+            if none_count >= 4:
+                warnings.append(
+                    f"🔴 财务数据: {q} 4 季数据全空 ({actual_cols}), "
+                    f"财务数据 parquet 可能损坏或 schema 不一致"
+                )
+
+    # 7. Magic 行检查 (1 行, 含 EBIT/总市值/净负债/EV/投入资本)
+    magic_rows = re.findall(r"^\|\s*\*\*💎 Magic\*\*.*$", table_section, re.MULTILINE)
+    if len(magic_rows) != 1:
+        warnings.append(f"🔴 财务数据: Magic 行应 1 行, 实际 {len(magic_rows)} 行")
+
+    # 8. 核心指标行检查 (1 行, ROC + EY + 行业)
+    core_rows = re.findall(r"^\|\s*\*\*核心指标\*\*.*$", table_section, re.MULTILINE)
+    if len(core_rows) != 1:
+        warnings.append(f"🔴 财务数据: 核心指标行应 1 行, 实际 {len(core_rows)} 行")
+
+    # 9. "💎 Magic" 行必须有 ROC 数值 (兜底逻辑)
+    if magic_rows and core_rows:
+        core = core_rows[0]
+        if "ROC **" not in core or "EY **" not in core:
+            warnings.append("🔴 财务数据: 核心指标行缺 ROC 或 EY 数值 (Magic 兜底逻辑没生效)")
+
+    # 10. 标题唯一性 (不能有重复的 "## 财务数据")
+    if content.count("## 财务数据") > 1:
+        warnings.append(f"🔴 财务数据: 出现 {content.count('## 财务数据')} 次 `## 财务数据` 标题, 应唯一")
+
+    return warnings
+
+
+# 在 lint_report 里调用 (在 5方法检查 后面加一行)
+_original_lint_report = lint_report
+def lint_report(md_path: str) -> dict[str, Any]:
+    """校验报告完整性 (v6.2.7 加: 财务数据 section 专项检查)"""
+    result = _original_lint_report(md_path)
+    if "error" in result:
+        return result
+    # 财务数据专项检查
+    path = Path(md_path)
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
+        # 排除 linter 自身段
+        linter_marker = "## 🔍 Linter 校验报告"
+        if linter_marker in content:
+            content = content.split(linter_marker)[0]
+        finance_warnings = lint_finance_section(content)
+        if finance_warnings:
+            result["warnings"] = result.get("warnings", []) + finance_warnings
+    return result
+
+
+# ============================================================
+# CLI
+# ============================================================
+
+
+# ============================================================
 # CLI
 # ============================================================
 

@@ -56,6 +56,10 @@ STOCK_BASIC_PARQUET = STOCK_BASIC_DIR / "stock_basic.parquet"
 FIN_DIR = Path("data/history/financials")
 FIN_DIR.mkdir(parents=True, exist_ok=True)
 
+# v6.2.5 加: 主力资金历史 (按天拉全市场, 按季存 parquet, 跟 stk_factor 平行)
+FFLOW_HISTORY_DIR = Path("data/history/fflow_history")
+FFLOW_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # ============================================================
 # Config
@@ -219,14 +223,14 @@ def _append_records(records: list[dict]):
 
         if path.exists():
             # 读旧数据，去重后合并写回
-            old_df = duckdb.execute(f"SELECT * FROM read_parquet('{path}')").df()
+            old_df = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
             combined = pd.concat([old_df, group], ignore_index=True)
             combined = combined.drop_duplicates(subset=["ts_code", "trade_date"], keep="last")
             combined = combined.sort_values(["trade_date", "ts_code"])
         else:
             combined = group.sort_values(["trade_date", "ts_code"])
 
-        duckdb.execute(
+        _conn().execute(
             f"COPY (SELECT * FROM combined) TO '{path}' (FORMAT PARQUET)"
         )
         total += len(group)
@@ -319,7 +323,7 @@ def has_data_for_date(trade_date: str) -> bool:
         path = _parquet_path(int(year))
         if not path.exists():
             return False
-        result = duckdb.execute(
+        result = _conn().execute(
             f"SELECT COUNT(*) FROM read_parquet('{path}') WHERE trade_date = '{trade_date}'"
         ).fetchone()
         return result[0] > 0 if result else False
@@ -335,7 +339,7 @@ def _get_local_min_date() -> str | None:
         if not files:
             return None
         glob_expr = str(HISTORY_DIR / "*.parquet")
-        result = duckdb.execute(
+        result = _conn().execute(
             f"SELECT MIN(trade_date) FROM read_parquet('{glob_expr}')"
         ).fetchone()
         return result[0] if result else None
@@ -353,7 +357,7 @@ def _get_local_max_date() -> str | None:
         # 只扫最近两个文件（季度或年度），快
         recent = [str(f) for f in files[-2:]]
         glob_expr = "', '".join(recent)
-        result = duckdb.execute(
+        result = _conn().execute(
             f"SELECT MAX(trade_date) FROM read_parquet(['{glob_expr}'])"
         ).fetchone()
         return result[0] if result else None
@@ -378,7 +382,7 @@ def _get_index_max_date() -> str | None:
         return None
     codes = ", ".join(f"'{c}'" for c in INDEX_CODES)
     try:
-        result = duckdb.execute(
+        result = _conn().execute(
             f"SELECT MAX(trade_date) FROM read_parquet('{glob_expr}') WHERE ts_code IN ({codes})"
         ).fetchone()
         return result[0] if result and result[0] else None
@@ -392,7 +396,7 @@ def sync_incremental(target_date: str | None = None) -> int:
     Returns: 新增的 bar 数量
 
     2026-08-26: 加跨进程单次保护 (文件锁), 避免 4 worker 各跑 1 次全市场补齐
-    之前 bug: 4 worker → 4 次 sync_incremental → Tushare 限流 + 重复拉数据
+    之前 bug: 4 worker → 4 次 sync_incremental → 重复拉数据
     修法: flock 跨进程互斥 + 进程内标志, 重复调用秒返回
     """
     from .sources.tushare import get_daily_by_date, get_index_daily
@@ -468,7 +472,7 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
                 if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
                     if all_records:
                         _append_records(all_records)
-                    print(f"  ⚠️ 限流退出 ({status})，已拉数据已写盘")
+                    print(f"  ⚠️ API 频次超限 ({status})，已拉数据已写盘")
                     sys.exit(0)
                 print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
                 continue
@@ -515,7 +519,7 @@ def sync_init(start_year: int = 2020) -> int:
 
     - 每天调一次 daily(trade_date=date)，约5000行，不超 Tushare 6000行限制
     - 每月积攒完写一次文件（减少 IO）
-    - 已有日期自动跳过（幂等），限流时先写盘再退出
+    - 已有日期自动跳过（幂等），API 频次超限时先写盘再退出
     """
     from .sources.tushare import get_daily_by_date
     from collections import defaultdict
@@ -540,12 +544,12 @@ def sync_init(start_year: int = 2020) -> int:
         records, status = get_daily_by_date(date)
         if not records:
             if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
-                # 限流：把已积攒的写盘再退出
+                # API 频次超限：把已积攒的写盘再退出
                 for ym, recs in month_buf.items():
                     if recs:
                         print(f"    💾 写入 {ym}: {len(recs)} 条")
                         _append_records(recs)
-                print(f"  ⚠️ 限流退出 ({status})，下次跑继续")
+                print(f"  ⚠️ API 频次超限退出 ({status})，下次跑继续")
                 sys.exit(0)
             print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
             continue
@@ -580,7 +584,7 @@ def _get_db_max_date() -> str | None:
             return None
         recent = [str(f) for f in files[-2:]]
         glob_expr = "', '".join(recent)
-        result = duckdb.execute(
+        result = _conn().execute(
             f"SELECT MAX(trade_date) FROM read_parquet(['{glob_expr}'])"
         ).fetchone()
         return result[0] if result else None
@@ -601,13 +605,13 @@ def _append_daily_basic(records: list[dict]):
         qdf = qdf.drop(columns=["quarter"])
         path = _db_parquet_path(quarter)
         if path.exists():
-            old = duckdb.execute(f"SELECT * FROM read_parquet('{path}')").df()
+            old = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
             qdf = pd.concat([old, qdf]).drop_duplicates(
                 subset=["ts_code", "trade_date"], keep="last"
             ).sort_values(["trade_date", "ts_code"])
         else:
             qdf = qdf.sort_values(["trade_date", "ts_code"])
-        duckdb.execute(f"COPY (SELECT * FROM qdf) TO '{path}' (FORMAT PARQUET)")
+        _conn().execute(f"COPY (SELECT * FROM qdf) TO '{path}' (FORMAT PARQUET)")
 
 
 def _prune_daily_basic_old(keep_days: int = 365):
@@ -686,7 +690,7 @@ def batch_load_daily_basic(code: str, dates: list[str]) -> dict[str, dict]:
         # IN 列表
         dates_clean = [d.replace("-", "")[:8] for d in dates]
         dates_str = ",".join(f"'{d}'" for d in dates_clean)
-        df = duckdb.execute(
+        df = _conn().execute(
             f"""
             SELECT trade_date, total_mv, close, pe, pe_ttm, pb
             FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet')
@@ -711,7 +715,7 @@ def read_daily_basic(ts_code: str) -> dict:
             return {}
         recent = [str(f) for f in files[-2:]]
         glob_expr = "', '".join(recent)
-        result = duckdb.execute(f"""
+        result = _conn().execute(f"""
             SELECT * FROM read_parquet(['{glob_expr}'])
             WHERE ts_code = '{ts_code}'
             ORDER BY trade_date DESC
@@ -794,20 +798,25 @@ def sync_stock_basic() -> int:
         print(f"  ⚠️ daily_basic 兜底失败: {e}")
 
     import duckdb
-    duckdb.execute(f"COPY (SELECT * FROM df) TO '{STOCK_BASIC_PARQUET}' (FORMAT PARQUET)")
+    _conn().execute(f"COPY (SELECT * FROM df) TO '{STOCK_BASIC_PARQUET}' (FORMAT PARQUET)")
     print(f"  ✅ stock_basic 建档完成: {len(df)} 只 → {STOCK_BASIC_PARQUET}")
     return len(df)
 
 
 def read_stock_basic(code: str) -> dict:
-    """读取单只股票的 stock_basic（从 parquet）。"""
+    """读取单只股票的 stock_basic（从 parquet）。
+
+    兼容 6位 (300613) 和带后缀 (300613.SZ) 两种 code 格式
+    """
     try:
         import duckdb
         if not STOCK_BASIC_PARQUET.exists():
             return {}
-        result = duckdb.execute(f"""
+        # 兼容: 6位 / 6位+后缀
+        code6 = code.split(".")[0] if "." in code else code
+        result = _conn().execute(f"""
             SELECT * FROM read_parquet('{STOCK_BASIC_PARQUET}')
-            WHERE code = '{code}'
+            WHERE code = '{code6}'
             LIMIT 1
         """).fetchdf()
         if result.empty:
@@ -830,7 +839,8 @@ def read_stock_basic(code: str) -> dict:
 # ============================================================
 # 存储: data/history/financials/{YYYYQN}.parquet, 1 季 1 文件
 # 字段: ts_code, code, end_date, ebit, fixed_assets, networking_capital,
-#       interestdebt, netdebt, eps_period, industry, fetched_at, fetch_status, error_msg
+#       interestdebt, netdebt, industry, fetch_status
+# v6.2.5 删: eps_period / fetched_at / error_msg (无用列)
 # 续跑规则: fetch_status='ok' 永不再拉 (季报定稿不变)
 #           fetch_status!='ok' 下次重试 (不限次数)
 # ============================================================
@@ -866,7 +876,7 @@ def _fin_load_existing(period: str) -> dict[str, dict]:
         path = _fin_path(period)
         if not path.exists():
             return {}
-        df = duckdb.execute(f"SELECT * FROM read_parquet('{path}')").df()
+        df = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
         if df.empty:
             return {}
         return {str(r["code"]): r.to_dict() for _, r in df.iterrows()}
@@ -887,7 +897,7 @@ def _fin_load_industry_map(codes: list[str]) -> dict[str, str]:
             return {}
         # 取 codes 子集, 减少扫描
         codes_str = ", ".join(f"'{c}'" for c in codes)
-        df = duckdb.execute(
+        df = _conn().execute(
             f"""
             SELECT code, industry FROM read_parquet('{STOCK_BASIC_PARQUET}')
             WHERE code IN ({codes_str})
@@ -943,39 +953,42 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
         print(f"  ⚠️ sync_financials {period}: 没有 codes")
         return 0
 
-    # Phase 1: 算 to_pull (DB-only, 不调 API)
+    # Phase 1: 算 to_pull / to_check (DB-only, 不调 API)
+    #   to_pull : 本地没有 or 之前失败 → 必须从 API 拿
+    #   to_check: 本地已有 ok → 拿到 API 数据后对比 ann_date, 有更新才覆盖
+    #   skip    : fetch_status='skip' (VIP 确认没有该票) → 永久不拉
     existing = _fin_load_existing(period)
     if force:
         to_pull = list(codes)
+        to_check: list[str] = []
     else:
         to_pull = []
+        to_check = []
         for c in codes:
             row = existing.get(c)
             if row is None:
-                to_pull.append(c)  # parquet 里没这行 → 必拉
-            elif row.get("fetch_status") in ("ok", "skip"):
-                continue            # 已成功 / 已确认没数据 → 永久跳过
+                to_pull.append(c)
+            elif row.get("fetch_status") == "skip":
+                continue  # VIP 确认无数据 → 永久跳过
+            elif row.get("fetch_status") == "ok":
+                to_check.append(c)  # 已有数据 → 对比 ann_date 增量更新
             else:
-                to_pull.append(c)  # 别的 (no_data / timeout) → 必拉
+                to_pull.append(c)   # no_data / timeout → 重试
 
-    n_skip_ok = sum(1 for c in codes if existing.get(c, {}).get("fetch_status") == "ok")
     n_skip_skip = sum(1 for c in codes if existing.get(c, {}).get("fetch_status") == "skip")
-    if n_skip_ok or n_skip_skip:
-        print(f"  ⏭ financials {period}: {n_skip_ok} ok / {n_skip_skip} skip, 跳过")
-    if not to_pull:
-        return 0   # DB 全 ok 或全 skip, 0 次 API
+    need_api = len(to_pull) + len(to_check)
+    if n_skip_skip:
+        print(f"  ⏭ financials {period}: {n_skip_skip} skip(无数据), {len(to_pull)} 待补, {len(to_check)} 对比更新")
+    if not need_api:
+        return len(existing)   # 全部 skip, 0 次 API
 
     # Phase 2: 1 次 VIP API 拿全市场 (5000 积分档, 不限流)
-    # v6.2.4 改: fina_indicator_vip 跨积分档不返 eps, 拿掉避免返空
     # EPS 走 datacenter.eastmoney.com (--eps flag, 独立渠道)
-    print(f"  📡 fina_indicator_vip period={period} (目标 {len(to_pull)} 只)")
+    all_needed = to_pull + to_check
+    print(f"  📡 fina_indicator_vip period={period} ({len(to_pull)} 待补 + {len(to_check)} 对比更新)")
     data, status = _safe_call(
         "fina_indicator_vip",
         period=period,
-        fields=(
-            "ts_code,end_date,ebit,fixed_assets,networking_capital,"
-            "interestdebt,netdebt"
-        ),
     )
     if not data:
         print(f"  ⚠️ VIP 拉取失败: {status}, {len(to_pull)} 只标 skip")
@@ -983,14 +996,10 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
         rows = [
             {
                 "ts_code": _to_ts_code(c), "code": c, "end_date": period,
-                "ebit": None, "fixed_assets": None, "networking_capital": None,
-                "interestdebt": None, "netdebt": None, "eps_period": None,
                 "industry": industry_map.get(c, ""),
-                "fetched_at": _fin_now(),
                 "fetch_status": "skip",
-                "error_msg": f"VIP 拉取失败: {status}",
             }
-            for c in to_pull
+            for c in to_pull  # to_check 的不动，保留原有 ok 数据
         ]
         n = upsert_financials(period, rows)
         print(f"  ✅ financials {period}: 写 {n} 行 (全 skip)")
@@ -999,46 +1008,51 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
     df_all = pd.DataFrame(data)
     df_all["code"] = df_all["ts_code"].str.split(".").str[0]
 
-    # Phase 3: 客户端筛 (to_pull ∩ VIP 返的行 = 命中)
-    df_hit = df_all[df_all["code"].isin(to_pull)].copy()
+    # Phase 3: 客户端筛
+    #   to_pull 命中 → 直接写
+    #   to_check 命中 → 对比 ann_date, API 侧更新才覆盖
+    df_new = df_all[df_all["code"].isin(to_pull)].copy()
 
-    # Phase 4: 标记 industry + fetched_at + 改字段名 (Tushare 'eps' → 我们 'eps_period')
-    # v6.2.4 改: fields 不再含 eps, eps_period 直接 None (EPS 走 datacenter 单独渠道)
-    industry_map = _fin_load_industry_map(to_pull)
-    df_hit["industry"] = df_hit["code"].map(industry_map).fillna("")
-    df_hit["fetched_at"] = _fin_now()
-    df_hit["fetch_status"] = "ok"
-    df_hit["error_msg"] = None
-    if "eps" in df_hit.columns:
-        df_hit["eps_period"] = df_hit["eps"]
-        df_hit = df_hit.drop(columns=["eps"])
-    else:
-        df_hit["eps_period"] = None
+    df_check_api = df_all[df_all["code"].isin(to_check)].copy()
+    updated_codes: list[str] = []
+    skipped_codes: list[str] = []
+    if not df_check_api.empty:
+        for _, api_row in df_check_api.iterrows():
+            c = str(api_row["code"])
+            local_ann = str(existing.get(c, {}).get("ann_date") or "")
+            api_ann   = str(api_row.get("ann_date") or "")
+            if api_ann > local_ann:  # 字符串比较 YYYYMMDD 格式安全
+                updated_codes.append(c)
+            else:
+                skipped_codes.append(c)
+        df_new = pd.concat([df_new, df_check_api[df_check_api["code"].isin(updated_codes)]], ignore_index=True)
 
-    # Phase 5: VIP 没返的票, 标 skip (永久不再拉)
-    hit_codes = set(df_hit["code"].tolist())
+    # Phase 4: 标记 industry + fetch_status='ok'
+    industry_map = _fin_load_industry_map(all_needed)
+    df_new["industry"] = df_new["code"].map(industry_map).fillna("")
+    df_new["fetch_status"] = "ok"
+
+    # Phase 5: to_pull 里 VIP 没返的票, 标 skip (永久不再拉)
+    hit_codes = set(df_new["code"].tolist())
     not_in_vip = [c for c in to_pull if c not in hit_codes]
     skip_rows = [
         {
             "ts_code": _to_ts_code(c), "code": c, "end_date": period,
-            "ebit": None, "fixed_assets": None, "networking_capital": None,
-            "interestdebt": None, "netdebt": None, "eps_period": None,
             "industry": industry_map.get(c, ""),
-            "fetched_at": _fin_now(),
             "fetch_status": "skip",
-            "error_msg": f"VIP 未返 (季报 {period} 未披露 / 公司退市)",
         }
         for c in not_in_vip
     ]
 
     # Phase 6: 1 次 upsert (ok + skip 一起, 保护已有 ok 不被新 skip 覆盖)
-    rows = df_hit.to_dict("records") + skip_rows
+    rows = df_new.to_dict("records") + skip_rows
     if not rows:
-        return 0
+        return len(existing)
     n = upsert_financials(period, rows)
-    n_ok = len(df_hit)
-    n_skip = len(not_in_vip)
-    print(f"  ✅ financials {period}: 写 {n} 行 ({n_ok} ok / {n_skip} skip)")
+    n_new = len(df_all[df_all["code"].isin(to_pull)].dropna(subset=["ann_date"]))
+    n_updated = len(updated_codes)
+    n_unchanged = len(skipped_codes)
+    print(f"  ✅ financials {period}: {n_new} 新增 / {n_updated} 更新 / {n_unchanged} 无变化 / {len(not_in_vip)} skip")
     return n
 
 
@@ -1046,24 +1060,28 @@ def read_financials(code: str, lookback_quarters: int = 4) -> list[dict]:
     """跨多季 parquet 读 (跟 read_stock_basic 同 pattern, duckdb glob)
 
     只返 fetch_status='ok' 的行, 按 end_date 升序。给分析层用 (RenderData / ROC / EY)。
+
+    v6.2.7 改: 用 UNION ALL BY NAME 替代 glob — glob 在 schema 不一致时
+    (Q1/Q3 只有 5 列, Q2/Q4 有 112 列) 会推断错 schema, 返 5 列。
     """
     try:
         import duckdb
         if not FIN_DIR.exists():
             return []
         ts_code = _to_ts_code(code)
-        df = duckdb.execute(
-            f"""
-            SELECT * FROM read_parquet('{FIN_DIR}/*.parquet')
-            WHERE ts_code = ? AND fetch_status = 'ok'
-            ORDER BY end_date DESC
-            LIMIT ?
-            """,
-            [ts_code, lookback_quarters],
-        ).df()
+        # 列固定, UNION ALL BY NAME — 不用 glob, 避免 schema 推断错
+        files = sorted(FIN_DIR.glob("*.parquet"))
+        if not files:
+            return []
+        union_sql = " UNION ALL BY NAME ".join(
+            f"SELECT * FROM read_parquet('{f}')" for f in files
+        )
+        df = _conn().execute(union_sql).df()
         if df.empty:
             return []
-        return df.sort_values("end_date", ascending=True).to_dict("records")
+        sub = df[(df["ts_code"] == ts_code) & (df["fetch_status"] == "ok")]
+        sub = sub.sort_values("end_date", ascending=False).head(lookback_quarters)
+        return sub.sort_values("end_date", ascending=True).to_dict("records")
     except Exception:
         return []
 
@@ -1187,11 +1205,14 @@ class DataStore:
     def get_ctx(cls, code: str, kline_only: bool = False, limit: int = 0):
         """返回 RawContext（L1 数据层唯一入口）。
 
-        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps。
+        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps/fflow。
         limit: K线条数上限，0=使用 config 默认值（kline_days）。
+
+        v6.2.5 改: moneyflow 走 get_fund_flow (内部优先 DataStore 落盘 parquet)
+                       老的 eastmoney.fetch_all 串行拉已删
         """
         from tools.analysis.analysis_engine import RawContext
-        from .sources.eastmoney import _synthesize_weekly
+        from .sources.eastmoney import _synthesize_weekly, get_fund_flow
 
         kline  = cls.get_kline(code, limit=limit)
         weekly = _synthesize_weekly(kline)
@@ -1213,9 +1234,13 @@ class DataStore:
         # 修复: 之前直接 db.get("total_mv") 拿"万" 当"亿" 存, 导致 EY 算成天文数字
         total_mv_yi = (db.get("total_mv") or 0.0) / 1e4
 
+        # v6.2.5: moneyflow 走 get_fund_flow (优先读 5 季落盘 parquet, 0 网络)
+        # 取 60 天覆盖 fflow_factor 3/5/10/20/30 周期
+        mf, _ = get_fund_flow(code, days=60)
+
         return RawContext(
             kline=kline, weekly=weekly,
-            eps_table=eps, fflow={}, moneyflow=[],
+            eps_table=eps, fflow={}, moneyflow=mf or [],
             current_price=db.get("close") or close,
             market_cap_yi=total_mv_yi,
             industry=sb.get("industry", ""),
@@ -1240,6 +1265,20 @@ class DataStore:
         return read_financials(code, lookback_quarters)
 
     @classmethod
+    def get_fflow_history(cls, code: str) -> list[dict]:
+        """单只票全季 fflow (主力资金) 历史, 按 trade_date 升序 (v6.2.5 加)
+
+        9 字段: ts_code/trade_date + 6 个 amount (sm/lg/elg 买/卖) + net_mf_amount
+        数据源: data/history/fflow_history/fflow_{YYYYQN}.parquet
+        走 caches/fflow_history.read_fflow_history (跨 5 季 parquet glob)
+
+        Returns:
+            list[dict] 按 trade_date 升序, 空 list = 没数据
+        """
+        from .caches.fflow_history import read_fflow_history
+        return read_fflow_history(code)
+
+    @classmethod
     def list_codes(cls) -> list[str]:
         """返回本地历史库里所有有数据的股票代码（6位，不带交易所后缀）。"""
         try:
@@ -1247,7 +1286,7 @@ class DataStore:
             files = list(HISTORY_DIR.glob("*.parquet"))
             if not files:
                 return []
-            result = duckdb.execute(
+            result = _conn().execute(
                 "SELECT DISTINCT ts_code FROM read_parquet('data/history/daily/*.parquet')"
             ).fetchall()
             codes = []
@@ -1270,7 +1309,7 @@ class DataStore:
             import pandas as pd
             if not STOCK_BASIC_PARQUET.exists():
                 return pd.DataFrame()
-            return duckdb.execute(
+            return _conn().execute(
                 f"SELECT * FROM read_parquet('{STOCK_BASIC_PARQUET}')"
             ).df()
         except Exception:
@@ -1299,7 +1338,7 @@ class DataStore:
             files = list(HISTORY_DIR.glob("*.parquet"))
             if not files:
                 return pd.DataFrame()
-            return duckdb.execute(f"""
+            return _conn().execute(f"""
                 SELECT ts_code, trade_date, close, vol, amount
                 FROM read_parquet('{HISTORY_DIR}/*.parquet')
                 WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('{HISTORY_DIR}/*.parquet'))
@@ -1331,7 +1370,7 @@ class DataStore:
                 WHERE STRPTIME(d.trade_date, '%Y%m%d') >= m.d - INTERVAL '{years} year'
                 ORDER BY d.ts_code, d.trade_date
             """
-            df = duckdb.execute(sql).df()
+            df = _conn().execute(sql).df()
             return {
                 code: g[["trade_date", "open", "high", "low", "close", "vol"]].to_dict("records")
                 for code, g in df.groupby("ts_code")
@@ -1352,7 +1391,7 @@ class DataStore:
             files = list(DAILY_BASIC_DIR.glob("*.parquet"))
             if not files:
                 return pd.DataFrame()
-            return duckdb.execute(
+            return _conn().execute(
                 f"SELECT * FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet')"
             ).df()
         except Exception:
@@ -1377,7 +1416,7 @@ class DataStore:
             path = FIN_DIR / f"{period}.parquet"
             if not path.exists():
                 return pd.DataFrame()
-            return duckdb.execute(
+            return _conn().execute(
                 f"SELECT * FROM read_parquet('{path}')"
             ).df()
         except Exception:
@@ -1396,8 +1435,31 @@ class DataStore:
             import pandas as pd
             if not FIN_DIR.exists():
                 return pd.DataFrame()
-            return duckdb.execute(
+            return _conn().execute(
                 f"SELECT * FROM read_parquet('{FIN_DIR}/*.parquet')"
+            ).df()
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    @classmethod
+    def load_all_fflow_history(cls) -> "pd.DataFrame":
+        """5 季全市场 fflow (主力资金) 历史 1 次 SQL (v6.2.5 加)
+
+        Returns:
+            DataFrame: 5 季合并, 9 列 (ts_code/trade_date + 6 amount + net_mf_amount)
+            空 DataFrame = 没拉过 / --fflow 没跑
+        """
+        try:
+            import duckdb
+            import pandas as pd
+            if not FFLOW_HISTORY_DIR.exists():
+                return pd.DataFrame()
+            files = list(FFLOW_HISTORY_DIR.glob("fflow_*.parquet"))
+            if not files:
+                return pd.DataFrame()
+            return _conn().execute(
+                f"SELECT * FROM read_parquet('{FFLOW_HISTORY_DIR}/fflow_*.parquet')"
             ).df()
         except Exception:
             import pandas as pd
@@ -1530,7 +1592,7 @@ def print_status_report() -> None:
     try:
         files = list(HISTORY_DIR.glob("*.parquet"))
         if files:
-            n, min_d, max_d = duckdb.execute(
+            n, min_d, max_d = _conn().execute(
                 f"SELECT COUNT(*), MIN(trade_date), MAX(trade_date) "
                 f"FROM read_parquet('{HISTORY_DIR}/*.parquet')"
             ).fetchone()
@@ -1544,7 +1606,7 @@ def print_status_report() -> None:
     try:
         files = list(DAILY_BASIC_DIR.glob("*.parquet"))
         if files:
-            n, min_d, max_d, code_count = duckdb.execute(
+            n, min_d, max_d, code_count = _conn().execute(
                 f"SELECT COUNT(*), MIN(trade_date), MAX(trade_date), COUNT(DISTINCT ts_code) "
                 f"FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet')"
             ).fetchone()
@@ -1557,7 +1619,7 @@ def print_status_report() -> None:
     # 3. stock_basic
     try:
         if STOCK_BASIC_PARQUET.exists():
-            df = duckdb.execute(
+            df = _conn().execute(
                 f"SELECT COUNT(*), MAX(industry) FROM read_parquet('{STOCK_BASIC_PARQUET}')"
             ).fetchone()
             n, last_industry = df
@@ -1575,7 +1637,7 @@ def print_status_report() -> None:
             files = sorted(FIN_DIR.glob("*.parquet"))
             if files:
                 latest = files[-1]
-                n_total, n_ok, n_skip, n_other = duckdb.execute(
+                n_total, n_ok, n_skip, n_other = _conn().execute(
                     f"SELECT COUNT(*), "
                     f"SUM(CASE WHEN fetch_status='ok' THEN 1 ELSE 0 END), "
                     f"SUM(CASE WHEN fetch_status='skip' THEN 1 ELSE 0 END), "
@@ -1585,7 +1647,7 @@ def print_status_report() -> None:
                 print(f"  financials:  最新 {latest.stem} | {n_total} 只 ({n_ok} ok / {n_skip} skip / {n_other} 失败)")
                 # 全部季汇总
                 if len(files) > 1:
-                    n_all = duckdb.execute(
+                    n_all = _conn().execute(
                         f"SELECT COUNT(*) FROM read_parquet('{FIN_DIR}/*.parquet')"
                     ).fetchone()[0]
                     print(f"              总计: {n_all} 只 | {len(files)} 个季文件")

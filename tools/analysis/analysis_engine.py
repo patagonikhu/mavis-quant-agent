@@ -46,6 +46,7 @@ class RawContext:
     smc_result:     dict = field(default_factory=dict)
     fflow_result:   dict = field(default_factory=dict)   # 主力资金流 (Tushare.money_flow)
     obv_result:     dict = field(default_factory=dict)   # 经典 OBV (Granville 1963, K线累计)
+    technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
     resonance_result: dict = field(default_factory=dict)
     _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
     kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写，ObvStrategy 复用
@@ -626,6 +627,217 @@ class ObvStrategy:
         return results
 
 
+class TechnicalStrategy:
+    """8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比) → 分数，从 ctx.kline 直接重算 (v6.2.8 新增)
+
+    跟 ObvStrategy 同样的"per-date O(1) 查信号"模式:
+    - analyze: 算全套 8 指标最新值, 跟原 compute_indicators 行为一致
+    - analyze_history: 全 series 预算一次, per date O(1) 查信号
+
+    来源: compute_indicators 已经预算完整 series (dif_series/rsi6_series/k_series/
+          mid_series/upper_series/lower_series/pct_series/atr14_series/atr_pct_series/
+          vol_ratio_series/vol_ma5_series), 这里把 series 对齐到 dates.
+
+    weight=0.10, 跟 obv/fflow/smc 持平.
+    """
+    name = "technical"
+
+    def analyze(self, ctx: RawContext) -> dict:
+        from tools.storage.sources.eastmoney import compute_indicators
+        try:
+            kline = ctx.kline or []
+            result = compute_indicators(kline) or {}
+        except Exception as e:
+            return {"score": 0, "signals": [], "summary": "技术指标失败", "verdict": "—"}
+
+        # 把完整 series 挂到 result (供 render_data 复用, 避免 render 端再算)
+        ctx.technical_result = result
+
+        # 提取关键信号 (单点, 跟原 _section_technical 显示口径一致)
+        signals = []
+        if "macd" in result and "verdict" in result["macd"]:
+            signals.append(result["macd"]["verdict"])
+        if "rsi" in result and "verdict" in result["rsi"]:
+            signals.append(result["rsi"]["verdict"])
+        if "kdj" in result and "verdict" in result["kdj"]:
+            signals.append(result["kdj"]["verdict"])
+        if "boll" in result and "verdict" in result["boll"]:
+            signals.append(result["boll"]["verdict"])
+        if "atr" in result and "verdict" in result["atr"]:
+            signals.append(result["atr"]["verdict"])
+        if "vol_ma" in result and "verdict" in result["vol_ma"]:
+            signals.append(result["vol_ma"]["verdict"])
+
+        # 评分规则 (跟原 compute_indicators summary 一致):
+        # bullish: 3+ 偏多 (DIF>DEA 金叉 / RSI 偏低 / KDJ 金叉 / BOLL 偏多 / 缩量)
+        # bearish: 3+ 偏空 (DIF<DEA 死叉 / RSI 超买 / KDJ 死叉 / BOLL 偏空 / 放量)
+        bullish_keywords = ["金叉多头", "DIF>DEA 但<0 金叉弱势", "🟢", "缩量", "偏低", "超卖", "反弹", "J<0", "低位金叉", "中轨上方"]
+        bearish_keywords = ["死叉空头", "DIF<DEA 但>0 死叉强势", "🔴", "超买", "放量", "J>100", "高位死叉", "突破上轨", "中轨下方"]
+        bullish = sum(1 for s in signals if any(k in s for k in bullish_keywords))
+        bearish = sum(1 for s in signals if any(k in s for k in bearish_keywords))
+
+        score = 0
+        if bullish >= 3 and bearish <= 1:
+            score = 2
+        elif bearish >= 3 and bullish <= 1:
+            score = -2
+        elif bullish > bearish:
+            score = 1
+        elif bearish > bullish:
+            score = -1
+
+        return {
+            "score":   float(score),
+            "signals": signals,
+            "summary": result.get("summary", "—"),
+            "verdict": result.get("summary", "—"),
+            **result,  # 透传 macd/rsi/kdj/boll/atr/vol_ma (含 series)
+        }
+
+    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
+        """per-date O(1) 查信号: 复用 analyze 已算的 result (含 series), 按 dates 取对应 index."""
+        kline = ctx.kline or []
+        if len(kline) < 20:
+            return {d.replace("-","")[:8]: {"score":0,"signals":[],"summary":"技术指标 K线不足",
+                                            "verdict":"—","source":"technical (K线不足)"}
+                    for d in dates}
+
+        # 单点算全套 (含 series) — analyze 内部已挂到 ctx.technical_result
+        result = self.analyze(ctx)
+
+        # dates → index 映射 (按 trade_date)
+        dates_list = [k.get("trade_date","").replace("-","")[:8] for k in kline]
+        date_to_idx = {d: i for i, d in enumerate(dates_list)}
+
+        # 取 series 引用
+        macd_dif = result.get("macd", {}).get("dif_series", [])
+        macd_dea = result.get("macd", {}).get("dea_series", [])
+        rsi6     = result.get("rsi",  {}).get("rsi6_series", [])
+        rsi12    = result.get("rsi",  {}).get("rsi12_series", [])
+        kdj_k    = result.get("kdj",  {}).get("k_series", [])
+        kdj_d    = result.get("kdj",  {}).get("d_series", [])
+        kdj_j    = result.get("kdj",  {}).get("j_series", [])
+        boll_mid = result.get("boll", {}).get("mid_series", [])
+        boll_pct = result.get("boll", {}).get("pct_series", [])
+        atr14    = result.get("atr",  {}).get("atr14_series", [])
+        atr_pct  = result.get("atr",  {}).get("atr_pct_series", [])
+        vol_r    = result.get("vol_ma", {}).get("vol_ratio_series", [])
+
+        dates_clean = [d.replace("-","")[:8] for d in dates]
+        results = {}
+        for dc in dates_clean:
+            i = date_to_idx.get(dc, -1)
+            if i < 0:
+                results[dc] = {"score":0,"signals":[],"summary":"—","verdict":"—","source":"technical (无日期)"}
+                continue
+
+            # 取该日各 series 值 (None 视为 0/中性)
+            dif_v = macd_dif[i] if i < len(macd_dif) else None
+            dea_v = macd_dea[i] if i < len(macd_dea) else None
+            r6_v  = rsi6[i]     if i < len(rsi6)     else None
+            r12_v = rsi12[i]    if i < len(rsi12)    else None
+            kk_v  = kdj_k[i]    if i < len(kdj_k)    else None
+            kd_v  = kdj_d[i]    if i < len(kdj_d)    else None
+            kj_v  = kdj_j[i]    if i < len(kdj_j)    else None
+            bm_v  = boll_mid[i] if i < len(boll_mid) else None
+            bp_v  = boll_pct[i] if i < len(boll_pct) else None
+            at_v  = atr14[i]    if i < len(atr14)    else None
+            ap_v  = atr_pct[i]  if i < len(atr_pct)  else None
+            vr_v  = vol_r[i]    if i < len(vol_r)    else None
+
+            signals = []; score = 0
+
+            # MACD: DIF/DEA 金叉死叉
+            if dif_v is not None and dea_v is not None:
+                if dif_v > dea_v and dif_v > 0:
+                    signals.append("MACD金叉多头"); score += 1
+                elif dif_v > dea_v and dif_v < 0:
+                    signals.append("MACD弱势金叉"); score += 0
+                elif dif_v < dea_v and dif_v < 0:
+                    signals.append("MACD死叉空头"); score -= 1
+                else:
+                    signals.append("MACD强势死叉"); score -= 1
+
+            # RSI: 超买超卖
+            if r6_v is not None:
+                if r6_v > 80:
+                    signals.append(f"RSI6超买({r6_v:.0f})"); score -= 1
+                elif r6_v < 20:
+                    signals.append(f"RSI6超卖({r6_v:.0f})反弹机会"); score += 1
+                elif r6_v > 70:
+                    signals.append(f"RSI6偏高({r6_v:.0f})")
+                elif r6_v < 30:
+                    signals.append(f"RSI6偏低({r6_v:.0f})")
+
+            # KDJ: K/D 金叉死叉
+            if kk_v is not None and kd_v is not None:
+                if kj_v is not None and kj_v < 0:
+                    signals.append(f"KDJ J<0超卖(K={kk_v:.0f})"); score += 1
+                elif kj_v is not None and kj_v > 100:
+                    signals.append(f"KDJ J>100超买(K={kk_v:.0f})"); score -= 1
+                elif kk_v > kd_v and kk_v < 30:
+                    signals.append("KDJ低位金叉"); score += 1
+                elif kk_v < kd_v and kk_v > 70:
+                    signals.append("KDJ高位死叉"); score -= 1
+
+            # BOLL: pct_series 位置 (0=下轨, 1=上轨)
+            if bp_v is not None:
+                if bp_v > 1.0:
+                    signals.append("BOLL突破上轨")
+                elif bp_v < 0.0:
+                    signals.append("BOLL跌破下轨")
+                elif bp_v > 0.5:
+                    signals.append("BOLL中轨上方偏多")
+                else:
+                    signals.append("BOLL中轨下方偏空")
+
+            # ATR: 波动率
+            if ap_v is not None:
+                if ap_v > 5:
+                    signals.append(f"ATR高波动({ap_v:.1f}%)")
+                elif ap_v > 3:
+                    signals.append(f"ATR中波动({ap_v:.1f}%)")
+                else:
+                    signals.append(f"ATR低波动({ap_v:.1f}%)")
+
+            # 量比
+            if vr_v is not None:
+                if vr_v > 2:
+                    signals.append(f"放量({vr_v:.2f}x)关注"); score -= 1
+                elif vr_v > 1.2:
+                    signals.append(f"温和放量({vr_v:.2f}x)")
+                elif vr_v < 0.7:
+                    signals.append(f"缩量({vr_v:.2f}x)"); score += 1
+                else:
+                    signals.append(f"量比正常({vr_v:.2f}x)")
+
+            if score >= 2:    verdict = "🟢技术偏多"
+            elif score >= 1:  verdict = "🟡偏多"
+            elif score == 0:  verdict = "⬜中性"
+            elif score >= -1: verdict = "🟠偏空"
+            else:             verdict = "🔴技术偏空"
+
+            results[dc] = {
+                "score":   score,
+                "signals": signals,
+                "summary": verdict,
+                "verdict": verdict,
+                "macd_dif": dif_v,
+                "macd_dea": dea_v,
+                "rsi6":     r6_v,
+                "rsi12":    r12_v,
+                "kdj_k":    kk_v,
+                "kdj_d":    kd_v,
+                "kdj_j":    kj_v,
+                "boll_pct": bp_v,
+                "atr14":    at_v,
+                "atr_pct":  ap_v,
+                "vol_ratio":vr_v,
+                "source":   "technical (K线)",
+            }
+        return results
+
+
 class ChanStrategy:
     """缠论 (中枢+背驰+买卖点)，日线+周线统一用一个 CzscSignals 对象。"""
     name = "chan"
@@ -814,115 +1026,160 @@ class PegStrategy:
         return {d: result for d in dates}
 
 
-class ValuationStrategy:
-    """PEG + DCF + Magic (ROC + EY) — 4 指标共享 1 次 daily_basic 读
+class FinanceStrategy:
+    """季度财务 + 估值 factor (合并原 ValuationStrategy, 2026-09-08)
 
-    输入:  daily_basic 时序 + EPS + financials
-    输出:  4 指标最新值 + 时序 + period_label
-
-    2026-09-02 重构: 之前 PEG 单独 PegStrategy, Magic 在 tools/factors/valuation/magic_formula.py
-    (ValuationStrategy 调不到), 合并到这里。
+    按季报日各算一次: Magic (ROC/EY/EBIT/EV/capital/netdebt/mc) + PEG + DCF。
+    PEG/DCF 用最新 EPS 预期，所有季共享同一份。
+    analyze_history 所有日期共享同一结果 (季报频率)。
+    weight=0, 不参与 total_score。
     """
-    name = "valuation"
+    name = "finance"
 
-    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """逐日算 PEG + DCF + ROC + EY
+    def analyze_history(self, ctx: "RawContext", dates: list) -> dict:
+        result = self.analyze(ctx)
+        return {d: result for d in dates}
 
-        dates 长度 60-120, 内部 1 次 daily_basic 批量读, 1 次 financials 读, 4 个指标全算
-        """
-        from tools.analysis.valuation import calc_magic_one_day, find_full_year_financials
-        from tools.factors.valuation.multi import PegFactor, DcfFactor
-
-        # 1) 批量读 daily_basic 1 次 (6ms 248 天)
-        from tools.storage.store import batch_load_daily_basic
-        dates_clean = [d.replace("-", "")[:8] for d in dates]
-        db_index = batch_load_daily_basic(ctx.code, dates_clean)  # {date: dict}
-
-        # 2) 读 financials (跨多季)
+    def analyze(self, ctx: "RawContext") -> dict:
         from tools.storage.store import DataStore
-        financials = DataStore.get_financials(ctx.code, lookback_quarters=4)
+        from tools.analysis.valuation import calc_magic_one_day
+        from tools.factors.valuation.multi import PegFactor, DcfFactor
+        _empty = {"quarterly": [], "score": 0.0, "signals": [], "summary": ""}
 
-        # 3) 读 EPS (PEG / DCF 用)
-        eps_table = ctx.eps_table or DataStore.get_eps(ctx.code)
+        try:
+            financials = DataStore.get_financials(ctx.code, lookback_quarters=4)
+        except Exception:
+            return _empty
+        if not financials:
+            return _empty
 
-        # 4) 算当天的 4 个指标 (用 latest 1 天, 时序算全 dates)
-        # 4a) PEG (单点, 时序: same as today, 因为只算 latest)
-        peg_factor = PegFactor()
-        latest_db = db_index.get(dates_clean[-1], {}) if db_index else {}
-        latest_price = latest_db.get("close") or ctx.current_price
-        peg_today = peg_factor(df=None, eps_table=eps_table, current_price=latest_price) or {}
+        market_cap_wan = (ctx.market_cap_yi or 0) * 1e4
 
-        # 4b) DCF (单点, 时序: same as today)
-        dcf_factor = DcfFactor()
-        market_cap_yi = (latest_db.get("total_mv") or 0) / 1e4 if latest_db.get("total_mv") else ctx.market_cap_yi
-        dcf_today = dcf_factor(df=None, eps_table=eps_table,
-                               current_price=latest_price, market_cap_yi=market_cap_yi) or {}
+        shares_wan = 0.0
+        # v6.2.8 改: 多重 fallback (daily_basic 返空/stock_basic 拿不到, 用 market_cap_yi/current_price 反推 shares_wan)
+        try:
+            db = DataStore.get_daily_basic(ctx.code)
+            if db and db.get("total_share"):
+                shares_wan = float(db["total_share"])
+        except Exception:
+            pass
+        # fallback 1: 从 market_cap_yi / current_price 反推 (daily_basic 返空/dump 缺数据时)
+        if shares_wan <= 0 and market_cap_wan > 0 and ctx.current_price > 0:
+            shares_wan = market_cap_wan / ctx.current_price  # 万股
+        # fallback 2: 从 stock_basic 拿 (最稳的源, 30 天才更新一次)
+        if shares_wan <= 0:
+            try:
+                sb = DataStore.get_stock_basic(ctx.code)
+                if sb and sb.get("total_share"):
+                    shares_wan = float(sb["total_share"])
+            except Exception:
+                pass
 
-        # 4c) Magic 时序 (每个 date 算 ROC + EY)
-        ey_series = {}
-        roc_series = {}
-        latest_magic = None
-        for d_clean in dates_clean:
-            if not financials:
-                continue
-            db = db_index.get(d_clean)
-            if not db or not db.get("total_mv"):
-                continue
-            # 找 ≤ d_clean 的最新全年
-            fin = find_full_year_financials(financials, d_clean)
-            if not fin:
-                continue
-            # 用 find 出的 fin 当 fin_periods, 内部 _ttm_ebit 自动取
-            magic = calc_magic_one_day([fin], d_clean, db["total_mv"])
-            if magic.get("roc") is not None:
-                roc_series[d_clean] = magic["roc"]
-            if magic.get("ey") is not None:
-                ey_series[d_clean] = magic["ey"]
-            if d_clean == dates_clean[-1]:
-                latest_magic = magic
+        eps_table = ctx.eps_table or []
+        try:
+            if not eps_table:
+                eps_table = DataStore.get_eps(ctx.code) or []
+        except Exception:
+            pass
 
-        # 5) 拼结果
-        magic_summary = f"ROC {latest_magic.get('roc', '—')}% | EY {latest_magic.get('ey', '—')}%" if latest_magic else "Magic 数据不足"
+        # PEG / DCF 用最新 EPS 预期，所有季共享
+        peg_out = PegFactor()(df=None, eps_table=eps_table, current_price=ctx.current_price) or {}
+        dcf_out = DcfFactor()(df=None, eps_table=eps_table,
+                              current_price=ctx.current_price, market_cap_yi=ctx.market_cap_yi) or {}
 
-        return {d: {
-            "score":   0.0,  # 估值不参与 total_score
-            "signals": [f"PEG {peg_today.get('PEG_真实', '—')}",
-                        f"DCF r=10% L={dcf_today.get('r_10%', {}).get('L_隐含(亿)', '—')}",
-                        magic_summary],
-            "summary": f"PEG {peg_today.get('PEG_真实', '—')} | ROC {latest_magic.get('roc', '—') if latest_magic else '—'}% | EY {latest_magic.get('ey', '—') if latest_magic else '—'}%",
+        quarterly = []
+        for r in reversed(financials[-4:]):
+            q_str = str(r.get("end_date", ""))
 
-            # PEG 字段 (跟 PegFactor 兼容)
-            "PEG_真实": peg_today.get("PEG_真实"),
-            "fwd_pe":   peg_today.get("Forward PE"),
-            "g":        peg_today.get("g_CAGR"),
-            "verdict":  peg_today.get("PEG_判定"),
+            rev_yi = (float(r.get("total_revenue_ps") or 0) * shares_wan) / 1e4 if shares_wan > 0 else 0.0
+            eps_val = float(r.get("eps") or r.get("diluted2_eps") or 0)
+            np_yi  = (eps_val * shares_wan) / 1e4 if shares_wan > 0 else 0.0
 
-            # DCF 字段 (跟 DcfFactor 兼容)
-            "L_r8":     dcf_today.get("r_8%", {}).get("L_隐含(亿)"),
-            "L_r10":    dcf_today.get("r_10%", {}).get("L_隐含(亿)"),
-            "L_r12":    dcf_today.get("r_12%", {}).get("L_隐含(亿)"),
-            "L_E3_r10": dcf_today.get("r_10%", {}).get("L/E3(每share)"),
-            "L_achievable": dcf_today.get("L_achievable", ""),  # 旧 _derive_dcf 字段
+            magic = {}
+            if market_cap_wan > 0:
+                try:
+                    magic = calc_magic_one_day([r], q_str, market_cap_wan) or {}
+                except Exception:
+                    pass
 
-            # Magic 字段 (新) — 2026-09-04 修: 补 5 个明细字段, render 表格不显示 —
-            "roc":       latest_magic.get("roc") if latest_magic else None,
-            "ey":        latest_magic.get("ey") if latest_magic else None,
-            "ev_yi":     latest_magic.get("ev_yi") if latest_magic else None,
-            "industry":  latest_magic.get("industry") if latest_magic else None,
-            "ebit_yi":   latest_magic.get("ebit_yi") if latest_magic else None,
-            "capital_yi":latest_magic.get("capital_yi") if latest_magic else None,
-            "netdebt_yi":latest_magic.get("netdebt_yi") if latest_magic else None,
-            "market_cap_yi": latest_magic.get("market_cap_yi") if latest_magic else None,
-            "period_label":     latest_magic.get("period_label") if latest_magic else "no_data",
-            "seasonal_warning": latest_magic.get("seasonal_warning", False) if latest_magic else False,
+            capital_yi = magic.get("capital_yi")
+            if capital_yi is None:
+                fa = float(r.get("fixed_assets") or 0)
+                capital_yi = round(fa / 1e8, 2) if fa > 0 else 0.0
 
-            # 时序 (新, 给回测/排名稳定性)
-            "magic_ey_series":  ey_series,
-            "magic_roc_series": roc_series,
-        } for d in dates}
+            ebit_yi = magic.get("ebit_yi")
+            if ebit_yi is None:
+                raw_ebit = r.get("ebit")
+                ebit_yi = round(raw_ebit / 1e8, 1) if raw_ebit and raw_ebit > 0 else 0.0
 
-# ============================================================
-# 3. Phase2 派生函数 (weight=0, 纯数据提取)
+            quarterly.append({
+                "quarter":      q_str[:10],
+                "or_yoy":       float(r.get("or_yoy") or 0),
+                "np_yoy":       float(r.get("netprofit_yoy") or 0),
+                "gm":           float(r.get("grossprofit_margin") or 0),
+                "roe":          float(r.get("roe") or 0),
+                "ebit_yi":      ebit_yi,
+                "revenue_yi":   rev_yi,
+                "netprofit_yi": np_yi,
+                "mc_yi":        magic.get("market_cap_yi") or (ctx.market_cap_yi or 0),
+                "netdebt_yi":   magic.get("netdebt_yi") or 0.0,
+                "ev_yi":        magic.get("ev_yi") or 0.0,
+                "capital_yi":   capital_yi,
+                "roc":          magic.get("roc"),
+                "ey":           magic.get("ey"),
+                "peg":          peg_out.get("PEG_真实"),
+                "fwd_pe":       peg_out.get("Forward PE"),
+                "g":            peg_out.get("g_CAGR"),
+                "peg_verdict":  peg_out.get("PEG_判定"),
+                "L_r8":         (dcf_out.get("r_8%")  or {}).get("L_隐含(亿)"),
+                "L_r10":        (dcf_out.get("r_10%") or {}).get("L_隐含(亿)"),
+                "L_r12":        (dcf_out.get("r_12%") or {}).get("L_隐含(亿)"),
+                "L_E3_r10":     (dcf_out.get("r_10%") or {}).get("L/E3(每share)"),
+            })
+
+        # 最新季 Magic（用最后一个财报行重算，确保 period_label 等字段正确）
+        latest_magic = {}
+        if financials and market_cap_wan > 0:
+            try:
+                latest_magic = calc_magic_one_day(
+                    [financials[-1]], str(financials[-1].get("end_date", "")), market_cap_wan
+                ) or {}
+            except Exception:
+                pass
+
+        latest_q = quarterly[-1] if quarterly else {}
+        return {
+            "quarterly": quarterly,
+            "score":   0.0,
+            "signals": [
+                f"PEG {peg_out.get('PEG_真实', '—')}",
+                f"DCF r=10% L={((dcf_out.get('r_10%') or {}).get('L_隐含(亿)', '—'))}",
+                f"ROC {latest_q.get('roc', '—')}% | EY {latest_q.get('ey', '—')}%",
+            ],
+            "summary": f"PEG {peg_out.get('PEG_真实','—')} | ROC {latest_q.get('roc','—')}% | EY {latest_q.get('ey','—')}%",
+            # 顶层字段 (兼容原 valuation_data 读法，供 _section_peg/_section_dcf/_compute_fundamental_4d)
+            "PEG_真实":  peg_out.get("PEG_真实"),
+            "fwd_pe":    peg_out.get("Forward PE"),
+            "g":         peg_out.get("g_CAGR"),
+            "verdict":   peg_out.get("PEG_判定"),
+            "L_r8":      (dcf_out.get("r_8%")  or {}).get("L_隐含(亿)"),
+            "L_r10":     (dcf_out.get("r_10%") or {}).get("L_隐含(亿)"),
+            "L_r12":     (dcf_out.get("r_12%") or {}).get("L_隐含(亿)"),
+            "L_E3_r10":  (dcf_out.get("r_10%") or {}).get("L/E3(每share)"),
+            "L_achievable": dcf_out.get("L_achievable", ""),
+            "roc":       latest_magic.get("roc"),
+            "ey":        latest_magic.get("ey"),
+            "ev_yi":     latest_magic.get("ev_yi"),
+            "industry":  latest_magic.get("industry"),
+            "ebit_yi":   latest_magic.get("ebit_yi"),
+            "capital_yi":latest_magic.get("capital_yi"),
+            "netdebt_yi":latest_magic.get("netdebt_yi"),
+            "market_cap_yi": ctx.market_cap_yi,
+            "period_label":     latest_magic.get("period_label", "no_data"),
+            "seasonal_warning": latest_magic.get("seasonal_warning", False),
+        }
+
+
 #    参数: (ctx: RawContext, raw: dict) → dict
 #    key = 函数名去掉 "_derive_" 前缀
 # ============================================================
@@ -1058,18 +1315,18 @@ def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
 # ============================================================
 
 # Phase1 策略类列表 (顺序重要: ChanStrategy 先跑, ObvStrategy 在 FflowStrategy 之前)
-# 2026-09-02: PegStrategy → ValuationStrategy (合并 PEG + DCF + Magic 4 指标)
+# 2026-09-08: 删 ValuationStrategy (合并进 FinanceStrategy)
 PHASE1_STRATEGY_CLASSES = [
     ChanStrategy,
     WyckoffStrategy,
     SmcStrategy,
     ObvStrategy,
     FflowStrategy,
-    ValuationStrategy,
+    TechnicalStrategy,  # v6.2.8 加: 8 个技术指标
+    FinanceStrategy,
 ]
 
 # Phase2 派生函数列表
-# 2026-09-02: 删 _derive_dcf (合并到 ValuationStrategy)
 PHASE2_FUNCTIONS = [
     _derive_sector_overheat,
     _derive_five_categories,
@@ -1081,14 +1338,13 @@ PHASE2_FUNCTIONS = [
 ]
 
 # Phase1 权重 (用于 total_score 加权)
-# 2026-09-02: "peg" → "valuation" (ValuationStrategy name)
+# finance (FinanceStrategy) weight=0, 不参与 total_score
 _STRATEGY_WEIGHTS: dict[str, float] = {
     "chan":      0.20,
     "wyckoff":   0.20,
     "smc":       0.10,
     "obv":       0.10,
     "fflow":     0.10,
-    "valuation": 0.15,  # 之前 "peg": 0.15, 跟 ValuationStrategy 同权重
 }
 
 # 向后兼容别名 (旧代码 import PHASE1_STRATEGIES / PHASE2_STRATEGIES)

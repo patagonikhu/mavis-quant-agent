@@ -276,41 +276,88 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
 # ============================================================
 
 def get_fund_flow(code: str, days: int = 10) -> tuple[list[dict] | None, str]:
-    """
-    v4.0 (2026-07-22): 单一源 Tushare.moneyflow (5000 积分档, 24h 稳定)
-      返回值: list[dict] (字段: date / main_net(万) / small / mid / big / super_big)
+    """主力资金 (fflow) - v6.2.5 改造: 优先读落盘 parquet, 缺数据兜底按天拉
 
-    历史: Tushare.money_flow 直接调, 2026-07-22 整合
+    数据流 (v6.2.5):
+      1. 优先 DataStore.get_fflow_history(code) 读 5 季落盘 parquet (O(1))
+      2. 缺数据 (新股/刚上市) → 兜底调 get_money_flow_by_date(today) + 内存筛
+    老的 get_money_flow(code, limit=days) 单只 API 路径已删
+
+    返回值: list[dict], 字段 (兼容 fflow_factor + analysis_engine):
+      trade_date / main_net(万) / main_yi(亿) / small / mid / big / super_big / net_mf_amount(万)
     """
+    from ..store import DataStore
+
+    # 1. 优先读落盘 parquet (5 季全市场, 已经在 v6.2.5 backfill 完)
     try:
-        from .tushare import get_money_flow as _ts_mf
+        rows_parquet = DataStore.get_fflow_history(code)
+    except Exception as e:
+        logger.warning("DataStore.get_fflow_history(%s) fail: %s", code, e)
+        rows_parquet = []
+
+    if rows_parquet:
+        # 截取最近 N 天 (按 trade_date 升序 → 倒序后取 N)
+        rows_parquet.sort(key=lambda x: x.get("trade_date", ""), reverse=True)
+        rows_parquet = rows_parquet[:days]
+        rows_parquet.sort(key=lambda x: x.get("trade_date", ""))  # 还原升序
+        out = []
+        for r in rows_parquet:
+            sm_net = (float(r.get("buy_sm_amount", 0) or 0) - float(r.get("sell_sm_amount", 0) or 0))
+            md_net = (float(r.get("buy_md_amount", 0) or 0) - float(r.get("sell_md_amount", 0) or 0))
+            lg_net = (float(r.get("buy_lg_amount", 0) or 0) - float(r.get("sell_lg_amount", 0) or 0))
+            elg_net = (float(r.get("buy_elg_amount", 0) or 0) - float(r.get("sell_elg_amount", 0) or 0))
+            main_net = lg_net + elg_net
+            net_mf = float(r.get("net_mf_amount", 0) or 0)
+            out.append({
+                "trade_date": r.get("trade_date", ""),
+                "main_net": main_net,        # 万
+                "main_yi": main_net / 1e4,   # 亿 (给 fflow_factor)
+                "small": sm_net, "mid": md_net,
+                "big": lg_net, "super_big": elg_net,
+                "net_mf_amount": net_mf,     # 万
+            })
+        return out, "OK_PARQUET"
+
+    # 2. 兜底: 按天拉 (新股/缺数据场景)
+    try:
+        from .tushare import get_money_flow_by_date
     except Exception as e:
         return None, f"IMPORT_FAIL_{type(e).__name__}"
 
-    ts_data, ts_status = _ts_mf(code, limit=days)
-    if not ts_data:
-        return None, ts_status or "EMPTY"
+    from datetime import datetime, timedelta
+    out = []
+    today = datetime.now()
+    for i in range(days + 10):
+        if len(out) >= days:
+            break
+        d = (today - timedelta(days=i)).strftime("%Y%m%d")
+        data, status = get_money_flow_by_date(d)
+        if not data:
+            continue
+        ts_code_prefix = code if "." in code else code
+        for r in data:
+            r_tc = r.get("ts_code", "")
+            if r_tc.split(".")[0] != ts_code_prefix.split(".")[0]:
+                continue
+            sm_net = (float(r.get("buy_sm_amount", 0) or 0) - float(r.get("sell_sm_amount", 0) or 0))
+            md_net = (float(r.get("buy_md_amount", 0) or 0) - float(r.get("sell_md_amount", 0) or 0))
+            lg_net = (float(r.get("buy_lg_amount", 0) or 0) - float(r.get("sell_lg_amount", 0) or 0))
+            elg_net = (float(r.get("buy_elg_amount", 0) or 0) - float(r.get("sell_elg_amount", 0) or 0))
+            main_net = lg_net + elg_net
+            net_mf = float(r.get("net_mf_amount", 0) or 0)
+            out.append({
+                "trade_date": r.get("trade_date", ""),
+                "main_net": main_net,
+                "main_yi": main_net / 1e4,
+                "small": sm_net, "mid": md_net,
+                "big": lg_net, "super_big": elg_net,
+                "net_mf_amount": net_mf,
+            })
+            break
 
-    rows = []
-    for r in ts_data:
-        # tushare moneyflow: buy_*_amount - sell_*_amount = 各单净额 (万)
-        sm_net = (float(r.get("buy_sm_amount", 0) or 0) - float(r.get("sell_sm_amount", 0) or 0))
-        md_net = (float(r.get("buy_md_amount", 0) or 0) - float(r.get("sell_md_amount", 0) or 0))
-        lg_net = (float(r.get("buy_lg_amount", 0) or 0) - float(r.get("sell_lg_amount", 0) or 0))
-        elg_net = (float(r.get("buy_elg_amount", 0) or 0) - float(r.get("sell_elg_amount", 0) or 0))
-        # 主力 (大单+特大单) 净额, 万
-        main_net = lg_net + elg_net
-        rows.append({
-            "trade_date": r.get("trade_date", ""),
-            "main_net": main_net,
-            "small": sm_net,
-            "mid": md_net,
-            "big": lg_net,
-            "super_big": elg_net,
-        })
-    if not rows:
+    if not out:
         return None, "EMPTY"
-    return rows, "OK"
+    return out, "OK_FALLBACK_BYDATE"
 
 
 # ============================================================
@@ -395,8 +442,9 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
       - fina_indicator (1 次, 给 EPS 用)
       - income (1 次, 给 EPS np_yi 用)
     v5.6 (2026-07-29): daily_basic_long 拆出 fetch_all
-      - fetch_all 保持 6 段并发 (Tushare 全接口 80/分 内, 实际跑 watchlist 平均 6-7 段/秒)
-      - daily_basic_long (250 天 PE/PB/市值/换手率) 由 老 data 工具 顶层另外拉
+      - fetch_all 保持 4 段并发 (sb/daily/mf/wk) + daily_basic 串行 = 5 段
+        (Tushare 全接口 80/分 内, 实际跑 watchlist 平均 6-7 段/秒)
+      - daily_basic_long (250 天 PE/PB/市值/换手率) v5.10.23 删, 改走 stk_factor_history/ 按日落盘
         1 只票 +1 API call, watchlist 间隔 60s 自然恢复, 不在 fetch_all 内部串行 (会拖累 13s+)
 
     配合 tushare_fetcher 1 小时内存缓存, 同一只股二次跑 0.5s 内
@@ -415,9 +463,11 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
         get_stock_basic as _ts_sb,
         get_daily as _ts_daily,
         get_daily_basic as _ts_db,
-        get_money_flow as _ts_mf,
         get_weekly as _ts_weekly,
     )
+    # v6.2.5 改造: fflow 不再走 tushare.get_money_flow 单只 fetch
+    # 改走 get_fund_flow(code, days=30) → 内部优先读 DataStore 落盘 parquet (O(1))
+    # 老的 _ts_mf (无落盘单只 API) 已弃用
 
     result = {
         "code": code,
@@ -451,7 +501,8 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     with ThreadPoolExecutor(max_workers=4) as ex:
         fut_sb  = ex.submit(_ts_sb,   code)
         fut_day = ex.submit(_ts_daily, code, limit=kline_days)
-        fut_mf  = ex.submit(_ts_mf,   code, 30)
+        # v6.2.5 改: 走 get_fund_flow (内部优先 DataStore 落盘, 0 网络)
+        fut_mf  = ex.submit(get_fund_flow, code, 30)
         fut_wk  = ex.submit(_ts_weekly, code, limit=weekly_limit)
 
         sb,  sb_s  = fut_sb.result()
@@ -538,22 +589,21 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     if not db and db_s == "EMPTY":
         logger.warning("daily_basic 仍 EMPTY, 跨票间隔会自动恢复 (本票不阻塞)")
 
-    # 4. money_flow
+    # 4. money_flow (v6.2.5 改: get_fund_flow 已内部转 main_net/small/mid/big/super_big, 直接用)
     if mf:
         fflow_rows = []
         for r in mf:
-            sm_net  = (float(r.get("buy_sm_amount",  0) or 0) - float(r.get("sell_sm_amount",  0) or 0))
-            md_net  = (float(r.get("buy_md_amount",  0) or 0) - float(r.get("sell_md_amount",  0) or 0))
-            lg_net  = (float(r.get("buy_lg_amount",  0) or 0) - float(r.get("sell_lg_amount",  0) or 0))
-            elg_net = (float(r.get("buy_elg_amount", 0) or 0) - float(r.get("sell_elg_amount", 0) or 0))
+            # r 字段: trade_date / main_net(万) / small / mid / big / super_big
             fflow_rows.append({
                 "trade_date": r.get("trade_date", ""),
-                "main_net": lg_net + elg_net,
-                "small": sm_net, "mid": md_net,
-                "big": lg_net, "super_big": elg_net,
+                "main_net": r.get("main_net", 0),
+                "small": r.get("small", 0),
+                "mid": r.get("mid", 0),
+                "big": r.get("big", 0),
+                "super_big": r.get("super_big", 0),
             })
         result["fflow"] = fflow_rows
-        # v5.10.17: 存原始 moneyflow list (给 fflow verdict 复用, 0 重复拉取)
+        # v6.2.5: moneyflow 字段保留兼容性, 存已转的 fflow_rows (下游 fflow verdict 直接用)
         result["moneyflow"] = mf
     result["statuses"]["fflow"] = mf_s
 
@@ -800,6 +850,16 @@ def compute_indicators(kline: list[dict]) -> dict:
     current = closes[-1]
 
     result = {}
+    # v6.2.8 改: TechnicalStrategy 需要 series 时序, 这里预算完整 series 一并存入 result
+    # 系列长度对齐到 K 线, 前面不足的位填 None
+    series_dates = [bar.get("date") or bar.get("trade_date", "") for bar in kline]
+
+    def _align_to_kline(series: list, series_start_idx: int) -> list:
+        """把 series 对齐到 K 线, 前面 series_start_idx 位填 None"""
+        out = [None] * series_start_idx + list(series)
+        if len(out) < n:
+            out = out + [None] * (n - len(out))
+        return out[:n]
 
     # ========== 1. MACD (12, 26, 9) ==========
     # 算完整 EMA12/EMA26 序列, 然后 DIF = EMA12 - EMA26, DEA = EMA9(DIF)
@@ -829,6 +889,9 @@ def compute_indicators(kline: list[dict]) -> dict:
         "DEA": round(dea, 4),
         "BAR": round(bar, 4),
         "verdict": macd_verdict,
+        # v6.2.8 加: series 字段, 供 TechnicalStrategy 用 (前面对齐 None)
+        "dif_series": _align_to_kline(dif_series, n - len(dif_series)),
+        "dea_series": _align_to_kline(dea_series, n - len(dea_series)),
     }
 
     # ========== 2. RSI (6, 12, 24) ==========
@@ -836,24 +899,37 @@ def compute_indicators(kline: list[dict]) -> dict:
     rsi12 = _rsi(closes, 12)
     rsi24 = _rsi(closes, 24)
     rsi_verdict = _rsi_verdict(rsi6, rsi12, rsi24)
+    # v6.2.8 加: RSI series (Wilder 递归)
+    rsi6_series = _rsi_series(closes, 6)
+    rsi12_series = _rsi_series(closes, 12)
+    rsi24_series = _rsi_series(closes, 24)
     result["rsi"] = {
         "rsi6": round(rsi6, 2),
         "rsi12": round(rsi12, 2),
         "rsi24": round(rsi24, 2),
         "verdict": rsi_verdict,
+        "rsi6_series": rsi6_series,
+        "rsi12_series": rsi12_series,
+        "rsi24_series": rsi24_series,
     }
 
     # ========== 3. KDJ (9, 3, 3) ==========
     k, d, j = _kdj(highs, lows, closes, n=9, m1=3, m2=3)
     kdj_verdict = _kdj_verdict(k, d, j)
+    # v6.2.8 加: KDJ series (sliding window)
+    kdj_k_series, kdj_d_series, kdj_j_series = _kdj_series(highs, lows, closes, n=9, m1=3, m2=3)
     result["kdj"] = {
         "K": round(k, 2),
         "D": round(d, 2),
         "J": round(j, 2),
         "verdict": kdj_verdict,
+        "k_series": kdj_k_series,
+        "d_series": kdj_d_series,
+        "j_series": kdj_j_series,
     }
 
     # ========== 4. BOLL (20, 2) ==========
+    boll_series_mid, boll_series_upper, boll_series_lower, boll_pct_series = _boll_series(closes, 20, 2)
     if n >= 20:
         mid20 = sum(closes[-20:]) / 20
         # 总体标准差
@@ -875,11 +951,17 @@ def compute_indicators(kline: list[dict]) -> dict:
             "lower": round(lower, 2),
             "width": round((upper - lower) / mid20 * 100, 2),  # 带宽 %
             "verdict": boll_verdict,
+            # v6.2.8 加: BOLL series
+            "mid_series": boll_series_mid,
+            "upper_series": boll_series_upper,
+            "lower_series": boll_series_lower,
+            "pct_series": boll_pct_series,  # (close-lower)/(upper-lower), 0=下轨, 1=上轨
         }
     else:
         result["boll"] = {"error": "K线 < 20"}
 
     # ========== 5. ATR (14) ==========
+    atr14_series = _atr_series(highs, lows, closes, 14)
     if n >= 15:
         atr14 = _atr(highs, lows, closes, 14)
         # ATR 占价格比 (波动率)
@@ -894,6 +976,9 @@ def compute_indicators(kline: list[dict]) -> dict:
             "atr14": round(atr14, 2),
             "atr_pct": round(atr_pct, 2),
             "verdict": atr_verdict,
+            "atr14_series": atr14_series,
+            "atr_pct_series": [round(a / c * 100, 2) if (a and c) else None
+                               for a, c in zip(atr14_series, closes)],
         }
     else:
         result["atr"] = {"error": "K线 < 15"}
@@ -910,11 +995,15 @@ def compute_indicators(kline: list[dict]) -> dict:
             vol_verdict = f"🟢 缩量 ({vol_ratio:.2f}x)"
         else:
             vol_verdict = f"⚪ 正常 ({vol_ratio:.2f}x)"
+        # v6.2.8 加: vol_ratio series (sliding)
+        vol_ratio_series = _vol_ratio_series(vols, window=5)
         result["vol_ma"] = {
             "vol_ma5": round(vol_ma5, 0),
             "vol_today": round(vols[-1], 0),
             "vol_ratio": round(vol_ratio, 2),
             "verdict": vol_verdict,
+            "vol_ratio_series": vol_ratio_series,
+            "vol_ma5_series": _vol_ma_series(vols, 5),
         }
     else:
         result["vol_ma"] = {"error": "K线 < 6"}
@@ -1076,6 +1165,142 @@ def _kdj_verdict(k: float, d: float, j: float) -> str:
     if k > d:
         return f"🟡 金叉 (K={k:.0f} > D={d:.0f})"
     return f"🟠 死叉 (K={k:.0f} < D={d:.0f})"
+
+
+# ============================================================
+# v6.2.8 加: 5 个 series 辅助函数 (TechnicalStrategy 用)
+# 返回长度 == K线数, 不足期填 None
+# ============================================================
+
+def _rsi_series(closes: list[float], period: int = 14) -> list:
+    """Wilder RSI 序列 (返回长度=len(closes), 前面 period 位填 None)"""
+    n = len(closes)
+    if n < period + 1:
+        return [None] * n
+    # gain/loss 序列
+    gains = [0.0]
+    losses = [0.0]
+    for i in range(1, n):
+        change = closes[i] - closes[i - 1]
+        gains.append(max(change, 0))
+        losses.append(max(-change, 0))
+    # Wilder 初始均值
+    avg_gain = sum(gains[1:period + 1]) / period
+    avg_loss = sum(losses[1:period + 1]) / period
+    series = [None] * (period)  # 前 period 位无值
+    # period 位 RSI
+    if avg_loss == 0:
+        series.append(100.0)
+    else:
+        rs = avg_gain / avg_loss
+        series.append(100 - 100 / (1 + rs))
+    for i in range(period + 1, n):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        if avg_loss == 0:
+            series.append(100.0)
+        else:
+            rs = avg_gain / avg_loss
+            series.append(100 - 100 / (1 + rs))
+    return series
+
+
+def _kdj_series(highs: list[float], lows: list[float], closes: list[float],
+                n: int = 9, m1: int = 3, m2: int = 3) -> tuple[list, list, list]:
+    """KDJ 序列 (返回 3 个 list, 长度=len(closes), 前面 n 位填 None)"""
+    N = len(closes)
+    if N < n:
+        return [None] * N, [None] * N, [None] * N
+    K_prev = 50.0
+    D_prev = 50.0
+    K_series = [None] * (n - 1)  # 前 n-1 位无值
+    D_series = [None] * (n - 1)
+    J_series = [None] * (n - 1)
+    for i in range(n - 1, N):
+        h_n = max(highs[max(0, i - n + 1):i + 1])
+        l_n = min(lows[max(0, i - n + 1):i + 1])
+        rsv = (closes[i] - l_n) / (h_n - l_n) * 100 if h_n > l_n else 50.0
+        K = (m1 - 1) / m1 * K_prev + 1 / m1 * rsv
+        D = (m2 - 1) / m2 * D_prev + 1 / m2 * K
+        J = 3 * K - 2 * D
+        K_series.append(K)
+        D_series.append(D)
+        J_series.append(J)
+        K_prev, D_prev = K, D
+    return K_series, D_series, J_series
+
+
+def _boll_series(closes: list[float], n: int = 20, k: float = 2) -> tuple[list, list, list, list]:
+    """BOLL 序列 (mid/upper/lower/pct), 返回 4 个 list, 长度=len(closes), 前面 n-1 位填 None
+
+    pct = (close - lower) / (upper - lower), 0=下轨, 1=上轨
+    """
+    N = len(closes)
+    if N < n:
+        return [None] * N, [None] * N, [None] * N, [None] * N
+    mid_series = [None] * (n - 1)
+    upper_series = [None] * (n - 1)
+    lower_series = [None] * (n - 1)
+    pct_series = [None] * (n - 1)
+    for i in range(n - 1, N):
+        window = closes[i - n + 1:i + 1]
+        mid = sum(window) / n
+        variance = sum((c - mid) ** 2 for c in window) / n
+        std = variance ** 0.5
+        upper = mid + k * std
+        lower = mid - k * std
+        pct = (closes[i] - lower) / (upper - lower) if (upper > lower) else 0.5
+        mid_series.append(mid)
+        upper_series.append(upper)
+        lower_series.append(lower)
+        pct_series.append(pct)
+    return mid_series, upper_series, lower_series, pct_series
+
+
+def _atr_series(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list:
+    """Wilder ATR 序列, 长度=len(closes), 前面 period 位填 None"""
+    N = len(closes)
+    if N < period + 1:
+        return [None] * N
+    trs = [None]  # i=0 无 TR
+    for i in range(1, N):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+        trs.append(tr)
+    # 初始 ATR
+    atr = sum(trs[1:period + 1]) / period
+    series = [None] * period + [atr]
+    for i in range(period + 1, N):
+        atr = (atr * (period - 1) + trs[i]) / period
+        series.append(atr)
+    return series
+
+
+def _vol_ratio_series(vols: list[float], window: int = 5) -> list:
+    """量比序列 (vol[i] / MA(vols[i-window:i], window))
+
+    长度=len(vols), 前面 window 位填 None
+    """
+    N = len(vols)
+    if N < window + 1:
+        return [None] * N
+    series = [None] * window
+    for i in range(window, N):
+        ma = sum(vols[i - window:i]) / window
+        series.append(vols[i] / ma if ma > 0 else 1.0)
+    return series
+
+
+def _vol_ma_series(vols: list[float], window: int = 5) -> list:
+    """成交量 MA 序列, 长度=len(vols), 前面 window-1 位填 None"""
+    N = len(vols)
+    series = [None] * (window - 1)
+    for i in range(window - 1, N):
+        series.append(sum(vols[i - window + 1:i + 1]) / window)
+    return series
 
 
 # ============================================================

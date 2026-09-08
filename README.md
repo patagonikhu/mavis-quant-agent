@@ -1,35 +1,34 @@
 # A股量化智能投顾 Agent (LLM-driven)
 
-> 6 个 Claude Code Skill (v6.2.3) + 单次 O(n) 因子引擎 = 你在终端的投资分析师。
-> 数据走本地 parquet (Tushare 同步) + LLM 训练知识 + 你手维护的 watchlist (101 只: 20 持仓 + 52 自选 + 29 Magic 初筛)。
+> 6 个 Claude Code Skill (v6.2.8) + 单次 O(n) 因子引擎 = 你在终端的投资分析师。
+> 数据走本地 parquet (Tushare 同步) + LLM 训练知识 + 你手维护的 watchlist (54 只: 21 持仓 + 33 自选)。
 
 ---
 
-## 1. 6 个 Slash 命令 (v6.2.3)
+## 1. 6 个 Slash 命令 (v6.2.8)
 
 所有 skill 都在 `.claude/skills/` 下, 直接在终端敲命令触发。
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报 (22 section: 投资四问 + T 框架 + PEG + DCF + 缠论 4 级别) | `/t-analyze 688017 绿的谐波` |
-| `/t-analyze --all` | 批量扫 watchlist 全部 (101 只: 20 持仓 + 52 自选 + 29 Magic 初筛), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
-| `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.3)** — 7 flag 正交: --kline/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
-| `/t-magic` | 跑 Magic Formula 排名 (Greenblatt ROC+EY 联合), Top 20 写到 docs/magic-top20.md, 可选加到 watchlist (29 只 Magic 初筛来源) | `/t-magic` |
+| `/t-analyze <code> [name]` | 单只详报 (22 section: 投资四问 + T 框架 + PEG + DCF + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
+| `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
+| `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 8 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
+| `/t-magic` | 跑 Magic Formula 排名 (Greenblatt ROC+EY 联合), Top 20 写到 docs/magic-top20.md | `/t-magic` |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单, 写 docs/oversold-watchlist.md | `/t-near-low --gap 2` |
 | `/t-bb-obv` | 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 三重确认 (每天 0-2 只) | `/t-bb-obv --window 5` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
-| `/t-sync-cache` (deprecated) | ⚠️ 已并入 `/t-sync-data --cache`, 不要再用 | — |
+| `/t-quality-growth` | R3 v6.2.7 启动期反转信号扫描, 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-quality-growth --top-np-jump 30` |
 
-> 6 个 skill, 加上历史 `t-sync-cache` (deprecated alias) = 共 7 个 skill 文件
+> 7 个 skill (含 t-quality-growth, 2026-09-08 加), 加 `t-sync-data --cache` 替代旧 `t-sync-cache`
 
 ### 1.1 典型用法
 
 ```bash
-# 单只分析 (60 行 22 section 详报)
-/t-analyze 600089 特变电工
-/t-analyze 688017 绿的谐波    # PEG 冲突案例
+# 单只分析 (22 section 详报, 800+ 行)
+/t-analyze 688256 寒武纪
 
-# 批量（后台跑 71 只约 90s）
+# 批量 (后台跑 54 只约 50s)
 /t-analyze --all              # 全 watchlist + 写 docs/{portfolio,watchlist}/analyze-*.md
 
 # 信号回测（走 signal_cache 缓存，命中行 0.5s 出结果）
@@ -73,7 +72,7 @@
 **DCF 隐含 L** (r=8/10/12% 三档, 板块-aware 假设):
   - r=10%  L=X亿  L/E3=X.Xx  L/可达利润=X.Xx
 
-**5 方法 × 3 周期 矩阵** (linter 必查):
+**7 strategy × 2 周期 矩阵** (linter 必查, v6.2.5 重构 6 strategy, v6.2.8 加 technical):
   - 场景: A/B/C/D/E
   - 共振数: N 重
   - 行动: 🥇/🥈/🥉/🟢/🟡/⬜/❌
@@ -112,19 +111,19 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   ├── backtest-*.md                     # 回测报告
 │   └── signal-watchlist.md               # 全量扫描信号表
 │
-├── data/                                  # 静态数据 (你/Claude 维护, v6.2.3)
-│   ├── watchlist.json                     # 关注股 + 笔记 (101 只: 20 持仓 + 52 自选 + 29 Magic 初筛)
+├── data/                                  # 静态数据 (你/Claude 维护, v6.2.5)
+│   ├── watchlist.json                     # 关注股 + 笔记 (54 只: 21 持仓 + 33 自选)
 │   ├── history/
-│   │   ├── daily/                         # 日 K 线 parquet (DataStore)
-│   │   ├── daily_basic/                   # 日线 PE/PB/市值 (DataStore)
-│   │   ├── financials/                     # 季报 5 季度 (DataStore, 27745 行)
-│   │   └── stock_basic/                   # 股票基础信息 (5549 只, DataStore)
-│   ├── cache/
-│   │   └── eps/                            # EPS 机构预期 JSON cache (30 天 TTL)
-│   └── analysis_cache.db                  # signal_cache (24 列 SQLite 缓存, 461MB / 166 万行)
+│   │   ├── daily/                         # 日 K 线 parquet (DataStore, 5 季)
+│   │   ├── stk_factor/                    # 17 列估值 (DataStore, 5 季 290 天 × 5555 只 ≈ 160 万行)
+│   │   ├── financials/                    # 季报 13 季度 (DataStore, 72253 行)
+│   │   ├── fflow_history/                 # 主力资金 9 字段 (DataStore, 5 季 150 万行, v6.2.5 新)
+│   │   ├── eps/                           # EPS 机构预期 (单文件 eps_consensus.parquet, 117 只 × 4 期, 30 天 TTL)
+│   │   └── stock_basic/                   # 股票基础信息 (5555 只, DataStore)
+│   └── analysis_cache.db                  # signal_cache SQLite 缓存 (24 列因子)
 
 > v6.2 起 events.json + sectors.json **已删**: T 事件由 LLM 报告生成时从外部查 (年报/新闻/公告),
-> 板块分类走 stock_basic.parquet 的 industry 字段 (5549 只全覆盖).
+> 板块分类走 stock_basic.parquet 的 industry 字段 (5555 只全覆盖).
 │
 ├── tools/                                 # 核心引擎
 │   ├── sync_stock.py                      # 单只拉数据 (DataStore)
@@ -139,13 +138,14 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── signal_cache.py                # SQLite 缓存 (wyckoff 9 bool + chan 5 bool + hub)
 │   │   └── render_data.py                 # RenderData (9 派生字段)
 │   │
-│   ├── factors/                           # 7 strategy 算子
+│   ├── factors/                           # 7 strategy 算子 (chan/wyckoff/smc/obv/fflow/technical/finance)
 │   │   ├── kline_arrays.py                # build_kline_features() O(n) 预算层
 │   │   ├── wyckoff/stage_factor.py
 │   │   ├── chan/czsc_signals.py
 │   │   ├── smc/                           # OB/FVG/Sweep
 │   │   ├── volume/price_fflow.py          # OBV + fflow
-│   │   └── valuation/multi.py             # PEG + DCF
+│   │   ├── valuation/multi.py             # PEG + DCF + Magic (合并 v6.2.5)
+│   │   └── risk/                          # 退出信号/止盈止损/监控触发
 │   │
 │   ├── render/                            # 报告渲染 (22 section)
 │   │   └── report_renderer.py
@@ -198,7 +198,7 @@ WyckoffStrategy.analyze_history(ctx, dates)  O(n) — 1次循环: 每根bar O(1)
 ChanStrategy.analyze_history(ctx, dates)     O(n) — czsc 内部已 O(n) 优化
 SmcStrategy.analyze_history(ctx, dates)      O(n) — OB/FVG/Sweep 全量扫一次
 ObvStrategy.analyze_history(ctx, dates)      O(n) — OBV 数组预建
-FflowStrategy.analyze_history(ctx, dates)     O(n) — Tushare money_flow 预扫描
+FflowStrategy.analyze_history(ctx, dates)     O(1) — fflow_factor 接 moneyflow_list 求和 (走 DataStore 落盘)
 PegStrategy.analyze_history(ctx, dates)       O(1) — 查表
 ResonanceStrategy.analyze_history(ctx, dates) O(n) — 1d/5d/20d 共振
   │
@@ -225,7 +225,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 | 文件 | 职责 |
 |------|------|
 | `tools/factors/kline_arrays.py::build_kline_features` | O(n) 预算层：MA/vol/slope/rolling min/max，返回 `arrs[key][i]` |
-| `tools/analysis/analysis_engine.py::AnalysisEngine.analyze_history` | 7 strategy 并行调用，合并 scene/resonance/action |
+| `tools/analysis/analysis_engine.py::AnalysisEngine.analyze_history` | 7 strategy 顺序调用 (chan/wyckoff/smc/obv/fflow/technical/finance), signal_action 由 LLM render 时聚合 |
 | `tools/analysis/analysis_engine.py::WyckoffStrategy.analyze_history` | 用 `arrs` 预算层 + pre_scan sub_events，循环内 O(1) |
 | `tools/analysis/analysis_engine.py::ChanStrategy.analyze_history` | czsc 批量，内部已 O(n) |
 | `tools/analysis/analysis_engine.py::SmcStrategy.analyze_history` | OB/FVG/Sweep 全量跑一次，per-date 按 idx 过滤 |
@@ -262,7 +262,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 }
 ```
 
-101 只: 20 持仓 + 52 自选 + 29 Magic 初筛 (来自 t-magic 加).
+54 只: 21 持仓 + 33 自选.
 
 ### 4.2 events.json (v6.2 起 **删除**)
 
@@ -271,7 +271,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 
 ### 4.3 sectors.json (v6.2 起 **删除**)
 
-> 板块分类走 `stock_basic.parquet` 的 `industry` 字段 (5549 只全覆盖)。
+> 板块分类走 `stock_basic.parquet` 的 `industry` 字段 (5555 只全覆盖)。
 > 细分板块 → DCF 假设 (WACC/FCF/g) 走 `SECTOR_DCF_ASSUMPTIONS` 字典 (代码内 `tools/factors/valuation/dcf_engine.py`)。
 
 ---
@@ -280,7 +280,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 
 1. **数据本地化优先** — 所有 K 线/EPS 走 parquet (`DataStore` 读), 避免运行时网络调用
 2. **三层分离** — `tools/storage/sync.py` (数据) → `tools/analysis/` (引擎) → `tools/render/` (报告)
-3. **O(n) 单次遍历** — 6 strategy 共享 `ctx.chan_result / wyckoff_result / smc_result / obv_result / fflow_result / valuation_data` 预算层, 单次遍历出全历史
+3. **O(n) 单次遍历** — 7 strategy 共享 `ctx.chan_result / wyckoff_result / smc_result / obv_result / fflow_result / technical_result` 预算层, FinanceStrategy 不预写 ctx (历史切片独立算), 单次遍历出全历史
 4. **缓存优先** — `analysis_cache.db` SQLite 让回测/分析秒级返回; `/t-sync-data --cache` 增量预热
 5. **架构守门 (v6.2.2)** — 所有数据/网络操作只在 `tools/storage/` 下 (DataStore / caches / sources), 不散落
 6. **异常立即抛** — 禁止 `except Exception` 吞错; 渲染失败立即 raise 停下整批
@@ -683,8 +683,8 @@ market_trend = (market[-1] / market[-6] - 1) * 100
 
 **dump 字段** (v5.6 新加): `data/dump/{code}.json` 顶层:
 - `kline` (日线 250 根) / `kline_60m` (60 分 200 根 + pct_chg) / `weekly` (周线 250 根)
-- `daily_basic_long` (250 天 PE/PB/市值/换手率历史)
-- `fflow` (60 日主力净额) / `eps_table` (4 期 EPS)
+- ~~`daily_basic_long` (250 天 PE/PB/市值/换手率历史)~~ — v5.10.23 删, 改用 `stk_factor_history/` 按季 parquet 落盘
+- `fflow` (主力资金净额, 5 季 290 天, v6.2.5 起走 DataStore 落盘) / `eps_table` (4 期 EPS)
 
 #### 9.4.4 实战读法 (报告里的输出示例)
 
@@ -755,7 +755,7 @@ market_trend = (market[-1] / market[-6] - 1) * 100
 |---|---|---|
 | 🟢 | 实数据 (parquet) | Tushare 同步 → `data/history/` → DataStore |
 | 🟡 | 硬编码 (LLM/STOCK_REGISTRY) | 卡点/leader/板块等元数据 |
-| ⚪ | 计算派生 | PEG / DCF L / MA / 5 方法×3 周期 |
+| ⚪ | 计算派生 | PEG / DCF L / MA / 7 strategy × 2 周期 |
 
 > 报告里每个数字都标来源, 用户一眼能看出真数据 vs 估算。
 

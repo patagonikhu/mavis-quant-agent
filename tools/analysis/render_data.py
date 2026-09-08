@@ -315,6 +315,9 @@ class RenderData:
     # ===== 5 方法 × 3 周期 矩阵 (2026-07-24 固化) =====
     analysis: Optional[dict] = None  # v5.10.26+: 替代 signals_5method, AnalysisEngine 输出 dict
 
+    # ===== 季度财务 (最近 2 季, 营收/净利/毛利率/ROE/EBIT) — render 用 =====
+    quarterly_finance: list[dict] = field(default_factory=list)  # [{quarter, or_yoy, np_yoy, gm, roe, ebit_yi, revenue_yi, netprofit_yi}, ...]
+
     # 因子历史缓存 — 计算一次后由 render/_section_factor_history 复用，避免重复 analyze_history
     factor_history_rows: Optional[list] = field(default=None, repr=False)
 
@@ -328,10 +331,6 @@ class RenderData:
     @property
     def dcf(self) -> Optional[dict]:
         return (self.analysis or {}).get("dcf")
-
-    @property
-    def sector_overheat(self) -> Optional[dict]:
-        return (self.analysis or {}).get("sector_overheat")
 
     @property
     def five_categories(self) -> Optional[dict]:
@@ -431,7 +430,6 @@ class RenderData:
     valuation_data: Optional[dict] = None  # ValuationStrategy 输出 (PEG + DCF + Magic)
     signal_5cat: Optional[dict] = None
     xgboost_prob: Optional[float] = None
-    sector_overheat: Optional[dict] = None
     supplement: Optional[dict] = None
     take_profit: Optional[dict] = None
     stop_loss: Optional[dict] = None
@@ -451,6 +449,14 @@ class RenderData:
     # ============================================================
     # 构造
     # ============================================================
+
+    @staticmethod
+    def _extract_quarterly_finance(ctx: "RawContext", valuation_data: "Optional[dict]" = None, n: int = 4) -> list[dict]:
+        """2026-09-08 废弃: 逻辑已迁移到 FinanceStrategy。
+        保留存根避免外部引用报错。实际数据来自 result.raw['finance']['quarterly']。
+        """
+        return []
+
 
     @classmethod
     def from_result(cls, ctx: "RawContext", result: "AnalysisResult") -> "RenderData":
@@ -475,11 +481,16 @@ class RenderData:
                         value=round(ma, 2),
                         deviation=round((current / ma - 1) * 100, 2),
                     ))
-            try:
-                from tools.storage.sources.eastmoney import compute_indicators
-                technical = compute_indicators(kline_raw)
-            except Exception as e:
-                technical = {"error": str(e)}
+            # v6.2.8 改: 从 ctx.technical_result 拿 (TechnicalStrategy 已算, 含 series)
+            # 避免 render 端再调 compute_indicators 二次计算
+            technical = ctx.technical_result or {}
+            if not technical:
+                # 兜底: 如果 strategy 没跑 (kline_only=True), 临时算一次
+                try:
+                    from tools.storage.sources.eastmoney import compute_indicators
+                    technical = compute_indicators(kline_raw)
+                except Exception as e:
+                    technical = {"error": str(e)}
 
         # EPS
         eps_raw = ctx.eps_table or []
@@ -542,15 +553,18 @@ class RenderData:
             ma_status=DataStatus(name="ma", status="OK" if ma_table else "EMPTY"),
             eps_table=eps_table,
             eps_status=DataStatus(name="eps", status="OK" if eps_table else "EMPTY"),
-            # fflow_data: 从 ctx.moneyflow (Tushare money_flow 原始 list) 转 FflowRow
-            # 之前漏了, 一直空, MD 永远显示"❌ fflow 未拉取"
+            # 季度财务 (最近 4 季) — 直接从 FinanceStrategy 结果取
+            quarterly_finance=(result.raw.get("finance") or {}).get("quarterly") or [],
+            # fflow_data: 从 ctx.moneyflow 转 FflowRow
+            # v6.2.5 改: ctx.moneyflow 来自 eastmoney.get_fund_flow, 字段是 main_net(万)/main_yi(亿)/small/mid/big/super_big
+            # 之前误用 buy_lg_amount/sell_lg_amount 老字段 → MD 永远"无数据"
             fflow_data=[FflowRow(
                 date=k.get("trade_date",""),
-                main_net=float(k.get("net_mf_amount", 0)) / 1e8,  # 元 → 亿
-                small=float(k.get("buy_sm_amount", 0) - k.get("sell_sm_amount", 0)) / 1e8,
-                mid=float(k.get("buy_md_amount", 0) - k.get("sell_md_amount", 0)) / 1e8,
-                big=float(k.get("buy_lg_amount", 0) - k.get("sell_lg_amount", 0)) / 1e8,
-                super_big=float(k.get("buy_elg_amount", 0) - k.get("sell_elg_amount", 0)) / 1e8,
+                main_net=float(k.get("main_net", 0)) / 1e8,  # 万 → 亿
+                small=float(k.get("small", 0)) / 1e8,
+                mid=float(k.get("mid", 0)) / 1e8,
+                big=float(k.get("big", 0)) / 1e8,
+                super_big=float(k.get("super_big", 0)) / 1e8,
                 derived=False,
             ) for k in (ctx.moneyflow or [])],
             fflow_status=DataStatus(name="fflow", status="OK" if (ctx.moneyflow or []) else "EMPTY"),
@@ -586,15 +600,11 @@ class RenderData:
 
     @classmethod
     def _compute_valuation(cls, ctx: "RawContext", result) -> Optional[dict]:
-        """从 AnalysisResult.raw["valuation"] 拿 ValuationStrategy 算的 4 指标 (2026-09-02 新)
-
-        返回: {PEG_真实, fwd_pe, g, verdict, L_r8/r10/r12, L_E3_r10, roc, ey, ev_yi,
-                period_label, seasonal_warning, magic_ey_series, magic_roc_series}
-        """
+        """从 AnalysisResult.raw["finance"] 拿 FinanceStrategy 算的 4 指标 (2026-09-08 改)"""
         try:
             if not result or not result.raw:
                 return None
-            return result.raw.get("valuation", {}) or None
+            return result.raw.get("finance", {}) or None
         except Exception:
             return None
 
@@ -612,8 +622,10 @@ class RenderData:
             return DataStatus(name=name, status="OK")
 
         # 1) 基本面 (4 维) — 估值/盈利/增长/安全 评分
-        val = raw.get("valuation", {}) or {}
-        out["fundamental"] = cls._compute_fundamental_4d(ctx, raw, val)
+        # v6.2.8 改: 业务规则抽到 tools/analysis/mech.py, render_data 0 计算
+        from tools.analysis.mech import compute_fundamental_4d
+        val = raw.get("finance", {}) or {}
+        out["fundamental"] = compute_fundamental_4d(val, industry=ctx.industry or "未知")
         out["fundamental_status"] = _ok("基本面")
         # 2) 5 类信号 — 5 个 strategy 信号聚合
         out["signal_5cat"] = cls._agg_5_categories(raw, signals_5, ctx)
@@ -621,12 +633,12 @@ class RenderData:
         # 3) 策略 — 综合 5 strategy 给出买/卖/观望
         out["strategy"] = cls._agg_strategy(raw, signals_5)
         out["strategy_status"] = _ok("策略")
-        # 4) 板块过热 — 简单算: 1 周 / 1 月 / 3 月涨幅 (个股代理)
-        out["sector_overheat"] = cls._compute_sector_overheat(ctx, raw)
-        # 5) 缠论补充 — 从 chan 取 (bsp + hub 已经算)
+        # 4) 缠论补充 — 从 chan 取 (bsp + hub 已经算)
         out["supplement"] = cls._extract_chan_supplement(raw)
         # 6) 止盈 3 层 + 止损 4 档 (合在 take_profit 里, render 拆开)
-        out["take_profit"] = cls._compute_stop_pl(ctx, raw)
+        # v6.2.8 改: 业务规则抽到 tools/analysis/mech.py, render_data 0 计算
+        from tools.analysis.mech import compute_stop_pl
+        out["take_profit"] = compute_stop_pl(ctx.kline or [])
 
         return out
 
@@ -671,7 +683,7 @@ class RenderData:
             })
             total_score += 5
         # 估值: PEG
-        val = raw.get("valuation", {})
+        val = raw.get("finance", {})
         peg = val.get("PEG_真实")
         if isinstance(peg, (int, float)) and peg < 1.5:
             signals.append({
@@ -738,7 +750,7 @@ class RenderData:
         strategies.append({"name": "资金 (FFlow)", "signal": fflow_signal, "reason": fflow_verdict or "—"})
 
         # 5) 估值
-        val = raw.get("valuation", {}) or {}
+        val = raw.get("finance", {}) or {}
         peg = val.get("PEG_真实")
         val_signal = "hold"
         if isinstance(peg, (int, float)):
@@ -762,25 +774,6 @@ class RenderData:
         }
 
     @staticmethod
-    def _compute_sector_overheat(ctx, raw: dict) -> dict:
-        """板块过热 (个股 K 线代理: 1 周 / 1 月 / 3 月涨幅)"""
-        kline = ctx.kline or []
-        if len(kline) < 64:
-            return {}
-        closes = [k["close"] for k in kline if "close" in k]
-        if len(closes) < 64:
-            return {}
-        pct_1w  = (closes[-1] / closes[-6]  - 1) * 100 if len(closes) >= 6  else 0
-        pct_1m  = (closes[-1] / closes[-22] - 1) * 100 if len(closes) >= 22 else 0
-        pct_3m  = (closes[-1] / closes[-64] - 1) * 100 if len(closes) >= 64 else 0
-        return {
-            "1周涨幅": f"{pct_1w:+.1f}%",
-            "1月涨幅": f"{pct_1m:+.1f}%",
-            "3月涨幅": f"{pct_3m:+.1f}%",
-            "source": f"个股 K线代理 (industry={ctx.industry or '未知'})",
-        }
-
-    @staticmethod
     def _extract_chan_supplement(raw: dict) -> dict:
         """缠论补充: 2 买 / 3 买 / 类二买 / 中枢突破"""
         bsp = (raw.get("buy_sell_points", {}) or {})
@@ -801,96 +794,6 @@ class RenderData:
                 elif "🟢笔结束" in str(k):
                     out[level]["笔结束"] = v
         return out
-
-    @staticmethod
-    def _compute_stop_pl(ctx, raw: dict) -> dict:
-        """止盈 3 层 + 止损 4 档 (基于 MA20/MA60 + 当前价)
-
-        2026-09-03 修: 返 Renderer 兼容结构
-        - tp1_price/tp2_price/tp3_price (兼容旧 _section_xxx 字段)
-        - 止损4档: s1_price/s2_price/s3_price/s4_price (兼容 _section_stop_loss)
-        """
-        kline = ctx.kline or []
-        if len(kline) < 60:
-            return {}
-        closes = [k["close"] for k in kline if "close" in k]
-        current = closes[-1]
-        ma20 = sum(closes[-20:]) / 20
-        ma60 = sum(closes[-60:]) / 60
-        # 止盈 3 层: 5% / 10% / 20%
-        tp1 = round(current * 1.05, 2)
-        tp2 = round(current * 1.10, 2)
-        tp3 = round(current * 1.20, 2)
-        # 止损 4 档: -3% / -5% / -8% / -10%
-        sl1 = round(current * 0.97, 2)
-        sl2 = round(current * 0.95, 2)
-        sl3 = round(current * 0.92, 2)
-        sl4 = round(current * 0.90, 2)
-        return {
-            "current_price": current,
-            "ma20": round(ma20, 2),
-            "ma60": round(ma60, 2),
-            # 止盈 (Renderer 旧字段名)
-            "tp1_price": tp1, "tp2_price": tp2, "tp3_price": tp3,
-            "止盈3层": [
-                {"档位": "1档 (+5%)", "价位": tp1, "建议操作": "卖 1/3 锁利"},
-                {"档位": "2档 (+10%)", "价位": tp2, "建议操作": "卖 1/3 显著利润"},
-                {"档位": "3档 (+20%)", "价位": tp3, "建议操作": "清仓"},
-            ],
-            # 止损 (Renderer 旧字段名 s1_price/s2_price/...)
-            "s1_price": sl1, "s2_price": sl2, "s3_price": sl3, "s4_price": sl4,
-            "止损4档": [
-                {"档位": "1档 (-3%)", "价位": sl1, "建议操作": "⚠️ 检查基本面"},
-                {"档位": "2档 (-5%)", "价位": sl2, "建议操作": "卖 1/3"},
-                {"档位": "3档 (-8%)", "价位": sl3, "建议操作": "减半仓"},
-                {"档位": "4档 (-10%)", "价位": sl4, "建议操作": "🛑 清仓"},
-            ],
-        }
-
-    @staticmethod
-    def _compute_fundamental_4d(ctx, raw: dict, val: dict) -> dict:
-        """基本面 4 维: 估值 / 盈利 / 增长 / 安全 (2026-09-03 修)
-
-        Renderer 期望 d = {key: {score, comment}}, 所以返 dict 嵌套.
-        """
-        dims = {}
-        # 1) 估值 (PEG)
-        peg = val.get("PEG_真实")
-        if isinstance(peg, (int, float)) and peg < 1.0:
-            dims["valuation"] = {"score": 75, "comment": f"✅ PEG {peg} (Lynch 买入区)"}
-        elif isinstance(peg, (int, float)) and peg < 1.5:
-            dims["valuation"] = {"score": 50, "comment": f"🟡 PEG {peg} (合理)"}
-        else:
-            dims["valuation"] = {"score": 25, "comment": f"🟠 PEG {peg or '—'} (偏贵)"}
-        # 2) 盈利 (ROC)
-        roc = val.get("roc")
-        if isinstance(roc, (int, float)) and roc > 25:
-            dims["profitability"] = {"score": 75, "comment": f"✅ ROC {roc}% (>25% 优秀)"}
-        elif isinstance(roc, (int, float)) and roc > 10:
-            dims["profitability"] = {"score": 50, "comment": f"🟡 ROC {roc}%"}
-        else:
-            dims["profitability"] = {"score": 25, "comment": f"⚠️ ROC {roc or '—'}"}
-        # 3) 增长 (EY)
-        ey = val.get("ey")
-        if isinstance(ey, (int, float)) and ey > 8:
-            dims["growth"] = {"score": 75, "comment": f"✅ EY {ey}% (>8% 便宜)"}
-        elif isinstance(ey, (int, float)) and ey > 5:
-            dims["growth"] = {"score": 50, "comment": f"🟡 EY {ey}%"}
-        else:
-            dims["growth"] = {"score": 25, "comment": f"⚠️ EY {ey or '—'}"}
-        # 4) 安全 (行业)
-        industry = ctx.industry or "未知"
-        dims["safety"] = {"score": 50, "comment": f"⚠️ 行业 {industry} (待 LLM 细化)"}
-        # 总分 (4 维平均)
-        total = sum(d["score"] for d in dims.values()) // 4
-        return {
-            "valuation": dims["valuation"],
-            "profitability": dims["profitability"],
-            "growth": dims["growth"],
-            "safety": dims["safety"],
-            "total_score": total,
-            "dims": dims,
-        }
 
     # ============================================================
     # 完整性
@@ -957,7 +860,6 @@ class RenderData:
         else:
             report["Magic"] = ("❓", "未计算")
         report["5类信号"] = ("✅" if self.signal_5cat else "❓", "OK" if self.signal_5cat else "未计算")
-        report["板块过热"] = ("✅" if self.sector_overheat else "❓", "OK" if self.sector_overheat else "未计算")
         report["缠论补充"] = ("✅" if self.supplement else "❓", "OK" if self.supplement else "未计算")
         report["止盈止损"] = ("✅" if self.take_profit else "❓", "OK" if self.take_profit else "未计算")
 
@@ -978,9 +880,6 @@ class RenderData:
     def can_calc_dcf(self) -> bool:
         e_count = sum(1 for r in self.eps_table if r.year_mark == "E" and r.eps > 0)
         return e_count >= 2 and self.current_price is not None
-
-    def can_calc_sector_overheat(self) -> bool:
-        return len(self.kline) >= 90
 
     def can_calc_supplement(self) -> bool:
         return len(self.kline) >= 30

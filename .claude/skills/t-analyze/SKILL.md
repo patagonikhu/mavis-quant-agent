@@ -32,7 +32,7 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py
 | 输入 | 字段 |
 |---|---|
 | DataStore.get_ctx(code) | K线 + 财务 + EPS + 行业 + 市值 |
-| AnalysisEngine.analyze_history(ctx, dates) | 5 策略 (chan/wyckoff/smc/obv/fflow/valuation) |
+| AnalysisEngine.analyze_history(ctx, dates) | 6 策略 (chan/wyckoff/smc/obv/fflow/valuation; PegStrategy DEPRECATED 兼容) |
 | render_report(data) | Markdown 渲染 |
 
 ## 输出
@@ -47,8 +47,8 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py
 2. EPS + 财务数据
 3. MA 均线 + 偏离
 4. 8 种技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比)
-5. 5 方法 × 3 周期 矩阵 (场景/共振/行动)
-6. 5 方法详情 (周/日/60分)
+5. 6 strategy × 2 周期 矩阵 (场景/共振/行动; 2026-08-29 删 60m)
+6. 6 strategy 详情 (周/日)
 7. PEG 估值 (4 口径: 后视镜/前视镜/真实/表观)
 8. DCF L (r=8/10/12% 三档)
 9. 4 问 (卡点/TAM/龙头/估值)
@@ -80,11 +80,11 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python3 tools/batch/t_analyze_all.py
 | **DCF L/E3** | <2 / 2-5 / >5 | 叙事未满 / 较高 / 叙事已满 |
 | **DCF L/可达** | <0.8 / 1-2 / >2 | 低估 ✅ / 合理 / 透支 ❌ |
 
-## 实战信号 (5 方法 × 3 周期)
+## 实战信号 (6 strategy × 2 周期)
 
-5 重保险, 必须输出:
+6 重保险, 必须输出:
 - **场景**: A 主升 / B 高位 / C 震荡 / D 弱势 / E 下跌
-- **共振数**: N 重 (5 方法里 N 个看多/空)
+- **共振数**: N 重 (6 strategy 里 N 个看多/空)
 - **行动**: 🥇 加仓 / 🥈 持有 / 🟡 观察 / ⬜ 不动 / ❌ 减仓
 
 ## 相关

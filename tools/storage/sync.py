@@ -73,48 +73,41 @@ def action_kline(codes: list[str], target_date: str | None = None) -> int:
     return n
 
 
-# v6.2.4 加: stk_factor_pro 替代 daily_basic, 16 列 (含 ps/dv_ratio/free_float_turnover)
-STK_FACTOR_PROGRESS = Path("data/history/.stk_factor_progress.json")
-STK_FACTOR_FIELDS = (
-    "ts_code,trade_date,close,"
-    "pe,pe_ttm,pb,ps,ps_ttm,"
-    "dv_ratio,dv_ttm,"
-    "total_mv,circ_mv,"
-    "turnover_rate,turnover_rate_f,volume_ratio,"
-    "total_share,float_share"
-)
+# v6.2.4 加: stk_factor_pro 替代 daily_basic, 17 列 (含 ps/dv_ratio/free_float_turnover)
+# v6.2.5 改造: done 进度塞 parquet metadata (跟 fflow 平行), 不再单独维护 .stk_factor_progress.json
+# STK_FACTOR_FIELDS 搬到 caches/stk_factor_history.py, 这里只保留兼容性 import alias (供 action_status 读 max date)
 
 
 def action_stk_factor(force: bool = False) -> int:
-    """重拉 5 季 stk_factor_pro (16 列, 写到 data/history/stk_factor/)
+    """重拉 5 季 stk_factor_pro (17 列, 写到 data/history/stk_factor/)
 
-    行为:
-      1. 删旧 5 季 daily_basic parquet (force=True 强制, False 智能)
-      2. 拉 240 trade_date x 1 API = 8 分钟 (30/分限频, sleep 2.0秒)
-      3. 按 trade_date 写季度 parquet (5 季: 25Q3 25Q4 26Q1 26Q2 26Q3)
-      4. 进度文件: data/history/.stk_factor_progress.json (断点续跑)
+    行为 (v6.2.5 改造: 跟 action_fflow 一样, done 进度塞 parquet metadata, 不用 json):
+      1. 删旧 5 季 stk_factor parquet (force=True 强制, False 智能)
+      2. 拉 5 季 trade_date x 1 API = ~8 分钟 (30/分限频, sleep 2.0秒)
+      3. **每 10 个 trade_date 就把当季累积的 rows 写盘 + 更新 metadata** (崩了不丢数据)
+      4. 5 季按 trade_date 写季度 parquet: 25Q3 25Q4 26Q1 26Q2 26Q3
+         每季文件 metadata.b'done_dates' = JSON 数组 of YYYYMMDD (本季已完成)
+         (老 .stk_factor_progress.json 进度文件已删)
 
     默认 force=False: 已完成的 trade_date 跳过, 支持中断后接着跑
     """
     from .sources.tushare import get_stk_factor_by_date
-    from .store import HISTORY_DIR
-    import json, time
-    from datetime import datetime, timedelta
+    from .store import STK_FACTOR_DIR
+    from .caches.stk_factor_history import (
+        write_stk_factor_quarter,
+        read_all_done_dates,
+        STK_FACTOR_FIELDS,
+    )
+    import time
+    from datetime import datetime
 
-    # 1) 加载进度
-    progress = {}
-    if STK_FACTOR_PROGRESS.exists():
-        try:
-            progress = json.loads(STK_FACTOR_PROGRESS.read_text())
-            print(f"  📋 续跑: 已完成 {len(progress.get('done', []))} 个 trade_date")
-        except Exception:
-            progress = {}
+    # 1) 加载进度 (从 5 季 parquet metadata 合并, 0 外部文件)
+    done = read_all_done_dates()
+    print(f"  📋 续跑: 已完成 {len(done)} 个 trade_date (从 parquet metadata)")
 
     # 2) 算要拉的 trade_date 列表 (5 季, 2025Q3 ~ 2026Q3)
-    #    从 2025-07-01 (2025Q3 第一天) 到今天
     start_date = datetime(2025, 7, 1)
     today = datetime.now()
-    # 用 Tushare trade_cal 拿交易日 (避免节假日)
     from .sources.tushare import _safe_call
     cal_data, _ = _safe_call(
         "trade_cal", exchange="SSE", is_open="1",
@@ -123,7 +116,6 @@ def action_stk_factor(force: bool = False) -> int:
         fields="cal_date",
     )
     all_dates = sorted([c["cal_date"] for c in (cal_data or [])])
-    done = set(progress.get("done", []))
     pending = [d for d in all_dates if d not in done]
     print(f"  📅 总交易日: {len(all_dates)}  已完成: {len(done)}  待拉: {len(pending)}")
 
@@ -131,27 +123,20 @@ def action_stk_factor(force: bool = False) -> int:
         print(f"  ✅ 全部完成, 无需重拉")
         return 0
 
-    # 3) 删旧 stk_factor parquet (5 季) — 写 STK_FACTOR_DIR, 不动 HISTORY_DIR (K 线!)
-    # v6.2.4 修: 之前用错 HISTORY_DIR 覆盖了 K 线 5 季 (大事故)
-    from .store import STK_FACTOR_DIR
-    STK_FACTOR_DIR.mkdir(parents=True, exist_ok=True)
-    for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]:
-        old = STK_FACTOR_DIR / f"{q}.parquet"
-        if old.exists():
-            old.unlink()
-            print(f"  🗑️  删旧 stk_factor/{old.name}")
+    # 3) force 模式才删旧 5 季 parquet
+    if force:
+        STK_FACTOR_DIR.mkdir(parents=True, exist_ok=True)
+        for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]:
+            old = STK_FACTOR_DIR / f"{q}.parquet"
+            if old.exists():
+                old.unlink()
+                print(f"  🗑️  删旧 stk_factor/{old.name}")
+        done = set()  # force 重置
 
-    # 4) 按 trade_date 逐个拉 (30/分限频 → sleep 2s)
-    #    按季写盘
-    quarter_of = lambda d: (
-        "2025Q3" if "202507" <= d[:6] <= "202509" else
-        "2025Q4" if "202510" <= d[:6] <= "202512" else
-        "2026Q1" if "202601" <= d[:6] <= "202603" else
-        "2026Q2" if "202604" <= d[:6] <= "202606" else
-        "2026Q3"
-    )
-
+    # 4) 按 trade_date 逐个拉, 按季累积
+    from .caches.fflow_history import _quarter_of as _q_of  # 复用同一函数
     quarter_data: dict[str, list[dict]] = {q: [] for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
+    quarter_done: dict[str, set[str]] = {q: set() for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
     t0 = time.time()
     n_total = 0
     for i, d in enumerate(pending, 1):
@@ -159,40 +144,33 @@ def action_stk_factor(force: bool = False) -> int:
         if not data:
             print(f"  ⚠️ {d}: 拉取失败 ({status})")
             continue
-        q = quarter_of(d)
+        q = _q_of(d)
         quarter_data[q].extend(data)
+        quarter_done[q].add(d)
         done.add(d)
         n_total += len(data)
-        # 进度
+        # 进度: 每 10 个或最后一个, 把所有非空季落盘 (崩了不丢)
         if i % 10 == 0 or i == len(pending):
             elapsed = time.time() - t0
             speed = i / elapsed if elapsed > 0 else 0
             eta = (len(pending) - i) / speed if speed > 0 else 0
             print(f"  📡 [{i}/{len(pending)}] {d}: {len(data)} 只  "
                   f"速度 {speed:.2f}/s  ETA {eta/60:.1f} 分钟")
-            # 写进度
-            STK_FACTOR_PROGRESS.write_text(json.dumps({
-                "done": sorted(done),
-                "updated_at": datetime.now().isoformat(),
-            }))
+            # merge 写盘 (含 metadata)
+            for q, rows in quarter_data.items():
+                if not rows:
+                    continue
+                write_stk_factor_quarter(q, rows, done_dates=sorted(quarter_done[q]))
         time.sleep(2.0)  # 30/分限频
 
-    # 5) 按季写 parquet (写到 STK_FACTOR_DIR, 不再写 HISTORY_DIR)
-    import pandas as pd
+    # 5) 最终再写一次 (保险)
     for q, rows in quarter_data.items():
         if not rows:
             continue
-        df = pd.DataFrame(rows)
-        # 强制 16 列 schema (即使某列全是 None)
-        for col in STK_FACTOR_FIELDS.split(","):
-            if col not in df.columns:
-                df[col] = None
-        df = df[STK_FACTOR_FIELDS.split(",")]
-        # 去重 (同一 trade_date 不应该出现多次)
-        df = df.drop_duplicates(subset=["ts_code", "trade_date"])
-        out = STK_FACTOR_DIR / f"{q}.parquet"
-        df.to_parquet(out, index=False)
-        print(f"  ✅ 写 stk_factor/{q}: {len(df)} 行, 16 列")
+        write_stk_factor_quarter(q, rows, done_dates=sorted(quarter_done[q]))
+        print(f"  ✅ 写 stk_factor/{q}: {len(rows)} 行, "
+              f"done={len(quarter_done[q])}, "
+              f"{len(STK_FACTOR_FIELDS.split(','))} 列")
 
     print(f"  🎉 完成: {n_total} 行 总耗时 {(time.time()-t0)/60:.1f} 分钟")
     return n_total
@@ -224,33 +202,63 @@ def action_financials(codes: list[str], period: str | None = None) -> int:
         n = sync_financials(period, codes=codes if codes else None)
         print(f"  ✅ financials {period}: {n} 行")
         return n
-    # 默认拉最近 5 年 (10 季: 5 H1 + 5 全年) — Magic 回测需要
-    from datetime import datetime
-    today = datetime.now()
-    quarters = []
-    # 季报出表规则: Q1 4月底, Q2 8月底, Q3 10月底, Q4 4月底次年
-    # 5 年回测需要每年的 H1 + 全年 (10 季, 跨 6 个自然年)
-    candidates = [
-        (today.year - 1, "1231"),
-        (today.year - 1, "0630"),
-        (today.year, "0331"),
-        (today.year - 2, "1231"),
-        (today.year - 2, "0630"),
-        (today.year - 3, "1231"),
-        (today.year - 3, "0630"),
-        (today.year - 4, "1231"),
-        (today.year - 4, "0630"),
-        (today.year - 5, "1231"),
-    ]
-    # 去重
-    seen = set()
-    for y, m in candidates:
-        p = f"{y}{m}"
-        if p not in seen:
-            quarters.append(p)
-            seen.add(p)
+
+    from datetime import datetime, date
+    from pathlib import Path as _Path
+
+    today = date.today()
+
+    # 季报截止日 (ann_date 最晚): Q1=4/30, Q2=8/31, Q3=10/31, Q4=次年4/30
+    # 披露窗口: 季末后 ~120 天内仍可能有修订版，超过则定稿
+    WINDOW_DAYS = 120
+
+    def _quarter_end_and_deadline(year: int, q: int) -> tuple[date, date]:
+        """返回 (季末日, 披露截止日)"""
+        if q == 1:
+            return date(year, 3, 31),  date(year, 4, 30)
+        elif q == 2:
+            return date(year, 6, 30),  date(year, 8, 31)
+        elif q == 3:
+            return date(year, 9, 30),  date(year, 10, 31)
+        else:
+            return date(year, 12, 31), date(year + 1, 4, 30)
+
+    def _period_str(year: int, q: int) -> str:
+        return {1: f"{year}0331", 2: f"{year}0630",
+                3: f"{year}0930", 4: f"{year}1231"}[q]
+
+    # 枚举过去 5 年所有季度 (20 季), 只取"已到披露截止日"的
+    fin_dir = _Path("data/history/financials")
+    local_files = {f.stem for f in fin_dir.glob("*.parquet")} if fin_dir.exists() else set()
+
+    def _quarter_label(year: int, q: int) -> str:
+        return f"{year}Q{q}"
+
+    to_run: list[tuple[str, str]] = []   # [(period, reason)]
+    for yr in range(today.year - 5, today.year + 1):
+        for q in range(1, 5):
+            qend, deadline = _quarter_end_and_deadline(yr, q)
+            if deadline > today:
+                continue  # 还没到截止日, 数据未完整, 跳过
+            label = _quarter_label(yr, q)
+            period_s = _period_str(yr, q)
+            days_since_deadline = (today - deadline).days
+            if label not in local_files:
+                to_run.append((period_s, "缺失"))
+            elif days_since_deadline <= WINDOW_DAYS:
+                to_run.append((period_s, "窗口期增量"))
+            # else: 超出窗口期且本地已有 → 跳过
+
+    if not to_run:
+        print("  ✅ financials: 所有季度已是最新, 跳过")
+        return 0
+
+    print(f"  📋 financials 待跑 {len(to_run)} 个季度:")
+    for p, reason in to_run:
+        print(f"     {p} ({reason})")
+
     total = 0
-    for p in quarters:
+    for p, _ in to_run:
         n = sync_financials(p, codes=codes if codes else None)
         total += n
         print(f"  ✅ financials {p}: {n} 行")
@@ -263,10 +271,12 @@ def action_eps(codes: list[str]) -> int:
     真实接口: tools/fetch/data_fetcher.py::_build_eps_table
     走 datacenter.eastmoney.com (主) → Tushare 自建 NTM (备) → EMPTY
 
-    v6.2.4 改: parquet 写入 data/history/eps/{code}.parquet (跟 financials 同目录)
+    v6.2.5 改造: 1 只票 = 1 parquet (4 期 A/E) → 117 票 = 117 文件 (浪费 schema)
+                  改成: 全表 = 1 个 parquet, 约 500 行 (117 票 × 4 期)
+                  caches.eps.write_eps(code, data) 内部 upsert (删旧 + 加新)
     """
     from .sources.eastmoney import _build_eps_table
-    from .caches.eps import EPS_DIR, _write_parquet
+    from .caches.eps import write_eps
     ok = 0
     sources = {"datacenter_consensus": 0, "tushare_built_ntm": 0, "EMPTY": 0}
     for c in codes:
@@ -274,9 +284,7 @@ def action_eps(codes: list[str]) -> int:
             data, source = _build_eps_table(c)
             sources[source] = sources.get(source, 0) + 1
             if data:
-                out = EPS_DIR / f"{c}.parquet"
-                out.parent.mkdir(parents=True, exist_ok=True)
-                _write_parquet(out, c, data)
+                write_eps(c, data)  # 内部 upsert 到 eps_consensus.parquet
                 ok += 1
         except Exception as e:
             print(f"  ⚠️ {c} EPS 拉取失败: {e}")
@@ -285,24 +293,146 @@ def action_eps(codes: list[str]) -> int:
     return ok
 
 
-def action_fflow(codes: list[str]) -> int:
-    """主力资金流 (Tushare money_flow) — 最近 10-20 日
+# v6.2.5 加: fflow 落盘到 data/history/fflow_history/, 跟 stk_factor 平行
+# 9 字段精简版 (大单+特大单 amount + net_mf_amount, 不存 vol/中单)
+# v6.2.5 优化: done 进度塞 parquet metadata (key=b'done_dates', JSON-encoded),
+#              不再单独维护 .fflow_history_progress.json
 
-    真实接口: tools/fetch/tushare_fetcher.py::get_money_flow
-    字段: buy_lg_*/buy_elg_* (大单/特大单买), sell_lg_*/sell_elg_* (卖), net_mf_amount (净流入, 万元)
-    5000 积分档可用 (Tushare 官方)
+
+def action_fflow(force: bool = False) -> int:
+    """主力资金流历史 — 按天全市场拉, 按季存 parquet (v6.2.5 改造)
+
+    行为:
+      1. 跨 5 季 parquet metadata 加载 done dates (断点续跑, 不依赖外部 json)
+      2. 拉 5 季 trade_date x 1 API ≈ 13 分钟 (30/分限频, sleep 2.0秒)
+      3. **每 10 个 trade_date 就把当季累积的 rows 写盘 + 更新 metadata** (崩了不丢数据)
+      4. 4 季按 trade_date 写季度 parquet: 25Q3 25Q4 26Q1 26Q2 26Q3
+         每季文件 metadata.b'done_dates' = JSON 数组 of YYYYMMDD (本季已完成)
+
+    9 字段 (FFLOW_HISTORY_FIELDS, 不存 vol/中单):
+      ts_code, trade_date,
+      buy_sm_amount, sell_sm_amount,
+      buy_lg_amount, sell_lg_amount,
+      buy_elg_amount, sell_elg_amount,
+      net_mf_amount
+
+    v6.2.5 改造后: 单一入口 (按天全市场), 不再有 --codes 兼容路径
+    老的 --codes X --fflow 单只 API 已删 (走 DataStore.get_fflow_history 读 parquet)
     """
-    from ..sources.tushare import get_money_flow
-    ok = 0
-    for c in codes:
-        try:
-            data, status = get_money_flow(c)
-            if data:
-                ok += 1
-        except Exception as e:
-            print(f"  ⚠️ {c} fflow 拉取失败: {e}")
-    print(f"  ✅ fflow: {ok}/{len(codes)} 只")
-    return ok
+    from .sources.tushare import get_money_flow_by_date
+    from .caches.fflow_history import (
+        write_fflow_quarter,
+        read_all_done_dates,
+        FFLOW_HISTORY_FIELDS,
+        FFLOW_HISTORY_DIR,
+    )
+
+    import time
+    from datetime import datetime
+
+    # 1) 加载进度 (从 5 季 parquet metadata 合并, 0 外部文件)
+    done = read_all_done_dates()
+    print(f"  📋 续跑: 已完成 {len(done)} 个 trade_date (从 parquet metadata)")
+
+    # 2) 算要拉的 trade_date 列表 (5 季, 2025Q3 ~ 2026Q3)
+    start_date = datetime(2025, 7, 1)
+    today = datetime.now()
+    from .sources.tushare import _safe_call
+    cal_data, _ = _safe_call(
+        "trade_cal", exchange="SSE", is_open="1",
+        start_date=start_date.strftime("%Y%m%d"),
+        end_date=today.strftime("%Y%m%d"),
+        fields="cal_date",
+    )
+    all_dates = sorted([c["cal_date"] for c in (cal_data or [])])
+    pending = [d for d in all_dates if d not in done]
+    print(f"  📅 总交易日: {len(all_dates)}  已完成: {len(done)}  待拉: {len(pending)}")
+
+    if not pending and not force:
+        print(f"  ✅ 全部完成, 无需重拉")
+        return 0
+
+    # 3) 删旧 5 季 fflow_history parquet (force 重拉语义)
+    if force:
+        FFLOW_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]:
+            old = FFLOW_HISTORY_DIR / f"fflow_{q}.parquet"
+            if old.exists():
+                old.unlink()
+                print(f"  🗑️  删旧 fflow_history/{old.name}")
+        done = set()  # force 重置
+
+    # 4) 按 trade_date 逐个拉, 按季累积
+    from .caches.fflow_history import _quarter_of
+    quarter_data: dict[str, list[dict]] = {q: [] for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
+    quarter_done: dict[str, set[str]] = {q: set() for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
+    t0 = time.time()
+    n_total = 0
+    for i, d in enumerate(pending, 1):
+        data, status = get_money_flow_by_date(d)
+        if not data:
+            print(f"  ⚠️ {d}: 拉取失败 ({status})")
+            continue
+        q = _quarter_of(d)
+        quarter_data[q].extend(data)
+        quarter_done[q].add(d)
+        done.add(d)
+        n_total += len(data)
+        # 进度: 每 10 个或最后一个, 把当季已完成的 row + done 写盘 (崩了不丢)
+        if i % 10 == 0 or i == len(pending):
+            elapsed = time.time() - t0
+            speed = i / elapsed if elapsed > 0 else 0
+            eta = (len(pending) - i) / speed if speed > 0 else 0
+            print(f"  📡 [{i}/{len(pending)}] {d}: {len(data)} 只  "
+                  f"速度 {speed:.2f}/s  ETA {eta/60:.1f} 分钟")
+            # 每 10 个就把所有非空季落盘 (append 模式: 重读旧文件 + merge)
+            for q, rows in quarter_data.items():
+                if not rows:
+                    continue
+                # 重读旧 parquet (如果存在), 合并
+                p = FFLOW_HISTORY_DIR / f"fflow_{q}.parquet"
+                if p.exists():
+                    try:
+                        old_df = duckdb.execute(
+                            f"SELECT * FROM read_parquet('{p}')"
+                        ).df()
+                        new_df = pd.DataFrame(rows)
+                        all_df = pd.concat([old_df, new_df], ignore_index=True)
+                        all_df = all_df.drop_duplicates(subset=["ts_code", "trade_date"])
+                        rows_to_write = all_df.to_dict("records")
+                    except Exception:
+                        rows_to_write = rows
+                else:
+                    rows_to_write = rows
+                # 写盘: rows + 当季 done dates
+                write_fflow_quarter(q, rows_to_write, done_dates=sorted(quarter_done[q]))
+        time.sleep(2.0)  # 30/分限频
+
+    # 5) 最终再写一次 (保险: 确保最新 done 落盘)
+    import pandas as pd
+    import duckdb
+    for q, rows in quarter_data.items():
+        if not rows:
+            continue
+        p = FFLOW_HISTORY_DIR / f"fflow_{q}.parquet"
+        if p.exists():
+            try:
+                old_df = duckdb.execute(f"SELECT * FROM read_parquet('{p}')").df()
+                new_df = pd.DataFrame(rows)
+                all_df = pd.concat([old_df, new_df], ignore_index=True)
+                all_df = all_df.drop_duplicates(subset=["ts_code", "trade_date"])
+                rows_to_write = all_df.to_dict("records")
+            except Exception:
+                rows_to_write = rows
+        else:
+            rows_to_write = rows
+        write_fflow_quarter(q, rows_to_write, done_dates=sorted(quarter_done[q]))
+        print(f"  ✅ 写 fflow_history/fflow_{q}: {len(rows_to_write)} 行, "
+              f"done={len(quarter_done[q])}, "
+              f"{len(FFLOW_HISTORY_FIELDS.split(','))} 列")
+
+    print(f"  🎉 完成: {n_total} 行 总耗时 {(time.time()-t0)/60:.1f} 分钟")
+    return n_total
 
 
 def action_cache(codes: list[str]) -> int:
@@ -346,7 +476,7 @@ def print_data_freshness_summary() -> None:
     """
     import duckdb
     from pathlib import Path
-    from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR
+    from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR, FFLOW_HISTORY_DIR
     from .caches.eps import EPS_DIR
 
     def _max_date(path: Path) -> str:
@@ -408,20 +538,17 @@ def print_data_freshness_summary() -> None:
             print(f"  EPS (机构预期)     : 空")
     except Exception as e:
         print(f"  EPS (机构预期)     : ❌ {type(e).__name__}")
-    # fflow 走 parquet 但目录结构不一样, 简单写
-    fflow_dir = Path("data/cache/fflow")
-    if fflow_dir.exists():
-        try:
-            files = list(fflow_dir.glob("*.parquet"))
-            if files:
-                latest = max(files, key=lambda p: p.stat().st_mtime).stem
-                print(f"  fflow (资金流)     : {latest}")
-            else:
-                print(f"  fflow (资金流)     : 空")
-        except Exception:
-            print(f"  fflow (资金流)     : —")
-    else:
-        print(f"  fflow (资金流)     : 未拉过")
+    # fflow_history 走 data/history/fflow_history/fflow_*.parquet (v6.2.5 新, 跟 stk_factor 平行)
+    try:
+        if FFLOW_HISTORY_DIR.exists() and list(FFLOW_HISTORY_DIR.glob("fflow_*.parquet")):
+            df = duckdb.execute(
+                f"SELECT MAX(trade_date) FROM read_parquet('{FFLOW_HISTORY_DIR}/fflow_*.parquet')"
+            ).fetchone()
+            print(f"  fflow (资金流)     : {df[0] if df and df[0] else '—'}")
+        else:
+            print(f"  fflow (资金流)     : 未拉过")
+    except Exception as e:
+        print(f"  fflow (资金流)     : ❌ {type(e).__name__}")
     # stock_basic 特殊: 没有 trade_date, 看 mtime
     sb_path = Path("data/history/stock_basic/stock_basic.parquet")
     print(f"  stock_basic (静态) : mtime {_file_mtime(sb_path)}")
@@ -592,7 +719,7 @@ def main():
     actions.add_argument("--eps", action="store_true",
                          help="EPS 机构预期 (datacenter.consensus)")
     actions.add_argument("--fflow", action="store_true",
-                         help="主力资金流 (Tushare.money_flow)")
+                         help="主力资金流历史 (按天全市场, 按季存 parquet)")
     actions.add_argument("--cache", action="store_true",
                          help="signal_cache 缓存 (analysis_cache.db)")
     actions.add_argument("--meta", action="store_true",
@@ -678,7 +805,7 @@ def main():
         action_kline(codes)
     if args.stk_factor:
         # v6.2.4 重构: 替代 daily_basic, 16 列, 8 分钟重拉
-        print("\n[1.5/7] --stk-factor (重拉 16 列 stk_factor_pro, 替代 daily_basic)")
+        print("\n[1.5/7] --stk-factor (重拉 17 列 stk_factor_pro, 替代 daily_basic)")
         action_stk_factor(force=False)
     if args.stock_basic:
         print("\n[2/7] --stock-basic (股票基础)")
@@ -693,8 +820,10 @@ def main():
         print("\n[4/7] --eps (机构预期)")
         action_eps(codes)
     if args.fflow:
-        print("\n[5/7] --fflow (主力资金)")
-        action_fflow(codes)
+        print("\n[5/7] --fflow (主力资金历史, 按天全市场拉+按季存)")
+        # v6.2.5 改: 单一入口 (按天全市场), 不再支持 --codes 单只
+        # 老的 --codes X --fflow 单只逻辑已删, 走 DataStore.get_fflow_history 读 parquet
+        action_fflow(force=False)
     if args.cache:
         print("\n[6/7] --cache (signal_cache)")
         action_cache(codes)

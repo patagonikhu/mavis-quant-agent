@@ -628,23 +628,54 @@ def get_dividend(code: str, limit: int = 10) -> tuple[list[dict] | None, str]:
 # 10. 个股资金流向 pro.moneyflow (真正的 fflow!)
 # ============================================================
 
-def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: int = 10) -> tuple[list[dict] | None, str]:
-    """个股资金流向 (小/中/大/特大单买卖 + 净流入)
+# v6.2.5 加: 按 trade_date 拉全市场 5555 只, 1 次 API 1 天
+# 跟 stk_factor_pro 平行, 用于 sync --fflow 按天落盘
+FFLOW_HISTORY_FIELDS = (
+    "ts_code,trade_date,"
+    "buy_sm_amount,sell_sm_amount,"   # 散户
+    "buy_lg_amount,sell_lg_amount,"   # 主力
+    "buy_elg_amount,sell_elg_amount," # 大主力
+    "net_mf_amount"                   # 净流入
+)
 
-    字段: buy_sm_vol/buy_sm_amount (小单买入手数/金额)
-          buy_md_vol/buy_md_amount (中单)
-          buy_lg_vol/buy_lg_amount (大单)
-          buy_elg_vol/buy_elg_amount (特大单)
-          sell_sm_*/sell_md_*/sell_lg_*/sell_elg_* (对应卖出)
-          net_mf_vol / net_mf_amount (净流入, 单位 万元)
 
-    Tushare 5000 积分档可用 (替代 push2delay fflow)
+def get_money_flow_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
+    """按交易日拉全市场 moneyflow, 1 次拿 5555 只 (5000 积分档可调)
 
-    Args:
-        code: 6 位代码
-        start_date/end_date: 20260715 格式
-        limit: 如果不给 start_date, 取最近 N 天
+    trade_date: YYYYMMDD
+    返回 [{ts_code, trade_date, buy_sm_amount, sell_sm_amount,
+           buy_lg_amount, sell_lg_amount, buy_elg_amount, sell_elg_amount,
+           net_mf_amount}, ...]
+
+    v6.2.5: 落盘用 9 字段 (vol 4 个不存, 中单 amount 不存, 散户仅存 amount)
     """
+    data, status = _safe_call(
+        "moneyflow",
+        trade_date=trade_date,
+        fields=FFLOW_HISTORY_FIELDS,
+    )
+    return data, status
+
+
+
+
+def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: int = 10) -> tuple[list[dict] | None, str]:
+    """⚠️ v6.2.5 弃用: 老的单只 moneyflow fetch API (不走落盘)
+
+    业务层请改用:
+      - 批量/历史: DataStore.get_fflow_history(code)  (读 data/history/fflow_history/ 落盘 parquet)
+      - 单日实时: get_money_flow_by_date(today_date) + 内存 filter ts_code
+
+    本函数保留仅供外部 eastmoney 兼容, 2026-09-05 之后将删
+    v6.2.5 新数据流: sync.action_fflow 按天全市场落盘 → DataStore.get_fflow_history 读
+    """
+    import warnings
+    warnings.warn(
+        "tushare.get_money_flow 已弃用, 请改用 DataStore.get_fflow_history() (落盘读) "
+        "或 get_money_flow_by_date(date) + 内存筛 ts_code (实时)",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     ts_code = _code_to_ts(code)
     kwargs = {
         "ts_code": ts_code,
@@ -657,7 +688,6 @@ def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: i
     data, status = _safe_call("moneyflow", **kwargs)
     if not data:
         return None, status
-    # 默认倒序 (新→旧), 升序 (旧→新), 跟 web.ifzq 一致
     data.sort(key=lambda x: x["trade_date"])
     if limit and not start_date:
         data = data[-limit:]
@@ -837,122 +867,6 @@ def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
     out["statuses"]["forecast"] = fc_s
 
     return out
-
-
-# ============================================================
-# 11. 组合 fflow 方案 (get_fund_flow_combined)
-# 2026-07-22 整合到 tushare_fetcher
-# 2026-07-22 升级 v2: 不再用 OBV 派生, 只用 tushare.money_flow
-# ============================================================
-
-def get_fund_flow_combined(code: str, days: int = 10, moneyflow_list: list | None = None) -> dict:
-    """
-    组合方案: Tushare.money_flow 真实数据 (主力=大单+特大单)
-    - 主源: Tushare.money_flow API (5000 积分档, 24h 稳定)
-
-    v5.10.17 改: 接受 moneyflow_list 参数 (复用 fetch_all 已拉数据)
-      - 不传 moneyflow_list: 内部调 get_money_flow(code, limit=days) 拉数据
-      - 传 moneyflow_list: 直接用, 0 重复拉取 (v5.10.16 修 fflow 重复 2 次的 bug)
-      - 旧 CLI 兼容: get_fund_flow_combined(code, days=10) 仍可独立调
-
-    返回结构:
-      {
-        "success": True,
-        "source": "🟢 Tushare.money_flow (10 日真实)",
-        "data_columns": {
-          "real": [{"date": "2026-07-21", "main_yi": +18.28, ...}],
-          "derived": []
-        },
-        "today_real": {...},
-        "verdict": "🟢 主力明显进货 ...",
-        "score": +6,
-        "data_source_type": "tushare_moneyflow",
-        "fflow_available": True
-      }
-    """
-    real_column = []
-    today_real = None
-
-    # 1. Tushare.money_flow 真实 (24h 稳定, 5000 积分档)
-    # v5.10.17: 优先用传入的 moneyflow_list, 0 重复拉取
-    if moneyflow_list is None:
-        try:
-            moneyflow_list, ts_status = get_money_flow(code, limit=days)
-        except Exception as e:
-            logger.warning("get_fund_flow_combined(Tushare) fail: %s", e)
-            moneyflow_list = []
-
-    if moneyflow_list and len(moneyflow_list) > 0:
-        for row in moneyflow_list:
-            # 各单净额 (万元) = 买 - 卖
-            sm_net_wan = (float(row.get("buy_sm_amount", 0) or 0) - float(row.get("sell_sm_amount", 0) or 0))
-            md_net_wan = (float(row.get("buy_md_amount", 0) or 0) - float(row.get("sell_md_amount", 0) or 0))
-            lg_net_wan = (float(row.get("buy_lg_amount", 0) or 0) - float(row.get("sell_lg_amount", 0) or 0))
-            elg_net_wan = (float(row.get("buy_elg_amount", 0) or 0) - float(row.get("sell_elg_amount", 0) or 0))
-            # 转亿 (万 → 亿, /10000)
-            real_column.append({
-                "date": row.get("trade_date"),
-                "main_yi": (lg_net_wan + elg_net_wan) / 1e4,    # 主力 = 大单+特大单 (亿)
-                "large_yi": lg_net_wan / 1e4,
-                "xlarge_yi": elg_net_wan / 1e4,
-                "small_yi": sm_net_wan / 1e4,
-                "medium_yi": md_net_wan / 1e4,
-                "net_mf_amount": float(row.get("net_mf_amount", 0) or 0) / 1e4,
-                "source": "tushare_moneyflow",
-            })
-        today_real = real_column[-1]
-
-    # 2. 评分 + 判定 (基于 Tushare 真实数据)
-    score = 0
-    signals = []
-    if today_real:
-        main_today = today_real.get("main_yi", 0)
-        xlarge_today = today_real.get("xlarge_yi", 0)
-        if main_today > 3:
-            signals.append(f"✅ 当日主力真实净流入 +{main_today:.2f}亿 (Tushare.money_flow)")
-            score += 3
-        elif main_today > 0:
-            signals.append(f"🟡 当日主力轻微流入 +{main_today:.2f}亿")
-            score += 1
-        elif main_today < -3:
-            signals.append(f"🔴 当日主力真实净流出 {main_today:.2f}亿")
-            score -= 3
-        if xlarge_today > 2:
-            signals.append(f"✅ 当日超大单 +{xlarge_today:.2f}亿 (机构买入)")
-            score += 2
-        elif xlarge_today < -2:
-            signals.append(f"⚠️ 当日超大单 {xlarge_today:.2f}亿 (机构出货)")
-            score -= 2
-
-    # 整体判定
-    main_str = f"今日真实 {today_real.get('main_yi', 0):.2f}亿" if today_real else "无数据"
-    if score >= 4:    verdict = f"🟢 主力明显进货 ({main_str})"
-    elif score >= 1:  verdict = f"🟡 主力轻微流入 ({main_str})"
-    elif score == 0:  verdict = "⬜ 中性震荡"
-    elif score >= -2: verdict = f"🟠 主力偏流出 ({main_str})"
-    else:             verdict = f"🔴 主力明显流出 ({main_str})"
-
-    return {
-        "success": today_real is not None,
-        "source": "🟢 Tushare.money_flow (10 日真实)",
-        "data_columns": {
-            "real": real_column,
-            "derived": [],
-        },
-        "data": real_column,
-        "today_real": today_real,
-        "history_obv": [],
-        "verdict": verdict,
-        "signals": signals,
-        "score": score,
-        "fallback_chain": ["tushare.moneyflow"],
-        "data_as_of": today_real["date"] if today_real else None,
-        "data_source_type": "tushare_moneyflow",
-        "fflow_available": today_real is not None,
-        "always_available": True,
-        "next_real_update": "Tushare 每日 ~18:00 更新昨日数据",
-        "note": "Tushare.money_flow 真实 (亿元). Tushare 不可用时 fflow 段直接空",
-    }
 
 
 # ============================================================

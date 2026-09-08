@@ -664,7 +664,7 @@ PEG_A 数值 = PEG_表观 数值 (数学相同, 不同标签)
 
 | 图例 | 含义 | 来源 | 验证方式 |
 |---|---|---|---|
-| 🟢 | **API 原始数据** | 腾讯 qtimg / 东财 datacenter / web.ifzq.gtimg.cn | curl 一致 |
+| 🟢 | **API 原始数据** | Tushare / 东财 datacenter (qtimg/ifzq v3.1 起 WAF 弃用) | curl 一致 |
 | 🟡 | **行业约定 (硬编码)** | Damodaran / CSMAR / IMF / 国务院 | 公开数据, 不能"修改" |
 | ⚪ | **数学派生** | Wilder 1978 / Gordon Growth / 公式 | 给同输入算一致 |
 

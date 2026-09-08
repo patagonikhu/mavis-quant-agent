@@ -46,53 +46,113 @@ from tools.analysis.analysis_result_signals import obv_label
 # ============================================================
 
 def _section_eps(data: RenderData) -> str:
-    """EPS + 财务数据 + Magic Formula (Greenblatt ROC + EY)
-    三块数据都是"基本面估值"维度, 合一个 section 信息密度更高
+    """财务数据 section (v6.2.7 改名 + 改中文 + 加最近 4 季财务 + Magic 整合)
+
+    内容 (1 张大表):
+    1. EPS 预测 (Tushare 一致预期) — 单独小表
+    2. 最近 4 季 财务 + Magic (合并 1 表) — 行: 4 季 + 1 行 Magic (5 行), 列: 12 指标
     """
     parts = []
 
-    # 1) EPS 表格
+    # 1) EPS 预测 (Tushare 一致预期)
     if data.eps_table:
-        rows = ["| 年份 | EPS | 净利(亿) | 营收(亿) | ROE |",
+        rows = ["| 年份 | EPS (¥) | 净利润 (亿) | 营收 (亿) | ROE (%) |",
                 "|---|---|---|---|---|"]
         for r in data.eps_table:
             rows.append(f"| {r.year} | {r.eps:.2f} | {r.net_profit_yi:.1f} | {r.revenue_yi:.1f} | {r.roe:.1f}% |")
-        parts.append("\n".join(rows))
+        parts.append("### EPS 一致预期 (Tushare)\n\n" + "\n".join(rows))
     else:
-        parts.append("> **EPS 预测:** ❌ 未拉取 (PEG/DCF 无法计算, 标 N/A)")
+        parts.append("> EPS 一致预期: ❌ 缺失 (PEG/DCF 标记 N/A)")
 
-    # 2) Magic Formula (Greenblatt ROC + EY) — 2026-09-02 改读 valuation_data
+    # 2) 合并大表: 4 季财务 + Magic 1 行 (12 指标)
     _val = data.valuation_data or {}
-    if _val:
-        skip = _val.get("skip_reason")
-        if skip:
-            parts.append(
-                f"\n\n### 💎 Magic Formula (Greenblatt ROC + EY)\n"
-                f"> **跳过原因:** {skip} ({_val.get('industry', '—')})\n"
-                f"> 行业失真 / 数据缺, 不参与排序"
+    has_magic = bool(_val and not _val.get("skip_reason"))
+
+    roc_pct = "—"
+    ey_pct  = "—"
+    ev_yi   = None
+    industry = "—"
+    period_label = "—"
+    seasonal = ""
+
+    if has_magic:
+        roc_raw = _val.get("roc")
+        ey_raw  = _val.get("ey")
+        ev_yi   = _val.get("ev_yi")
+        industry = _val.get("industry") or "—"
+        period_label = _val.get("period_label") or "—"
+
+        if period_label in ("—", "no_data", None, "") and data.quarterly_finance:
+            latest_q = data.quarterly_finance[-1].get("quarter", "")
+            if latest_q:
+                try:
+                    y, m, _ = latest_q.split("-")
+                    q_num = (int(m) - 1) // 3 + 1
+                    period_label = f"{y}Q{q_num}"
+                except Exception:
+                    period_label = latest_q
+
+        seasonal = " ⚠️ 季度代理" if _val.get("seasonal_warning") else ""
+        roc_pct = f"{roc_raw:.1f}" if isinstance(roc_raw, (int, float)) else "—"
+        ey_pct  = f"{ey_raw:.2f}" if isinstance(ey_raw, (int, float)) else "—"
+
+    # 构建大表 (两个独立表格)
+    if data.quarterly_finance:
+        header = f"### 最近 4 季财务 + Magic 公式 ({period_label if has_magic else 'TTM'})"
+        note = "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期):**"
+        # v6.2.8 改: 加 ROC + EY 2 列 (14 列, 季粒度, 每季单独算)
+        cols1 = ["季", "营收 yoy", "净利 yoy", "毛利率", "ROE", "营收 (亿)", "净利 (亿)",
+                 "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)"]
+        sep1 = ["---"] * 14
+        rows = [
+            header, "",
+            note, "",
+            "| " + " | ".join(cols1) + " |",
+            "| " + " | ".join(sep1) + " |",
+        ]
+
+        for r in data.quarterly_finance:
+            def _fmt(v):
+                return f"{v:,.0f}" if v else "—"
+            # v6.2.8 加: ROC/EY 按每季分别取, 不再用最新一季
+            roc_q = r.get('roc')
+            ey_q = r.get('ey')
+            roc_s = f"{roc_q:.1f}%" if roc_q is not None else "—"
+            ey_s  = f"{ey_q:.2f}%" if ey_q is not None else "—"
+            rows.append(
+                f"| {r['quarter']} "
+                f"| {r['or_yoy']:+.1f}% "
+                f"| {r['np_yoy']:+.1f}% "
+                f"| {r['gm']:.1f}% "
+                f"| {r['roe']:.1f}% "
+                f"| {r['revenue_yi']:.1f} "
+                f"| {r['netprofit_yi']:.2f} "
+                f"| {r.get('ebit_yi') or 0:.2f} "
+                f"| {roc_s} "
+                f"| {ey_s} "
+                f"| {_fmt(r.get('mc_yi'))} "
+                f"| {_fmt(r.get('netdebt_yi'))} "
+                f"| {_fmt(r.get('ev_yi'))} "
+                f"| {_fmt(r.get('capital_yi'))} |"
             )
-        else:
-            roc_pct = _val.get("roc", "—")
-            ey_pct  = _val.get("ey", "—")
-            ev_yi   = _val.get("ev_yi", "—")
-            industry = _val.get("industry", "—")
-            period_label = _val.get("period_label", "—")
-            seasonal = " ⚠️ 季节性 proxy" if _val.get("seasonal_warning") else ""
-            ev_str = f"{ev_yi:,.0f}" if isinstance(ev_yi, (int, float)) else "—"
+
+        if has_magic:
+            # v6.2.8 改: 删小表 (Magic 公式 ROC/EY 4 季已在大表里, 不再重复显示最新一季)
+            # 保留行业 + 判定说明
+            rows.extend([
+                "",
+                f"**行业:** {industry}",
+            ])
+
+        parts.append("\n" + "\n".join(rows))
+
+        if has_magic:
             parts.append(
-                f"\n\n### 💎 Magic Formula (Greenblatt ROC + EY) (来源: {period_label}{seasonal})\n"
-                f"| 指标 | 数值 | 说明 |\n"
-                f"|---|---|---|\n"
-                f"| 行业 | {industry} | — |\n"
-                f"| EBIT (TTM) | {_val.get('ebit_yi', '—')} 亿 | Tushare fina_indicator |\n"
-                f"| 净营运资本 + 固定资产 | {_val.get('capital_yi', '—')} 亿 | NWC + FA |\n"
-                f"| **ROC (Return on Capital)** | **{roc_pct}%** | EBIT / (NWC + FA) |\n"
-                f"| 市值 | {_val.get('market_cap_yi', '—')} 亿 | Tushare daily_basic |\n"
-                f"| 净债务 | {_val.get('netdebt_yi', '—')} 亿 | Tushare fina_indicator |\n"
-                f"| **EV (企业价值)** | **{ev_str} 亿** | 市值 + 净债务 |\n"
-                f"| **EY (Earnings Yield)** | **{ey_pct}%** | EBIT / EV |\n"
-                f"\n**判定:** ROC 越高越好 (高资本效率), EY 越高越好 (盈利对 EV 回报高), 联合排名 (Greenblatt 原版)"
+                "\n**判定:** ROC 越高 = 资本效率越好, EY 越高 = EV 回报越好, "
+                "联合排名 (Greenblatt 原版)"
             )
+    else:
+        parts.append("\n> **最近 4 季实际财务:** ❌ 缺失")
 
     return "\n".join(parts)
 
@@ -311,31 +371,34 @@ def _section_ga_factor(data: RenderData) -> str:
 
 def _section_peg(data: RenderData) -> str:
     # 2026-09-02 改: 读 data.valuation_data (ValuationStrategy 输出)
+    # v6.2.5 改: 表头全英文 (PEG / Forward PE / g)
     _v = data.valuation_data or {}
     if _v.get("PEG_真实") is not None and _v.get("PEG_真实") != "数据不足":
-        return f"""| 指标 | 数值 |
+        return f"""| Metric | Value |
 |---|---|
-| **PEG_真实** | **{_v.get('PEG_真实')}** ({_v.get('verdict', '—')}) |
+| **PEG_Real** | **{_v.get('PEG_真实')}** ({_v.get('verdict', '—')}) |
 | Forward PE | {_v.get('fwd_pe', '—')} |
-| g (稳态 CAGR) | {_v.get('g', '—')} |
+| g (CAGR) | {_v.get('g', '—')} |
 """
-    return """> **数据状态:** ⚠️ PEG 未计算 (ValuationStrategy 缺 EPS 数据)
-> **降级:** 用 PE_TTM 替代, 标 ⚠️
+    return """> **Data Status:** ⚠️ PEG not computed (ValuationStrategy missing EPS)
+> **Fallback:** PE_TTM as proxy, marked ⚠️
 """
 
 
 def _section_dcf(data: RenderData) -> str:
     # 2026-09-02 改: 读 data.valuation_data
+    # v6.2.5 改: 表头全英文 (Discount r / Implied L / L/E3)
     _v = data.valuation_data or {}
     if _v.get("L_r10") is not None:
-        return f"""| 折现率 r | 隐含终局利润 L | L/E3 |
+        return f"""| Discount r | Implied L (¥Bn) | L/E3 |
 |---|---|---|
-| 8% | {_v.get('L_r8', '—')} 亿 | — |
-| 10% | {_v.get('L_r10', '—')} 亿 | {_v.get('L_E3_r10', '—')}x |
-| 12% | {_v.get('L_r12', '—')} 亿 | — |
+| 8% | {_v.get('L_r8', '—')} | — |
+| 10% | {_v.get('L_r10', '—')} | {_v.get('L_E3_r10', '—')}x |
+| 12% | {_v.get('L_r12', '—')} | — |
 """
-    return """> **数据状态:** ⚠️ DCF L 未计算 (ValuationStrategy 缺 EPS 数据)
+    return """> **Data Status:** ⚠️ DCF L not computed (ValuationStrategy missing EPS)
 """
+
 
 def _section_magic_formula_unused(data: RenderData) -> str:
     """2026-09-02 废弃: Magic 合并到 _section_eps, 这个函数保留只是占位避免引用错误。
@@ -346,18 +409,18 @@ def _section_magic_formula_unused(data: RenderData) -> str:
 
 def _section_fundamental(data: RenderData) -> str:
     if not data.fundamental or "error" in data.fundamental:
-        return "> **数据状态:** ❌ 基本面未计算 (财务数据不足)\n> **降级:** 用 EPS 一致预期 + PE_TTM 间接算\n"
+        return "> **Data Status:** ❌ Fundamental not computed (insufficient financials)\n> **Fallback:** EPS consensus + PE_TTM indirect\n"
     f = data.fundamental
     parts = [
-        f"**综合评分:** {f.get('summary', '—')}\n",
-        "| 维度 | 评分 | 说明 |",
+        f"**Overall Score:** {f.get('summary', '—')}\n",
+        "| Dimension | Score | Note |",
         "|---|---|---|",
     ]
     for key, label in [
-        ("valuation", "估值"),
-        ("profitability", "盈利"),
-        ("growth", "成长"),
-        ("safety", "安全"),
+        ("valuation", "Valuation"),
+        ("profitability", "Profitability"),
+        ("growth", "Growth"),
+        ("safety", "Safety"),
     ]:
         d = f.get(key, {})
         score = d.get("score", 0)
@@ -372,7 +435,7 @@ def _section_fundamental(data: RenderData) -> str:
             emoji = "🔴"
         parts.append(f"| {label} | {score}/100 {emoji} | {comment} |")
     if f.get("missing"):
-        parts.append(f"\n**数据缺失:** {', '.join(f['missing'])} (用 ROE 间接判断)")
+        parts.append(f"\n**Missing data:** {', '.join(f['missing'])} (use ROE as proxy)")
     return "\n".join(parts) + "\n"
 
 
@@ -422,26 +485,6 @@ def _section_xgboost(data: RenderData) -> str:
     return """> **数据状态:** ⚠️ XGBoost 校准未运行 (可选, 需训练数据)
 > **降级:** 报告只显示规则分
 """
-
-
-def _section_sector_overheat(data: RenderData) -> str:
-    if data.sector_overheat:
-        so = data.sector_overheat
-        # 兼容两种字段格式: {1w/1m/3m/ma20_dev} 或 {1周涨幅/1月涨幅/3月涨幅/判定}
-        w1  = so.get('1w')  or _parse_pct(so.get('1周涨幅',  '0'))
-        m1  = so.get('1m')  or _parse_pct(so.get('1月涨幅',  '0'))
-        m3  = so.get('3m')  or _parse_pct(so.get('3月涨幅',  '0'))
-        ma20 = so.get('ma20_dev') or _parse_pct(so.get('MA20偏离', '0'))
-        verdict = so.get('verdict') or so.get('判定', '未算')
-        return f"""- 1 周涨幅: {w1:+.1f}% {'🟠>10% 关注' if w1 > 10 else '✅<10% 安全'}
-- 1 月涨幅: {m1:+.1f}% {'🟠>30% 减仓1/3' if m1 > 30 else '🟡>20% 关注' if m1 > 20 else '✅<20% 安全'}
-- 3 月涨幅: {m3:+.1f}% {'🔴>100% 减半' if m3 > 100 else '🟠>50% 关注' if m3 > 50 else '✅<50% 安全'}
-- MA20 偏离: {ma20:+.1f}% {'🔴>30% 立即减仓1/3' if ma20 > 30 else '🟠>20% 关注' if ma20 > 20 else '✅<20% 安全'}
-- **综合:** {verdict}
-"""
-    if not data.can_calc_sector_overheat():
-        return "> **数据状态:** ❌ 板块过热无法计算 (K线不足 90 天)\n"
-    return "> **数据状态:** ⚠️ 板块过热数据具备但未生成，需重新 sync_watchlist_fresh\n"
 
 
 def _section_take_profit(data: RenderData) -> str:
@@ -1398,21 +1441,22 @@ def _has_signal(row: dict) -> bool:
     )
 
 
-# 因子历史走势 — 14 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
-# 2026-09-02 加 2 列: ROC% + EY% (ValuationStrategy 时序, 给回测用)
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MA偏离(日/周) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | ROC% | EY% |"
-FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+# 因子历史走势 — 20 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
+# 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
+# 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MA偏离(MA5/20/60) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | MACD | RSI6 | KDJ-K | ATR% | 量比 | MACD状态 |"
+FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
-    """单行因子历史 markdown 表格行 (14 列, header 跟 _section_factor_history 完全一致)
+    """单行因子历史 markdown 表格行 (22 列, header 跟 _section_factor_history 完全一致)
 
     Args:
         rows: compute_factor_history 输出, 按日期升序 (含 ma20_slope 字段)
         idx:  当前行索引
 
     Returns:
-        "| date | ¥close | ... | 14 列" markdown 行 (无错位防护, 调用方负责)
+        "| date | ¥close | ... | 22 列" markdown 行 (无错位防护, 调用方负责)
         数据不足返 None
     """
     from tools.analysis.analysis_result_signals import diff_rows, format_signals_for_render
@@ -1445,14 +1489,15 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     aw = row.get('accum_days_weekly', 0)
     accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
 
-    # MA 分两列: MA偏离(日/周) + MA20斜率
-    ma_d = row.get('ma_dev_daily')
-    ma_w = row.get('ma_dev_weekly')
+    # MA 偏离 (MA5/20/60 三档日偏离) — v6.2.8 改: 标题"MA偏离(MA5/20/60)", cell 只显示 3 个分数
+    ma5_dev  = row.get('ma5_dev')
+    ma20_dev = row.get('ma_dev_daily')   # ma20 日偏离 (字段复用)
+    ma60_dev = row.get('ma60_dev')
     ma_parts = []
-    for v in (ma_d, ma_w):
+    for v in (ma5_dev, ma20_dev, ma60_dev):
         if v is not None:
             ma_parts.append(f"{v:+.1f}%")
-    ma_s = " / ".join(ma_parts) if ma_parts else "—"
+    ma_s = "/".join(ma_parts) if ma_parts else "—"
 
     # MA20 斜率 (从 row['ma20_slope'] 读, 由 compute_factor_history 预算好, 0 重算)
     slope = row.get('ma20_slope')
@@ -1477,13 +1522,67 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     bpct_s = f"{bpct:.0f}%"  if bpct  is not None else "—"
     bwid_s = f"{bwid:.1f}%"  if bwid  is not None else "—"
 
-    # 2026-09-02 加 2 列: ROC% + EY% (ValuationStrategy 时序)
-    roc  = row.get('roc_daily')
-    ey   = row.get('ey_daily')
-    roc_s = f"{roc:.0f}%" if roc is not None else "—"
-    ey_s  = f"{ey:.1f}%" if ey is not None else "—"
+    # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跟"## 财务数据" section 的 4 季表重复, 历史表里跨季才变没日价值)
 
-    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {roc_s} | {ey_s} |"
+    # 2026-09-08 加 6 列: TechnicalStrategy 8 指标中的关键 5 (v6.2.8)
+    macd_dif_v = row.get('macd_dif')
+    macd_dea_v = row.get('macd_dea')
+    rsi6_v     = row.get('rsi6')
+    kdj_k_v    = row.get('kdj_k')
+    atr_pct_v  = row.get('atr_pct')
+    vol_r_v    = row.get('vol_ratio')
+
+    # MACD 列: 显示 DIF/DEA 差值 (金叉死叉强度)
+    if macd_dif_v is not None and macd_dea_v is not None:
+        macd_diff = macd_dif_v - macd_dea_v
+        if macd_diff > 0:
+            macd_s = f"🟢+{macd_diff:.2f}"
+        elif macd_diff < 0:
+            macd_s = f"🔴{macd_diff:.2f}"
+        else:
+            macd_s = "⚪0"
+    else:
+        macd_s = "—"
+
+    # RSI6 列: 4 档 (超卖/偏低/正常/超买)
+    if rsi6_v is not None:
+        if rsi6_v > 80:   rsi6_s = f"🔴{rsi6_v:.0f}"
+        elif rsi6_v > 70: rsi6_s = f"🟠{rsi6_v:.0f}"
+        elif rsi6_v < 20: rsi6_s = f"🟢{rsi6_v:.0f}"
+        elif rsi6_v < 30: rsi6_s = f"🟡{rsi6_v:.0f}"
+        else:             rsi6_s = f"{rsi6_v:.0f}"
+    else:
+        rsi6_s = "—"
+
+    # KDJ-K 列: 显示 K 值 (KDJ 主指标)
+    kdj_s = f"{kdj_k_v:.0f}" if kdj_k_v is not None else "—"
+
+    # ATR% 列: 波动率
+    atr_s = f"{atr_pct_v:.1f}%" if atr_pct_v is not None else "—"
+
+    # 量比列: 缩量/正常/放量
+    if vol_r_v is not None:
+        if vol_r_v > 2.0:   vol_s = f"🔴{vol_r_v:.1f}x"
+        elif vol_r_v > 1.2: vol_s = f"🟡{vol_r_v:.1f}x"
+        elif vol_r_v < 0.7: vol_s = f"🟢{vol_r_v:.1f}x"
+        else:               vol_s = f"{vol_r_v:.1f}x"
+    else:
+        vol_s = "—"
+
+    # MACD 状态列: DIF/DEA 关系 + 正负区
+    if macd_dif_v is not None and macd_dea_v is not None:
+        if macd_dif_v > macd_dea_v and macd_dif_v > 0:
+            macd_state = "金叉↑"
+        elif macd_dif_v > macd_dea_v and macd_dif_v <= 0:
+            macd_state = "弱金叉"
+        elif macd_dif_v < macd_dea_v and macd_dif_v < 0:
+            macd_state = "死叉↓"
+        else:
+            macd_state = "强死叉"
+    else:
+        macd_state = "—"
+
+    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {macd_s} | {rsi6_s} | {kdj_s} | {atr_s} | {vol_s} | {macd_state} |"
 
 
 def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
@@ -1550,35 +1649,31 @@ def _section_chan_three_elements(data: RenderData) -> str:
     hub = daily.get("hub", {})
     hub_low = hub.get("low", 0)
     hub_high = hub.get("high", 0)
-    raw_pos = hub.get("pos", "—")
+    raw_pos = hub.get("pos", "—")  # v6.2.8 改: 直接用 ChanStrategy 算的 pos 字段, 不再二次复核
     current_price = data.current_price or 0
-    if hub_low > 0 and hub_high > hub_low and current_price > 0:
-        if current_price > hub_high:
-            calc_pos, dist_pct = "上方✅", (current_price / hub_high - 1) * 100
-            extra = f"突破 +{dist_pct:.1f}%"
-            action = "⚠️ 高位, 关注是否回落中枢 (追高风险大)"
-        elif current_price >= hub_low:
-            calc_pos, dist_pct = "内部⬜", (current_price / ((hub_low + hub_high) / 2) - 1) * 100
-            extra = f"中枢内 (距中枢中心 {dist_pct:+.1f}%)"
-            action = "🟡 中枢震荡, 关注突破或跌破方向"
-        elif current_price >= hub_low * 0.95:
-            calc_pos, dist_pct = "下方⚠️", (current_price - hub_low) / hub_low * 100
-            extra = f"破位下沿 {dist_pct:.1f}%"
-            action = "🟢 关注止跌信号 (缩量+长下影), 触发后底仓建"
-        else:
-            calc_pos, dist_pct = "跌穿🔴", (current_price - hub_low) / hub_low * 100
-            extra = f"**严重跌穿 -5%+ (实际 {dist_pct:.1f}%)** ⚠️"
-            action = "🔴 严重跌穿, 等止跌 (缩量+底背驰) 才考虑建仓, 严禁猜底"
-    else:
-        calc_pos = raw_pos if raw_pos and raw_pos != "—" else "未形成中枢"
-        extra = "周线段数不足，中枢尚未形成" if not hub_low else "(无中枢数据)"
+
+    # v6.2.8 改: 删 calc_pos 二次复核 (~25 行 if/else), ChanStrategy 已经在 _hub_result 里算过 pos
+    # raw_pos 4 档: "上方✅" / "内部⬜" / "下方⚠️" / "跌穿🔴" / "—"
+    if raw_pos == "上方✅":
+        action = "⚠️ 高位, 关注是否回落中枢 (追高风险大)"
+    elif raw_pos == "内部⬜":
+        action = "🟡 中枢震荡, 关注突破或跌破方向"
+    elif raw_pos == "下方⚠️":
+        action = "🟢 关注止跌信号 (缩量+长下影), 触发后底仓建"
+    elif raw_pos == "跌穿🔴":
+        action = "🔴 严重跌穿, 等止跌 (缩量+底背驰) 才考虑建仓, 严禁猜底"
+    elif hub_low > 0:
         action = "⏳ 等待中枢形成后判断方向"
+    else:
+        action = "⏳ 中枢数据不足"
+    extra = f"(ChanStrategy 算的 pos: {raw_pos})" if raw_pos and raw_pos != "—" else "周线段数不足，中枢尚未形成"
+
     return f"""**当前价格:** ¥{current_price:.2f}
-**中枢区间:** {'¥{:.2f}~¥{:.2f}'.format(hub_low, hub_high) if hub_low else '未形成中枢'} (位置: {calc_pos} — {extra})
+**中枢区间:** {'¥{:.2f}~¥{:.2f}'.format(hub_low, hub_high) if hub_low else '未形成中枢'} (位置: {raw_pos or '—'} — {extra})
 
 | 要素 | 状态 | 说明 |
 |---|---|---|
-| **中枢位置** | {calc_pos} | {extra} |
+| **中枢位置** | {raw_pos or '—'} | {extra} |
 
 **操作建议:** {action}
 """
@@ -1777,7 +1872,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ---
 
-## EPS + 财务数据
+## 财务数据
 {_section_eps(data)}
 
 ---
@@ -1822,11 +1917,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
 {_section_ga_factor(data)}
-
----
-
-## 📈 板块过热预警
-{_section_sector_overheat(data)}
 
 ---
 

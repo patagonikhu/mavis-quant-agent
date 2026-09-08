@@ -7,7 +7,7 @@
 ## 入口 (grep 验证过)
 
 - **项目根**: `/Users/I514959/workspace/mavis-quant-agent/`
-- **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic,eps}/`
+- **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic,eps,fflow_history}/`
 - **同步**: `tools/storage/sync.py` (8 flag: kline/stk-factor/stock-basic/financials/eps/fflow/cache/meta, 默认 --auto)
 - **分析引擎**: `tools/analysis/analysis_engine.py` 6 strategies (chan/wyckoff/smc/obv/fflow/valuation)
 - **6 个活 skill**: `.claude/skills/{t-analyze, t-magic, t-sync-data, t-bb-obv, t-near-low, t-backtest}/`

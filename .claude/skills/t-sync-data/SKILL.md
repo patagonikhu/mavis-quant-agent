@@ -25,11 +25,11 @@ python -m tools.storage.sync --auto-force
 
 # 7 个正交 flag
 python -m tools.storage.sync --kline          # 增量 K 线 + 6 指数
-python -m tools.storage.sync --stk-factor     # 重拉 stk_factor_pro 16 列 (5 季, 8 分钟)
+python -m tools.storage.sync --stk-factor     # 重拉 stk_factor_pro 17 列 (5 季, 8 分钟)
 python -m tools.storage.sync --stock-basic    # 行业/名称 (30 天 1 次)
 python -m tools.storage.sync --financials     # 5 季财务 (fina_indicator_vip 全市场)
 python -m tools.storage.sync --eps            # EPS 机构预期 (datacenter)
-python -m tools.storage.sync --fflow          # 主力资金 (Tushare.money_flow)
+python -m tools.storage.sync --fflow          # 主力资金历史 (按天全市场, 按季存 parquet, ~13 分钟)
 python -m tools.storage.sync --cache          # signal_cache 缓存
 
 # 一键 alias
@@ -45,11 +45,11 @@ python -m tools.storage.sync --codes 002371 300750
 | Flag | 数据源 | 频率 |
 |---|---|---|
 | `--kline` | Tushare daily (按日增量) | 每天 |
-| `--stk-factor` | Tushare stk_factor_pro (16 列, 含 ps/dv_ratio/float_share) | 5 季一次 (8 分钟) |
+| `--stk-factor` | Tushare stk_factor_pro (17 列, 含 ps/dv_ratio/float_share) | 5 季一次 (8 分钟) |
 | `--stock-basic` | Tushare stock_basic + stk_factor 兜底股本 | 30 天 |
 | `--financials` | Tushare fina_indicator_vip (全市场 1 次 API) | 5 季 |
 | `--eps` | datacenter.eastmoney.com (机构一致预期) | 30 天 TTL |
-| `--fflow` | Tushare.money_flow (主力资金) | 每天 |
+| `--fflow` | Tushare.money_flow (按天全市场, 落盘 data/history/fflow_history/) | 每天 |
 | `--cache` | analysis_cache.db (24 列因子) | 跑前 |
 | `--meta` | 占位, 暂未实现 | — |
 

@@ -12,7 +12,7 @@
 
 ## 🚫 数据拉取铁律
 
-> **唯一入口 (v6.2.3)**: `tools/storage/sync.py` (7 flag 正交, 全部走 storage/), 所有网络调用必须经 sync 层
+> **唯一入口 (v6.2.5)**: `tools/storage/sync.py` (8 flag 正交, 全部走 storage/), 所有网络调用必须经 sync 层
 
 ```
 ✅ bash tools/with_venv.sh python -m tools.storage.sync --kline           # 单只拉数据 (只 sync, 不计算)
@@ -46,9 +46,9 @@
 
 | 层 | 文件 | 职责 | 禁止 |
 |---|---|---|---|
-| **L1 Sync** | `tools/storage/sync.py` | 7 flag 正交 (--kline/--stock-basic/--financials/--eps/--fflow/--cache/--meta), 默认 --auto | — |
-| **L1 Store** | `tools/storage/store.py` | DataStore I/O, 25+ 公开方法, 6 bulk 接口 | ❌ 网络 |
-| **L2 Analysis** | `tools/analysis/analysis_engine.py` | 6 个 strategy (chan/wyckoff/smc/obv/fflow/peg) | ❌ 网络, ❌ 直读 db |
+| **L1 Sync** | `tools/storage/sync.py` | 8 flag 正交 (--kline/--stk-factor/--stock-basic/--financials/--eps/--fflow/--cache/--meta), 默认 --auto | — |
+| **L1 Store** | `tools/storage/store.py` | DataStore I/O, 25+ 公开方法, 7 bulk 接口 (含 load_all_fflow_history v6.2.5 加) | ❌ 网络 |
+| **L2 Analysis** | `tools/analysis/analysis_engine.py` | 7 strategy (chan/wyckoff/smc/obv/fflow/technical/finance; PegStrategy 已 DEPRECATED 兼容保留) | ❌ 网络, ❌ 直读 db |
 | **L2 容器** | `tools/analysis/render_data.py` | `RenderData` dataclass, 9 派生字段 | ❌ 网络 |
 | **L3 Render** | `tools/render/report_renderer.py` | `RenderData` → Markdown | ❌ 网络 |
 
@@ -73,13 +73,13 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 | Strategy | name | weight | 输入 | 输出 |
 |---|---|---|---|---|
-| `ChanStrategy` | chan | 0.20 | K线 (日/周/60m) | 中枢+背驰+买卖点 (czsc) |
-| `WyckoffStrategy` | wyckoff | 0.20 | K线 (日/周/60m) | 3 阶段 + sub_events (build_kline_features 算 BOLL/BBW) |
-| `SmcStrategy` | smc | 0.10 | K线 (日/周/60m) | OB/FVG/Sweep 三周期 |
+| `ChanStrategy` | chan | 0.20 | K线 (日/周) | 中枢+背驰+买卖点 (czsc) |
+| `WyckoffStrategy` | wyckoff | 0.20 | K线 (日/周) | 3 阶段 + sub_events (build_kline_features 算 BOLL/BBW) |
+| `SmcStrategy` | smc | 0.10 | K线 (日/周) | OB/FVG/Sweep 两周期 |
 | `ObvStrategy` | obv | 0.10 | K线 (close + volume) | OBV 累计 + 5档 verdict + obv5/obv_trend (2026-08-29 简化) |
-| `FflowStrategy` | fflow | 0.15 | Tushare money_flow | 大单/特大单净流入 5档 verdict |
-| `PegStrategy` | peg | 0.15 | EPS + current_price | PEG 真实分数 |
-| `DcfStrategy` | dcf | 0.00 | EPS + market_cap | L/E3 估值 (Phase2 派生, 不参与 scene/total_score) |
+| `FflowStrategy` | fflow | 0.10 | Tushare money_flow (DataStore 落盘) | 大单/特大单净流入 5档 verdict |
+| `ValuationStrategy` → `FinanceStrategy` (v6.2.8 改名) | finance | 0 | EPS + market_cap + stk_factor | PEG + DCF L + Magic ROC/EY 合并 (v6.2.5 合并 peg+dcf) |
+| ~~`PegStrategy`~~ | peg | DEPRECATED | — | 2026-09-02 合并进 ValuationStrategy, 保留兼容 |
 
 > 2026-08-17 拆分: `VolumePriceStrategy` (v5.10.34) 拆成 `ObvStrategy` + `FflowStrategy` 两个独立 strategy
 > 2026-08-29 简化: `ObvStrategy` 删 60d 段背离 (太滞后), 改 obv5 (5日价跌+OBV涨) + obv_trend (OBV>MA20)
@@ -87,13 +87,16 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 ### RawContext (历史回测核心)
 
 `tools/analysis/analysis_engine.py::RawContext` 是 Strategy 的唯一输入:
-- 字段: `kline / kline_60m / weekly / eps_table / fflow / resonance / moneyflow / current_price / market_cap_yi / industry / code / name`
+- 数据字段: `kline / weekly / eps_table / fflow / moneyflow / current_price / market_cap_yi / industry / code / name`
+- Phase1 结果字段 (Strategy 算完后写, Phase2 直接读, 不重算): `chan_result / wyckoff_result / wyckoff_weekly / smc_result / fflow_result / obv_result / resonance_result / kline_arrs / kline_arrs_weekly`
 - `ctx.slice(as_of_date)` 切片 (铁律, 改 kline 不要绕开它)
-- 7 个 strategy 共享 `ctx.chan_result / wyckoff_result / smc_result / vp_result / resonance_result`, Phase2 读 Phase1 结果不重算
+- 7 strategy (chan/wyckoff/smc/obv/fflow/technical/finance) 共享 `ctx.<strategy>_result`, Phase2 读 Phase1 结果不重算
 
-### 9 派生字段在 analysis 层 (v5.10.34 起)
+### 10 派生字段在 analysis 层 (v5.10.34 起, v6.2.5 加 position)
 
-`peg / dcf / sector_overheat / five_categories / buy_sell_points / exit_signals / stop_profit_loss / three_layer_position / monitor_triggers` —— **不存 dump**, render 时由 analysis 算; `RenderData` 9 个 `@property` 兼容老代码 `data.<field>` 调用, 内部读 `data.analysis[field]`。
+`peg / dcf / five_categories / buy_sell_points / position / exit_signals / stop_profit_loss / three_layer_position / monitor_triggers / fundamental` —— **不存 dump**, render 时由 analysis 算; `RenderData` 10 个 `@property` 兼容老代码 `data.<field>` 调用, 内部读 `data.analysis[field]`。
+
+> v6.2.8 删 `sector_overheat` (K线代理算涨幅, 不是真板块指数), 加 `fundamental` (4 维评分从 mech.py 抽)
 
 ### 历史回测 (2026-08 简化)
 
@@ -247,19 +250,28 @@ Step2: L/可达利润 = L / (营收天花板 × 净利率)
 - ✅ 拉代码 (`git pull` 等) 通过 `git config http.proxy` 配 proxy
 - ✅ 推代码 (`git push`) 失败后重试非 proxy 路径
 
-**🟢 fflow (主力资金净额):**
+**🟢 fflow (主力资金净额) — v6.2.5 改造后统一落盘:**
 
 ```bash
-# 项目封装 (v6.2.3): 走 storage.sync, --fflow flag
-bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
-# 直查: from tools.storage.sources.tushare import get_money_flow; print(get_money_flow('300274'))
-# 字段 (Tushare money_flow 真值, 单位 万元 → 内部转亿):
-#   buy_sm_vol/amount (小单买入手数/金额), sell_sm_* (小单卖出)
-#   buy_md_vol/amount (中单), sell_md_*
-#   buy_lg_vol/amount (大单), sell_lg_*
-#   buy_elg_vol/amount (特大单), sell_elg_*
-#   net_mf_vol / net_mf_amount (净流入)
-# 数据: 最近10-20日, 5日主力净额 (大单+特大单) = 主指标
+# 1. 数据落盘 (按天全市场, 按季存 parquet, ~13 分钟)
+bash tools/with_venv.sh python -m tools.storage.sync --fflow
+# 数据: data/history/fflow_history/fflow_2025Q3..2026Q3.parquet (5 季, ~67 MB)
+
+# 2. 直查单只 (走 DataStore, 0 网络)
+# from tools.storage.store import DataStore
+# print(DataStore.get_fflow_history('300274'))   # 290 天历史
+# print(DataStore.load_all_fflow_history())      # 5 季全市场 DataFrame
+
+# 3. 业务层 (eastmoney.get_fund_flow) 内部自动: 优先读 parquet, 缺数据兜底按天拉
+# 老的 tushare.get_money_flow 单只 fetch API 已标弃用, 老的 --codes X --fflow 已删
+
+# 字段 (9 列, 跟 stk_factor 平行精简, 不存 vol/中单 amount):
+#   ts_code, trade_date,
+#   buy_sm_amount, sell_sm_amount,   # 散户
+#   buy_lg_amount, sell_lg_amount,   # 主力
+#   buy_elg_amount, sell_elg_amount, # 大主力
+#   net_mf_amount                    # 净流入
+# 数据: 5 季 290 个交易日, 主力 (大单+特大单) 累计 = 主指标
 ```
 
 ---
@@ -339,26 +351,27 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
 
 > **任何 `/t-analyze` / `/t-trigger` 输出的 md 报告必须遵守以下规则:**
 
-### 🚨 5 方法 × 3 周期 矩阵
+### 🚨 7 strategy × 2 周期 矩阵 (v6.2.5 重构 6 strategy, v6.2.8 加 technical)
 
-**理论:** 5 套方法 (缠论/威科夫/SMC/量价/多市场共振) × 3 周期 (周/日/60m) = 15 场景矩阵互补
+**理论:** 7 strategy (缠论/威科夫/SMC/OBV/fflow/technical/finance) × 2 周期 (周/日) = 14 场景矩阵互补
 
-**5 重保险:**
+**6 重保险:**
 1. **模板层** (`tools/render/report_renderer.py`): `_section_factor_matrix()` 硬编码占位符, 调 `render_factor_matrix_md`
 2. **Linter 层** (`tools/render/report_linter.py`): 4 个正则 (场景/共振数/行动/标题), 缺任一 → FAIL
 3. **Skill 层** (`.claude/skills/t-analyze/SKILL.md`): 必含 4 个固定标签
 4. **CLAUDE.md 铁律** (本节): 22 section 必填
 5. **回测**: 故意删 section → linter FAIL → 强制修复
+6. **strategy 权重**: chan 0.20 / wyckoff 0.20 / smc 0.10 / obv 0.10 / fflow 0.10 / valuation 0.15
 
 **输出格式 (缺则 Linter FAIL):**
 ```markdown
-## 🎯 因子 × 3 周期 综合矩阵
+## 🎯 因子 × 2 周期 综合矩阵
 **场景**: C (震荡观望)            ← 必须含 A-E 之一
 **共振数**: 5 重                    ← 必须含数字 + "重"
 **行动**: ⬜ 震荡观望               ← 必须含 🥇/🥈/🥉/🟢/🟡/⬜/❌ 之一
 ```
 
-**实现:** `tools/batch/batch_matrix.py` (5 方法 × 3 周期 矩阵批量入口, 走 `factor_matrix` 公开接口)
+**实现:** `tools/batch/batch_matrix.py` (7 strategy × 2 周期 矩阵批量入口, 走 `factor_matrix` 公开接口)
 
 ### 22 section 必填 + 三阶段工作流 + 工具
 
@@ -377,12 +390,12 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
 | 周线 K | Tushare `weekly` (真实周线, 非日线合成) | `tools/fetch/tushare_fetcher.py` |
 | 财务三表 / EPS 历史 | Tushare `fina_indicator` / `income` | `tools/fetch/tushare_fetcher.py` |
 | **EPS 机构一致预期 (E1/NTM)** | **datacenter.eastmoney.com** (主, 真机构预测) → Tushare 自建 NTM (备) | `tools/fetch/data_fetcher.py:392` (`datacenter_consensus` / `tushare_built_ntm` / `EMPTY` 三态) |
-| **fflow (主力资金流)** | **Tushare `money_flow`** (主, dump 预拉) → OBV 派生 (备, K线推算) | `tools/factors/volume/price_fflow.py` 走 `ctx.moneyflow` (dump 预拉字段) |
-| 股本 / 流通 | Tushare `daily_basic.total_share` / `circ_share` (主) | `tools/fetch/tushare_fetcher.py` |
+| **fflow (主力资金流)** | **Tushare `money_flow`** (主, 按天全市场落盘) | `tools/storage/sync.py::action_fflow` 按天拉 → `data/history/fflow_history/fflow_{YYYYQN}.parquet`;业务层 `DataStore.get_fflow_history(code)` 读;`tools/factors/volume/price_fflow.py` 走 `ctx.moneyflow` |
+| 股本 / 流通 | Tushare `stk_factor_pro.total_share` / `float_share` (主, 按日) — stock_basic 5000 积分档不返这俩 | `tools/storage/sync.py::action_stk_factor` 落盘 → `DataStore.get_stk_factor` 读 |
 | 实时价 (当前) | Tushare `daily` 末根 (主) | `tools/fetch/tushare_fetcher.py` |
 
 **关键:**
-- **fflow 真实数据是 Tushare.money_flow** (不是 push2his!), v3.5 之前 OBV 仅在 moneyflow 无数据时派生, v3.5 起 fflow+OBV **并联双判定**
+- **fflow 真实数据是 Tushare.money_flow** (不是 push2his!), v6.2.5 起按天全市场落盘到 `data/history/fflow_history/`,业务层读 `DataStore.get_fflow_history()`;`FflowStrategy` 跟 `ObvStrategy` 各自独立 strategy, **并联双判定** (数据源不同: fflow=Tushare.money_flow, OBV=K线累计)
 - **EPS 机构预期是 datacenter** (不是 push2his), 区分: EPS 历史 = Tushare, EPS 预期 = datacenter
 - API 限流时该 section 显示 ❌, 不影响其他 section (data_fetcher 隔离 try-except)
 
@@ -423,11 +436,11 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
 
 ### 三、退出信号 (基于 Mavis 现有框架)
 
-> 信号源全部是 5 方法 × 3 周期矩阵 + fflow/OBV 并联双判定 + 估值 (PEG/DCF) + 技术指标。`v11 score` 是 v5.7 之前的旧命名, 现行版用 `factor_scores.total_score` (5 方法加权总分)。
+> 信号源全部是 7 strategy × 2 周期矩阵 (日/周) + fflow/OBV 并联双判定 + 估值 (PEG/DCF) + 技术指标。`v11 score` 是 v5.7 之前的旧命名, 现行版用 `factor_scores.total_score` (6 方法加权总分)。
 
 **🔴 立即清仓 (满足任意):**
-- fflow 5日净流出 > 30亿 (Tushare.money_flow 真值)
-- **OBV 强顶背离** (60 日内 4 个 15 日窗口, ≥2 窗口触发 价>+2% 且 OBV 净增<-3%) — 仅光学/封测/HBM 有效
+- fflow 5日净流出 > 30亿 (Tushare.money_flow 真值, 走 DataStore.get_fflow_history)
+- OBV 趋势转空 (`obv5` 连续 3 日 0 + `obv_trend` 由 1 转 0) — 2026-08-29 简化后唯一 OBV 退出信号
 - MACD 高位死叉 — 仅半导体设备/HBM 有效
 - 5 方法总分 ≤ -3 (Wyckoff=Markdown + 多重共振 sell)
 - PEG > 3.0
@@ -447,12 +460,12 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
 
 #### OBV 信号版块适用性 (重要)
 
-`OBV 强顶背离` 退出信号 **不是所有板块都准**:
+`OBV 趋势` (obv5 + obv_trend) 退出信号 **不是所有板块都准** (跟原"OBV 强顶背离"一致):
 - ✅ 光学 / 封测 / HBM: 主力控盘度高, OBV 提前出货信号准
 - ❌ 题材股 / 小盘股: 主力分散, OBV 噪声大, 容易假信号
 - ❌ 周期股: 行业 β 主导, OBV 个股信号被行业 β 淹没
 
-判断: 信号触发后必须结合 "板块 MA20 偏离" + "fflow 5日净流出" + "T 框架阶段" 综合判定, 单 OBV 强顶背离不直接清仓。
+判断: 信号触发后必须结合 "板块 MA20 偏离" + "fflow 5日净流出" + "T 框架阶段" 综合判定, 单 OBV 趋势不直接清仓。
 
 ### 四、组合级别风控
 
@@ -475,16 +488,17 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow --codes 300274
 
 ---
 
-## 六个 Slash 命令 (2026-08-28 清理后)
+## 七个 Slash 命令 (2026-08-28 清理后, 2026-09-08 加 t-quality-growth)
 
 | 命令 | 用途 |
 |---|---|
 | `/t-analyze <code> [name] [--no-news]` | 单标的完整分析 (22 section 详报, 写 docs/portfolio/ 或 docs/watchlist/) |
-| `/t-analyze --all` | 批量扫 watchlist (71 只, 含 4 指数), 后台 ~90s 跑完 |
+| `/t-analyze --all` | 批量扫 watchlist (54 只: 21 持仓 + 33 自选), 后台 ~50s 跑完 |
 | `/t-backtest <signal>` | 信号回测 (5 年历史, 走 signal_cache 命中 O(1) 读) |
 | `/t-sync-data [--all / --codes X / --kline / --fflow / --cache / --financials / --eps / --stock-basic / --stk-factor]` | 7 flag 正交 sync, 默认 `--auto` 智能检测 stale |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 <3%"清单 |
 | `/t-bb-obv [--window 5]` | 科技股扫 BOLL<15% + BBW<10% + OBV 5日/趋势 (compute_factor_history **直算**, 不走 cache) |
 | `/t-magic [--top N] [--period 2026Q2] [--skip-watchlist]` | Magic Formula 排名 (Greenblatt ROC+EY 双优), 0 网络, 追加到 watchlist |
+| `/t-quality-growth` | R3 v6.2.7 启动期反转信号扫描, 找 3 年内涨 10 倍的"10x 票"启动期 |
 
 **已删除** (过时的): `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking`

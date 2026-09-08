@@ -56,7 +56,7 @@ def process_one(code: str, name: str | None = None) -> dict:
     """
     t0 = time.time()
     wl_map = load_watchlist_map()
-    s = wl_map.get(code, {"code": code, "name": name or "未知", "list_type": "自选"})
+    s = wl_map.get(code, {"code": code, "name": name or "", "list_type": "自选"})
     list_type = s.get("list_type", "自选")
     subdir = "portfolio" if list_type == "持仓" else "watchlist"
     list_type_label = "持仓" if list_type == "持仓" else "自选"
@@ -67,7 +67,8 @@ def process_one(code: str, name: str | None = None) -> dict:
             return {"ok": False, "err": f"{code} 无 K 线数据, 请先 /t-sync-data", "code": code}
 
         all_dates = [k["trade_date"].replace("-", "")[:8] for k in ctx.kline]
-        dates = all_dates[-120:]
+        # v6.2.7 改: 扩大到 480 天 (覆盖 4 季 + 季末 15 天), 4 季 Magic 估值才完整
+        dates = all_dates[-480:] if len(all_dates) >= 480 else all_dates
         history = AnalysisEngine().analyze_history(ctx, dates)
         if len(history) < 2:
             return {"ok": False, "err": f"history 不足 ({len(history)} 根)", "code": code}
@@ -80,9 +81,16 @@ def process_one(code: str, name: str | None = None) -> dict:
         )
         md = render_report(data)
 
-        # 文件名
-        name_for_file = s.get("name") or name or ctx.name or code
-        out = Path(f"docs/{subdir}/analyze-{code}-{name_for_file}.md")
+        # 文件名: code 用 6 位 (去掉 .SZ/.SH 后缀), name 中文
+        code6 = code.split(".")[0] if "." in code else code
+        name_for_file = s.get("name") or name or ctx.name or code6
+        if not name_for_file or name_for_file == "未知":
+            try:
+                sb = DataStore.get_stock_basic(code6)
+                name_for_file = sb.get("name", code6)
+            except Exception:
+                name_for_file = code6
+        out = Path(f"docs/{subdir}/analyze-{code6}-{name_for_file}.md")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(md, encoding="utf-8")
 

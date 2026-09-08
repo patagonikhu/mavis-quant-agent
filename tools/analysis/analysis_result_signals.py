@@ -60,21 +60,31 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 
         # MA/Boll 从预算数组 O(1) 读，不重算
         obv_raw = (result.raw if hasattr(result, 'raw') else {}).get("obv") or {}
+        ma5     = d_arrs.get('ma5',   [None] * (ki+2))
         ma20    = d_arrs.get('ma20',  [None] * (ki+2))
+        ma60    = d_arrs.get('ma60',  [None] * (ki+2))
         ma120   = d_arrs.get('ma120', [None] * (ki+2))
         boll_upper = d_arrs.get('boll_upper', [None] * (ki+2))
         boll_lower = d_arrs.get('boll_lower', [None] * (ki+2))
         boll_mid   = d_arrs.get('boll_mid',   [None] * (ki+2))
         boll_pct   = d_arrs.get('boll_pct',   [None] * (ki+2))
         boll_width = d_arrs.get('boll_width',  [None] * (ki+2))
-        w_ma20  = w_arrs.get('ma20', [None] * (wi+2))
 
         def _dev(price, ma):
             return round((price / ma - 1) * 100, 1) if ma and ma > 0 else None
 
+        # v6.2.8 加: MA5/MA20/MA60 偏离 (cell 显示用 3 个分数)
+        ma5_v  = ma5[ki]  if ki < len(ma5)  else None
+        ma20_v = ma20[ki] if ki < len(ma20) else None
+        ma60_v = ma60[ki] if ki < len(ma60) else None
+        ma5_dev  = _dev(close, ma5_v)
+        ma20_dev_v = obv_raw.get("ma20_dev") or _dev(close, ma20_v)
+        ma60_dev  = _dev(close, ma60_v)
+
         ma_devs = {
-            "ma_dev_daily":  obv_raw.get("ma20_dev")  or _dev(close, ma20[ki]  if ki < len(ma20)  else None),
-            "ma_dev_weekly": _dev(close, w_ma20[wi] if wi >= 0 and wi < len(w_ma20) else None),
+            "ma_dev_daily":  ma20_dev_v,    # v6.2.8 改: ma20 日偏离 (不是别的)
+            "ma5_dev":       ma5_dev,
+            "ma60_dev":      ma60_dev,
             "ma120_dev":     obv_raw.get("ma120_dev") or _dev(close, ma120[ki] if ki < len(ma120) else None),
             "boll_upper":    boll_upper[ki] if ki < len(boll_upper) else None,
             "boll_lower":    boll_lower[ki] if ki < len(boll_lower) else None,
@@ -135,7 +145,8 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     smc_raw    = raw.get("smc",             {}) or {}
     fflow_raw  = raw.get("fflow",           {}) or {}
     obv_raw    = raw.get("obv",             {}) or {}
-    val_raw    = raw.get("valuation",       {}) or {}  # 2026-09-02 新 (PEG+DCF+Magic 合并)
+    val_raw    = raw.get("finance",           {}) or {}  # 2026-09-08 改: ValuationStrategy → FinanceStrategy
+    tech_raw   = raw.get("technical",        {}) or {}  # v6.2.8 改: TechnicalStrategy 8 指标
     p3         = wy_raw.get("3period") or {}
 
     pos_raw = raw.get("position", {}) or {}
@@ -192,9 +203,17 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "obv_trend":           obv_raw.get("obv_trend", 0),
         "obv_strategy_score": obv_raw.get("score", 0),
 
-        # 估值时序 (ValuationStrategy 算的 4 指标, 2026-09-02 新)
-        "ey_daily":  val_raw.get("magic_ey_series", {}).get(date.replace("-", "")[:8]),
-        "roc_daily": val_raw.get("magic_roc_series", {}).get(date.replace("-", "")[:8]),
+        # 估值 (FinanceStrategy 季报粒度, 共享最新季值)
+        # v6.2.8 删: 历史表里不再有 ROC%/EY% 列 (跨季才变, 跟"## 财务数据" section 重复)
+
+        # Technical 8 指标 (v6.2.8 加: TechnicalStrategy 时序)
+        # 从 tech_raw 抽 per-date 字段 (TechnicalStrategy.analyze_history 算出)
+        "macd_dif":   tech_raw.get("macd_dif"),
+        "macd_dea":   tech_raw.get("macd_dea"),
+        "rsi6":       tech_raw.get("rsi6"),
+        "kdj_k":      tech_raw.get("kdj_k"),
+        "atr_pct":    tech_raw.get("atr_pct"),
+        "vol_ratio":  tech_raw.get("vol_ratio"),
     }
 
 

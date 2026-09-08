@@ -11,8 +11,7 @@ report_schema.py — 报告格式定义 (单一真源, 不可变)
 CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
   2️⃣ 4 个缠论补充策略 (SMC-OB+量价+威科夫+多市场共振) — 一等公民
-  3️⃣ 市场状态定量 (三指标 0-9 分 / 板块过热) — 二等
-  4️⃣ 大盘+美股背景 — 二等 (可跳过)
+  3️⃣ 大盘+美股背景 — 二等 (可跳过)
   5️⃣ PEG/DCF L (基本面对冲) — 二等, 必须在 1️⃣2️⃣ 之后
   6️⃣ 主力 fflow — 验证
   7️⃣ 三层仓位+买卖点 — 综合 (止盈/止损/退场/仓位/监控)
@@ -38,7 +37,7 @@ REPORT_SECTIONS = [
     },
     {
         "id": "eps_finance",
-        "title": "EPS + 财务数据",
+        "title": "财务数据",
         "category": "📋",
         "render": "render_eps_finance",
         "required": True,
@@ -70,16 +69,7 @@ REPORT_SECTIONS = [
         "required": True,
         "refresh": "REGEN",
     },
-    # === 3️⃣ 市场状态定量 / 板块 ===
-    {
-        "id": "sector_overheat",
-        "title": "📈 板块过热预警",
-        "category": "3️⃣",
-        "render": "render_sector_overheat",
-        "required": True,
-        "refresh": "REGEN",
-    },
-    # === 4️⃣ 大盘+美股背景 (可跳过) ===
+    # === 3️⃣ 大盘+美股背景 (可跳过) ===
     {
         "id": "market_context",
         "title": "🌍 大盘 + 美股背景",
