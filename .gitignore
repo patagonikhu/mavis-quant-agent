@@ -49,7 +49,11 @@ data/*
 # Docs (其他入库, analyze-* 单独 ignore)
 !docs/
 !docs/**
+# analyze-* 是 /t-analyze 自动生成的缓存报告, 跟代码无关, 不入库 (历史存量用 git rm --cached 清理)
 docs/analyze-*.md
+docs/portfolio/analyze-*.md
+docs/watchlist/analyze-*.md
+docs/sector/analyze-*.md
 
 # Cache
 .cache/
