@@ -356,7 +356,7 @@
 ## 7. 数据来源
 
 - K 线: Tushare daily (2021-09 ~ 2026-09, 5352 只)
-- 财务: Tushare fina_indicator_vip (18 季, 2021Q2 ~ 2026Q2)
+- 财务: Tushare 财务接口 (18 季, 2021Q2 ~ 2026Q2, 落 financials parquet)
 - 行业: Tushare stock_basic
 - 生成脚本: `tools/batch/ten_x_5y.py` (本次)
-- R3 命中计算: `tools/batch/quality_growth_scan.py`
+- R3 命中计算: `tools/batch/earnings_blowout_scan.py` (原 quality_growth_scan.py)

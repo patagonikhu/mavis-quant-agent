@@ -1,6 +1,6 @@
 {
   "version": "v2.1",
-  "last_updated": "2026-09-08",
+  "last_updated": "2026-09-09",
   "description": "21 持仓 + 33 自选 (R3 v6.2.7 命中) | 2026-09-08 用户指定替换",
   "stocks": [
     {
@@ -390,6 +390,13 @@
       "list_type": "自选",
       "added_at": "2026-09-08",
       "note": "[latest=2026Q2 R3 v6.2.7 命中]"
+    },
+    {
+      "code": "600865",
+      "name": "百大集团",
+      "sector": "百货",
+      "list_type": "手工添加",
+      "notes": "[2026-09-09 手工] 用户要求加入 watchlist + 分析"
     }
   ],
   "changelog": [
@@ -456,6 +463,46 @@
     {
       "date": "2026-09-04",
       "change": "加 7 只 Magic Top 20 (list_type=Magic初筛, 跳过 13 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 20 只 Magic Top 20 (list_type=Magic初筛, 跳过 0 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 14 只 Magic Top 20 (list_type=Magic初筛, 跳过 6 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
+      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-09",
+      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
       "source": "docs/magic-top20.md (Greenblatt 联合排名)"
     }
   ]

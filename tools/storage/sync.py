@@ -7,7 +7,7 @@ tools/sync_data.py — 唯一 sync 入口 (2026-09-03 改造)
   2. 默认只跑 --kline (增量 K 线, 最常用)
   3. 其他 (financials/eps/fflow/cache/stock-basic/meta) 都要显式开
   4. 范围: --watchlist (默认) / --all / --codes 002371 300750
-  5. 5 个分析 skill (t-analyze/t-bb-obv/t-near-low/t-magic/t-backtest) 全改"只读",
+  5. 5 个分析 skill (t-analyze/t-bb-obv/t-near-low/t-roc-ey/t-backtest) 全改"只读",
      缺数据时直接报"请先 /t-sync", 不再偷偷调 sync
 
 历史: 之前 sync 逻辑散落在 5+ 文件:
@@ -26,7 +26,6 @@ tools/sync_data.py — 唯一 sync 入口 (2026-09-03 改造)
   bash tools/with_venv.sh python -m tools.sync --fflow               # + 主力资金流
   bash tools/with_venv.sh python -m tools.sync --cache               # + signal_cache 缓存
   bash tools/with_venv.sh python -m tools.sync --stock-basic         # + 股票基础信息
-  bash tools/with_venv.sh python -m tools.sync --meta                # + 板块/事件
   bash tools/with_venv.sh python -m tools.sync --status              # 看现状, 不拉
 """
 import sys
@@ -447,18 +446,6 @@ def action_cache(codes: list[str]) -> int:
     return 0
 
 
-def action_meta(codes: list[str]) -> int:
-    """板块 / 事件元数据 — 一次性"""
-    from tools.batch import refresh_sectors
-    print("  ℹ️  调 refresh_sectors (sectors/events 同步)...")
-    try:
-        sys.argv = ["refresh_sectors"]
-        refresh_sectors.main()
-    except (SystemExit, AttributeError) as e:
-        print(f"  ⚠️ refresh_sectors 不可用: {e}")
-    return 0
-
-
 # ============================================================
 # Status
 # ============================================================
@@ -722,8 +709,7 @@ def main():
                          help="主力资金流历史 (按天全市场, 按季存 parquet)")
     actions.add_argument("--cache", action="store_true",
                          help="signal_cache 缓存 (analysis_cache.db)")
-    actions.add_argument("--meta", action="store_true",
-                         help="板块 / 事件元数据")
+    # 2026-09-09 删: --meta (板块/事件元数据, 引用不存在的 refresh_sectors, 死代码 + broken)
     actions.add_argument("--all-data", action="store_true",
                          help="[一键] --kline --stock-basic --financials 一起跑 (最常用)")
 
@@ -746,6 +732,15 @@ def main():
     # Status 短路
     if args.status:
         return action_status()
+
+    # v6.2.9 铁律: --eps 绝不允许全市场 (datacenter 5555 只限频, 拉一次 25 分钟且会撞 WAF)
+    # 任何 --eps 路径 (含 --auto 自动检测) 强制缩到 watchlist; --codes 显式指定放行
+    if args.eps and args.codes:
+        pass  # 显式 --codes 放行
+    elif args.eps:
+        if args.all:
+            print("⚠️  --eps 不允许全市场 (datacenter API 限频), 强制缩到 watchlist")
+        args.all = False
 
     # --auto / --auto-force / --auto-dry 短路 (忽略其他 flag)
     if args.auto or args.auto_force or args.auto_dry:
@@ -827,13 +822,10 @@ def main():
     if args.cache:
         print("\n[6/7] --cache (signal_cache)")
         action_cache(codes)
-    if args.meta:
-        print("\n[7/7] --meta (板块/事件)")
-        action_meta(codes)
 
     # 全部 flag 都没开 + 也不是 --status → 给个友好提示
     if not any([args.kline, args.stock_basic, args.financials,
-                args.eps, args.fflow, args.cache, args.meta]):
+                args.eps, args.fflow, args.cache]):
         print("\n💡 没指定任何行为, 看 --help 选 flag")
         print("   最常用: python -m tools.sync --all-data")
 
