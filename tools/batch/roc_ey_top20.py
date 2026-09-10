@@ -1,13 +1,15 @@
 """
-magic_top20.py — Magic Formula 排名 + 摘要 + 加 watchlist (3 合 1, 2026-09-02)
+roc_ey_top20.py — ROC + EY 联合排名 (Greenblatt 公式) + 摘要 + 加 watchlist (3 合 1, 2026-09-09 改名)
+
+原名 magic_top20.py (Magic Formula), 改名理由: 跟 t-earnings-blowout 形成 "质量" 主题兄弟 skill
 
 用法:
-    bash tools/with_venv.sh python -m tools.batch.magic_top20              # 默认: 跑全 3 步
-    bash tools/with_venv.sh python -m tools.batch.magic_top20 --top 50    # Top N (默认 20)
-    bash tools/with_venv.sh python -m tools.batch.magic_top20 --period 2026Q2
-    bash tools/with_venv.sh python -m tools.batch.magic_top20 --rank-only          # 只排名, 不出摘要不加 watchlist
-    bash tools/with_venv.sh python -m tools.batch.magic_top20 --summary-only       # 排名 + 摘要, 不加 watchlist
-    bash tools/with_venv.sh python -m tools.batch.magic_top20 --skip-watchlist     # 跳过加 watchlist
+    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20              # 默认: 跑全 3 步
+    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --top 50    # Top N (默认 20)
+    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --period 2026Q2
+    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --rank-only          # 只排名, 不出摘要不加 watchlist
+    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --summary-only       # 排名 + 摘要, 不加 watchlist
+    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --skip-watchlist     # 跳过加 watchlist
 
 公式 (Greenblatt 2005):
     ROC = EBIT / (净营运资本 + 固定资产)            ← 排名 1
@@ -25,9 +27,9 @@ magic_top20.py — Magic Formula 排名 + 摘要 + 加 watchlist (3 合 1, 2026-
     - 数据: ROC/EY 任一 None → 跳过
 
 输出:
-    1) docs/magic-top20.md              (Top N 表 + 统计)
-    2) docs/magic-top20-summary.md      (Top N + PEG/DCF/Magic 4 项摘要, 卡点⭐ N/A)
-    3) data/watchlist.json (via DataStore.load_watchlist)              (加 list_type="Magic初筛", 跳已存在)
+    1) docs/roc-ey-top20.md              (Top N 表 + 统计)
+    2) docs/roc-ey-top20-summary.md      (Top N + PEG/DCF/ROC 4 项摘要, 卡点⭐ N/A)
+    3) data/watchlist.json (via DataStore.load_watchlist)              (加 list_type="ROC_EY初筛", 跳已存在)
     4) stdout: Top 5 速览
 """
 from __future__ import annotations
@@ -45,8 +47,8 @@ _TOOLS = Path(__file__).resolve().parent.parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-# 2026-09-02 改: magic_formula.py 删了, 搬进 tools/analysis/valuation.py
-from tools.analysis.valuation import (  # noqa: E402
+# 2026-09-09 改: 统一到 tools.factors.valuation.factor_lib.py
+from tools.factors.valuation.factor_lib import (  # noqa: E402
     EXCLUDED_INDUSTRIES,
     batch_magic_scores,
 )
@@ -128,7 +130,7 @@ def rank_magic(results: list[dict], top: int = 20,
 # ============================================================
 
 def render_markdown(top20: list[dict], period: str, skipped: int) -> str:
-    """渲染 docs/magic-top20.md"""
+    """渲染 docs/roc-ey-top20.md"""
     today = datetime.now().strftime("%Y-%m-%d")
     n = len(top20)
 
@@ -144,7 +146,7 @@ def render_markdown(top20: list[dict], period: str, skipped: int) -> str:
         roc_avg = ey_avg = roc_max = ey_max = 0
 
     lines = []
-    lines.append(f"# Magic Formula 排名 Top {n} — {today}")
+    lines.append(f"# ROC + EY 联合排名 Top {n} — {today}")
     lines.append("")
     lines.append(f"> **报告期:** {period}  |  **股票池:** 1923 只科技股 (client-side 筛选)  |  **跳过:** {skipped} 只 (含行业 EXCLUDED + 无数据)")
     lines.append(f"> **公式:** ROC = EBIT / (净营运资本 + 固定资产), EY = EBIT / EV (Greenblatt 2005)")
@@ -182,32 +184,32 @@ def render_markdown(top20: list[dict], period: str, skipped: int) -> str:
     lines.append("## 🔗 数据流")
     lines.append("")
     lines.append("```")
-    lines.append("Tushare fina_indicator_vip (1次API, 全市场 9255 行)")
+    lines.append("sync.py --financials 预拉 (Tushare 财务接口, 全市场 9255 行, 落 financials parquet)")
     lines.append("   ↓ 客户端筛科技股 (industry != EXCLUDED_INDUSTRIES)")
     lines.append("data/history/financials/{period}.parquet  (1923 只, status=ok)")
     lines.append("   ↓ DataStore.get_financials(code)")
     lines.append("ROC = EBIT / (NWC + FA),  EY = EBIT / EV")
     lines.append("   ↓ 联合排名")
-    lines.append("Top 20 → docs/magic-top20.md")
+    lines.append("Top 20 → docs/roc-ey-top20.md")
     lines.append("```")
     lines.append("")
     lines.append("## 💡 用法")
     lines.append("")
     lines.append("```bash")
     lines.append("# 跑全市场排名 (默认 1923 科技股, Top 20)")
-    lines.append("bash tools/with_venv.sh python -m tools.batch.magic_top20")
+    lines.append("bash tools/with_venv.sh python -m tools.batch.roc_ey_top20")
     lines.append("")
     lines.append("# 自定义 Top 数")
-    lines.append("bash tools/with_venv.sh python -m tools.batch.magic_top20 --top 50")
+    lines.append("bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --top 50")
     lines.append("")
     lines.append("# 改报告期 (缺数据请先 /t-sync-data)")
-    lines.append("bash tools/with_venv.sh python -m tools.batch.magic_top20 --period 2026Q1")
+    lines.append("bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --period 2026Q1")
     lines.append("```")
     lines.append("")
     lines.append("---")
     lines.append("")
     lines.append(f"📅 **生成时间:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  |  "
-                 f"🔧 **脚本:** `tools/batch/magic_top20.py`  |  "
+                 f"🔧 **脚本:** `tools/batch/roc_ey_top20.py`  |  "
                  f"📊 **数据:** `data/history/financials/{period}.parquet`")
     lines.append("")
 
@@ -219,7 +221,7 @@ def render_markdown(top20: list[dict], period: str, skipped: int) -> str:
 # ============================================================
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Magic Formula 排名 → docs/magic-top20.md")
+    parser = argparse.ArgumentParser(description="ROC + EY 联合排名 → docs/roc-ey-top20.md")
     parser.add_argument("--top", type=int, default=20, help="输出前 N 名 (默认 20)")
     parser.add_argument(
         "--period",
@@ -237,10 +239,19 @@ def main() -> int:
         action="store_true",
         help="排名 + 摘要, 不加 watchlist",
     )
+    # 2026-09-09 改: 默认 不加 watchlist (用 --add-watchlist 显式开启)
+    # 原因: 用户不希望每次跑 ROC_EY 都自动污染 watchlist
     parser.add_argument(
         "--skip-watchlist",
         action="store_true",
-        help="跳过加 watchlist 那步",
+        default=True,  # 默认 True (不加), 向后兼容
+        help="[已默认] 跳过加 watchlist 那步 (--add-watchlist 显式开启)",
+    )
+    parser.add_argument(
+        "--add-watchlist",
+        action="store_true",
+        default=False,
+        help="显式加 Top 20 到 watchlist (list_type=ROC_EY初筛)",
     )
     # v6.2.4 加: 小盘股过滤 (避免 NWC 接近 0 导致 ROC 虚高)
     parser.add_argument("--min-mcap", type=float, default=0, help="最小市值 (亿), 0=不过滤")
@@ -292,7 +303,7 @@ def main() -> int:
                        min_mcap=args.min_mcap, max_roc=args.max_roc, min_ebit=args.min_ebit)
 
     # 4) 写文件 (skipped = 总池 - 有效排名, 不是 - topN)
-    out_path = _TOOLS.parent / "docs" / "magic-top20.md"
+    out_path = _TOOLS.parent / "docs" / "roc-ey-top20.md"
     n_valid = sum(1 for r in results if r.get("roc") is not None and r.get("ey") is not None)
     md = render_markdown(top_n, args.period, skipped=len(codes) - n_valid)
     out_path.write_text(md, encoding="utf-8")
@@ -310,18 +321,18 @@ def main() -> int:
                 f"综合={r['combined_rank']:4.1f}  市值={mc_yi:,.0f}亿  ({r['industry']})"
             )
 
-    # 6) 摘要 (Top 20 + PEG/DCF/Magic 4 项) — 2026-09-02 合并
+    # 6) 摘要 (Top 20 + PEG/DCF/ROC 4 项) — 2026-09-02 合并, 2026-09-09 改名
     if not args.rank_only and top_n:
         print()
-        print("📊 跑 4 项摘要 (PEG/DCF/Magic 排名)...")
-        summary_path = _TOOLS.parent / "docs" / "magic-top20-summary.md"
+        print("📊 跑 4 项摘要 (PEG/DCF/ROC 排名)...")
+        summary_path = _TOOLS.parent / "docs" / "roc-ey-top20-summary.md"
         _run_summary(top_n, out_path, summary_path)
         print(f"   ✅ 写: {summary_path}")
 
     # 7) 加 watchlist — 2026-09-02 合并
-    if not args.rank_only and not args.summary_only and not args.skip_watchlist and top_n:
+    if not args.rank_only and not args.summary_only and args.add_watchlist and top_n:
         print()
-        print("📋 加 watchlist (list_type=Magic初筛)...")
+        print("📋 加 watchlist (list_type=ROC_EY初筛)...")
         _add_to_watchlist(top_n, args.period)
         print(f"   ✅ watchlist 已更新")
 
@@ -333,16 +344,16 @@ def main() -> int:
 # ============================================================
 
 def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
-    """Top 20 + PEG/DCF/Magic 4 项摘要
+    """Top 20 + PEG/DCF/ROC 4 项摘要
 
-    解析 magic-top20.md 拿排名, 逐只补 PEG/DCF (走 report_section_evaluators), 写 docs/magic-top20-summary.md
+    解析 roc-ey-top20.md 拿排名, 逐只补 PEG/DCF (走 report_section_evaluators), 写 docs/roc-ey-top20-summary.md
     """
     from tools.analysis.render_data import RenderData  # 避免循环
     # 解析 Top N 拿 code/name/industry/roc/ey 5 字段
     rank_data = parse_top20_md(top_md_path)
     code_to_rank = {r["code"]: r for r in rank_data}
 
-    # 逐只补 4 项 (PEG/DCF/Magic/卡点⭐)
+    # 逐只补 4 项 (PEG/DCF/ROC/卡点⭐)
     items = []
     for r in top_n:
         code = r["code"]
@@ -356,11 +367,13 @@ def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
         ctx = _DS.get_ctx(code)
         current_price = ctx.current_price or (db.get("close") if db else None) or 0
 
-        from tools.analysis.report_section_evaluators import compute_peg, compute_dcf_l
+        from tools.factors.valuation.factor_lib import compute_peg, compute_dcf_l
 
         item = {"code": code, "name": r["name"], "industry": r["industry"], "card": "N/A",
-                "magic_rank": code_to_rank.get(code, {}).get("rank", "—"),
-                "magic_combined": code_to_rank.get(code, {}).get("combined_rank", "—")}
+                "rank": code_to_rank.get(code, {}).get("rank", "—"),
+                "roc_rank": code_to_rank.get(code, {}).get("rank", "—"),
+                "ey_rank": r.get("ey_rank", "—"),
+                "combined_rank": code_to_rank.get(code, {}).get("combined_rank", "—")}
 
         if eps_table and current_price:
             item["peg"] = compute_peg(eps_table, current_price)
@@ -378,9 +391,10 @@ def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
 
 
 def _add_to_watchlist(top_n: list[dict], period: str):
-    """把 Top N 加到 data/watchlist.json (via DataStore.load_watchlist) (list_type=Magic初筛)
+    """把 Top N 加到 data/watchlist.json (via DataStore.load_watchlist) (list_type=ROC_EY初筛)
 
     2026-09-03 v6.2 改: 走 DataStore.add_to_watchlist, 不直接 json 写
+    2026-09-09 改: list_type 从 "Magic初筛" → "ROC_EY初筛"
     """
     from tools.storage.store import DataStore
     today = datetime.now().strftime("%Y-%m-%d")
@@ -389,12 +403,12 @@ def _add_to_watchlist(top_n: list[dict], period: str):
     for r in top_n:
         code = r["code"]
         notes = (
-            f"[{today} Magic Top{r['rank']}] "
+            f"[{today} ROC_EY Top{r['rank']}] "
             f"ROC={r['roc']:.1f}% (rank {r['roc_rank']}) "
             f"EY={r['ey']:.2f}% (rank {r['ey_rank']}) "
             f"综合={r['combined_rank']} | 卡点⭐ 待 LLM 补"
         )
-        if DataStore.add_to_watchlist(code, r["name"], r["industry"], "Magic初筛", notes):
+        if DataStore.add_to_watchlist(code, r["name"], r["industry"], "ROC_EY初筛", notes):
             added += 1
         else:
             skipped += 1
@@ -415,20 +429,16 @@ def _add_to_watchlist(top_n: list[dict], period: str):
 # ============================================================
 
 def get_eps_for_summary(code: str) -> list[dict]:
-    """EPS 摘要 (v6.2.4 改: 读 parquet, 跟 financials 同目录)
+    """EPS 摘要 (走 DataStore.get_eps)
 
-    之前: 走 datacenter.eastmoney.com 写本地 cache (违反 sync_data 唯一入口)
-    现在: 只读本地 EPS_DIR/{code}.parquet; 缺数据时返空, 提示先跑 /t-sync-data --eps
+    之前: 读 EPS_DIR/{code}.parquet (_read_parquet 已在 v6.2.5 删除)
+    现在: 走 DataStore 唯一入口
     """
-    from tools.storage.caches.eps import EPS_DIR, _read_parquet
-    path = EPS_DIR / f"{code}.parquet"
-    if path.exists() and path.stat().st_size > 100:
-        try:
-            return _read_parquet(path)
-        except Exception:
-            pass
-    # 缺数据: 不偷偷拉, 提示用户先跑 /t-sync-data
-    return []
+    try:
+        from tools.storage.store import DataStore
+        return DataStore.get_eps(code) or []
+    except Exception:
+        return []
 
 
 def parse_top20_md(md_path: Path) -> list[dict]:
@@ -498,9 +508,9 @@ def render_summary_md(items: list[dict]) -> str:
         mc = ((it.get("price") or 0) * 0) + 0  # 总市值从 daily_basic 拿
         # 简化: 总市值从 price 算不出来, 跳过
         md += (
-            f"| {it.get('magic_rank', '—')} | {it['code']} | {it['name']} | {it['industry']} | "
+            f"| {it.get('rank', '—')} | {it['code']} | {it['name']} | {it['industry']} | "
             f"{it['card']} | {_fmt_peg(it['peg'])} | {_fmt_dcf(it['dcf'])} | "
-            f"#{it['magic_rank']} (综合 {it['magic_combined']}) | "
+            f"#{it.get('rank', '—')} (综合 {it.get('combined_rank', '—')}) | "
             f"{(it.get('price') or 0):.2f} | — |\n"
         )
     md += "\n---\n"

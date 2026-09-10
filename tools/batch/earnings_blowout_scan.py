@@ -1,5 +1,8 @@
 """
-tools/batch/quality_growth_scan.py — 启动期高增长扫描 (v6.2.7 启动期模式: 4 基础 + 1 触发 + 位置过滤)
+tools/batch/earnings_blowout_scan.py — Earnings Blowout 财季炸裂扫描 (v6.2.7, 2026-09-09 改自 quality_growth_scan.py)
+
+原名 quality_growth_scan.py, 改名理由: "财季炸裂 (Earnings Blowout)" 更贴切 R3 反转信号语义,
+跟 /t-roc-ey 形成 "质量" 主题兄弟 skill, 用户更容易理解"营收+净利+毛利率同向爆量"是什么
 
 R3 v6.2.7 4 基础 (AND):
   1. 营收 yoy >= 25%  (主业高增长)
@@ -24,69 +27,65 @@ v6.2.7 关键改动:
 性能: 全市场 13 季 5555 只 0.01s 跑完 (Python pandas 内存计算, 0 网络)
 
 输出:
-  - docs/quality-growth-watchlist.md (按季分 section, 18 列全中文)
+  - docs/earnings-blowout-watchlist.md (按季分 section, 18 列全中文)
   - stdout 速览 (最新 1 季 Top 30)
   - --top-np-jump N: 追加按 np_jump pp 差降序的 Top N 表 (默认 0=不输出)
 
 用法:
-  bash tools/with_venv.sh python -m tools.batch.quality_growth_scan
-  bash tools/with_venv.sh python -m tools.batch.quality_growth_scan --rev-yoy 30 --np-yoy 80
-  bash tools/with_venv.sh python -m tools.batch.quality_growth_scan --jump-mode leader
-  bash tools/with_venv.sh python -m tools.batch.quality_growth_scan --top-np-jump 200
+  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan
+  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan --rev-yoy 30 --np-yoy 80
+  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan --jump-mode leader
+  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan --top-np-jump 200
 """
 import argparse
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-import duckdb
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.storage.store import DataStore  # noqa: E402  数据访问统一走 DataStore
 
 
 # ============================================================
-# 数据加载 (SQL 只取数, 不算逻辑)
+# 数据加载 (走 DataStore, 0 网络 0 直读 parquet)
 # ============================================================
 
 def _load_financials() -> pd.DataFrame:
-    """从 financials 13 季 parquet 加载原始数据
+    """从 financials 13 季 parquet 加载原始数据 (走 DataStore)
 
-    SQL 只做列选择 + 基础过滤, 不做 LAG / 筛选
     返 pd.DataFrame: ts_code, industry, end_date, ebit, roe, roe_yoy,
                      grossprofit_margin, or_yoy, netprofit_yoy
     """
-    sql = """
-    SELECT ts_code, industry, end_date, ebit, roe, roe_yoy,
-           grossprofit_margin, or_yoy, netprofit_yoy
-    FROM read_parquet('data/history/financials/*.parquet')
-    WHERE fetch_status='ok'
-      AND or_yoy IS NOT NULL
-      AND netprofit_yoy IS NOT NULL
-      AND grossprofit_margin IS NOT NULL
-      AND ebit IS NOT NULL AND ebit > 0
-    ORDER BY ts_code, end_date
-    """
-    return duckdb.execute(sql).df()
+    df = DataStore.load_all_financials()
+    if df.empty:
+        return df
+    # 基础过滤 (替代原 SQL WHERE)
+    df = df[
+        (df["fetch_status"] == "ok")
+        & df["or_yoy"].notna()
+        & df["netprofit_yoy"].notna()
+        & df["grossprofit_margin"].notna()
+        & df["ebit"].notna() & (df["ebit"] > 0)
+        & df["industry"].notna() & (df["industry"] != "")
+    ]
+    cols = ["ts_code", "industry", "end_date", "ebit", "roe", "roe_yoy",
+            "grossprofit_margin", "or_yoy", "netprofit_yoy"]
+    return df[cols].sort_values(["ts_code", "end_date"]).reset_index(drop=True)
 
 
 def _load_stk_factor_latest() -> pd.DataFrame:
-    """从 stk_factor 5 季 parquet 加载最新一日的 PE/PE_TTM/市值/收盘价
+    """每只票最新一日的 PE/PE_TTM/市值/收盘价 (走 DataStore)
 
-    SQL 取每只票的 (ts_code, max(trade_date)) 对应的那一行
     返 pd.DataFrame: ts_code, close, pe, pe_ttm, total_mv
     """
-    sql = """
-    SELECT ts_code, close, pe, pe_ttm, total_mv
-    FROM read_parquet('data/history/stk_factor/*.parquet')
-    WHERE (ts_code, trade_date) IN (
-        SELECT ts_code, MAX(trade_date)
-        FROM read_parquet('data/history/stk_factor/*.parquet')
-        GROUP BY ts_code
-    )
-    """
-    return duckdb.execute(sql).df()
+    return DataStore.get_stk_factor_latest()
 
 
 def _load_basic_map() -> dict:
@@ -327,7 +326,7 @@ def render_md(hits: list[dict], args) -> str:
     md.append(f"- 净利 yoy 跳升 >= 50pp (本季 - 上季)\n\n")
     md.append(f"- (ROE 门槛已移除, R3 算法不依赖 ROE)\n\n")
 
-    md.append("**字段来源**: Tushare `fina_indicator_vip` 109 字段 (financials) + `stk_factor_pro` 17 字段 (PE / 市值)\n")
+    md.append("**字段来源**: 本地 financials parquet 109 字段 (由 sync.py --financials 预拉) + stk_factor parquet 17 字段 (PE / 市值)\n")
     md.append(f"\n**数据落盘**: `data/history/financials/{{YYYYQN}}.parquet` (按季 13 份) + `data/history/stk_factor/{{YYYYQN}}.parquet` (按季 5 份)\n")
 
     return "".join(md)
@@ -387,7 +386,7 @@ def main():
     parser.add_argument("--top-np-jump", type=int, default=0,
                         help="按本季-上季净利 yoy 差 (pp) 降序取前 N, 追加到 md (默认 0=不输出, 例 --top-np-jump 200)")
     parser.add_argument("--no-md", action="store_true", help="不写 md 文件")
-    parser.add_argument("--out", default="docs/quality-growth-watchlist.md", help="md 输出路径")
+    parser.add_argument("--out", default="docs/earnings-blowout-watchlist.md", help="md 输出路径")
     parser.add_argument("--include-cycle", action="store_true", help="包含周期股 (默认排除, 周期股景气突破是 β 不是 α)")
     parser.add_argument("--tolerance", type=float, default=0.0, help="3 季单调回踩容忍 (pp, 默认 0 = 严格; 例 1.0 允许 prev vs prev2 差 -1pp, 解决财务披露口径跳跃问题)")
     parser.add_argument("--cycle-industries", default="小金属,铜,铝,化工原料,农药化肥,铅锌,矿物制品,钢铁,煤炭,石油,化纤,水运,仓储物流,电器仪表,家用电器,工程机械,石油开采,黄金,塑料,造纸,建材,玻璃,陶瓷,纺织,化纤,电气设备",
@@ -430,10 +429,9 @@ def main():
     # 0. 数据状态
     try:
         from tools.storage.store import DataStore
+        fin_df = DataStore.load_all_financials()
         n_parquet = len(list(Path("data/history/financials").glob("*.parquet")))
-        latest = duckdb.execute("""
-            SELECT MAX(end_date) FROM read_parquet('data/history/financials/*.parquet')
-        """).fetchone()[0]
+        latest = fin_df["end_date"].max() if not fin_df.empty else None
         print(f"  financials parquet: {n_parquet} 季, 最新一季 max end_date: {latest}", flush=True)
     except Exception as e:
         print(f"  [WARN] financials 检查失败: {e}", flush=True)

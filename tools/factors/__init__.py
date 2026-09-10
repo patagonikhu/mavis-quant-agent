@@ -1,45 +1,22 @@
 """
-tools/factors/__init__.py - 因子库入口 (Day 1 重构)
+tools/factors/__init__.py - 因子库入口 (2026-09-09 简化)
 
-Day 1 目标: 建空架子, 不动现有代码
-  - 因子抽象类 (Factor)
-  - 注册表 (FactorRegistry)
-  - 注册几个示例因子 (价格衍生, 时序, 横截面)
+2026-09-09 改动:
+  - 删了 Factor 基类 (Factor) + Registry (FactorRegistry/Runner/StandardFactorSets/print_registry)
+  - 删了 FactorConfig (yaml 配置)
+  - 删了 FactorMeta
+  - 全部改成纯函数, 统一在 3 个文件:
+    - factor_basic.py  (基础通用: ma / returns / position / 3 层仓位 / alpha)
+    - factor_risk.py   (风控: 止盈止损 / 退出信号 / 监控触发)
+    - factor_volume.py (量能: fflow / OBV)
+    - valuation/factor_lib.py (估值: ROC/EY/PEG/DCF/Magic 等 11 个)
+  - 保留框架: utils.py (K 线处理) + kline_arrays.py (滑动窗口)
+  - 保留专用: chan/ smc/ wyckoff/ (各自保留 class Factor 风格)
+  - 保留: tools/factors/valuation/dcf_engine.py (DCF 假设工具)
 
-Day 2+: 把 老 data 工具._factor_chan_signals 等逻辑抽进来
+Mavis 守门员 (t-guardrail::factor-guard) 规则:
+  - ❌ 禁止 class XXX(Factor) 包装 (在 valuation/ 目录)
+  - ❌ 禁止 tools/analysis/valuation.py 复活
+  - ❌ 禁止 tools/factors/valuation/ 多文件 (除 factor_lib.py + dcf_engine.py)
 """
-from tools.factors.base import (
-    Factor,
-    FactorConfig,
-    FactorMeta,
-    safe_div,
-    rank_pct,
-    ts_rank,
-    ts_mean,
-    ts_std,
-    zscore,
-)
-from tools.factors.registry import (
-    FactorRegistry,
-    FactorRunner,
-    StandardFactorSets,
-    print_registry,
-)
-
-__all__ = [
-    'Factor',
-    'FactorConfig',
-    'FactorMeta',
-    'FactorRegistry',
-    'FactorRunner',
-    'StandardFactorSets',
-    'print_registry',
-    'safe_div',
-    'rank_pct',
-    'ts_rank',
-    'ts_mean',
-    'ts_std',
-    'zscore',
-]
-
-__version__ = '0.1.0'  # Day 1 版本
+__version__ = '2.0.0'  # 2026-09-09 纯函数化 + 删框架

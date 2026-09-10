@@ -1,5 +1,6 @@
 """
-backfill_magic_cache.py — 给 analysis_cache.db 4 列估值 (roc / ey / peg / dcf_l) backfill 1 年
+backfill_roc_ey_cache.py — 给 analysis_cache.db 4 列估值 (roc / ey / peg / dcf_l) backfill 1 年
+2026-09-09 改自 backfill_magic_cache.py
 
 数据源 (全本地, 0 网络):
   - data/history/financials/{period}.parquet  (TTM EBIT / NWC / FA / netdebt)
@@ -32,10 +33,10 @@ from tools.storage.store import (
     DataStore, _to_ts_code,
 )
 # v6.0 改: 不再 import sync_incremental (sync 走 /t-sync, 本脚本 0 网络)
-from tools.analysis.valuation import (
-    find_full_year_financials, calc_ey_at_date, calc_roc_at_date,
+from tools.factors.valuation.factor_lib import (
+    find_full_year_financials, compute_ey, compute_roc,
+    compute_peg, compute_dcf_l,
 )
-from tools.factors.valuation.multi import PegFactor, DcfFactor
 from tools.storage.caches.eps import EPS_DIR
 
 
@@ -145,8 +146,6 @@ def _calc_4cols_for_code(
     Returns: {date: (roc, ey, peg, dcf_l)}  缺数据 = None
     """
     out: dict[str, tuple] = {}
-    peg_factor = PegFactor()
-    dcf_factor = DcfFactor()
     for d in dates:
         # 找 ≤ d 的最新全年 financials
         fin = find_full_year_financials(fin_data, d) if fin_data else None
@@ -157,20 +156,20 @@ def _calc_4cols_for_code(
         # 1) ROC (只要 financials, 不需要 daily_basic)
         roc = None
         if fin:
-            magic = calc_roc_at_date([fin], d)
+            magic = compute_roc([fin], d)
             roc = magic.get("roc")
 
         # 2) EY (要 daily_basic.market_cap)
         ey = None
         if fin and mc_wan:
-            magic = calc_ey_at_date([fin], d, mc_wan)
+            magic = compute_ey([fin], d, mc_wan)
             ey = magic.get("ey")
 
         # 3) PEG (要 EPS 预期 + 当前价)
         peg = None
         if eps_table and len(eps_table) >= 4 and db_d.get("close"):
-            r = peg_factor(df=None, eps_table=eps_table, current_price=db_d["close"]) or {}
-            p = r.get("PEG_真实")
+            r = compute_peg(eps_table, db_d["close"]) or {}
+            p = r.get("peg")
             if isinstance(p, (int, float)) and 0 < p < 1000:  # 过滤 PEG=999 (g 缺失)
                 peg = p
 
@@ -178,11 +177,10 @@ def _calc_4cols_for_code(
         dcf_l = None
         if eps_table and len(eps_table) >= 4 and mc_wan:
             market_cap_yi = mc_wan / 1e4
-            close = db_d.get("close") or 0
-            r = dcf_factor(df=None, eps_table=eps_table, current_price=close, market_cap_yi=market_cap_yi) or {}
-            d10 = r.get("r_10%", {})
-            if d10.get("L/E3(每share)") is not None and d10["L/E3(每share)"] > 0:
-                dcf_l = d10["L/E3(每share)"]
+            r = compute_dcf_l(eps_table, market_cap_yi) or {}
+            l_e3 = r.get("L_E3_r10")
+            if l_e3 is not None and l_e3 > 0:
+                dcf_l = l_e3
 
         out[d] = (roc, ey, peg, dcf_l)
     return out

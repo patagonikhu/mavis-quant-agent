@@ -61,10 +61,10 @@ def process_one(s):
         # signal table
         rows = data.factor_history_rows
         signals = []
-        # 2026-09-02 加 list_type 标签 (持仓/自选/Magic初筛)
+        # 2026-09-02 加 list_type 标签 (持仓/自选/ROC_EY初筛), 2026-09-09 Magic→ROC_EY
         tag = {
             '持仓': '🟢',
-            'Magic初筛': '💎',
+            'ROC_EY初筛': '💎',
         }.get(list_type_label, '·')
         code_tagged = f"{tag} {code}"
         if len(rows) >= 2:
@@ -121,7 +121,7 @@ for r in results:
 total_elapsed = time.time() - t_total
 
 # write summary
-# 2026-09-02 加: 按 list_type 分类统计 (持仓/自选/Magic初筛)
+# 2026-09-02 加: 按 list_type 分类统计 (持仓/自选/ROC_EY初筛), 2026-09-09 Magic→ROC_EY
 from collections import Counter
 _lt_counter = Counter(s.get("list_type", "自选") for s in stocks)
 _lt_summary = " | ".join(f"{k} {v}" for k, v in sorted(_lt_counter.items(), key=lambda x: -x[1]))
@@ -148,6 +148,18 @@ print(f'FILE: {output_path}')
 print(f'MD生成: {md_written}/{len(stocks)}')
 print(f'有今日信号: {sum(1 for r in all_table_rows if r[6]=="⭐")}只')
 print(f'总耗时: {total_elapsed:.0f}s')
+
+# 2026-09-09 加: stdout 直接输出信号明细 (buy_rows + sell_rows), 不需要打开 md 文件看
+if buy_rows:
+    print(f'\n=== 今日底部信号 (buy, {len(buy_rows)} 只) ===')
+    for code, name, detail in buy_rows:
+        print(f'  🟢 {code} {name} | {detail}')
+if sell_rows:
+    print(f'\n=== 今日顶部信号 (sell, {len(sell_rows)} 只) ===')
+    for code, name, detail in sell_rows:
+        print(f'  🔴 {code} {name} | {detail}')
+if not buy_rows and not sell_rows:
+    print(f'\n  无今日 buy/sell  信号')
 if errs:
     print(f'错误: {len(errs)}只')
     for c, e in errs:

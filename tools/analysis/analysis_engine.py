@@ -449,7 +449,7 @@ class FflowStrategy:
     name = "fflow"
 
     def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.volume.price_fflow import fflow_factor
+        from tools.factors.factor_volume import compute_fflow_factor as fflow_factor
         ff = {}
         try:
             ff = fflow_factor(
@@ -511,7 +511,7 @@ class ObvStrategy:
     name = "obv"
 
     def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.volume.price_fflow import obv_factor
+        from tools.factors.factor_volume import compute_obv_factor as obv_factor
         obv = {}
         try:
             kline = ctx.kline or []
@@ -1042,8 +1042,9 @@ class FinanceStrategy:
 
     def analyze(self, ctx: "RawContext") -> dict:
         from tools.storage.store import DataStore
-        from tools.analysis.valuation import calc_magic_one_day
-        from tools.factors.valuation.multi import PegFactor, DcfFactor
+        from tools.factors.valuation.factor_lib import (
+            compute_magic_one_day, compute_peg, compute_dcf_l,
+        )
         _empty = {"quarterly": [], "score": 0.0, "signals": [], "summary": ""}
 
         try:
@@ -1054,6 +1055,17 @@ class FinanceStrategy:
             return _empty
 
         market_cap_wan = (ctx.market_cap_yi or 0) * 1e4
+
+        # 2026-09-10 修 4 季大表市值 bug: 每季按 end_date 拿"季末后 30 天内最近 trade_date"的市值
+        # 修前: 4 季循环都用 market_cap_wan (今日市值), 4 个 mc_yi 全一样 (bug)
+        # 修后: 每季用自己的季末市值, ROC/EY 反映季报披露后真实市场估值
+        end_dates = [str(r.get("end_date", ""))[:8] for r in financials[-4:]]
+        mc_by_end_date = {}
+        if end_dates and any(end_dates):
+            try:
+                mc_by_end_date = DataStore.get_market_cap_near_dates(ctx.code, end_dates, days_after=30)
+            except Exception:
+                mc_by_end_date = {}
 
         shares_wan = 0.0
         # v6.2.8 改: 多重 fallback (daily_basic 返空/stock_basic 拿不到, 用 market_cap_yi/current_price 反推 shares_wan)
@@ -1083,9 +1095,8 @@ class FinanceStrategy:
             pass
 
         # PEG / DCF 用最新 EPS 预期，所有季共享
-        peg_out = PegFactor()(df=None, eps_table=eps_table, current_price=ctx.current_price) or {}
-        dcf_out = DcfFactor()(df=None, eps_table=eps_table,
-                              current_price=ctx.current_price, market_cap_yi=ctx.market_cap_yi) or {}
+        peg_out = compute_peg(eps_table, ctx.current_price) or {}
+        dcf_out = compute_dcf_l(eps_table, ctx.market_cap_yi) or {}
 
         quarterly = []
         for r in reversed(financials[-4:]):
@@ -1095,10 +1106,24 @@ class FinanceStrategy:
             eps_val = float(r.get("eps") or r.get("diluted2_eps") or 0)
             np_yi  = (eps_val * shares_wan) / 1e4 if shares_wan > 0 else 0.0
 
+            # 2026-09-10 修 4 季大表市值 bug: 每季用"季末市值"代替"今日市值"
+            # 修前 4 个 mc_yi 全是 4346 亿 (今日) → 修后 4 个不同 (季末)
+            q_mc_yi = mc_by_end_date.get(q_str[:8], 0.0) or 0.0
+            # 退路: 该季拿不到市值时, 用今日市值 (避免 ROC/EY 完全无数据)
+            if q_mc_yi <= 0:
+                q_mc_yi = ctx.market_cap_yi or 0.0
+            q_market_cap_wan = q_mc_yi * 1e4
+
+            # 2026-09-09 改: 每季单独算 ROC/EY (用该季 EBIT + 当时 NWC+FA + 当时市值)
+            # 设计意图: 4 季大表是"周期分析"工具, 每行代表该季的快照
+            # 营收/净利 yoy/毛利率/ROE 是该季实际 → EBIT 也必须是该季实际
+            # ROC = 该季 EBIT / 该季 NWC+FA (单季 TTM proxy)
+            # EY = 该季 EBIT / 当时市值 (单季 TTM proxy, A 股 季报无 LTM EBIT)
             magic = {}
-            if market_cap_wan > 0:
+            if q_market_cap_wan > 0:
                 try:
-                    magic = calc_magic_one_day([r], q_str, market_cap_wan) or {}
+                    # 单季 [r] → _ttm_ebit fallback 用该季 EBIT (符合"周期分析"语义)
+                    magic = compute_magic_one_day([r], q_str, q_market_cap_wan) or {}
                 except Exception:
                     pass
 
@@ -1107,10 +1132,12 @@ class FinanceStrategy:
                 fa = float(r.get("fixed_assets") or 0)
                 capital_yi = round(fa / 1e8, 2) if fa > 0 else 0.0
 
-            ebit_yi = magic.get("ebit_yi")
-            if ebit_yi is None:
-                raw_ebit = r.get("ebit")
-                ebit_yi = round(raw_ebit / 1e8, 1) if raw_ebit and raw_ebit > 0 else 0.0
+            # 强制用该季 EBIT (不取 magic 的全年 EBIT), 保持 4 季大表"周期分析"语义
+            raw_ebit = r.get("ebit")
+            ebit_yi = round(raw_ebit / 1e8, 1) if raw_ebit and raw_ebit > 0 else 0.0
+            # 如果 magic 给了更好的 ebit (理论无, 但保底), 用 magic
+            if ebit_yi == 0:
+                ebit_yi = magic.get("ebit_yi") or 0.0
 
             quarterly.append({
                 "quarter":      q_str[:10],
@@ -1121,16 +1148,17 @@ class FinanceStrategy:
                 "ebit_yi":      ebit_yi,
                 "revenue_yi":   rev_yi,
                 "netprofit_yi": np_yi,
-                "mc_yi":        magic.get("market_cap_yi") or (ctx.market_cap_yi or 0),
+                # 2026-09-10 修 4 季大表市值 bug: 用季末市值, 不用今日市值
+                "mc_yi":        q_mc_yi,
                 "netdebt_yi":   magic.get("netdebt_yi") or 0.0,
-                "ev_yi":        magic.get("ev_yi") or 0.0,
+                "ev_yi":        round(q_mc_yi + (magic.get("netdebt_yi") or 0.0), 1),
                 "capital_yi":   capital_yi,
                 "roc":          magic.get("roc"),
                 "ey":           magic.get("ey"),
-                "peg":          peg_out.get("PEG_真实"),
-                "fwd_pe":       peg_out.get("Forward PE"),
-                "g":            peg_out.get("g_CAGR"),
-                "peg_verdict":  peg_out.get("PEG_判定"),
+                "peg":          peg_out.get("peg"),
+                "fwd_pe":       peg_out.get("fwd_pe"),
+                "g":            peg_out.get("g"),
+                "peg_verdict":  peg_out.get("verdict"),
                 "L_r8":         (dcf_out.get("r_8%")  or {}).get("L_隐含(亿)"),
                 "L_r10":        (dcf_out.get("r_10%") or {}).get("L_隐含(亿)"),
                 "L_r12":        (dcf_out.get("r_12%") or {}).get("L_隐含(亿)"),
@@ -1141,8 +1169,9 @@ class FinanceStrategy:
         latest_magic = {}
         if financials and market_cap_wan > 0:
             try:
-                latest_magic = calc_magic_one_day(
-                    [financials[-1]], str(financials[-1].get("end_date", "")), market_cap_wan
+                # 2026-09-09 修: 传完整 financials, 让 _ttm_ebit 找 12-31 全年 (与 /t-roc-ey 一致)
+                latest_magic = compute_magic_one_day(
+                    financials, str(financials[-1].get("end_date", "")), market_cap_wan
                 ) or {}
             except Exception:
                 pass
@@ -1152,20 +1181,20 @@ class FinanceStrategy:
             "quarterly": quarterly,
             "score":   0.0,
             "signals": [
-                f"PEG {peg_out.get('PEG_真实', '—')}",
-                f"DCF r=10% L={((dcf_out.get('r_10%') or {}).get('L_隐含(亿)', '—'))}",
+                f"PEG {peg_out.get('peg', '—')}",
+                f"DCF r=10% L={dcf_out.get('L_r10', '—')}",
                 f"ROC {latest_q.get('roc', '—')}% | EY {latest_q.get('ey', '—')}%",
             ],
-            "summary": f"PEG {peg_out.get('PEG_真实','—')} | ROC {latest_q.get('roc','—')}% | EY {latest_q.get('ey','—')}%",
+            "summary": f"PEG {peg_out.get('peg','—')} | ROC {latest_q.get('roc','—')}% | EY {latest_q.get('ey','—')}%",
             # 顶层字段 (兼容原 valuation_data 读法，供 _section_peg/_section_dcf/_compute_fundamental_4d)
-            "PEG_真实":  peg_out.get("PEG_真实"),
-            "fwd_pe":    peg_out.get("Forward PE"),
-            "g":         peg_out.get("g_CAGR"),
-            "verdict":   peg_out.get("PEG_判定"),
-            "L_r8":      (dcf_out.get("r_8%")  or {}).get("L_隐含(亿)"),
-            "L_r10":     (dcf_out.get("r_10%") or {}).get("L_隐含(亿)"),
-            "L_r12":     (dcf_out.get("r_12%") or {}).get("L_隐含(亿)"),
-            "L_E3_r10":  (dcf_out.get("r_10%") or {}).get("L/E3(每share)"),
+            "PEG_真实":  peg_out.get("peg"),
+            "fwd_pe":    peg_out.get("fwd_pe"),
+            "g":         peg_out.get("g"),
+            "verdict":   peg_out.get("verdict"),
+            "L_r8":      dcf_out.get("L_r8"),
+            "L_r10":     dcf_out.get("L_r10"),
+            "L_r12":     dcf_out.get("L_r12"),
+            "L_E3_r10":  dcf_out.get("L_E3_r10"),
             "L_achievable": dcf_out.get("L_achievable", ""),
             "roc":       latest_magic.get("roc"),
             "ey":        latest_magic.get("ey"),
@@ -1247,64 +1276,76 @@ def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_exit_signals(ctx: RawContext, raw: dict) -> dict:
-    """退场信号 9 项 (PEG + L_E3 + MA120 + 板块 + 缠论)"""
-    from tools.factors.registry import FactorRegistry
-    reg = FactorRegistry()
-    exit_factor = reg.get("exit_signals")
-    if exit_factor is None:
-        return {}
+    """退场信号 9 项 (PEG + L_E3 + MA120 + 板块 + 缠论)
+
+    2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
+    """
+    from tools.factors.factor_risk import compute_exit_signals
     try:
-        out = exit_factor(df=None, fflow=ctx.fflow,
-                          eps_table=ctx.eps_table,
-                          current_price=ctx.current_price,
-                          sector_ma20_dev=-22,
-                          chan_signals=ctx.chan_result)
+        out = compute_exit_signals(
+            fflow=ctx.fflow,
+            eps_table=ctx.eps_table,
+            current_price=ctx.current_price,
+            sector_ma20_dev=-22,
+            chan_signals=ctx.chan_result,
+        )
         return out if isinstance(out, dict) else {}
     except Exception as e:
         return {"error": str(e)}
 
 
 def _derive_stop_profit_loss(ctx: RawContext, raw: dict) -> dict:
-    """止盈 3 层 + 止损 4 档 (基于中枢上下沿)"""
-    from tools.factors.registry import FactorRegistry
-    reg = FactorRegistry()
-    spl_factor = reg.get("stop_profit_loss")
-    if spl_factor is None:
-        return {}
+    """止盈 3 层 + 止损 4 档 (基于中枢上下沿)
+
+    2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
+    """
+    from tools.factors.factor_risk import compute_stop_profit_loss
     try:
-        out = spl_factor(df=None, price=ctx.current_price, factor=ctx.chan_result)
+        out = compute_stop_profit_loss(
+            price=ctx.current_price,
+            chan_signals=ctx.chan_result,
+        )
         return out if isinstance(out, dict) else {}
     except Exception as e:
         return {"error": str(e)}
 
 
 def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
-    """三层仓位 (日线中枢+缠论+fflow+PEG)"""
-    from tools.factors.registry import FactorRegistry
-    reg = FactorRegistry()
-    pos_factor = reg.get("three_layer_position")
-    if pos_factor is None:
-        return {}
+    """三层仓位 (日线中枢+缠论+fflow+PEG)
+
+    2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
+    """
+    from tools.factors.factor_basic import compute_three_layer_position
     try:
         res_d = ctx.chan_result.get("daily") or {}
-        out = pos_factor(df=None, price=ctx.current_price, chan_d=res_d,
-                         fflow=ctx.fflow, peg=0.76, factor=ctx.chan_result)
+        out = compute_three_layer_position(
+            price=ctx.current_price,
+            chan_d=res_d,
+            fflow=ctx.fflow,
+            peg=0.76,
+            chan_signals=ctx.chan_result,
+        )
         return out if isinstance(out, dict) else {}
     except Exception as e:
         return {"error": str(e)}
 
 
 def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
-    """监控触发点 5 类 14 子 (缠论背驰+止跌+fflow+事件)"""
-    from tools.factors.registry import FactorRegistry
-    reg = FactorRegistry()
-    mon_factor = reg.get("monitor_triggers")
-    if mon_factor is None:
-        return {}
+    """监控触发点 5 类 14 子 (缠论背驰+止跌+fflow+事件)
+
+    2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
+    """
+    from tools.factors.factor_risk import compute_monitor_triggers
     try:
         res_d = ctx.chan_result.get("daily") or {}
-        out = mon_factor(df=None, price=ctx.current_price, chan_d=res_d,
-                         fflow=ctx.fflow, events=[], factor=ctx.chan_result)
+        out = compute_monitor_triggers(
+            price=ctx.current_price,
+            chan_d=res_d,
+            fflow=ctx.fflow,
+            events=[],
+            code="",
+            chan_signals=ctx.chan_result,
+        )
         return out if isinstance(out, dict) else {}
     except Exception as e:
         return {"error": str(e)}
@@ -1337,15 +1378,10 @@ PHASE2_FUNCTIONS = [
     _derive_monitor_triggers,
 ]
 
-# Phase1 权重 (用于 total_score 加权)
-# finance (FinanceStrategy) weight=0, 不参与 total_score
-_STRATEGY_WEIGHTS: dict[str, float] = {
-    "chan":      0.20,
-    "wyckoff":   0.20,
-    "smc":       0.10,
-    "obv":       0.10,
-    "fflow":     0.10,
-}
+# 2026-09-09 删: 7 strategy 权重 (chan 0.20 / wyckoff 0.20 / smc 0.10 / obv 0.10 / fflow 0.10)
+# 决策全部走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再加权汇总.
+# 保留空 dict 防止旧 import KeyError.
+_STRATEGY_WEIGHTS: dict[str, float] = {}
 
 # 向后兼容别名 (旧代码 import PHASE1_STRATEGIES / PHASE2_STRATEGIES)
 PHASE1_STRATEGIES = PHASE1_STRATEGY_CLASSES

@@ -67,13 +67,10 @@ KEY_DATA_PATTERNS = {
     "止盈价": r"\+20%\s*\|\s*¥[\d.]+|当前\s*→\s*\+20%.*¥[\d.]+",
     "止损价": r"-10%.*¥[\d.]+",
     "评级": r"(🥇|🥈|🥉|⚠️|❌).*[重仓|标准|轻仓|观察|不买]",
-    # ===== 5 方法 × 3 周期 矩阵 必填 (匹配 schema 真源: tools/render/report_schema.py, id=method_matrix) =====
-    "因子矩阵标题": r"##\s*🎯\s*5\s*方法\s*×\s*3\s*周期",
-    # render 真实输出: `**场景**: C (震荡观望) | **共振数**: 5 重 | **行动**: ⬜ 震荡观望`
-    "5方法场景": r"\*\*场景\*\*[：:]\s*[ABCDEabcde]\s*[\(\uff08]",
-    "5方法共振数": r"\*\*共振数\*\*[：:]\s*\d+\s*重",
-    "5方法行动": r"\*\*行动\*\*[：:]\s*(🥇|🥈|🥉|🟢|🟡|⬜|❌)",
-    "5方法总分": r"(5\s*方法\s*总分|总分).{0,30}[\-\d.]+",  # "5方法总分 < 1.5" 或 "总分 -0.1"
+    # ===== 因子 × 3 周期 矩阵 必填 (2026-09-09 改: 原 5 方法 → 因子, 走 缠论 等权投票) =====
+    "因子矩阵标题": r"##\s*🎯\s*因子\s*×\s*3\s*周期",
+    # 删: "5方法场景/共振数/行动/总分" 4 个 pattern (2026-09-09 删: 决策走 缠论 1买/2买/3买/1卖/2卖/3卖)
+    # 矩阵内容由 factor_matrix._composite_verdict 5 类等权投票生成 (action: 🥇/🥈/🥉/🟠/🟡)
 }
 
 
@@ -194,17 +191,10 @@ def lint_report(md_path: str) -> dict[str, Any]:
                 )
         except Exception:
             pass
-    # ===== 2026-07-24 新增: 5 方法矩阵 必填校验 (硬保证稳定显示) =====
+    # ===== 2026-09-09 改: 因子 × 3 周期 矩阵 必填校验 (原 5 方法 → 因子, 删 4 个 weight/total_score warning) =====
     if not key_data["因子矩阵标题"]:
-        warnings.append("🔴 缺 '5 方法 × 3 周期 矩阵' section 标题 (硬保证失败)")
-    if not key_data["5方法场景"]:
-        warnings.append("🔴 缺 '场景' (A-E) (5 方法矩阵必填)")
-    if not key_data["5方法共振数"]:
-        warnings.append("🔴 缺 '共振数' (数字 + '重') (5 方法矩阵必填)")
-    if not key_data["5方法行动"]:
-        warnings.append("🔴 缺 '行动' (🥇/🥈/🥉/❌) (5 方法矩阵必填)")
-    if not key_data["5方法总分"]:
-        warnings.append("🔴 缺 '总分' 字段 (跨周期公式必填)")
+        warnings.append("🔴 缺 '因子 × 3 周期 矩阵' section 标题 (硬保证失败)")
+    # 删: 4 个 '5方法场景/共振数/行动/总分' warning (2026-09-09 删: 决策走 缠论, 不再按 5 方法加权)
 
     # === 升级: 占位符检测 (2026-07-22 加, 防止"数据丢"漏检) ===
     # 2026-07-23 加: 3 个特定占位符 (sync_watchlist_fresh 之前埋的坑, 实算后必须消失)
@@ -265,9 +255,9 @@ def lint_report(md_path: str) -> dict[str, Any]:
                 f"表格会被 python-markdown 吞掉 (改成 `**{title}**\\n\\n| ...`)"
             )
 
-    # === 2026-07-25 新增: 5 方法分析 section 必须有表格 ===
-    # 5 方法分析的 3 个子 section (周线/日线/60分) 各应有缠论详情表 + 走段表
-    m_5method = re.search(r"## 🔍 5 方法分析(.*?)(?=\n## |\Z)", content, re.DOTALL)
+    # === 2026-09-09 改: 因子详情 section 必须有表格 (原 5 方法分析 → 因子详情) ===
+    # 因子详情的 3 个子 section (周线/日线/60分) 各应有缠论详情表 + 走段表
+    m_5method = re.search(r"## 🔍 因子详情(.*?)(?=\n## |\Z)", content, re.DOTALL)
     if m_5method:
         section_5m = m_5method.group(1)
         # 数子 section
@@ -278,7 +268,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
             expected = sub_count * 2  # 至少缠论详情 + 最近走段
             if len(tables) < expected:
                 warnings.append(
-                    f"🔴 5 方法分析 {sub_count} 子 section, "
+                    f"🔴 因子详情 {sub_count} 子 section, "
                     f"但只有 {len(tables)} 个表格 (期望 ≥ {expected} 个: "
                     f"每子 section 至少缠论详情 + 最近走段)"
                 )
@@ -349,10 +339,10 @@ def lint_report(md_path: str) -> dict[str, Any]:
 
         if supp_idx >= 0 and peg_idx >= 0 and peg_idx < supp_idx:
             warnings.append(
-                f"🔴 顺序违反铁律: PEG (第{peg_idx+1}个) 在 5方法详情 (第{supp_idx+1}个) 之前 — CLAUDE.md 5️⃣ 必须在 2️⃣ 之后"
+                f"🔴 顺序违反铁律: PEG (第{peg_idx+1}个) 在 因子详情 (第{supp_idx+1}个) 之前 — CLAUDE.md 5️⃣ 必须在 2️⃣ 之后"
             )
         if matrix_idx < 0:
-            warnings.append("🔴 5 方法 × 3 周期 矩阵 section 缺失 (id:method_matrix)")
+            warnings.append("🔴 因子 × 3 周期 矩阵 section 缺失 (id:method_matrix)")
     except ImportError:
         pass
 

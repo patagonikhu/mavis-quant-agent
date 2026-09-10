@@ -12,59 +12,10 @@
 from typing import Optional
 
 
-def compute_fundamental_4d(val: dict, industry: str = "未知") -> dict:
-    """基本面 4 维评分: 估值 / 盈利 / 增长 / 安全
-
-    业务规则 (Mavis 投资纪律):
-    - 估值 (PEG): <1.0=75 / <1.5=50 / >=1.5=25
-    - 盈利 (ROC): >25%=75 / >10%=50 / <=10%=25
-    - 增长 (EY): >8%=75 / >5%=50 / <=5%=25
-    - 安全 (行业): 50 占位, 等 LLM 细化
-
-    Args:
-        val: FinanceStrategy 输出, 含 PEG_真实/roc/ey 字段
-        industry: 行业名, 写入 safety 维度
-
-    Returns:
-        dict 含 valuation/profitability/growth/safety (各 {score, comment}) + total_score + dims
-    """
-    dims = {}
-    # 1) 估值 (PEG)
-    peg = val.get("PEG_真实")
-    if isinstance(peg, (int, float)) and peg < 1.0:
-        dims["valuation"] = {"score": 75, "comment": f"✅ PEG {peg} (Lynch 买入区)"}
-    elif isinstance(peg, (int, float)) and peg < 1.5:
-        dims["valuation"] = {"score": 50, "comment": f"🟡 PEG {peg} (合理)"}
-    else:
-        dims["valuation"] = {"score": 25, "comment": f"🟠 PEG {peg or '—'} (偏贵)"}
-    # 2) 盈利 (ROC)
-    roc = val.get("roc")
-    if isinstance(roc, (int, float)) and roc > 25:
-        dims["profitability"] = {"score": 75, "comment": f"✅ ROC {roc}% (>25% 优秀)"}
-    elif isinstance(roc, (int, float)) and roc > 10:
-        dims["profitability"] = {"score": 50, "comment": f"🟡 ROC {roc}%"}
-    else:
-        dims["profitability"] = {"score": 25, "comment": f"⚠️ ROC {roc or '—'}"}
-    # 3) 增长 (EY)
-    ey = val.get("ey")
-    if isinstance(ey, (int, float)) and ey > 8:
-        dims["growth"] = {"score": 75, "comment": f"✅ EY {ey}% (>8% 便宜)"}
-    elif isinstance(ey, (int, float)) and ey > 5:
-        dims["growth"] = {"score": 50, "comment": f"🟡 EY {ey}%"}
-    else:
-        dims["growth"] = {"score": 25, "comment": f"⚠️ EY {ey or '—'}"}
-    # 4) 安全 (行业)
-    dims["safety"] = {"score": 50, "comment": f"⚠️ 行业 {industry} (待 LLM 细化)"}
-    # 总分 (4 维平均)
-    total = sum(d["score"] for d in dims.values()) // 4
-    return {
-        "valuation": dims["valuation"],
-        "profitability": dims["profitability"],
-        "growth": dims["growth"],
-        "safety": dims["safety"],
-        "total_score": total,
-        "dims": dims,
-    }
+# 2026-09-09 删: compute_fundamental_4d (基本面 4 维评分, 死代码)
+# 原因: 4 维 (估值/盈利/成长/安全) 走 PEG/ROC/EY/行业, 已被 ValuationStrategy (PEG+DCF+Magic ROC/EY v6.2.5) 取代
+# 决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 估值双指标 (PEG/DCF L)
+# 报告 section 整个删掉, 函数也删
 
 
 def compute_stop_pl(kline: list, current_price: Optional[float] = None) -> dict:

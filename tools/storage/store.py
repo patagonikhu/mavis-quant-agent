@@ -100,12 +100,18 @@ _INDEX_NAMES = {
 
 
 def _to_ts_code(code: str) -> str:
-    """000725 → 000725.SZ / 600000 → 600000.SH / 000300 → 000300.SH (指数优先)"""
+    """000725 → 000725.SZ / 600000 → 600000.SH / 920045 → 920045.BJ (北交所) / 000300 → 000300.SH (指数优先)
+
+    2026-09-09 修: 加 .BJ 后缀映射 (北交所 920xxx 代码), 之前错误映射成 .SH 导致 K 线查不到
+    """
     if "." in code:
         return code
     c = code.strip()
     if c in _INDEX_SUFFIX:
         return f"{c}.{_INDEX_SUFFIX[c]}"
+    # 北交所代码段: 920xxx / 430xxx (老三板转板); 老三板 8xxxxx 已退市不处理
+    if c.startswith(("920", "430", "831", "832", "833", "834", "835", "836", "837", "838", "839")):
+        return f"{c}.BJ"
     if c.startswith(("0", "3")):
         return f"{c}.SZ"
     if c.startswith(("6", "9")):
@@ -1379,6 +1385,36 @@ class DataStore:
             return {}
 
     @classmethod
+    def load_all_daily_full(cls, years: float = 0.5) -> "pd.DataFrame":
+        """全市场 K 线 1 次 SQL, 返全列 (含 pct_chg / amount / pre_close)
+
+        替代 sector_breakout_scan.py 的 pd.read_parquet
+        Returns:
+            DataFrame: ts_code, trade_date, open, high, low, close, pre_close, vol, amount, pct_chg
+        """
+        try:
+            import duckdb
+            import pandas as pd
+            files = list(HISTORY_DIR.glob("*.parquet"))
+            if not files:
+                return pd.DataFrame()
+            sql = f"""
+                WITH max_d AS (
+                    SELECT MAX(STRPTIME(trade_date, '%Y%m%d')) AS d
+                    FROM read_parquet('{HISTORY_DIR}/*.parquet', union_by_name=true)
+                )
+                SELECT d.ts_code, d.trade_date, d.open, d.high, d.low, d.close,
+                       d.pre_close, d.vol, d.amount, d.pct_chg
+                FROM read_parquet('{HISTORY_DIR}/*.parquet', union_by_name=true) d, max_d m
+                WHERE STRPTIME(d.trade_date, '%Y%m%d') >= m.d - INTERVAL '{years} year'
+                ORDER BY d.ts_code, d.trade_date
+            """
+            return duckdb.execute(sql).df()
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    @classmethod
     def load_all_daily_basic(cls) -> "pd.DataFrame":
         """全市场 daily_basic 1 次 SQL (替代 backfill_magic_cache / bb_obv_scan 散落)
 
@@ -1400,7 +1436,7 @@ class DataStore:
 
     @classmethod
     def load_financials_period(cls, period: str) -> "pd.DataFrame":
-        """1 季度全市场财务 (替代 magic_top20 散落)
+        """1 季度全市场财务 (替代 roc_ey_top20 散落)
 
         Args:
             period: '2025Q4' / '2026Q2' 格式 (file stem)
@@ -1428,15 +1464,15 @@ class DataStore:
         """5+ 季度全市场财务 (替代 backfill_magic_cache 散落)
 
         Returns:
-            DataFrame: 5 季度合并, ~27745 行
+            DataFrame: 5 季度合并, ~27745 行, union_by_name=true 解决 schema 不齐
         """
         try:
             import duckdb
             import pandas as pd
             if not FIN_DIR.exists():
                 return pd.DataFrame()
-            return _conn().execute(
-                f"SELECT * FROM read_parquet('{FIN_DIR}/*.parquet')"
+            return duckdb.execute(
+                f"SELECT * FROM read_parquet('{FIN_DIR}/*.parquet', union_by_name=true)"
             ).df()
         except Exception:
             import pandas as pd
@@ -1464,6 +1500,94 @@ class DataStore:
         except Exception:
             import pandas as pd
             return pd.DataFrame()
+
+    @classmethod
+    def get_market_cap_at_date(cls, date_str: str) -> dict[str, float]:
+        """某日全市场市值 (单位: 万元, 跟 Tushare daily_basic 一致)
+
+        替代 backtest_roc_ey.py:105 的 duckdb read_parquet
+        Args:
+            date_str: 'YYYYMMDD' 格式
+        Returns:
+            dict[code_6digit, total_mv_yi]  (key 不带 .SH/.SZ 后缀)
+        """
+        try:
+            import pandas as pd
+            df = cls.load_all_daily_basic()
+            if df.empty:
+                return {}
+            df = df[df["trade_date"] == date_str]
+            if df.empty:
+                return {}
+            return dict(zip(
+                df["ts_code"].astype(str).str.split(".").str[0],
+                df["total_mv"].astype(float),
+            ))
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame() if False else {}
+
+    @classmethod
+    def get_stk_factor_latest(cls) -> "pd.DataFrame":
+        """每只票最新一日的 stk_factor (PE/PE_TTM/close/total_mv)
+
+        替代 earnings_blowout_scan.py:78 的 duckdb read_parquet
+        Returns:
+            DataFrame: columns = [ts_code, trade_date, close, pe, pe_ttm, total_mv]
+            1 行/票, 取该票 trade_date 最大那日
+        """
+        try:
+            import pandas as pd
+            df = cls.load_all_daily_basic()
+            if df.empty:
+                return pd.DataFrame()
+            idx = df.groupby("ts_code")["trade_date"].idxmax()
+            return df.loc[idx, ["ts_code", "trade_date", "close", "pe", "pe_ttm", "total_mv"]].reset_index(drop=True)
+        except Exception:
+            import pandas as pd
+            return pd.DataFrame()
+
+    @classmethod
+    def get_market_cap_near_dates(cls, code: str, end_dates: list[str], days_after: int = 30) -> dict[str, float]:
+        """单只票: 每个 end_date 找其后 [0, days_after] 内最近一个 trade_date 的 total_mv (亿)
+
+        用于 4 季大表 (FinanceStrategy) — 季报披露后市场估值, 不是 end_date 当天 (A 股季末可能停牌)
+        Args:
+            code: 6 位代码 (例 '300750')
+            end_dates: ['20250630', '20251231', '20260331', '20260630'] 格式
+            days_after: 找 [end_date, end_date+days_after] 区间, 默认 30 天
+        Returns:
+            {end_date_str: mc_yi}  找不到返 0.0
+        """
+        try:
+            import pandas as pd
+            ts_code = _to_ts_code(code)
+            df = cls.load_all_daily_basic()
+            if df.empty or not end_dates:
+                return {ed: 0.0 for ed in end_dates}
+            df = df[df["ts_code"] == ts_code][["trade_date", "total_mv"]].copy()
+            if df.empty:
+                return {ed: 0.0 for ed in end_dates}
+            out = {}
+            for ed in end_dates:
+                # 找 [ed, ed+days_after] 内最大 trade_date
+                ed_int = int(ed[:8])
+                upper_int = ed_int + days_after
+                # trade_date 是字符串 '20250630', 转 int 比较
+                df["td_int"] = df["trade_date"].astype(int)
+                window = df[(df["td_int"] >= ed_int) & (df["td_int"] <= upper_int)]
+                if window.empty:
+                    # 退路: 取 <= end_date 的最近一天 (市场还没看到季报, 用季末前)
+                    window = df[df["td_int"] <= ed_int].tail(1)
+                if window.empty:
+                    out[ed] = 0.0
+                else:
+                    # 取窗口内 trade_date 最大那行
+                    best = window.loc[window["td_int"].idxmax()]
+                    out[ed] = float(best["total_mv"]) / 1e4  # 万 → 亿
+            return out
+        except Exception:
+            return {ed: 0.0 for ed in end_dates}
 
     @classmethod
     def watchlist_codes(cls) -> list[str]:
@@ -1516,7 +1640,7 @@ class DataStore:
                           list_type: str = "自选", notes: str = "") -> bool:
         """原子加股票到 watchlist (跳过已存在)
 
-        替代 magic_top20.py:353 _add_to_watchlist 散落实现
+        替代 roc_ey_top20.py:353 _add_to_watchlist 散落实现 (原 magic_top20)
         """
         d = cls.load_watchlist()
         existing = {s["code"] for s in d.get("stocks", [])}

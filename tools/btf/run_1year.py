@@ -1,7 +1,7 @@
 """
-tools/btf/run_1year.py — 跑 5 策略 1 年回测, 出 docs/backtest-magic-formula.md
+tools/btf/run_1year.py — 跑 5 策略 1 年回测, 出 docs/backtest-roc-ey-formula.md (2026-09-09 改自 magic)
 
-5 策略 (跟 magic_top20 配套):
+5 策略 (跟 roc_ey_top20 配套, 原 magic_top20):
   - EY>8% (Magic 便宜)
   - ROC>25% (Magic 好公司)
   - ROC>25% + EY>8% (双优, 核心)
@@ -176,7 +176,7 @@ def main():
     parser.add_argument("--top",   type=int, default=20, help="每策略选 top N 票")
     parser.add_argument("--hold",  type=int, default=20, help="持仓天数")
     parser.add_argument("--rebalance", action="store_true", help="每天调仓 (默认否, 长持)")
-    parser.add_argument("--out",   default="docs/backtest-magic-formula.md")
+    parser.add_argument("--out",   default="docs/backtest-roc-ey-formula.md")
     args = parser.parse_args()
 
     rebalance_str = "每天调仓" if args.rebalance else "长持 (选 1 次持 248 天)"

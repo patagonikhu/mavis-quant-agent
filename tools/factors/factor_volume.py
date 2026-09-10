@@ -1,35 +1,24 @@
 """
-volume/price_fflow.py - fflow + OBV 量价因子 (纯计算, 无网络请求)
+tools/factors/factor_volume.py — 量能 factor 库 (纯函数, 2026-09-09 统一)
 
-**2026-08-17 拆分**: 之前 price_fflow_factor 一个函数混 fflow + OBV + 双判定, 容易让
-调用方搞混. 现在拆成两个独立函数:
+合并来源:
+  - tools/factors/volume/price_fflow.py (fflow_factor + obv_factor)
 
-- fflow_factor(): 只算 Tushare money_flow 主力净流入, 5 档判定
-- obv_factor(): 只算经典 Granville 1963 OBV, 含 5 类信号 + 60 日段背离
-
-双判定同向/矛盾逻辑在 analysis_engine 聚合层 (FflowStrategy.analyze) 算, 不再混在
-factor 函数里. 这样:
-
-  1. 因子库职责单一, fflow 和 OBV 各自纯计算
-  2. 聚合在 strategy 层做, 容易测试和调权
-  3. 出报告时 render 层可独立读 fflow_result / obv_result
-
-输入数据: moneyflow_list (dump['tushare']['money_flow']) / closes+vols (K线) —
-          都由 sync_watchlist_fresh.py 预拉, factor 层只做计算。
+公开 API (2 个):
+  - compute_fflow_factor  fflow 主力资金流因子 (Tushare money_flow)
+  - compute_obv_factor     OBV 因子 (经典 Granville 1963)
 """
-from pathlib import Path
-import sys
+from __future__ import annotations
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 
-# ============================================================
-# fflow (主力资金流) 因子
-# ============================================================
-
-def fflow_factor(code: str, moneyflow_list=None, dates=None, asof=None) -> dict:
+def compute_fflow_factor(code: str, moneyflow_list=None, dates=None, asof=None) -> dict:
     """fflow 主力资金流因子 — 纯计算, 无网络
 
     输入: Tushare money_flow (dump 预拉)
@@ -123,11 +112,7 @@ def fflow_factor(code: str, moneyflow_list=None, dates=None, asof=None) -> dict:
     }
 
 
-# ============================================================
-# OBV (经典 Granville 1963) 因子
-# ============================================================
-
-def obv_factor(closes, vols, dates=None, asof=None) -> dict:
+def compute_obv_factor(closes, vols, dates=None, asof=None) -> dict:
     """OBV 因子 — 经典 Granville 1963 累计 + 5 类信号 + 60 日段背离
 
     纯 K 线计算, 无网络。累计规则:
@@ -150,7 +135,7 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
           - source: "OBV 派生 (K线)" (因为 fflow 走的是 Tushare, OBV 走的是 K线)
           - asof: "YYYYMMDD" / "latest"
     """
-    # asof 切片 (跟 fflow_factor 同样的处理)
+    # asof 切片 (跟 compute_fflow_factor 同样的处理)
     if asof and dates and len(dates) == len(closes):
         from tools.factors.utils import normalize_asof
         asof_norm = normalize_asof(asof)
@@ -162,7 +147,7 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
                 vols   = vols[:last]
                 dates  = dates[:last]
 
-    # 数据不足: 至少要 2 根 K 线算 OBV, 20 根算 OBV MA20
+    # 数据不足
     if not closes or len(closes) < 2:
         return {
             "score": 0, "verdict": "无数据", "signals": [],
@@ -209,4 +194,3 @@ def obv_factor(closes, vols, dates=None, asof=None) -> dict:
         "source": "OBV 派生 (K线)",
         "asof": asof or "latest",
     }
-

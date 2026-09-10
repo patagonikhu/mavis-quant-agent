@@ -44,217 +44,11 @@ _PROJECT_CFG = _load_config()
 
 
 # ============================================================
-# 1. 4 维基本面评估
+# 2026-09-09 删: compute_fundamental_score (4 维基本面评估, 死代码)
+# 原因: 4 维 (估值/盈利/成长/安全) 走 PEG/ROC/EY/行业, 已被 ValuationStrategy (PEG+DCF+Magic ROC/EY v6.2.5) 取代
+# 决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 估值双指标 (PEG/DCF L)
+# 报告 section 整个删掉, 函数也删 (原 200 行)
 # ============================================================
-
-def compute_fundamental_score(
-    eps_table: list[dict],
-    current_price: Optional[float] = None,
-    pe_ttm: Optional[float] = None,
-) -> dict:
-    """
-    4 维基本面评估 (估值/盈利/成长/安全)
-
-    数据需求:
-      - eps_table: [{"year": "2025A", "eps": float, "net_profit_yi": float,
-                    "revenue_yi": float, "roe": float}, ...]
-      - current_price: 用于算 PE = price / E1
-      - pe_ttm: 已有的 PE (优先用)
-
-    Returns:
-        {
-            "valuation": {"score": 0-100, "comment": str, "data": str},
-            "profitability": {"score": 0-100, "comment": str, "data": str},
-            "growth": {"score": 0-100, "comment": str, "data": str},
-            "safety": {"score": 0-100, "comment": str, "data": str},
-            "total_score": 0-100,
-            "summary": str,
-            "missing": list[str],  # 哪些维度数据缺失
-        }
-    """
-    result = {
-        "valuation": {"score": 50, "comment": "数据缺失", "data": "—"},
-        "profitability": {"score": 50, "comment": "数据缺失", "data": "—"},
-        "growth": {"score": 50, "comment": "数据缺失", "data": "—"},
-        "safety": {"score": 50, "comment": "数据缺失", "data": "—"},
-        "total_score": 50,
-        "summary": "数据不足, 综合分 50 (中性)",
-        "missing": [],
-    }
-
-    if not eps_table:
-        result["missing"] = ["全部财务数据"]
-        return result
-
-    # 找最新 actual (A) 和 estimate (E) 数据
-    actuals = [r for r in eps_table if r.get("year_mark") == "A"]
-    estimates = [r for r in eps_table if r.get("year_mark") == "E"]
-
-    latest_a = actuals[-1] if actuals else None
-    prev_a = actuals[-2] if len(actuals) >= 2 else None
-    latest_e = estimates[0] if estimates else None
-
-    # ========== 1. 估值评分 (用 PE) ==========
-    pe = pe_ttm
-    if not pe or pe <= 0:
-        # 算 PE = price / E0
-        if current_price and latest_a and latest_a.get("eps", 0) > 0:
-            pe = current_price / latest_a["eps"]
-        elif current_price and latest_e and latest_e.get("eps", 0) > 0:
-            pe = current_price / latest_e["eps"]
-
-    if pe and pe > 0:
-        if pe < 15:
-            val_score, val_comment = 90, f"PE(TTM)={pe:.1f} 估值低估"
-        elif pe < 25:
-            val_score, val_comment = 70, f"PE(TTM)={pe:.1f} 估值合理"
-        elif pe < 40:
-            val_score, val_comment = 45, f"PE(TTM)={pe:.1f} 估值偏高"
-        else:
-            val_score, val_comment = 20, f"PE(TTM)={pe:.1f} 估值高估"
-        result["valuation"] = {
-            "score": val_score,
-            "comment": val_comment,
-            "data": f"PE={pe:.1f}x",
-        }
-    else:
-        result["missing"].append("PE")
-        result["valuation"]["comment"] = "PE 数据缺失"
-
-    # ========== 2. 盈利能力评分 (用 ROE + 净利率) ==========
-    if latest_a and latest_a.get("roe", 0) > 0:
-        roe = latest_a["roe"]
-        nm = 0
-        if latest_a.get("net_profit_yi", 0) > 0 and latest_a.get("revenue_yi", 0) > 0:
-            nm = (latest_a["net_profit_yi"] / latest_a["revenue_yi"]) * 100
-
-        if roe >= 20:
-            prof_score = _PROJECT_CFG["scores"]["profitability"]["tier_1"]
-        elif roe >= 15:
-            prof_score = _PROJECT_CFG["scores"]["profitability"]["tier_2"]
-        elif roe >= 10:
-            prof_score = _PROJECT_CFG["scores"]["profitability"]["tier_3"]
-        elif roe >= 5:
-            prof_score = _PROJECT_CFG["scores"]["profitability"]["tier_4"]
-        else:
-            prof_score = _PROJECT_CFG["scores"]["profitability"]["tier_5"]
-
-        if nm >= 20:
-            prof_score = min(100, prof_score + 10)
-        elif nm < 5:
-            prof_score = max(0, prof_score - 15)
-
-        result["profitability"] = {
-            "score": prof_score,
-            "comment": f"ROE={roe:.1f}% 净利率={nm:.1f}%",
-            "data": f"ROE={roe:.1f}%, 净利率={nm:.1f}%",
-        }
-    else:
-        result["missing"].append("ROE")
-        result["profitability"]["comment"] = "ROE 数据缺失"
-
-    # ========== 3. 成长性评分 (用 YoY) ==========
-    if latest_a and prev_a:
-        rev_yoy = 0
-        np_yoy = 0
-        if prev_a.get("revenue_yi", 0) > 0:
-            rev_yoy = (latest_a["revenue_yi"] - prev_a["revenue_yi"]) / prev_a["revenue_yi"] * 100
-        if prev_a.get("net_profit_yi", 0) > 0:
-            np_yoy = (latest_a["net_profit_yi"] - prev_a["net_profit_yi"]) / prev_a["net_profit_yi"] * 100
-
-        avg_growth = (rev_yoy + np_yoy) / 2
-        if avg_growth >= 30:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["explosive"]
-        elif avg_growth >= 20:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["strong"]
-        elif avg_growth >= 10:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["moderate"]
-        elif avg_growth >= 0:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["weak"]
-        else:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["decline"]
-
-        result["growth"] = {
-            "score": grow_score,
-            "comment": f"营收 YoY={rev_yoy:+.1f}%, 净利 YoY={np_yoy:+.1f}%",
-            "data": f"营收 +{rev_yoy:.1f}%, 净利 +{np_yoy:.1f}%",
-        }
-    elif latest_e and latest_a:
-        # 用 estimate vs actual 算预期增速
-        rev_growth = 0
-        if latest_a.get("revenue_yi", 0) > 0:
-            rev_growth = (latest_e["revenue_yi"] - latest_a["revenue_yi"]) / latest_a["revenue_yi"] * 100
-        np_growth = 0
-        if latest_a.get("net_profit_yi", 0) > 0:
-            np_growth = (latest_e["net_profit_yi"] - latest_a["net_profit_yi"]) / latest_a["net_profit_yi"] * 100
-
-        avg_growth = (rev_growth + np_growth) / 2
-        if avg_growth >= 30:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["explosive"]
-        elif avg_growth >= 20:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["strong"]
-        elif avg_growth >= 10:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["moderate"]
-        else:
-            grow_score = _PROJECT_CFG["scores"]["growth"]["weak"]
-
-        result["growth"] = {
-            "score": grow_score,
-            "comment": f"预期 营收 YoY=+{rev_growth:.1f}%, 净利 YoY=+{np_growth:.1f}%",
-            "data": f"预期 营收 +{rev_growth:.1f}%, 净利 +{np_growth:.1f}%",
-        }
-    else:
-        result["missing"].append("同比数据")
-        result["growth"]["comment"] = "需要 2 年 actual 数据"
-
-    # ========== 4. 安全性评分 (用 ROE 间接判断) ==========
-    # 真正的资产负债率/流动比率没数据, 用 ROE 替代 (ROE 高通常负债合理)
-    if latest_a and latest_a.get("roe", 0) > 0:
-        roe = latest_a["roe"]
-        # ROE > 15% 通常财务健康
-        if roe >= 20:
-            safe_score = 90
-        elif roe >= 15:
-            safe_score = 80
-        elif roe >= 10:
-            safe_score = 65
-        elif roe >= 5:
-            safe_score = 45
-        else:
-            safe_score = 30
-        result["safety"] = {
-            "score": safe_score,
-            "comment": f"用 ROE 间接判断 ({roe:.1f}%, 需 PB/负债率验证)",
-            "data": f"ROE={roe:.1f}% (无 PB/负债率数据, 降级判断)",
-        }
-    else:
-        result["missing"].append("PB/负债率")
-        result["safety"]["comment"] = "PB/负债率数据缺失"
-
-    # ========== 5. 综合分 (权重: 估值30 盈利30 成长25 安全15) ==========
-    total = (
-        result["valuation"]["score"] * 0.30
-        + result["profitability"]["score"] * 0.30
-        + result["growth"]["score"] * 0.25
-        + result["safety"]["score"] * 0.15
-    )
-    result["total_score"] = round(total, 1)
-
-    if total >= 75:
-        summary = f"综合 {total:.0f}/100, 基本面优秀"
-    elif total >= 60:
-        summary = f"综合 {total:.0f}/100, 基本面良好"
-    elif total >= 45:
-        summary = f"综合 {total:.0f}/100, 基本面一般"
-    else:
-        summary = f"综合 {total:.0f}/100, 基本面偏弱"
-
-    if result["missing"]:
-        summary += f" (缺: {', '.join(result['missing'])})"
-
-    result["summary"] = summary
-    return result
-
 
 # ============================================================
 # 2. 4 个量价信号 (volume_breakout / limit_up_surge / volume_price_uptrend / breakout_resistance)
@@ -262,16 +56,15 @@ def compute_fundamental_score(
 
 def compute_volume_price_signals(kline: list[dict]) -> dict:
     """
-    量价类 4 个子信号 (满分 30 分, 来自 app/signals/volume_price.py)
+    量价类 4 个子信号 (v6.2.8 重构: 删 weight/raw_score 加权汇总, 2026-09-09 再清)
+    决策走 缠论 1买/2买/3买/1卖/2卖/3卖, 量价只是参考子信号.
 
     Returns:
         {
             "signals": [
-                {"name": "volume_breakout", "score": 0-10, "triggered": bool, "weight": 10, "reason": str},
+                {"name": "volume_breakout", "score": 0-10, "triggered": bool, "reason": str},
                 ...
             ],
-            "raw_score": 0-30,
-            "rating": str,
         }
     """
     if len(kline) < 20:
@@ -303,7 +96,7 @@ def compute_volume_price_signals(kline: list[dict]) -> dict:
         vb_reason = f"量 {vol_ratio:.1f}x 价 {price_change:+.1f}%, 中性"
     signals.append({
         "name": "volume_breakout", "category": "量价", "score": vb_score,
-        "triggered": vb_score >= 7, "weight": 10, "reason": vb_reason,
+        "triggered": vb_score >= 7, "reason": vb_reason,
     })
 
     # 2. limit_up_surge: 最近 20 日涨停数
@@ -319,7 +112,7 @@ def compute_volume_price_signals(kline: list[dict]) -> dict:
         lu_score = 3
     signals.append({
         "name": "limit_up_surge", "category": "量价", "score": lu_score,
-        "triggered": lu_score >= 7, "weight": 15, "reason": f"20日内涨停 {limit_ups} 次",
+        "triggered": lu_score >= 7, "reason": f"20日内涨停 {limit_ups} 次",
     })
 
     # 3. volume_price_uptrend: 3 日 close 涨 + vol 涨
@@ -343,7 +136,7 @@ def compute_volume_price_signals(kline: list[dict]) -> dict:
         vp_reason = "K线 < 4 条"
     signals.append({
         "name": "volume_price_uptrend", "category": "量价", "score": vp_score,
-        "triggered": vp_score >= 7, "weight": 5, "reason": vp_reason,
+        "triggered": vp_score >= 7, "reason": vp_reason,
     })
 
     # 4. breakout_resistance: 突破 60 日新高
@@ -363,314 +156,22 @@ def compute_volume_price_signals(kline: list[dict]) -> dict:
         br_reason = "K线 < 60"
     signals.append({
         "name": "breakout_resistance", "category": "量价", "score": br_score,
-        "triggered": br_score >= 7, "weight": 8, "reason": br_reason,
+        "triggered": br_score >= 7, "reason": br_reason,
     })
 
-    # 加权求和
-    raw = sum((s["score"] / 10) * s["weight"] for s in signals)
-
-    if raw >= 25:
-        rating = "🟢 强势"
-    elif raw >= 18:
-        rating = "🟡 中等"
-    elif raw >= 10:
-        rating = "🟠 偏弱"
-    else:
-        rating = "🔴 弱势"
-
+    # 2026-09-09 删: 加权求和 (raw_score) + rating (强势/中等/偏弱/弱势)
+    # 决策走 缠论, 量价只是参考子信号, 不再汇总成 0-30 分
     return {
         "signals": signals,
-        "raw_score": round(raw, 1),
-        "rating": rating,
-        "max_score": 30,
     }
 
 
-# ============================================================
-# 3. 4 套交易策略 (MACD/KDJ/MATrend/Bollinger)
-# ============================================================
-
-def compute_strategy_signals(indicators: dict) -> dict:
-    """
-    4 套交易策略信号 (基于 compute_indicators 输出)
-
-    Returns:
-        {
-            "strategies": [
-                {"name": "MACD 金叉/死叉", "signal": "buy/sell/hold", "reason": str},
-                {"name": "KDJ 超卖/超买", ...},
-                {"name": "MA 多头排列", ...},
-                {"name": "BOLL 突破", ...},
-            ],
-            "buy_count": int,
-            "sell_count": int,
-        }
-    """
-    if not indicators or "error" in indicators:
-        return {"error": "技术指标未计算, 无法评估策略"}
-
-    strategies = []
-    buy_count = 0
-    sell_count = 0
-
-    # 1. MACD 策略
-    macd = indicators.get("macd", {})
-    dif = macd.get("DIF", 0)
-    dea = macd.get("DEA", 0)
-    if dif > dea and dif > 0:
-        signal = "buy"
-        reason = f"MACD 金叉多头 (DIF={dif:.2f} > DEA={dea:.2f} > 0)"
-        buy_count += 1
-    elif dif < dea and dif < 0:
-        signal = "sell"
-        reason = f"MACD 死叉空头 (DIF={dif:.2f} < DEA={dea:.2f} < 0)"
-        sell_count += 1
-    elif dif > dea:
-        signal = "hold"
-        reason = f"MACD 弱势金叉 (DIF>DEA 但<0, 反弹有限)"
-    else:
-        signal = "hold"
-        reason = f"MACD 强势死叉 (DIF<DEA 但>0, 调整有限)"
-    strategies.append({"name": "MACD 金叉/死叉", "signal": signal, "reason": reason})
-
-    # 2. KDJ 策略
-    kdj = indicators.get("kdj", {})
-    j = kdj.get("J", 50)
-    k = kdj.get("K", 50)
-    d = kdj.get("D", 50)
-    if j < 0:
-        signal = "buy"
-        reason = f"KDJ 极度超卖 (J={j:.0f} < 0, 反弹机会)"
-        buy_count += 1
-    elif j > 100:
-        signal = "sell"
-        reason = f"KDJ 极度超买 (J={j:.0f} > 100, 回调风险)"
-        sell_count += 1
-    elif k > d and k < 30:
-        signal = "buy"
-        reason = f"KDJ 低位金叉 (K={k:.0f} > D={d:.0f}, < 30 弱势区)"
-        buy_count += 1
-    elif k < d and k > 70:
-        signal = "sell"
-        reason = f"KDJ 高位死叉 (K={k:.0f} < D={d:.0f}, > 70 强势区)"
-        sell_count += 1
-    elif k > d:
-        signal = "hold"
-        reason = f"KDJ 金叉 (K={k:.0f} > D={d:.0f})"
-    else:
-        signal = "hold"
-        reason = f"KDJ 死叉 (K={k:.0f} < D={d:.0f})"
-    strategies.append({"name": "KDJ 超卖/超买", "signal": signal, "reason": reason})
-
-    # 3. MA 多头排列策略
-    # 看 indicators 是否有 ma5/20/60/120 偏离
-    # 注意: indicators 里没有 MA, 用价格序列自己算
-    # 简化: 用 verdict
-    if "macd" in indicators:  # 占位, 实际需要传入 K 线
-        # 临时: 跳过 MA, 用 MACD 状态代替
-        signal = "hold"
-        reason = "需 K线 60+ 条判断 MA 排列"
-    else:
-        signal = "hold"
-        reason = "—"
-    strategies.append({"name": "MA 多头排列", "signal": signal, "reason": reason})
-
-    # 4. BOLL 策略
-    boll = indicators.get("boll", {})
-    if boll and "mid" in boll:
-        upper = boll.get("upper", 0)
-        mid = boll.get("mid", 0)
-        lower = boll.get("lower", 0)
-        # 实际价格 = mid 附近或上下轨关系 — 用 RSI 6 间接判断
-        rsi = indicators.get("rsi", {}).get("rsi6", 50)
-        if rsi > _PROJECT_CFG["thresholds"]["rsi"]["overbought"]:
-            signal = "sell"
-            reason = f"BOLL 超买区 (RSI6={rsi:.0f}, 接近上轨 ¥{upper:.0f})"
-            sell_count += 1
-        elif rsi < _PROJECT_CFG["thresholds"]["rsi"]["oversold"]:
-            signal = "buy"
-            reason = f"BOLL 超卖区 (RSI6={rsi:.0f}, 接近下轨 ¥{lower:.0f})"
-            buy_count += 1
-        elif rsi > _PROJECT_CFG["thresholds"]["rsi"]["bullish"]:
-            signal = "hold"
-            reason = f"BOLL 中轨上方 (RSI6={rsi:.0f})"
-        else:
-            signal = "hold"
-            reason = f"BOLL 中轨下方 (RSI6={rsi:.0f})"
-    else:
-        signal = "hold"
-        reason = "BOLL 未计算"
-    strategies.append({"name": "BOLL 突破", "signal": signal, "reason": reason})
-
-    return {
-        "strategies": strategies,
-        "buy_count": buy_count,
-        "sell_count": sell_count,
-        "verdict": (
-            f"🟢 偏多 ({buy_count}买 / {sell_count}卖)" if buy_count > sell_count
-            else f"🔴 偏空 ({buy_count}买 / {sell_count}卖)" if sell_count > buy_count
-            else f"🟡 中性 ({buy_count}买 / {sell_count}卖)"
-        ),
-    }
-
+# 2026-09-09 删: compute_strategy_signals (4 套交易策略, 死代码)
+# 原因: 4 套 (MACD/KDJ/MA/BOLL) 老的简易指标投票, 已被 TechnicalStrategy (8 个技术指标 v6.2.8) 取代
+# RenderData.strategy / _section_strategy / status 行 "策略" 全部删除 (走 缠论, 不再单独跑 4 套指标)
 
 # ============================================================
 # 4. 5 类 14 子信号 (板块级别, 简化为个股可用版本)
-# ============================================================
-
-def compute_peg(eps_table: list[dict], current_price: Optional[float] = None) -> dict:
-    """
-    PEG 实算 (Phase 1 自动化, 不再占位)
-
-    边界修复 (2026-09-03):
-    - E0/E1/E3 ≤ 0 或缺失 → 返 {"error": "..."}, 不算 PEG
-    - g_pct 算出后再算 PEG, 缺 g 直接返错误
-    - 避免 1 年前半导体 EPS=0.01 → PEG=0.01 误选
-    """
-    if not eps_table or not current_price:
-        return {"error": "数据不足"}
-
-    actuals = [r for r in eps_table if r.get("year_mark") == "A"]
-    estimates = [r for r in eps_table if r.get("year_mark") == "E"]
-
-    if not actuals or not estimates:
-        return {"error": "需要 actual + estimate 数据"}
-
-    e0 = actuals[-1].get("eps", 0) or 0  # 最新 actual
-    e1 = estimates[0].get("eps", 0) or 0 if estimates else 0  # NTM
-    e2 = estimates[1].get("eps", 0) or 0 if len(estimates) >= 2 else 0
-    e3 = estimates[2].get("eps", 0) or 0 if len(estimates) >= 3 else 0
-
-    # 边界: E1 必须 > 0 (1 年前半导体 EPS=0.01 误选就是这个 bug)
-    if e1 <= 0:
-        return {"error": "E1 数据无效 (≤0 或缺失)"}
-
-    fwd_pe = current_price / e1
-    # g = (E3/E0)^(1/n) - 1, 默认 n=3
-    # 边界: E0 或 E3 ≤ 0 → 没 g, 不算 PEG
-    if e0 <= 0 or e3 <= 0:
-        return {
-            "price": current_price, "E0": e0, "E1": e1, "E2": e2, "E3": e3,
-            "fwd_pe": round(fwd_pe, 2),
-            "g": None, "peg": None, "verdict": "— 数据不足 (E0/E3 缺)",
-            "error": "no_growth",
-        }
-
-    n = 3
-    g_pct = (((e3 / e0) ** (1.0 / n)) - 1) * 100
-    # 边界: g <= 0 (公司下滑) → PEG 不可信
-    if g_pct <= 0:
-        return {
-            "price": current_price, "E0": e0, "E1": e1, "E2": e2, "E3": e3,
-            "fwd_pe": round(fwd_pe, 2),
-            "g": round(g_pct, 1), "peg": None, "verdict": "— 增长 ≤0",
-            "error": "negative_growth",
-        }
-
-    peg = fwd_pe / g_pct
-    if peg < 1.0:
-        verdict = "🟢 健康 (Lynch 买入区, <1.0)"
-    elif peg < 1.5:
-        verdict = "🟡 合理 (1.0-1.5)"
-    elif peg < 2.0:
-        verdict = "🟠 偏贵 (1.5-2.0)"
-    else:
-        verdict = "🔴 高估 (>2.0)"
-
-    return {
-        "price": current_price,
-        "E0": e0, "E1": e1, "E2": e2, "E3": e3,
-        "fwd_pe": round(fwd_pe, 2),
-        "g": round(g_pct, 1),
-        "peg": round(peg, 2),
-        "verdict": verdict,
-    }
-
-
-def compute_dcf_l(eps_table: list[dict], market_cap_yi: Optional[float] = None) -> dict:
-    """
-    DCF L 实算 (Phase 1 自动化)
-    """
-    if not eps_table or not market_cap_yi:
-        return {"error": "数据不足"}
-
-    estimates = [r for r in eps_table if r.get("year_mark") == "E"]
-    if len(estimates) < 2:
-        return {"error": "需要至少 2 年 E 数据"}
-
-    e1 = estimates[0].get("net_profit_yi", 0)
-    e2 = estimates[1].get("net_profit_yi", 0)
-    e3 = estimates[2].get("net_profit_yi", 0) if len(estimates) >= 3 else e2
-
-    if e1 <= 0 or e3 <= 0:
-        return {"error": "净利润数据无效"}
-
-    # DCF 公式
-    GROWTH_YEARS = 5
-
-    def fair_value(L, e1, e2, e3, r_pct):
-        r = r_pct / 100.0
-        pv = e1 / (1 + r) ** 1 + e2 / (1 + r) ** 2 + e3 / (1 + r) ** 3
-        if e3 > 0 and L > 0 and abs(L - e3) > 1e-9:
-            g = (L / e3) ** (1.0 / GROWTH_YEARS) - 1.0
-            for t in range(4, 9):
-                pv += e3 * (1 + g) ** (t - 3) / (1 + r) ** t
-        elif e3 > 0 and L > 0:
-            for t in range(4, 9):
-                pv += e3 / (1 + r) ** t
-        pv += (L / r) / (1 + r) ** (3 + GROWTH_YEARS)
-        return pv
-
-    def implied_L(cap, e1, e2, e3, r_pct):
-        r = r_pct / 100.0
-        hi = max(cap * r * (1 + r) ** 8 * 10, e3 * 100, 1000.)
-        lo = 0.
-        for _ in range(300):
-            mid = (lo + hi) / 2.
-            if fair_value(mid, e1, e2, e3, r_pct) < cap:
-                lo = mid
-            else:
-                hi = mid
-        return (lo + hi) / 2.
-
-    L_r8 = implied_L(market_cap_yi, e1, e2, e3, 8)
-    L_r10 = implied_L(market_cap_yi, e1, e2, e3, 10)
-    L_r12 = implied_L(market_cap_yi, e1, e2, e3, 12)
-
-    # 校正 (r=10 × 0.7 ≈ r=8 真实 L)
-    L_actual = round(L_r8, 1)
-
-    L_E3_r8 = round(L_r8 / e3, 2)
-    L_E3_r10 = round(L_r10 / e3, 2)
-
-    g_r8 = round(((L_r8 / e3) ** 0.2 - 1) * 100, 1)
-    g_r10 = round(((L_r10 / e3) ** 0.2 - 1) * 100, 1)
-    g_r12 = round(((L_r12 / e3) ** 0.2 - 1) * 100, 1)
-
-    # 简化的可达利润 (用当前净利率 × 当前营收 × 1.5x)
-    estimates_now = estimates[0]
-    nm = estimates_now["net_profit_yi"] / estimates_now["revenue_yi"] * 100 if estimates_now.get("revenue_yi", 0) > 0 else 15
-    revenue_ceiling = estimates_now.get("revenue_yi", 0) * 1.5  # 乐观 50% 增长
-    achievable = revenue_ceiling * nm / 100
-
-    L_achievable = f"{L_actual:.0f}/{achievable:.0f}={L_actual/achievable if achievable > 0 else 0:.2f}x"
-    if achievable > 0 and L_actual / achievable < 0.8:
-        verdict = "🟢 低估 (<0.8, 双侧便宜)"
-    elif achievable > 0 and L_actual / achievable < 1.5:
-        verdict = "🟡 合理 (0.8-1.5)"
-    else:
-        verdict = "🔴 偏贵 (>1.5, 叙事透支)"
-
-    return {
-        "L_r8": round(L_r8, 1), "L_r10": round(L_r10, 1), "L_r12": round(L_r12, 1),
-        "L_actual": L_actual,
-        "L_E3_r8": L_E3_r8, "L_E3_r10": L_E3_r10, "L_E3_r12": round(L_r12 / e3, 2),
-        "g_r8": g_r8, "g_r10": g_r10, "g_r12": g_r12,
-        "L_achievable": L_achievable,
-        "verdict": verdict,
-        "market_cap_yi": market_cap_yi,
-    }
-
 
 def compute_signal_5cat(
     kline: list[dict],
@@ -688,10 +189,9 @@ def compute_signal_5cat(
 
     Returns:
         {
-            "signals": [{name, cat, score, triggered, weight, reason}, ...],
-            "raw_score": 0-123,
-            "rating": str,
+            "signals": [{name, cat, score, triggered, reason}, ...],  # 2026-09-09 删 weight
             "missing": [str],  # 哪些类数据缺失
+            # 2026-09-09 删: raw_score + rating 加权汇总
         }
     """
     all_signals = []
@@ -700,20 +200,19 @@ def compute_signal_5cat(
     vp_result = compute_volume_price_signals(kline)
     if "signals" in vp_result:
         for sig in vp_result["signals"]:
-            sig["weight_source"] = "app/signals/volume_price.py"
             all_signals.append(sig)
-    raw_vp = vp_result.get("raw_score", 0)
+    raw_vp = 0  # 2026-09-09 删: 不再加权汇总
 
     # === 2. 龙头 (2 子信号, 25 分) — 需板块成分股, 标 "数据缺失" ===
     all_signals.append({
         "name": "leader_launching", "category": "龙头", "score": 5,
-        "triggered": False, "weight": 15, "reason": "需板块成分股数据 (暂未接入)",
+        "triggered": False, "reason": "需板块成分股数据 (暂未接入)",
     })
     all_signals.append({
         "name": "sector_diffusion", "category": "龙头", "score": 5,
-        "triggered": False, "weight": 10, "reason": "需板块成分股数据 (暂未接入)",
+        "triggered": False, "reason": "需板块成分股数据 (暂未接入)",
     })
-    raw_leader = 12.5  # 中性 50%
+    raw_leader = 0  # 2026-09-09 删: 不再加权汇总
 
     # === 3. 资金 (4 子信号, 20 分) ===
     # main_capital_inflow: 5 日 fflow 净额
@@ -739,73 +238,54 @@ def compute_signal_5cat(
         mc_score, mc_reason, mc_trig = 5, "fflow 数据缺失", False
     all_signals.append({
         "name": "main_capital_inflow", "category": "资金", "score": mc_score,
-        "triggered": mc_trig, "weight": 10, "reason": mc_reason,
+        "triggered": mc_trig, "reason": mc_reason,
     })
 
     # north_capital / institutional / etf_subscription: 需专项 API, 暂标记
     all_signals.append({
         "name": "north_capital_anomaly", "category": "资金", "score": 5,
-        "triggered": False, "weight": 5, "reason": "北向资金 API 暂未接入 (Tushare 10000 积分档, 后续按需)",
+        "triggered": False, "reason": "北向资金 API 暂未接入 (Tushare 10000 积分档, 后续按需)",
     })
     all_signals.append({
         "name": "institutional_concentration", "category": "资金", "score": 5,
-        "triggered": False, "weight": 5, "reason": "机构持仓 API 未接入",
+        "triggered": False, "reason": "机构持仓 API 未接入",
     })
     all_signals.append({
         "name": "etf_subscription_surge", "category": "资金", "score": 5,
-        "triggered": False, "weight": 5, "reason": "ETF 申赎 API 未接入",
+        "triggered": False, "reason": "ETF 申赎 API 未接入",
     })
-    raw_capital = (
-        (mc_score / 10) * 10
-        + 0.5 * 5  # north
-        + 0.5 * 5  # inst
-        + 0.5 * 5  # etf
-    )
+    raw_capital = 0  # 2026-09-09 删: 不再加权汇总
 
     # === 4. 政策 (2 子信号, 15 分) ===
     all_signals.append({
         "name": "policy_keyword_hit", "category": "政策", "score": 5,
-        "triggered": False, "weight": 5, "reason": "政策新闻 API 未接入 (需 WebSearch)",
+        "triggered": False, "reason": "政策新闻 API 未接入 (需 WebSearch)",
     })
     all_signals.append({
         "name": "llm_policy_score", "category": "政策", "score": 5,
-        "triggered": False, "weight": 10, "reason": "LLM 政策评分需 mavis 算",
+        "triggered": False, "reason": "LLM 政策评分需 mavis 算",
     })
-    raw_policy = 7.5
+    raw_policy = 0  # 2026-09-09 删: 不再加权汇总
 
     # === 5. 情绪 (3 子信号, 10 分) ===
     all_signals.append({
         "name": "hot_rank_surge", "category": "情绪", "score": 5,
-        "triggered": False, "weight": 4, "reason": "热度榜 API 未接入",
+        "triggered": False, "reason": "热度榜 API 未接入",
     })
     all_signals.append({
         "name": "research_surge", "category": "情绪", "score": 5,
-        "triggered": False, "weight": 3, "reason": "研报数量 API 未接入",
+        "triggered": False, "reason": "研报数量 API 未接入",
     })
     all_signals.append({
         "name": "discussion_anomaly", "category": "情绪", "score": 5,
-        "triggered": False, "weight": 3, "reason": "讨论量 API 未接入",
+        "triggered": False, "reason": "讨论量 API 未接入",
     })
-    raw_sentiment = 5
+    raw_sentiment = 0  # 2026-09-09 删: 不再加权汇总
 
-    # 总分
-    raw_total = sum((s["score"] / 10) * s["weight"] for s in all_signals)
-
-    # 评级
-    if raw_total >= 80:
-        rating = "🥇 强信号"
-    elif raw_total >= 60:
-        rating = "🥈 标准"
-    elif raw_total >= 40:
-        rating = "🥉 中性"
-    else:
-        rating = "⚠️ 偏弱"
-
+    # 2026-09-09 删: 总分 (raw_total) + 评级 (rating)
+    # 决策走 缠论 1买/2买/3买/1卖/2卖/3卖, 子信号只是参考
     return {
         "signals": all_signals,
-        "raw_score": round(raw_total, 1),
-        "max_score": 123,
-        "rating": rating,
         "missing": ["龙头类", "政策类", "情绪类", "部分资金类"],
     }
 

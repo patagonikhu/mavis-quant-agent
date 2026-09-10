@@ -1,5 +1,5 @@
 """
-backtest_magic.py — Magic Formula MVP 回测 (v6.2.4)
+backtest_roc_ey.py — ROC + EY 联合排名 MVP 回测 (v6.2.4, 2026-09-09 改自 backtest_magic.py)
 
 设计:
   - 季频调仓 (年报披露后第二个月底: 04-30 / 08-31 / 10-31)
@@ -8,10 +8,10 @@ backtest_magic.py — Magic Formula MVP 回测 (v6.2.4)
   - 持有 60 / 90 / 120 日, 算最大涨幅
   - 输出: 累计收益 / 平均命中 / 胜率
 
-数据 (0 网络, 全本地):
-  - data/history/financials/{YYYYQN}.parquet   (TTM EBIT, NWC, FA, netdebt)
-  - data/history/daily_basic/{YYYYQN}.parquet  (季末市值)
-  - data/history/daily/*.parquet               (1200 天 K 线, 算持有期收益)
+数据 (0 网络, 全本地, 走 DataStore):
+  - DataStore.load_financials_period(period)  (TTM EBIT, NWC, FA, netdebt)
+  - DataStore.get_market_cap_at_date(date)    (季末市值)
+  - DataStore.get_kline(code)                 (1200 天 K 线, 算持有期收益)
 
 限制:
   - 季频 EY (财务一年 4 个点), 不是日频
@@ -28,13 +28,12 @@ _TOOLS = Path(__file__).resolve().parent.parent.parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-import duckdb
 import pandas as pd
 
 from tools.storage.store import DataStore
-from tools.analysis.valuation import (
+from tools.factors.valuation.factor_lib import (
     EXCLUDED_INDUSTRIES,
-    calc_magic_one_day,
+    compute_magic_one_day,
     find_full_year_financials,
 )
 
@@ -88,25 +87,13 @@ BENCHMARK_CODE = "000300"
 # ============================================================
 
 def load_quarter_financials(period: str) -> pd.DataFrame:
-    """读某季财务 (全市场)"""
-    f = Path(f"data/history/financials/{period}.parquet")
-    if not f.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(f)
+    """读某季财务 (全市场) — 走 DataStore"""
+    return DataStore.load_financials_period(period)
 
 
 def load_market_cap_at(date_str: str) -> dict[str, float]:
-    """读某日所有票市值 (单位: 万元, 跟 Tushare daily_basic 一致)
-
-    走 duckdb 直查 parquet, O(1) SQL
-    """
-    q = f"""
-    SELECT ts_code, total_mv
-    FROM read_parquet('data/history/daily_basic/*.parquet')
-    WHERE trade_date = '{date_str}'
-    """
-    df = duckdb.execute(q).df()
-    return dict(zip(df["ts_code"].str.split(".").str[0], df["total_mv"]))
+    """读某日所有票市值 (单位: 万元, 跟 Tushare daily_basic 一致) — 走 DataStore"""
+    return DataStore.get_market_cap_at_date(date_str)
 
 
 def get_kline_window(code: str, start_date: str, days: int) -> list[dict]:
@@ -151,8 +138,8 @@ def rank_at_date(rebalance_date: str, fin_df: pd.DataFrame) -> list[dict]:
         fins = sorted(group.to_dict("records"), key=lambda r: r.get("end_date", ""))
         if not fins:
             continue
-        # 用 calc_magic_one_day (内部已处理 ROC+EY+combined)
-        result = calc_magic_one_day(fins, rebalance_date, mc_wan)
+        # 用 compute_magic_one_day (内部已处理 ROC+EY+combined)
+        result = compute_magic_one_day(fins, rebalance_date, mc_wan)
         if result.get("roc") is None or result.get("ey") is None:
             continue
         rows.append({
@@ -219,7 +206,7 @@ def calc_returns(code: str, start_date: str, days: int) -> dict | None:
 # ============================================================
 
 def main() -> int:
-    print("🔬 Magic Formula 5 年真回测 (v6.2.4)")
+    print("🔬 ROC + EY 联合排名 5 年真回测 (v6.2.4, 原 Magic Formula)")
     print(f"   调仓日: {REBALANCE_DATES}")
     print(f"   持有期: {HOLD_PERIODS} 日")
     print(f"   Top N: {TOP_N}")
@@ -326,14 +313,14 @@ def main() -> int:
     print(summary.to_string())
 
     # 写盘
-    out_csv = Path("docs/backtest-magic-mvp.csv")
-    out_md = Path("docs/backtest-magic-mvp.md")
+    out_csv = Path("docs/backtest-roc-ey-mvp.csv")
+    out_md = Path("docs/backtest-roc-ey-mvp.md")
     df.to_csv(out_csv, index=False)
     print(f"\n✅ 写: {out_csv} ({len(df)} 行)")
 
     # 简单 md 报告
     lines = [
-        "# Magic Formula 5 年回测 — " + pd.Timestamp.now().strftime("%Y-%m-%d"),
+        "# ROC + EY 5 年回测 (原 Magic Formula) — " + pd.Timestamp.now().strftime("%Y-%m-%d"),
         "",
         f"> **调仓日**: {', '.join(REBALANCE_DATES)}",
         f"> **持有期**: {HOLD_PERIODS} 日",

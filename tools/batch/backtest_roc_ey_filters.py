@@ -5,7 +5,7 @@ backtest_magic_filters.py — 小盘股阈值扫描 (v6.2.4)
   - 复用 backtest_magic.py 的 5 年调仓框架
   - 扫 3 维阈值网格 (min_mcap × max_roc × min_ebit)
   - 每组阈值跑一次完整回测, 算均终值 + 命中率
-  - 输出对照表 → docs/backtest-magic-filters.md
+  - 输出对照表 → docs/backtest-roc-ey-filters.md
 """
 from __future__ import annotations
 
@@ -17,12 +17,11 @@ if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
 import pandas as pd
-import duckdb
 
 from tools.storage.store import DataStore
-from tools.analysis.valuation import (
+from tools.factors.valuation.factor_lib import (
     EXCLUDED_INDUSTRIES,
-    calc_magic_one_day,
+    compute_magic_one_day,
 )
 
 
@@ -55,19 +54,11 @@ for mcap in [0, 30, 50, 100, 200]:
 # 数据加载
 # ============================================================
 def load_quarter_financials(period: str) -> pd.DataFrame:
-    f = Path(f"data/history/financials/{period}.parquet")
-    if not f.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(f)
+    return DataStore.load_financials_period(period)
 
 
 def load_market_cap_at(date_str: str) -> dict[str, float]:
-    q = f"""
-    SELECT ts_code, total_mv FROM read_parquet('data/history/daily_basic/*.parquet')
-    WHERE trade_date = '{date_str}'
-    """
-    df = duckdb.execute(q).df()
-    return dict(zip(df["ts_code"].str.split(".").str[0], df["total_mv"]))
+    return DataStore.get_market_cap_at_date(date_str)
 
 
 # v6.2.4 性能优化: 1 次 SQL 拉全市场 K 线, 内存 (565 万行 0.9s, 比预加载快)
@@ -75,15 +66,13 @@ _KLINE_INDEX: dict[str, pd.DataFrame] = {}  # code → DataFrame(sort by trade_d
 
 
 def build_kline_index() -> int:
-    """1 次 SQL 把全市场 K 线分组到 _KLINE_INDEX, 内存查"""
+    """1 次 SQL 把全市场 K 线分组到 _KLINE_INDEX, 内存查 — 走 DataStore"""
     global _KLINE_INDEX
-    df = duckdb.execute("""
-        SELECT ts_code, trade_date, close, high
-        FROM read_parquet('data/history/daily/*.parquet')
-        WHERE trade_date >= '20220101'
-    """).df()
-    _KLINE_INDEX = {code: g.sort_values("trade_date").reset_index(drop=True)
-                    for code, g in df.groupby("ts_code")}
+    kline_dict = DataStore.load_all_kline(years=5.5)
+    _KLINE_INDEX = {
+        code: pd.DataFrame(bar_list).sort_values("trade_date").reset_index(drop=True)
+        for code, bar_list in kline_dict.items()
+    }
     return len(_KLINE_INDEX)
 
 
@@ -135,7 +124,7 @@ def rank_at_date_filtered(rebalance_date: str, fin_df: pd.DataFrame,
         fins = sorted(group.to_dict("records"), key=lambda r: r.get("end_date", ""))
         if not fins:
             continue
-        result = calc_magic_one_day(fins, rebalance_date, mc_wan)
+        result = compute_magic_one_day(fins, rebalance_date, mc_wan)
         if result.get("roc") is None or result.get("ey") is None:
             continue
 
@@ -182,7 +171,7 @@ PRECOMPUTED: dict[str, list[tuple]] = {}
 
 
 def precompute_all_dates(fin_cache: dict) -> int:
-    """对所有调仓日, 1 次 calc_magic_one_day 算全市场, 存 PRECOMPUTED"""
+    """对所有调仓日, 1 次 compute_magic_one_day 算全市场, 存 PRECOMPUTED"""
     global PRECOMPUTED
     n_total = 0
     for rb_date in REBALANCE_DATES:
@@ -201,7 +190,7 @@ def precompute_all_dates(fin_cache: dict) -> int:
             fins = sorted(group.to_dict("records"), key=lambda r: r.get("end_date", ""))
             if not fins:
                 continue
-            result = calc_magic_one_day(fins, rb_date, mc_wan)
+            result = compute_magic_one_day(fins, rb_date, mc_wan)
             if result.get("roc") is None or result.get("ey") is None:
                 continue
             industry = fins[-1].get("industry", "")
@@ -342,8 +331,8 @@ def main() -> int:
     print(summary.head(30).to_string())
 
     # 写盘
-    out_csv = Path("docs/backtest-magic-filters.csv")
-    out_md = Path("docs/backtest-magic-filters.md")
+    out_csv = Path("docs/backtest-roc-ey-filters.csv")
+    out_md = Path("docs/backtest-roc-ey-filters.md")
     df.to_csv(out_csv, index=False)
     print(f"\n✅ 写: {out_csv} ({len(df)} 行)")
 

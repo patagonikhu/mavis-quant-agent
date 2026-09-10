@@ -63,7 +63,7 @@ REPORT_SECTIONS = [
     # 注: chan_signals / chan_supplement 已于 7-29 合并入 factor_history + method_matrix, 废弃删除
     {
         "id": "method_matrix",
-        "title": "🎯 5 方法 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警)",
+        "title": "🎯 因子 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警, 2026-09-09 改)",
         "category": "2️⃣",
         "render": "render_method_matrix",
         "required": True,
@@ -96,22 +96,24 @@ REPORT_SECTIONS = [
         "refresh": "PRESERVE",  # LLM 填充, 保留
     },
     # === 基本面 + 策略 (数据驱动) ===
-    {
-        "id": "fundamental",
-        "title": "💎 基本面 (4 维) — 自动评估",
-        "category": "📋",
-        "render": "render_fundamental",
-        "required": True,
-        "refresh": "REGEN",
-    },
-    {
-        "id": "strategy",
-        "title": "🎯 4 套交易策略 — 自动评估",
-        "category": "📋",
-        "render": "render_strategy",
-        "required": True,
-        "refresh": "REGEN",
-    },
+    # 2026-09-09 删: 基本面 (4 维) section (走 缠论 + ValuationStrategy PEG+DCF+Magic)
+    # {
+    #     "id": "fundamental",
+    #     "title": "💎 基本面 (4 维) — 自动评估",
+    #     "category": "📋",
+    #     "render": "render_fundamental",
+    #     "required": True,
+    #     "refresh": "REGEN",
+    # },
+    # 2026-09-09 删: 4 套交易策略 section (走 缠论, 不再单独跑 4 套指标)
+    # {
+    #     "id": "strategy",
+    #     "title": "🎯 4 套交易策略 — 自动评估",
+    #     "category": "📋",
+    #     "render": "render_strategy",
+    #     "required": True,
+    #     "refresh": "REGEN",
+    # },
     # === 投资四问 + T 框架 (LLM 填充, 保留) ===
     {
         "id": "four_questions",

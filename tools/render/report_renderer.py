@@ -408,35 +408,12 @@ def _section_magic_formula_unused(data: RenderData) -> str:
 
 
 def _section_fundamental(data: RenderData) -> str:
-    if not data.fundamental or "error" in data.fundamental:
-        return "> **Data Status:** ❌ Fundamental not computed (insufficient financials)\n> **Fallback:** EPS consensus + PE_TTM indirect\n"
-    f = data.fundamental
-    parts = [
-        f"**Overall Score:** {f.get('summary', '—')}\n",
-        "| Dimension | Score | Note |",
-        "|---|---|---|",
-    ]
-    for key, label in [
-        ("valuation", "Valuation"),
-        ("profitability", "Profitability"),
-        ("growth", "Growth"),
-        ("safety", "Safety"),
-    ]:
-        d = f.get(key, {})
-        score = d.get("score", 0)
-        comment = d.get("comment", "—")
-        if score >= 75:
-            emoji = "🟢"
-        elif score >= 50:
-            emoji = "🟡"
-        elif score >= 25:
-            emoji = "🟠"
-        else:
-            emoji = "🔴"
-        parts.append(f"| {label} | {score}/100 {emoji} | {comment} |")
-    if f.get("missing"):
-        parts.append(f"\n**Missing data:** {', '.join(f['missing'])} (use ROE as proxy)")
-    return "\n".join(parts) + "\n"
+    """基本面 (4 维) — 2026-09-09 整个 section 删掉
+    4 维 (估值/盈利/成长/安全) 走 PEG/ROC/EY/行业 4 维, 已被 ValuationStrategy (PEG + DCF + Magic ROC/EY v6.2.5) 取代.
+    决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 估值双指标 (PEG/DCF L).
+    函数保留为空 stub, 防止外部 import 引用报错.
+    """
+    return ""
 
 
 def _section_signal_5cat(data: RenderData) -> str:
@@ -444,15 +421,16 @@ def _section_signal_5cat(data: RenderData) -> str:
         return "> **数据状态:** ❌ 5 类 14 子信号未计算\n> **降级:** 用 K 线 + 量价 + fflow 自动算 (部分项用中性 5/10 分)\n"
     s = data.signal_5cat
     parts = [
-        f"**总规则分:** {s.get('raw_score', '—')}/123 → {s.get('rating', '—')}\n",
-        "| 类别 | 子信号 | Score | 触发 | 权重 | 说明 |",
-        "|---|---|---|---|---|---|",
+        # 2026-09-09 删: 总规则分 (raw_score/123) + rating (🥇/🥈/🥉/⚠️)
+        # 决策走 缠论 1买/2买/3买/1卖/2卖/3卖, 5 类信号只是参考子信号
+        "| 类别 | 子信号 | Score | 触发 | 说明 |",
+        "|---|---|---|---|---|",
     ]
     for row in s.get("signals", []):
         triggered = "✅" if row.get("triggered") else "❌"
         parts.append(
             f"| {row.get('category', '—')} | {row.get('name', '—')} "
-            f"| {row.get('score', 0)}/10 | {triggered} | {row.get('weight', 0)} "
+            f"| {row.get('score', 0)}/10 | {triggered} "
             f"| {row.get('reason', '—')} |"
         )
     if s.get("missing"):
@@ -461,20 +439,10 @@ def _section_signal_5cat(data: RenderData) -> str:
 
 
 def _section_strategy(data: RenderData) -> str:
-    """4 套交易策略 (新增, 接通 compute_strategy_signals)"""
-    if not data.strategy or "error" in data.strategy:
-        return "> **数据状态:** ❌ 4 套策略未计算 (技术指标缺失)\n> **降级:** 用 MACD/KDJ/BOLL 间接判断\n"
-    s = data.strategy
-    parts = [
-        f"**综合判定:** {s.get('verdict', '—')}\n",
-        "| 策略 | 信号 | 说明 |",
-        "|---|---|---|",
-    ]
-    for strat in s.get("strategies", []):
-        signal = strat.get("signal", "hold")
-        emoji = "🟢 买" if signal == "buy" else "🔴 卖" if signal == "sell" else "⚪ 持"
-        parts.append(f"| {strat.get('name', '—')} | {emoji} | {strat.get('reason', '—')} |")
-    return "\n".join(parts) + "\n"
+    """4 套交易策略 — 2026-09-09 整个 section 删掉 (走 缠论, 走 TechnicalStrategy 8 个技术指标)
+    函数保留为空 stub, 防止外部 import 引用报错.
+    """
+    return ""
 
 
 def _section_xgboost(data: RenderData) -> str:
@@ -899,7 +867,7 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
     单周期 section：缠论详细数据 + 其余4方法在该周期视角的数据
     level: 'weekly' | 'daily' | '60min'
     label: '周线' | '日线' | '60分'
-    weight: '1.5x' | '1.0x' | '0.5x'
+    weight: '1.0x' (2026-09-09 改: 3 周期等权, 不再区分 1.5x/1.0x/0.5x)
     vp_windows: 量价关注的时间窗口 tuple，如 ('20d','30d','60d')
     """
     s5 = data.analysis or {}
@@ -1117,7 +1085,7 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
                   if k != "action" and v and v != "无" and v != "—"]
     bsp_str = " / ".join(f"{k}={v}" for k, v in bsp_active) if bsp_active else "无有效买卖点"
 
-    return f"""> 权重 **{weight}** | 中枢: {hub_str} ({pos_e}{hub_pos_str}, {hub_dist}) | 段数: {cd['seg_count']}
+    return f"""> 周期 **{label}** (3 周期等权, 2026-09-09 删权重展示) | 中枢: {hub_str} ({pos_e}{hub_pos_str}, {hub_dist}) | 段数: {cd['seg_count']}
 
 **【缠论详情】**
 
@@ -1199,14 +1167,14 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
 
 
 def _section_weekly(data: RenderData) -> str:
-    """📋 周线分析 (5 方法)"""
+    """📋 周线分析 (因子)"""
     if not data.chan_data and not data.analysis:
         return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
-    return _section_period(data, "weekly", "周线", "1.5x", ("20d", "30d", "60d"))
+    return _section_period(data, "weekly", "周线", "1.0x", ("20d", "30d", "60d"))
 
 
 def _section_daily(data: RenderData) -> str:
-    """📋 日线分析 (5 方法)"""
+    """📋 日线分析 (因子)"""
     if not data.chan_data and not data.analysis:
         return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
     return _section_period(data, "daily", "日线", "1.0x", ("5d", "10d", "20d"))
@@ -1895,22 +1863,22 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ---
 
-## 🎯 5 方法 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警)
+## 🎯 因子 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警)
 {_section_factor_matrix(data)}
 
 ---
 
-## 🔍 5 方法详情 — 周期独立展开 (2026-07-29 简版: 矩阵 + 详情并存, 矩阵简版/详情展开)
+## 🔍 因子详情 — 周期独立展开 (2026-07-29 简版: 矩阵 + 详情并存, 矩阵简版/详情展开)
 
-> 📌 **结构说明**: 上面矩阵是 1 眼总览 (5 方法 × 3 周期各 1 行概要), 下面是每个周期的详情 (段表 / 9 子事件 / OB 列表等矩阵没包含的独有信息)
+> 📌 **结构说明**: 上面矩阵是 1 眼总览 (因子 × 3 周期各 1 行概要), 下面是每个周期的详情 (段表 / 9 子事件 / OB 列表等矩阵没包含的独有信息)
 > 不重复: 矩阵已包含的概要不在详情里再写
 
-### 📋 周线分析 (5 方法 × 周线视角)
+### 📋 周线分析 (因子 × 周线视角)
 {_section_weekly(data)}
 
 ---
 
-### 📋 日线分析 (5 方法 × 日线视角)
+### 📋 日线分析 (因子 × 日线视角)
 {_section_daily(data)}
 
 ---
@@ -1932,16 +1900,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 📊 DCF L 实算
 {_section_dcf(data)}
-
----
-
-## 💎 基本面 (4 维) — 自动评估
-{_section_fundamental(data)}
-
----
-
-## 🎯 4 套交易策略 — 自动评估
-{_section_strategy(data)}
 
 ---
 

@@ -279,41 +279,48 @@ def _format_fvg(fvg: dict) -> Optional[dict]:
 
 def _composite_verdict(chan, wy, smc, vp, res, prices, current_price) -> dict:
     """
-    综合判定: 因子投票, 输出最终建议
+    综合判定: 因子等权投票 (2026-09-09 改: 删 chan 隐式 3 票优势, 5 类各 1 票)
+
+    原设计: chan 给 1buy_trend/1buy/2buy 3 票, wy/smc/vp/res 各 1 票 (chan 3/8 隐式权重)
+    改后: 5 类 (chan/wyckoff/smc/vp/res) 各 1 票等权, 决策更分散
     """
-    # 底部信号计数
+    # 底部信号计数 (5 类各 1 票)
+    chan_buy = (
+        chan.get('1buy_trend', '—') != '—'
+        or chan.get('1buy', '—') != '—'
+        or chan.get('2buy', '—') != '—'
+    )
     bottom_signals = sum([
-        1 if chan.get('1buy_trend', '—') != '—' else 0,
-        1 if chan.get('1buy', '—') != '—' else 0,
-        1 if chan.get('2buy', '—') != '—' else 0,
+        1 if chan_buy else 0,
         1 if wy.get('stage') == 'Accumulation' else 0,
-        1 if smc.get('nearest_bull_ob') else 0,
-        1 if smc.get('nearest_fvg_bull') else 0,
+        1 if smc.get('nearest_bull_ob') or smc.get('nearest_fvg_bull') else 0,
         1 if '进货' in str(vp.get('verdict', '')) else 0,
         1 if '跑赢' in str(res.get('direction', '')) or '正' in str(res.get('direction', '')) else 0,
     ])
-    # 顶部信号计数
+    # 顶部信号计数 (5 类各 1 票)
+    chan_sell = (
+        chan.get('1sell_trend', '—') != '—'
+        or chan.get('1sell', '—') != '—'
+        or chan.get('2sell', '—') != '—'
+    )
     top_signals = sum([
-        1 if chan.get('1sell_trend', '—') != '—' else 0,
-        1 if chan.get('1sell', '—') != '—' else 0,
-        1 if chan.get('2sell', '—') != '—' else 0,
+        1 if chan_sell else 0,
         1 if wy.get('stage') == 'Distribution' else 0,
-        1 if smc.get('nearest_bear_ob') else 0,
-        1 if smc.get('nearest_fvg_bear') else 0,
+        1 if smc.get('nearest_bear_ob') or smc.get('nearest_fvg_bear') else 0,
         1 if '出货' in str(vp.get('verdict', '')) else 0,
         1 if '跑输' in str(res.get('direction', '')) or '负' in str(res.get('direction', '')) else 0,
     ])
 
-    if bottom_signals >= 4 and bottom_signals > top_signals:
+    if bottom_signals >= 3 and bottom_signals > top_signals:
         action = '🥇 强建仓'
         direction = 'long'
-    elif bottom_signals >= 3 and bottom_signals > top_signals:
+    elif bottom_signals >= 2 and bottom_signals > top_signals:
         action = '🥈 标准建仓'
         direction = 'long'
-    elif top_signals >= 4 and top_signals > bottom_signals:
+    elif top_signals >= 3 and top_signals > bottom_signals:
         action = '🔴 强减仓'
         direction = 'short'
-    elif top_signals >= 3 and top_signals > bottom_signals:
+    elif top_signals >= 2 and top_signals > bottom_signals:
         action = '🟠 标准减仓'
         direction = 'short'
     else:
