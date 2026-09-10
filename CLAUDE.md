@@ -71,15 +71,15 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 `AnalysisEngine.analyze(ctx)` 跑完返 `AnalysisResult`。Phase1 + Phase2 共 7 个 (DcfStrategy 是 Phase2 派生)。
 
-| Strategy | name | weight | 输入 | 输出 |
-|---|---|---|---|---|
-| `ChanStrategy` | chan | 0.20 | K线 (日/周) | 中枢+背驰+买卖点 (czsc) |
-| `WyckoffStrategy` | wyckoff | 0.20 | K线 (日/周) | 3 阶段 + sub_events (build_kline_features 算 BOLL/BBW) |
-| `SmcStrategy` | smc | 0.10 | K线 (日/周) | OB/FVG/Sweep 两周期 |
-| `ObvStrategy` | obv | 0.10 | K线 (close + volume) | OBV 累计 + 5档 verdict + obv5/obv_trend (2026-08-29 简化) |
-| `FflowStrategy` | fflow | 0.10 | Tushare money_flow (DataStore 落盘) | 大单/特大单净流入 5档 verdict |
-| `ValuationStrategy` → `FinanceStrategy` (v6.2.8 改名) | finance | 0 | EPS + market_cap + stk_factor | PEG + DCF L + Magic ROC/EY 合并 (v6.2.5 合并 peg+dcf) |
-| ~~`PegStrategy`~~ | peg | DEPRECATED | — | 2026-09-02 合并进 ValuationStrategy, 保留兼容 |
+| Strategy | name | 输入 | 输出 |
+|---|---|---|---|
+| `ChanStrategy` | chan | K线 (日/周) | 中枢+背驰+买卖点 (czsc) — **决策主入口** |
+| `WyckoffStrategy` | wyckoff | K线 (日/周) | 3 阶段 + sub_events (build_kline_features 算 BOLL/BBW) |
+| `SmcStrategy` | smc | K线 (日/周) | OB/FVG/Sweep 两周期 |
+| `ObvStrategy` | obv | K线 (close + volume) | OBV 累计 + 5档 verdict + obv5/obv_trend (2026-08-29 简化) |
+| `FflowStrategy` | fflow | Tushare money_flow (DataStore 落盘) | 大单/特大单净流入 5档 verdict |
+| `ValuationStrategy` → `FinanceStrategy` (v6.2.8 改名) | finance | EPS + market_cap + stk_factor | PEG + DCF L + Magic ROC/EY 合并 (v6.2.5 合并 peg+dcf) |
+| ~~`PegStrategy`~~ | peg | DEPRECATED | 2026-09-02 合并进 ValuationStrategy, 保留兼容 |
 
 > 2026-08-17 拆分: `VolumePriceStrategy` (v5.10.34) 拆成 `ObvStrategy` + `FflowStrategy` 两个独立 strategy
 > 2026-08-29 简化: `ObvStrategy` 删 60d 段背离 (太滞后), 改 obv5 (5日价跌+OBV涨) + obv_trend (OBV>MA20)
@@ -96,7 +96,7 @@ sync 是全局操作，必须在多线程启动前单线程完成。
 
 `peg / dcf / five_categories / buy_sell_points / position / exit_signals / stop_profit_loss / three_layer_position / monitor_triggers / fundamental` —— **不存 dump**, render 时由 analysis 算; `RenderData` 10 个 `@property` 兼容老代码 `data.<field>` 调用, 内部读 `data.analysis[field]`。
 
-> v6.2.8 删 `sector_overheat` (K线代理算涨幅, 不是真板块指数), 加 `fundamental` (4 维评分从 mech.py 抽)
+> v6.2.8 删 `sector_overheat` (K线代理算涨幅, 不是真板块指数)
 
 ### 历史回测 (2026-08 简化)
 
@@ -351,17 +351,18 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow
 
 > **任何 `/t-analyze` / `/t-trigger` 输出的 md 报告必须遵守以下规则:**
 
-### 🚨 7 strategy × 2 周期 矩阵 (v6.2.5 重构 6 strategy, v6.2.8 加 technical)
+### 🚨 因子 × 2 周期 矩阵 (v6.2.5 重构)
 
-**理论:** 7 strategy (缠论/威科夫/SMC/OBV/fflow/technical/finance) × 2 周期 (周/日) = 14 场景矩阵互补
+**理论:** 5 类 (缠论/威科夫/SMC/OBV+fflow/共振) × 2 周期 (周/日) = 10 场景矩阵互补
+> 矩阵里的 "composite" 5 类等权投票 (chan/wyckoff/smc/vp/res 各 1 票), 仅做参考, 不进仓位/退出/监控决策.
 
 **6 重保险:**
 1. **模板层** (`tools/render/report_renderer.py`): `_section_factor_matrix()` 硬编码占位符, 调 `render_factor_matrix_md`
-2. **Linter 层** (`tools/render/report_linter.py`): 4 个正则 (场景/共振数/行动/标题), 缺任一 → FAIL
+2. **Linter 层** (`tools/render/report_linter.py`): 因子矩阵标题正则 + 顺序检查, 缺任一 → FAIL
 3. **Skill 层** (`.claude/skills/t-analyze/SKILL.md`): 必含 4 个固定标签
 4. **CLAUDE.md 铁律** (本节): 22 section 必填
 5. **回测**: 故意删 section → linter FAIL → 强制修复
-6. **strategy 权重**: chan 0.20 / wyckoff 0.20 / smc 0.10 / obv 0.10 / fflow 0.10 / valuation 0.15
+6. **strategy 权重**: 决策走缠论 + 估值双指标 (无加权汇总)
 
 **输出格式 (缺则 Linter FAIL):**
 ```markdown
@@ -436,13 +437,14 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow
 
 ### 三、退出信号 (基于 Mavis 现有框架)
 
-> 信号源全部是 7 strategy × 2 周期矩阵 (日/周) + fflow/OBV 并联双判定 + 估值 (PEG/DCF) + 技术指标。`v11 score` 是 v5.7 之前的旧命名, 现行版用 `factor_scores.total_score` (6 方法加权总分)。
+> 退出信号: 决策走 缠论 1卖/2卖/3卖/60分顶背 + 风控
+> 信号源: 缠论 5 类固化信号 (60分底背/60分顶背/止跌信号/威科夫阶段/缠论综合) + fflow/OBV + 估值 (PEG/DCF L) + MA120 偏离
 
 **🔴 立即清仓 (满足任意):**
 - fflow 5日净流出 > 30亿 (Tushare.money_flow 真值, 走 DataStore.get_fflow_history)
 - OBV 趋势转空 (`obv5` 连续 3 日 0 + `obv_trend` 由 1 转 0) — 2026-08-29 简化后唯一 OBV 退出信号
 - MACD 高位死叉 — 仅半导体设备/HBM 有效
-- 5 方法总分 ≤ -3 (Wyckoff=Markdown + 多重共振 sell)
+- 缠论 60分顶背触发 (1 卖信号) — 走 compute_exit_signals 纯缠论判定
 - PEG > 3.0
 - L/E3 > 8 (r=10% 档)
 - L/可达利润 > 2.5
@@ -451,12 +453,12 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow
 - fflow 5日净流出 10-30亿
 - MA120 偏离 > 50%
 - ROE 连续 2 季度下滑
-- 5 方法总分 = -2
+- 缠论 1卖/2卖信号触发 (60分级别)
 - T 框架进入 T+3 ~ T+6
 
 #### 🟡 持仓观察 (1-2 个信号)
 
-5 方法总分 = -1 / MA120 偏离 30-50% / 板块轮动进入出货预警区 / L/E3 = 5-8
+缠论止跌信号 (缩量+长下影+次日不创新低 3/3) / MA120 偏离 30-50% / 板块轮动进入出货预警区 / L/E3 = 5-8
 
 #### OBV 信号版块适用性 (重要)
 
@@ -484,11 +486,12 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow
 
 ### 六、规则应用声明
 
-任何 `/t-analyze` / `/t-watchlist` 报告必须包含退出信号检查：factor_scores.total_score / PEG_真实 / L/E3 / vs MA120 / **板块MA20偏离** / OBV顶背离板块适用性 / MACD死叉板块适用性 → 综合判定
+任何 `/t-analyze` / `/t-watchlist` 报告必须包含退出信号检查:
+缠论 1卖/2卖/3卖 + 60分顶背 / PEG_真实 / L/E3 / vs MA120 / **板块MA20偏离** / OBV 顶背离板块适用性 / MACD 死叉板块适用性 → 综合判定
 
 ---
 
-## 七个 Slash 命令 (2026-08-28 清理后, 2026-09-08 加 t-quality-growth)
+## 七个 Slash 命令 (2026-08-28 清理后, 2026-09-08 加 t-quality-growth → 2026-09-09 改名 t-earnings-blowout)
 
 | 命令 | 用途 |
 |---|---|
@@ -498,7 +501,7 @@ bash tools/with_venv.sh python -m tools.storage.sync --fflow
 | `/t-sync-data [--all / --codes X / --kline / --fflow / --cache / --financials / --eps / --stock-basic / --stk-factor]` | 7 flag 正交 sync, 默认 `--auto` 智能检测 stale |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 <3%"清单 |
 | `/t-bb-obv [--window 5]` | 科技股扫 BOLL<15% + BBW<10% + OBV 5日/趋势 (compute_factor_history **直算**, 不走 cache) |
-| `/t-magic [--top N] [--period 2026Q2] [--skip-watchlist]` | Magic Formula 排名 (Greenblatt ROC+EY 双优), 0 网络, 追加到 watchlist |
-| `/t-quality-growth` | R3 v6.2.7 启动期反转信号扫描, 找 3 年内涨 10 倍的"10x 票"启动期 |
+| `/t-roc-ey [--top N] [--period 2026Q2] [--skip-watchlist]` | ROC + EY 联合排名 (Greenblatt 公式, 原 Magic Formula), 0 网络, 追加到 watchlist |
+| `/t-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 |
 
 **已删除** (过时的): `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking`

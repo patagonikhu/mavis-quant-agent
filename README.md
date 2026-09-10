@@ -14,13 +14,13 @@
 | `/t-analyze <code> [name]` | 单只详报 (22 section: 投资四问 + T 框架 + PEG + DCF + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 8 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
-| `/t-magic` | 跑 Magic Formula 排名 (Greenblatt ROC+EY 联合), Top 20 写到 docs/magic-top20.md | `/t-magic` |
+| `/t-roc-ey` | 跑 ROC + EY 联合排名 (Greenblatt 公式, 原 Magic Formula), Top 20 写到 docs/roc-ey-top20.md | `/t-roc-ey` |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单, 写 docs/oversold-watchlist.md | `/t-near-low --gap 2` |
 | `/t-bb-obv` | 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 三重确认 (每天 0-2 只) | `/t-bb-obv --window 5` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
-| `/t-quality-growth` | R3 v6.2.7 启动期反转信号扫描, 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-quality-growth --top-np-jump 30` |
+| `/t-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-earnings-blowout --top-np-jump 30` |
 
-> 7 个 skill (含 t-quality-growth, 2026-09-08 加), 加 `t-sync-data --cache` 替代旧 `t-sync-cache`
+> 7 个 skill (含 t-earnings-blowout, 2026-09-09 改自 t-quality-growth), 加 `t-sync-data --cache` 替代旧 `t-sync-cache`
 
 ### 1.1 典型用法
 

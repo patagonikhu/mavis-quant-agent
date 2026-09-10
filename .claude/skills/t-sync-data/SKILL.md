@@ -1,94 +1,42 @@
 ---
 name: t-sync-data
-description: 唯一数据同步入口. 7 个正交 flag 控制 sync 行为, 默认 --auto 智能检测 stale. 触发词: "同步数据"、"拉K线/财务/EPS/fflow"、"sync cache"、"sync 一下".
+description: 唯一数据同步入口. 7 个正交 flag (kline/stk-factor/stock-basic/financials/eps/fflow/cache), 默认 --auto 智能检测 stale. 触发词: "同步数据"、"拉K线/财务/EPS/fflow"、"sync cache"、"sync 一下".
 user-invocable: true
 allowed-tools:
   - Bash
 
-## 核心原则
-
-- 所有数据同步走 `tools/storage/sync.py` 一个入口
-- 分析 skill (analyze / bb-obv / near-low / magic / backtest) **read-only**, 缺数据时报"请先 /t-sync-data"
-- 数据写盘唯一路径: `tools.storage.sync`, 业务层不直连 db/网络
+> 📐 代码组织: [`architecture.md`](../../architecture.md)
+> 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
+> 📐 新 Strategy: [`strategy_recipe.md`](../../strategy_recipe.md)
 
 ## 用法
 
 ```bash
-# 智能模式 (推荐, 多数情况 0 网络)
-python -m tools.storage.sync                 # --auto 默认
+# 默认智能 (推荐, 多数 0 网络)
+bash tools/with_venv.sh python -m tools.storage.sync
+bash tools/with_venv.sh python -m tools.storage.sync --auto-dry       # 试运行
 
-# 试运行 (只显示会跑啥)
-python -m tools.storage.sync --auto-dry
-
-# 强刷 stale
-python -m tools.storage.sync --auto-force
-
-# 7 个正交 flag
-python -m tools.storage.sync --kline          # 增量 K 线 + 6 指数
-python -m tools.storage.sync --stk-factor     # 重拉 stk_factor_pro 17 列 (5 季, 8 分钟)
-python -m tools.storage.sync --stock-basic    # 行业/名称 (30 天 1 次)
-python -m tools.storage.sync --financials     # 5 季财务 (fina_indicator_vip 全市场)
-python -m tools.storage.sync --eps            # EPS 机构预期 (datacenter)
-python -m tools.storage.sync --fflow          # 主力资金历史 (按天全市场, 按季存 parquet, ~13 分钟)
-python -m tools.storage.sync --cache          # signal_cache 缓存
-
-# 一键 alias
-python -m tools.storage.sync --all-data       # kline + stock-basic + financials
+# 7 个正交 flag (按需刷单个)
+... --kline              # 增量 K 线 (每天)
+... --stk-factor         # 17 列估值因子 (5 季 1 次, 8 分钟)
+... --stock-basic        # 名称/行业 (30 天 1 次)
+... --financials         # 5 季财务
+... --eps                # 机构一致预期 (datacenter)
+... --fflow              # 主力资金 (按天全市场, ~13 分钟)
+... --cache              # signal_cache (跑回测前)
 
 # 范围 (3 选 1, 默认 --watchlist)
-python -m tools.storage.sync --all            # 全市场
-python -m tools.storage.sync --codes 002371 300750
+... --all                 # 全市场
+... --codes 002371 300750 # 指定
 ```
 
-## 8 个 flag 含义
+## 关键约束
 
-| Flag | 数据源 | 频率 |
-|---|---|---|
-| `--kline` | Tushare daily (按日增量) | 每天 |
-| `--stk-factor` | Tushare stk_factor_pro (17 列, 含 ps/dv_ratio/float_share) | 5 季一次 (8 分钟) |
-| `--stock-basic` | Tushare stock_basic + stk_factor 兜底股本 | 30 天 |
-| `--financials` | Tushare fina_indicator_vip (全市场 1 次 API) | 5 季 |
-| `--eps` | datacenter.eastmoney.com (机构一致预期) | 30 天 TTL |
-| `--fflow` | Tushare.money_flow (按天全市场, 落盘 data/history/fflow_history/) | 每天 |
-| `--cache` | analysis_cache.db (24 列因子) | 跑前 |
-| `--meta` | 占位, 暂未实现 | — |
-
-## 实战节奏
-
-```bash
-# 周一早上
-python -m tools.storage.sync                 # 智能检测, 多数 0 网络
-
-# 盘后
-python -m tools.storage.sync                  # 补今天 K 线 + stk_factor
-
-# 季报出后
-python -m tools.storage.sync --all-data --all # 全市场 5-10 分钟
-
-# 跑回测前
-python -m tools.storage.sync --cache --all    # 全市场缓存
-```
-
-## 输出
-
-sync 跑完打印本地数据新鲜度:
-
-```
-📊 本地数据新鲜度 (最新一天):
-  K线 (OHLCV)        : 20260903
-  stk_factor (估值)  : 20260903
-  financials (季报)  : 20260630
-  EPS (机构预期)     : 2026-09-03 22:28
-  fflow (资金流)     : 20260903
-  stock_basic (静态) : mtime 2026-09-04 07:27
-```
-
-## 数据源 (DAO 层)
-
-`DataStore` (tools/storage/store.py) 是唯一数据读接口. 25+ 公开方法, 6 个 bulk 接口, **业务层不直连 parquet 或 db**.
+- **唯一允许网络的 skill** (其他 8 个全部 0 网络, 走 DataStore)
+- **`--eps` 范围互斥** (守门员): 默认 watchlist, `--eps --all` 强制缩回 watchlist + warning
+- 写盘唯一路径: `tools.storage.sync`, 业务层不直连 db/网络
 
 ## 相关
 
-- `/t-analyze` / `/t-bb-obv` / `/t-near-low` / `/t-magic` / `/t-backtest` — 5 个 read-only 分析 skill, 跑前先 sync
-- `tools/storage/store.py` — DataStore DAO
-- `tools/storage/sources/` — Tushare / eastmoney 接口封装
+- 7 个分析 skill (read-only): `/t-analyze` / `/t-bb-obv` / `/t-near-low` / `/t-roc-ey` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest`
+- `/t-guardrail` (含 eps-scope-guard)
