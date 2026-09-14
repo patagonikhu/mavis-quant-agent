@@ -37,4 +37,4 @@ bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan             
 
 ## 相关
 
-- `/t-analyze <code>` (命中后深挖) / `/t-roc-ey` / `/t-bb-obv` / `/t-near-low` / `/t-backtest` / `/t-sync-data`
+- `/t-analyze <code>` (命中后深挖) / `/t-finance` / `/t-bb-obv` / `/t-near-low` / `/t-backtest` / `/t-sync-data`

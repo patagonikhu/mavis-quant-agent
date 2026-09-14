@@ -34,4 +34,4 @@ bash tools/with_venv.sh python -m tools.batch.find_near_low               # 默�
 
 ## 相关
 
-- `/t-analyze <code>` (命中后深挖) / `/t-bb-obv` / `/t-roc-ey` / `/t-sync-data`
+- `/t-analyze <code>` (命中后深挖) / `/t-bb-obv` / `/t-finance` / `/t-sync-data`

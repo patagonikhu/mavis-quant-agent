@@ -25,7 +25,7 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-dry       # 试运�
 ... --fflow              # 主力资金 (按天全市场, ~13 分钟)
 ... --cache              # signal_cache (跑回测前)
 
-# 范围 (3 选 1, 默认 --watchlist)
+# 范围 (3 选 1, 默认 --all)
 ... --all                 # 全市场
 ... --codes 002371 300750 # 指定
 ```
@@ -38,5 +38,5 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-dry       # 试运�
 
 ## 相关
 
-- 7 个分析 skill (read-only): `/t-analyze` / `/t-bb-obv` / `/t-near-low` / `/t-roc-ey` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest`
+- 7 个分析 skill (read-only): `/t-analyze` / `/t-bb-obv` / `/t-near-low` / `/t-finance` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest`
 - `/t-guardrail` (含 eps-scope-guard)

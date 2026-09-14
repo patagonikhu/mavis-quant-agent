@@ -249,12 +249,15 @@ def main():
     )
     print("-" * 100)
     for r in candidates:
+        # 2026-09-11 修: 打印精筛后的 daily_gap_v2 (用 daily_basic close 算), 不用粗筛的 daily_gap
+        # 修前: 用 K 线最后价算的 daily_gap, 跟精筛阈值 (gap_th) 不一致
+        # 修后: 输出跟精筛保持一致
         print(
             f"{r['code']:<8} {r['name']:<10} {r['sector'][:10]:<12} "
             f"{r['cur']:>7.2f} {r['daily_cur']:>7.2f} {r['lo_5y']:>7.2f} "
             f"{r['max_dd_5y'] * 100:>+9.1f}% "
             f"{r['current_drop'] * 100:>+7.1f}% "
-            f"{r['daily_gap'] * 100:>+5.2f}% {r['n_b']:>4d}次"
+            f"{r['daily_gap_v2'] * 100:>+5.2f}% {r['n_b']:>4d}次"
         )
 
     # 写 md 报告

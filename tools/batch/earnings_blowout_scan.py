@@ -385,7 +385,6 @@ def main():
     parser.add_argument("--limit", type=int, default=30, help="stdout Top N (默认 30)")
     parser.add_argument("--top-np-jump", type=int, default=0,
                         help="按本季-上季净利 yoy 差 (pp) 降序取前 N, 追加到 md (默认 0=不输出, 例 --top-np-jump 200)")
-    parser.add_argument("--no-md", action="store_true", help="不写 md 文件")
     parser.add_argument("--out", default="docs/earnings-blowout-watchlist.md", help="md 输出路径")
     parser.add_argument("--include-cycle", action="store_true", help="包含周期股 (默认排除, 周期股景气突破是 β 不是 α)")
     parser.add_argument("--tolerance", type=float, default=0.0, help="3 季单调回踩容忍 (pp, 默认 0 = 严格; 例 1.0 允许 prev vs prev2 差 -1pp, 解决财务披露口径跳跃问题)")
@@ -607,7 +606,7 @@ def main():
     else:
         print(render_stdout(hits, args))
 
-    if not args.no_md and hits:
+    if hits:
         out_path = ROOT / args.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
         md_content = render_md(hits, args)

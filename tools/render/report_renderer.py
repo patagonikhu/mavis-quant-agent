@@ -45,12 +45,84 @@ from tools.analysis.analysis_result_signals import obv_label
 # Section 渲染器
 # ============================================================
 
+def _section_quarterly_table(data: RenderData) -> str:
+    """4 季大表 (从 RenderData.quarterly_finance 读 14 列, 含 ROC/EY/季末市值/EV/投入资本)
+
+    2026-09-11 拆出: 给 /t-roc-ey 摘要复用, 跟 /t-analyze 22 section 第 1 张表保持一致
+    返回 markdown 字符串 (header + note + 表格 + 行业)
+    """
+    _val = data.valuation_data or {}
+    has_magic = bool(_val and not _val.get("skip_reason"))
+
+    if not data.quarterly_finance:
+        return "> **最近 4 季实际财务:** ❌ 缺失"
+
+    # period_label 复用 _section_eps 逻辑
+    period_label = "—"
+    industry = "—"
+    if has_magic:
+        period_label = _val.get("period_label") or "—"
+        industry = _val.get("industry") or "—"
+        if period_label in ("—", "no_data", None, "") and data.quarterly_finance:
+            latest_q = data.quarterly_finance[-1].get("quarter", "")
+            if latest_q:
+                try:
+                    y, m, _ = latest_q.split("-")
+                    q_num = (int(m) - 1) // 3 + 1
+                    period_label = f"{y}Q{q_num}"
+                except Exception:
+                    period_label = latest_q
+
+    cols1 = ["季", "营收 yoy", "净利 yoy", "毛利率", "ROE", "营收 (亿)", "净利 (亿)",
+             "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)"]
+    sep1 = ["---"] * 14
+    rows = [f"### 最近 4 季财务 + Magic 公式 ({period_label if has_magic else 'TTM'})", "",
+            "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期):**", "",
+            "| " + " | ".join(cols1) + " |",
+            "| " + " | ".join(sep1) + " |"]
+
+    for r in data.quarterly_finance:
+        def _fmt(v):
+            return f"{v:,.0f}" if v else "—"
+        roc_q = r.get('roc')
+        ey_q = r.get('ey')
+        roc_s = f"{roc_q:.1f}%" if roc_q is not None else "—"
+        ey_s  = f"{ey_q:.2f}%" if ey_q is not None else "—"
+        rows.append(
+            f"| {r['quarter']} "
+            f"| {r['or_yoy']:+.1f}% "
+            f"| {r['np_yoy']:+.1f}% "
+            f"| {r['gm']:.1f}% "
+            f"| {r['roe']:.1f}% "
+            f"| {r['revenue_yi']:.1f} "
+            f"| {r['netprofit_yi']:.2f} "
+            f"| {r.get('ebit_yi') or 0:.2f} "
+            f"| {roc_s} "
+            f"| {ey_s} "
+            f"| {_fmt(r.get('mc_yi'))} "
+            f"| {_fmt(r.get('netdebt_yi'))} "
+            f"| {_fmt(r.get('ev_yi'))} "
+            f"| {_fmt(r.get('capital_yi'))} |"
+        )
+
+    if has_magic:
+        rows.extend(["", f"**行业:** {industry}"])
+        rows.append(
+            "\n**判定:** ROC 越高 = 资本效率越好, EY 越高 = EV 回报越好, "
+            "联合排名 (Greenblatt 原版)"
+        )
+
+    return "\n".join(rows)
+
+
 def _section_eps(data: RenderData) -> str:
     """财务数据 section (v6.2.7 改名 + 改中文 + 加最近 4 季财务 + Magic 整合)
 
     内容 (1 张大表):
     1. EPS 预测 (Tushare 一致预期) — 单独小表
-    2. 最近 4 季 财务 + Magic (合并 1 表) — 行: 4 季 + 1 行 Magic (5 行), 列: 12 指标
+    2. 最近 4 季 财务 + Magic (合并 1 表) — 复用 _section_quarterly_table()
+
+    2026-09-11 改: 4 季大表拆到 _section_quarterly_table, 摘要也复用
     """
     parts = []
 
@@ -64,95 +136,8 @@ def _section_eps(data: RenderData) -> str:
     else:
         parts.append("> EPS 一致预期: ❌ 缺失 (PEG/DCF 标记 N/A)")
 
-    # 2) 合并大表: 4 季财务 + Magic 1 行 (12 指标)
-    _val = data.valuation_data or {}
-    has_magic = bool(_val and not _val.get("skip_reason"))
-
-    roc_pct = "—"
-    ey_pct  = "—"
-    ev_yi   = None
-    industry = "—"
-    period_label = "—"
-    seasonal = ""
-
-    if has_magic:
-        roc_raw = _val.get("roc")
-        ey_raw  = _val.get("ey")
-        ev_yi   = _val.get("ev_yi")
-        industry = _val.get("industry") or "—"
-        period_label = _val.get("period_label") or "—"
-
-        if period_label in ("—", "no_data", None, "") and data.quarterly_finance:
-            latest_q = data.quarterly_finance[-1].get("quarter", "")
-            if latest_q:
-                try:
-                    y, m, _ = latest_q.split("-")
-                    q_num = (int(m) - 1) // 3 + 1
-                    period_label = f"{y}Q{q_num}"
-                except Exception:
-                    period_label = latest_q
-
-        seasonal = " ⚠️ 季度代理" if _val.get("seasonal_warning") else ""
-        roc_pct = f"{roc_raw:.1f}" if isinstance(roc_raw, (int, float)) else "—"
-        ey_pct  = f"{ey_raw:.2f}" if isinstance(ey_raw, (int, float)) else "—"
-
-    # 构建大表 (两个独立表格)
-    if data.quarterly_finance:
-        header = f"### 最近 4 季财务 + Magic 公式 ({period_label if has_magic else 'TTM'})"
-        note = "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期):**"
-        # v6.2.8 改: 加 ROC + EY 2 列 (14 列, 季粒度, 每季单独算)
-        cols1 = ["季", "营收 yoy", "净利 yoy", "毛利率", "ROE", "营收 (亿)", "净利 (亿)",
-                 "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)"]
-        sep1 = ["---"] * 14
-        rows = [
-            header, "",
-            note, "",
-            "| " + " | ".join(cols1) + " |",
-            "| " + " | ".join(sep1) + " |",
-        ]
-
-        for r in data.quarterly_finance:
-            def _fmt(v):
-                return f"{v:,.0f}" if v else "—"
-            # v6.2.8 加: ROC/EY 按每季分别取, 不再用最新一季
-            roc_q = r.get('roc')
-            ey_q = r.get('ey')
-            roc_s = f"{roc_q:.1f}%" if roc_q is not None else "—"
-            ey_s  = f"{ey_q:.2f}%" if ey_q is not None else "—"
-            rows.append(
-                f"| {r['quarter']} "
-                f"| {r['or_yoy']:+.1f}% "
-                f"| {r['np_yoy']:+.1f}% "
-                f"| {r['gm']:.1f}% "
-                f"| {r['roe']:.1f}% "
-                f"| {r['revenue_yi']:.1f} "
-                f"| {r['netprofit_yi']:.2f} "
-                f"| {r.get('ebit_yi') or 0:.2f} "
-                f"| {roc_s} "
-                f"| {ey_s} "
-                f"| {_fmt(r.get('mc_yi'))} "
-                f"| {_fmt(r.get('netdebt_yi'))} "
-                f"| {_fmt(r.get('ev_yi'))} "
-                f"| {_fmt(r.get('capital_yi'))} |"
-            )
-
-        if has_magic:
-            # v6.2.8 改: 删小表 (Magic 公式 ROC/EY 4 季已在大表里, 不再重复显示最新一季)
-            # 保留行业 + 判定说明
-            rows.extend([
-                "",
-                f"**行业:** {industry}",
-            ])
-
-        parts.append("\n" + "\n".join(rows))
-
-        if has_magic:
-            parts.append(
-                "\n**判定:** ROC 越高 = 资本效率越好, EY 越高 = EV 回报越好, "
-                "联合排名 (Greenblatt 原版)"
-            )
-    else:
-        parts.append("\n> **最近 4 季实际财务:** ❌ 缺失")
+    # 2) 4 季大表 (复用 helper)
+    parts.append(_section_quarterly_table(data))
 
     return "\n".join(parts)
 

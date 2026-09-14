@@ -303,7 +303,7 @@ def main() -> int:
                        min_mcap=args.min_mcap, max_roc=args.max_roc, min_ebit=args.min_ebit)
 
     # 4) 写文件 (skipped = 总池 - 有效排名, 不是 - topN)
-    out_path = _TOOLS.parent / "docs" / "roc-ey-top20.md"
+    out_path = _TOOLS.parent / "docs" / "finance-top20.md"
     n_valid = sum(1 for r in results if r.get("roc") is not None and r.get("ey") is not None)
     md = render_markdown(top_n, args.period, skipped=len(codes) - n_valid)
     out_path.write_text(md, encoding="utf-8")
@@ -325,7 +325,7 @@ def main() -> int:
     if not args.rank_only and top_n:
         print()
         print("📊 跑 4 项摘要 (PEG/DCF/ROC 排名)...")
-        summary_path = _TOOLS.parent / "docs" / "roc-ey-top20-summary.md"
+        summary_path = _TOOLS.parent / "docs" / "finance-top20-summary.md"
         _run_summary(top_n, out_path, summary_path)
         print(f"   ✅ 写: {summary_path}")
 
@@ -384,6 +384,19 @@ def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
         else:
             item["dcf"] = {"error": "市值或 EPS 缺"}
         item["price"] = current_price
+        item["roc"] = r.get("roc")
+        item["ey"] = r.get("ey")
+
+        # 4 季大表 markdown (复用 /t-analyze 22 section 的 _section_quarterly_table)
+        # 2026-09-11 改: 跟 /t-analyze 22 section 第 1 张表完全一致 (14 列, 含季末市值/EV/投入资本)
+        from tools.render.report_renderer import _section_quarterly_table
+        from tools.analysis.render_data import RenderData
+        from tools.analysis.analysis_engine import AnalysisEngine
+        full_ctx = DataStore.get_ctx(code)
+        full_result = AnalysisEngine().analyze(full_ctx)
+        rd = RenderData.from_result(full_ctx, full_result)
+        item["quarterly_table_md"] = _section_quarterly_table(rd)
+
         items.append(item)
 
     md = render_summary_md(items)
@@ -497,26 +510,61 @@ def _fmt_dcf(dcf: dict) -> str:
 
 
 def render_summary_md(items: list[dict]) -> str:
-    today = datetime.now().strftime("%Y-%m-%d")
-    md = f"# Magic Top 20 摘要 — {today}\n\n"
-    md += "> **范围:** Magic Top 20 票\n"
-    md += "> **字段:** 卡点⭐=N/A (LLM 补), PEG/DCF (datacenter.eastmoney.com), Magic 排名\n\n"
-    md += "## 📊 摘要表 (按 Magic 排名)\n\n"
-    md += "| # | 代码 | 名称 | 行业 | 卡点⭐ | PEG | DCF (r=10%) | Magic 排名 | 当前价 | 总市值 (亿) |\n"
-    md += "|---|------|------|------|--------|-----|-------------|------------|--------|-------------|\n"
+    """Top 20 摘要 markdown (2026-09-11 重写)
+
+    每票 1 个 4 季大表 (复用 _section_quarterly_table, 跟 /t-analyze 22 section 第 1 张表一致)
+    + 1 行 PEG/DCF L 摘要
+
+    字段 (跟 /t-analyze 22 section 1 表一致):
+      季 / 营收 yoy / 净利 yoy / 毛利率 / ROE / 营收 / 净利 / EBIT / ROC / EY / 市值 / 净负债 / EV / 投入资本
+    """
+    today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    md = f"# ROC + EY Top 20 摘要 — {today}\n\n"
+    md += "> **范围:** ROC + EY 联合排名 Top 20 (Greenblatt 公式: ROC 降序 + EY 降序, 综合 = (ROC 排名 + EY 排名) / 2)\n"
+    md += "> **4 季大表:** 复用 `tools/render/report_renderer.py::_section_quarterly_table` (跟 /t-analyze 22 section 第 1 张表完全一致)\n"
+    md += "> **PEG/DCF:** datacenter.eastmoney.com 机构一致预期 (LLM 后续补卡点⭐)\n\n"
+    md += "## 📊 Top 20 排名速览 (按综合排名)\n\n"
+    md += "| 综合 | 代码 | 名称 | 行业 | ROC | EY | PEG | DCF L (r=10%) | L/E3 |\n"
+    md += "|------|------|------|------|------|------|------|---------------|------|\n"
     for it in items:
-        mc = ((it.get("price") or 0) * 0) + 0  # 总市值从 daily_basic 拿
-        # 简化: 总市值从 price 算不出来, 跳过
         md += (
-            f"| {it.get('rank', '—')} | {it['code']} | {it['name']} | {it['industry']} | "
-            f"{it['card']} | {_fmt_peg(it['peg'])} | {_fmt_dcf(it['dcf'])} | "
-            f"#{it.get('rank', '—')} (综合 {it.get('combined_rank', '—')}) | "
-            f"{(it.get('price') or 0):.2f} | — |\n"
+            f"| {it.get('combined_rank', '—'):.1f} | {it['code']} | {it['name']} | {it['industry']} | "
+            f"{it.get('roc','—'):.1f}% | {it.get('ey','—'):.2f}% | "
+            f"{_fmt_peg(it['peg'])} | "
+            f"{_fmt_dcf_l(it['dcf'])} | "
+            f"{_fmt_dcf_l_e3(it['dcf'])} |\n"
         )
-    md += "\n---\n"
-    md += f"\n📅 **生成:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  |  "
-    md += f"🔧 **脚本:** `tools/batch/magic_top20.py`\n"
+
+    md += "\n---\n\n## 📋 Top 20 详表 (4 季财务 + Magic 估值)\n\n"
+    md += "> 每只票 1 张 4 季大表 (14 列: 季/营收yoy/净利yoy/毛利率/ROE/营收/净利/EBIT/ROC/EY/市值/净负债/EV/投入资本)\n"
+    md += "> + 1 行 PEG (机构一致预期 g%) + 1 行 DCF L (r=10% 隐含市值)\n\n"
+    for i, it in enumerate(items, 1):
+        md += f"### #{i} {it['code']} {it['name']} ({it['industry']})\n\n"
+        # 4 季大表
+        md += it["quarterly_table_md"] + "\n\n"
+        # PEG / DCF 1 行
+        md += f"**PEG:** {_fmt_peg(it['peg'])}  |  "
+        md += f"**DCF L (r=10%):** {_fmt_dcf_l(it['dcf'])}  |  "
+        md += f"**L/E3:** {_fmt_dcf_l_e3(it['dcf'])}\n\n"
+        md += "---\n\n"
+
+    md += f"\n📅 **生成:** {today}  |  "
+    md += f"🔧 **脚本:** `tools/batch/roc_ey_top20.py`\n"
     return md
+
+
+def _fmt_dcf_l(dcf: dict) -> str:
+    if "error" in dcf:
+        return f"❌ {dcf['error'][:18]}"
+    L = dcf.get("L_r10")
+    return f"{L:.0f}亿" if isinstance(L, (int, float)) else "—"
+
+
+def _fmt_dcf_l_e3(dcf: dict) -> str:
+    if "error" in dcf:
+        return "—"
+    e3 = dcf.get("L_E3_r10")
+    return f"{e3:.1f}x" if isinstance(e3, (int, float)) else "—"
 
 
 if __name__ == "__main__":

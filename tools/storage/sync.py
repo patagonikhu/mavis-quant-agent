@@ -683,12 +683,12 @@ def main():
         """,
     )
 
-    # Scope (3 选 1, 默认 --watchlist)
-    scope = parser.add_argument_group("范围 (3 选 1, 默认 --watchlist)")
-    scope.add_argument("--watchlist", action="store_true", default=True,
-                       help="watchlist 全部 (默认)")
-    scope.add_argument("--all", action="store_true",
-                       help="全市场 (5549 只, 慢)")
+    # Scope (3 选 1, 默认 --all, 2026-09-14 改)
+    scope = parser.add_argument_group("范围 (3 选 1, 默认 --all)")
+    scope.add_argument("--watchlist", action="store_true", default=False,
+                       help="watchlist 全部 (55 只, 显式 --watchlist)")
+    scope.add_argument("--all", action="store_true", default=True,
+                       help="全市场 (5555 只, 默认)")
     scope.add_argument("--codes", nargs="+", metavar="CODE",
                        help="指定代码列表 (例: --codes 002371 300750)")
 
@@ -779,7 +779,7 @@ def main():
     # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
     any_sync_flag = any([
         args.kline, args.stk_factor, args.stock_basic, args.financials,
-        args.eps, args.fflow, args.cache, args.meta, args.all_data,
+        args.eps, args.fflow, args.cache, args.all_data,
     ])
     if not any_sync_flag:
         print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")

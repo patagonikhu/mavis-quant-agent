@@ -36,4 +36,4 @@ bash tools/with_venv.sh python -m tools.batch.sector_ma_scan                    
 
 ## 相关
 
-- `/t-analyze <code>` (板块内真龙头) / `/t-bb-obv` / `/t-near-low` / `/t-roc-ey` / `/t-earnings-blowout` / `/t-sync-data`
+- `/t-analyze <code>` (板块内真龙头) / `/t-bb-obv` / `/t-near-low` / `/t-finance` / `/t-earnings-blowout` / `/t-sync-data`
