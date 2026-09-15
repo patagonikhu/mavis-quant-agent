@@ -12,10 +12,10 @@ allowed-tools:
 ## 用法
 
 ```bash
-bash tools/with_venv.sh python -m tools.batch.tech_bb_obv_scan              # 默认全市场
-... --window 5            # 改 OBV 5 日窗口
-... --limit 100           # 调试: 只扫前 N 只
+bash tools/with_venv.sh python -m tools.batch.macd_r2g_scan              # 默认: MACD 红转绿 (红柱≥20天)
+... --min-red 15          # 红柱天数 ≥ 15 天 (实战常用, 默认 20 偏严)
 ... --write-md            # 写 docs/macd-r2g-watchlist.md
+... --limit 100           # 调试: 只扫前 N 只
 ... --workers 8           # 线程数 (默认 4)
 ... --no-junk-filter      # 跳过垃圾股过滤
 ```
@@ -23,15 +23,15 @@ bash tools/with_venv.sh python -m tools.batch.tech_bb_obv_scan              # �
 ## 关键约束
 
 - **0 网络**: `DataStore.get_ctx(kline_only=True)` 跳过 EPS/fflow 网络拉取
-- **架构**: 走 `AnalysisEngine + [ObvStrategy]`, mode="bb_obv" 让 `build_kline_features` 只算 6 数组 (ma5/20/60/120 + boll_pct + boll_width), 跳过 17 个用不到的
-- **3 维过滤**: BOLL 位置 + BBW 带宽 + OBV 5日/趋势 (全过 → 1-3 个月反弹)
-- **性能**: 5256 只 ~1.5min (老版 30+min, 30x 提速)
-- **OBV 适用性**: ✅ 光学/封测/HBM (主力控盘) | ⚠️ 白酒/医药/银行 (主力分散, 信号参考度低) | ❌ 题材小盘 (噪声大)
+- **架构**: 纯内置 MACD 指标 (`_macd_arr`), 不走 L2 因子库, 不算任何"用不到"的特征数组
+- **算法**: 红柱持续 ≥ N 天 + 最近 2 根 K 线翻绿 (刚转绿)
+- **质量**: ⭐ = bar_diff 已转正 (动能反转初期)
+- **性能**: 3638 只 ~1.5min
 - **缺数据**: 报"请先 /t-sync-data"
 
 ## 输出
 
-- `docs/macd-r2g-watchlist.md` — 命中列表 (含 OBV 适用性警告)
+- `docs/macd-r2g-watchlist.md`
 - 命中后用 `/t-analyze <code>` 看 22 section 详报
 
 ## 相关
