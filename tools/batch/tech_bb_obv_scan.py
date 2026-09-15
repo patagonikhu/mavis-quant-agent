@@ -176,11 +176,12 @@ def scan_one_worker(args_tuple):
 
 
 def scan_bottom_one_worker(args_tuple):
-    """底部反弹信号: BOLL+BBW+OBV 三重确认 + 红柱持续 ≥ 5 天 + 柱子顶点已过 + bar_diff 转稳
+    """底部反弹信号: BOLL+BBW+OBV 三重确认 + 红柱持续 ≥ min_red_days 天 + 柱子顶点已过 + bar_diff 转稳
 
     2026-09-15 新增: 红柱到底,准备转绿 的抄底信号
+    2026-09-15 改: 红柱天数阈值可配置 (默认 5, 实证 21~30 最佳)
     """
-    code, boll_th, bbw_th, kline_limit = args_tuple
+    code, boll_th, bbw_th, kline_limit, min_red_days = args_tuple
     try:
         from tools.storage.store import DataStore
         with redirect_stdout(io.StringIO()):
@@ -224,7 +225,7 @@ def scan_bottom_one_worker(args_tuple):
                 cur_red_days += 1
             else:
                 break
-        if cur_red_days < 5:
+        if cur_red_days < min_red_days:
             return None  # 红柱太短, 不算蓄势
 
         # 找当前红柱区间内柱子最低点 (= 柱子顶点已过判断)
@@ -375,6 +376,7 @@ def main():
     parser.add_argument("--no-cap",          action="store_true",      help="跳过小盘市值过滤 (总市值<50亿 + 流通<20亿) — 默认过滤")
     parser.add_argument("--no-liq",          action="store_true",      help="跳过流动性过滤 (日成交额<5000万) — 默认过滤")
     parser.add_argument("--bottom",          action="store_true",      help="底部反弹信号 (BOLL+BBW+OBV + 红柱到底 + bar_diff 转稳)")
+    parser.add_argument("--bottom-min-days", type=int,   default=5,    help="底部模式: 红柱最短持续天数 (默认 5, 实证 21~30 天最佳)")
     args = parser.parse_args()
 
     require_obv = not args.no_obv
@@ -399,10 +401,10 @@ def main():
     if args.bottom:
         # 底部反弹信号: 需要更长 K 线 (60+ 根, 算 MACD 26 根)
         bottom_kline_limit = max(args.kline_limit, 80)
-        work_items = [(code, args.boll_threshold, args.bbw_threshold, bottom_kline_limit)
+        work_items = [(code, args.boll_threshold, args.bbw_threshold, bottom_kline_limit, args.bottom_min_days)
                       for code in codes]
         worker_fn = scan_bottom_one_worker
-        print(f"=== {scope} | 底部反弹 (BOLL<{args.boll_threshold}% + BBW<{args.bbw_threshold}% + OBV + 红柱≥5天 + diff转稳) ===", flush=True)
+        print(f"=== {scope} | 底部反弹 (BOLL<{args.boll_threshold}% + BBW<{args.bbw_threshold}% + OBV + 红柱≥{args.bottom_min_days}天 + diff转稳) ===", flush=True)
     else:
         worker_fn = scan_one_worker
         print(f"=== {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% "
