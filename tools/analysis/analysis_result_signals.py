@@ -495,7 +495,13 @@ def format_signals_for_render(changes: dict) -> list[str]:
     # wyckoff stage 变化（不在 extract_signals 里，单独处理）
     for field in ("wyckoff_daily", "wyckoff_weekly"):
         if field in changes:
-            parts.append(f"🔄wy{field.split('_')[1]}:{changes[field]}")
+            v = changes[field]
+            # 2026-09-15 缩写: Accumulation=A / Markup=M / Distribution=D / TradingRange=TR
+            v = (v.replace("Accumulation", "A")
+                  .replace("Markup", "M")
+                  .replace("Distribution", "D")
+                  .replace("TradingRange", "TR"))
+            parts.append(f"🔄wy{field.split('_')[1]}:{v}")
     return parts
 
 

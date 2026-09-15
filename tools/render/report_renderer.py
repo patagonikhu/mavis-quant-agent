@@ -1397,8 +1397,8 @@ def _has_signal(row: dict) -> bool:
 # 因子历史走势 — 20 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MA偏离(MA5/20/60) | MA20斜率 | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | MACD | RSI6 | KDJ-K | ATR% | 量比 | MACD状态 |"
-FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MACD | DIF | DEA | BARΔ | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | RSI6 | KDJ-K | ATR% | 量比 | MACD状态 |"
+FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
@@ -1462,9 +1462,50 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         slope_s = "—"
 
+    # MACD 4 列变量 (line 拼接前必须先算, 2026-09-15 把 MACD 挪到第 3 列)
+    macd_dif_v = row.get('macd_dif')
+    macd_dea_v = row.get('macd_dea')
+    # MACD 列: DIF-DEA 差值 (金叉死叉强度)
+    if macd_dif_v is not None and macd_dea_v is not None:
+        macd_diff = macd_dif_v - macd_dea_v
+        if macd_diff > 0:
+            macd_s = f"🟢+{macd_diff:.2f}"
+        elif macd_diff < 0:
+            macd_s = f"🔴{macd_diff:.2f}"
+        else:
+            macd_s = "⚪0"
+    else:
+        macd_s = "—"
+    # DIF / DEA
+    if macd_dif_v is not None:
+        dif_str = f"{macd_dif_v:+.3f}"
+    else:
+        dif_str = "—"
+    if macd_dea_v is not None:
+        dea_str = f"{macd_dea_v:+.3f}"
+    else:
+        dea_str = "—"
+    # BARΔ = bars[-1] - bars[-2], 第一行为 "—"
+    if macd_dif_v is not None and macd_dea_v is not None:
+        cur_bar = (macd_dif_v - macd_dea_v) * 2
+        if idx > 0 and rows[idx-1].get('macd_dif') is not None and rows[idx-1].get('macd_dea') is not None:
+            prev_bar = (rows[idx-1]['macd_dif'] - rows[idx-1]['macd_dea']) * 2
+            bar_delta = cur_bar - prev_bar
+            if bar_delta > 0:
+                bar_d_s = f"🟢+{bar_delta:.3f}"
+            elif bar_delta < 0:
+                bar_d_s = f"🔴{bar_delta:.3f}"
+            else:
+                bar_d_s = "⚪0"
+        else:
+            bar_d_s = "—"
+    else:
+        bar_d_s = "—"
+
     line = (
         f"| {row['date']} | ¥{row['close']:.1f} "
-        f"| {ma_s} | {slope_s} "
+        f"| {macd_s} | {dif_str} | {dea_str} | {bar_d_s} "
+        f"| {slope_s} | {ma_s} "
         f"| {wy} | {se} "
         f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
         f"| {b3} | {chg_str} | {accum_str} "
@@ -1476,26 +1517,12 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     bwid_s = f"{bwid:.1f}%"  if bwid  is not None else "—"
 
     # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跟"## 财务数据" section 的 4 季表重复, 历史表里跨季才变没日价值)
+    # 2026-09-15 注: MACD 4 列已挪到 line 拼接前, 这里只算 RSI6/KDJ/ATR/量比/MACD状态
 
-    # 2026-09-08 加 6 列: TechnicalStrategy 8 指标中的关键 5 (v6.2.8)
-    macd_dif_v = row.get('macd_dif')
-    macd_dea_v = row.get('macd_dea')
     rsi6_v     = row.get('rsi6')
     kdj_k_v    = row.get('kdj_k')
     atr_pct_v  = row.get('atr_pct')
     vol_r_v    = row.get('vol_ratio')
-
-    # MACD 列: 显示 DIF/DEA 差值 (金叉死叉强度)
-    if macd_dif_v is not None and macd_dea_v is not None:
-        macd_diff = macd_dif_v - macd_dea_v
-        if macd_diff > 0:
-            macd_s = f"🟢+{macd_diff:.2f}"
-        elif macd_diff < 0:
-            macd_s = f"🔴{macd_diff:.2f}"
-        else:
-            macd_s = "⚪0"
-    else:
-        macd_s = "—"
 
     # RSI6 列: 4 档 (超卖/偏低/正常/超买)
     if rsi6_v is not None:
@@ -1535,7 +1562,7 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         macd_state = "—"
 
-    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {macd_s} | {rsi6_s} | {kdj_s} | {atr_s} | {vol_s} | {macd_state} |"
+    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {rsi6_s} | {kdj_s} | {atr_s} | {vol_s} | {macd_state} |"
 
 
 def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
