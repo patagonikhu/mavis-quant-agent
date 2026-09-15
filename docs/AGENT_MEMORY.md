@@ -10,7 +10,7 @@
 - **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic,eps,fflow_history}/`
 - **同步**: `tools/storage/sync.py` (8 flag: kline/stk-factor/stock-basic/financials/eps/fflow/cache/meta, 默认 --auto)
 - **分析引擎**: `tools/analysis/analysis_engine.py` 6 个 strategy 类 (chan/wyckoff/smc/obv/fflow/finance)
-- **10 个活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-macd-r2g, t-near-low, t-backtest, t-roc-ey, t-sector-ma, t-earnings-blowout, t-guardrail, t-tech-bb-obv}/` (t-tech-bb-obv 兼容旧名, 默认指向 t-macd-r2g)
+- **10 个活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-macd-r2g, t-near-low, t-backtest, t-roc-ey, t-sector-ma, t-earnings-blowout, t-guardrail}/` (2026-09-15 重命名: t-tech-bb-obv → t-macd-r2g, 旧名不再支持)
 - **批量分析**: `tools/batch/t_analyze_all.py` (4 worker 并发)
 - **单只分析**: `tools/batch/t_analyze_one.py --code <code>` (新加, 829 行详报)
 

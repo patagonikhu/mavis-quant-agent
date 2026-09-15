@@ -15,7 +15,7 @@ allowed-tools:
 bash tools/with_venv.sh python -m tools.batch.tech_bb_obv_scan              # 默认全市场
 ... --window 5            # 改 OBV 5 日窗口
 ... --limit 100           # 调试: 只扫前 N 只
-... --write-md            # 写 docs/tech-bb-obv-watchlist.md
+... --write-md            # 写 docs/macd-r2g-watchlist.md
 ... --workers 8           # 线程数 (默认 4)
 ... --no-junk-filter      # 跳过垃圾股过滤
 ```
@@ -31,7 +31,7 @@ bash tools/with_venv.sh python -m tools.batch.tech_bb_obv_scan              # �
 
 ## 输出
 
-- `docs/tech-bb-obv-watchlist.md` — 命中列表 (含 OBV 适用性警告)
+- `docs/macd-r2g-watchlist.md` — 命中列表 (含 OBV 适用性警告)
 - 命中后用 `/t-analyze <code>` 看 22 section 详报
 
 ## 相关

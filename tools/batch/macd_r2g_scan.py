@@ -19,7 +19,6 @@ tools/batch/macd_r2g_scan.py — MACD 红转绿 信号 (红柱≥N天 + 最近2�
   ... --bottom-min-days N  # 旧模式红柱天数 (默认 5)
   ... --window 5         # 旧 BOLL 触底窗口
   ... --write-md         # 写 docs/macd-r2g-watchlist.md
-  ... --write-md-legacy  # 写 docs/tech-bb-obv-watchlist.md (兼容)
   ... --workers 8        # 线程数
 """
 import argparse
@@ -370,8 +369,7 @@ def main():
     parser.add_argument("--bbw-threshold",   type=float, default=10.0, help="BBW 上限 (默认 10)")
     parser.add_argument("--no-obv",          action="store_true",      help="只要 BOLL+BBW 双确认")
     parser.add_argument("--workers",         type=int,   default=4,    help="线程数 (默认 4)")
-    parser.add_argument("--write-md",        action="store_true",      help="写 docs/macd-r2g-watchlist.md (默认), --write-md-legacy 写旧名 docs/tech-bb-obv-watchlist.md")
-    parser.add_argument("--write-md-legacy", action="store_true",      help="写旧名 docs/tech-bb-obv-watchlist.md (向后兼容)")
+    parser.add_argument("--write-md",        action="store_true",      help="写 docs/macd-r2g-watchlist.md")
     parser.add_argument("--limit",           type=int,   default=0,    help="调试: 只扫前 N 只 (0=全部)")
     parser.add_argument("--no-junk-filter",  action="store_true",      help="跳过垃圾股过滤")
     parser.add_argument("--kline-limit",     type=int,   default=80,   help="K 线条数 (默认 80, ~3-4 月, 够 BOLL 20 + OBV MA20 + obv5)")
@@ -487,10 +485,9 @@ def main():
                          f"{h['days_after_min']} | {h['cur_bar']:+.3f} | {h['cur_diff']:+.4f} | {quality_icon} |\n")
             md.append("\n**信号含义**: 红柱已经到底,柱子顶点已过,准备转绿. ⭐ = bar_diff 已转正 (动能反转初期)\n")
         else:
-            # 默认写新文件名, --write-md-legacy 写旧名 (向后兼容)
-            out_path = ROOT / "docs" / ("tech-bb-obv-watchlist.md" if args.write_md_legacy else "macd-r2g-watchlist.md")
-            md_title = "Tech BB+OBV 三重确认" if args.write_md_legacy else "MACD 红转绿信号"
-            md = [f"# {md_title} ({today})\n\n"]
+            # 旧: Tech BB+OBV 三重确认 (已废弃, 保留标题兼容旧代码)
+            out_path = ROOT / "docs" / "macd-r2g-watchlist.md"
+            md = [f"# MACD 红转绿信号 ({today})\n\n"]
             md.append(f"> {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% "
                       f"{'AND OBV 底' if require_obv else ''}\n\n")
             md.append(f"**{len(hits)} 只命中** (实战: 宁可错过不可做错)\n\n")
