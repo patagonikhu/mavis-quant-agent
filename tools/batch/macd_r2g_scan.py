@@ -1,5 +1,5 @@
 """
-tools/batch/tech_bb_obv_scan.py — BOLL+BBW+OBV 三重确认 (全市场, 0 网络)
+tools/batch/macd_r2g_scan.py — MACD 红转绿 信号 (红柱≥N天 + 最近2根翻绿, 全市场, 0 网络)
 
 2026-09-14 重构 (从 bb_obv_scan.py 改):
   1. 默认 --all (全市场), 不再只扫 15 个科技股
@@ -14,10 +14,12 @@ tools/batch/tech_bb_obv_scan.py — BOLL+BBW+OBV 三重确认 (全市场, 0 网�
   3. OBV obv5 OR obv_trend ≥ 1 (吸筹信号)
 
 用法:
-  bash tools/with_venv.sh python -m tools.batch.tech_bb_obv_scan        # 默认全市场
-  ... --window 5         # 改 OBV 触底窗口
-  ... --limit 100        # 调试
-  ... --write-md         # 写 docs/tech-bb-obv-watchlist.md
+  bash tools/with_venv.sh python -m tools.batch.macd_r2g_scan              # 默认全市场
+  ... --bottom           # 旧 BOLL+BBW+OBV+MACD 模式 (兼容)
+  ... --bottom-min-days N  # 旧模式红柱天数 (默认 5)
+  ... --window 5         # 旧 BOLL 触底窗口
+  ... --write-md         # 写 docs/macd-r2g-watchlist.md
+  ... --write-md-legacy  # 写 docs/tech-bb-obv-watchlist.md (兼容)
   ... --workers 8        # 线程数
 """
 import argparse
@@ -368,7 +370,8 @@ def main():
     parser.add_argument("--bbw-threshold",   type=float, default=10.0, help="BBW 上限 (默认 10)")
     parser.add_argument("--no-obv",          action="store_true",      help="只要 BOLL+BBW 双确认")
     parser.add_argument("--workers",         type=int,   default=4,    help="线程数 (默认 4)")
-    parser.add_argument("--write-md",        action="store_true",      help="写 docs/tech-bb-obv-watchlist.md")
+    parser.add_argument("--write-md",        action="store_true",      help="写 docs/macd-r2g-watchlist.md (默认), --write-md-legacy 写旧名 docs/tech-bb-obv-watchlist.md")
+    parser.add_argument("--write-md-legacy", action="store_true",      help="写旧名 docs/tech-bb-obv-watchlist.md (向后兼容)")
     parser.add_argument("--limit",           type=int,   default=0,    help="调试: 只扫前 N 只 (0=全部)")
     parser.add_argument("--no-junk-filter",  action="store_true",      help="跳过垃圾股过滤")
     parser.add_argument("--kline-limit",     type=int,   default=80,   help="K 线条数 (默认 80, ~3-4 月, 够 BOLL 20 + OBV MA20 + obv5)")
@@ -484,8 +487,10 @@ def main():
                          f"{h['days_after_min']} | {h['cur_bar']:+.3f} | {h['cur_diff']:+.4f} | {quality_icon} |\n")
             md.append("\n**信号含义**: 红柱已经到底,柱子顶点已过,准备转绿. ⭐ = bar_diff 已转正 (动能反转初期)\n")
         else:
-            out_path = ROOT / "docs" / "tech-bb-obv-watchlist.md"
-            md = [f"# Tech BB+OBV 三重确认 ({today})\n\n"]
+            # 默认写新文件名, --write-md-legacy 写旧名 (向后兼容)
+            out_path = ROOT / "docs" / ("tech-bb-obv-watchlist.md" if args.write_md_legacy else "macd-r2g-watchlist.md")
+            md_title = "Tech BB+OBV 三重确认" if args.write_md_legacy else "MACD 红转绿信号"
+            md = [f"# {md_title} ({today})\n\n"]
             md.append(f"> {scope} | 最近 {args.window} 日 | BOLL<{args.boll_threshold}% AND BBW<{args.bbw_threshold}% "
                       f"{'AND OBV 底' if require_obv else ''}\n\n")
             md.append(f"**{len(hits)} 只命中** (实战: 宁可错过不可做错)\n\n")

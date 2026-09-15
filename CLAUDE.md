@@ -99,7 +99,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | `/t-backtest <signal>` | 信号回测 (5 年) |
 | `/t-sync-data [flags]` | 7 flag 正交 sync, 默认 --auto |
 | `/t-near-low` | 跌 70-80% + 距 5y 低 <3% |
-| `/t-tech-bb-obv [--window 5]` | BOLL+BBW+OBV 全市场扫 (走 AnalysisEngine, 30x 提速) |
+| `/t-macd-r2g [--bottom-min-days N]` | MACD 红转绿信号 (红柱≥N天 + 最近2根翻绿, 全市场, 0 网络) |
 | `/t-roc-ey [--top N]` | ROC+EY+4 季大表 (PEG/DCF L 已移除, 性能优化) |
 | `/t-earnings-blowout` | R3 启动期反转信号, 找 10x 票 |
 

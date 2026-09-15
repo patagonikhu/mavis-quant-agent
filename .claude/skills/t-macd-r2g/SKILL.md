@@ -1,6 +1,6 @@
 ---
-name: t-tech-bb-obv
-description: BOLL<15% + BBW<10% + OBV 5日/趋势 三重确认 (全市场, 走 AnalysisEngine). 0 网络. 触发词: "BOLL 触底"、"OBV 吸筹"、"短期形态".
+name: t-macd-r2g
+description: MACD 红转绿信号 (红柱≥N天 + 最近2根翻绿). 0 网络. 触发词: "红转绿"、"MACD 底部"、"红柱翻绿".
 user-invocable: true
 allowed-tools:
   - Bash
