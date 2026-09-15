@@ -41,4 +41,4 @@ allowed-tools:
 
 ## 相关
 
-- `/t-analyze` / `/t-finance` / `/t-sync-data` / `tools/batch/batch_backtest.py` (回测引擎) / `tools/analysis/signal_cache.py` (24 列因子缓存)
+- `/t-analyze` / `/t-roc-ey` / `/t-sync-data` / `tools/batch/batch_backtest.py` (回测引擎) / `tools/analysis/signal_cache.py` (24 列因子缓存)

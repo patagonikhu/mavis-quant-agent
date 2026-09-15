@@ -32,4 +32,4 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
 
 ## 相关
 
-- `/t-sync-data` (跑前必跑) / `/t-finance` / `/t-bb-obv` / `/t-near-low` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest` / `/t-guardrail`
+- `/t-sync-data` (跑前必跑) / `/t-roc-ey` / `/t-bb-obv` / `/t-near-low` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest` / `/t-guardrail`

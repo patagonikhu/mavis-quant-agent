@@ -38,5 +38,5 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-dry       # 试运�
 
 ## 相关
 
-- 7 个分析 skill (read-only): `/t-analyze` / `/t-bb-obv` / `/t-near-low` / `/t-finance` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest`
+- 7 个分析 skill (read-only): `/t-analyze` / `/t-bb-obv` / `/t-near-low` / `/t-roc-ey` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest`
 - `/t-guardrail` (含 eps-scope-guard)

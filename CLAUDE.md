@@ -100,7 +100,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | `/t-sync-data [flags]` | 7 flag 正交 sync, 默认 --auto |
 | `/t-near-low` | 跌 70-80% + 距 5y 低 <3% |
 | `/t-tech-bb-obv [--window 5]` | BOLL+BBW+OBV 全市场扫 (走 AnalysisEngine, 30x 提速) |
-| `/t-finance [--top N]` | ROC+EY+4 季大表+PEG+DCF L |
+| `/t-roc-ey [--top N]` | ROC+EY+4 季大表 (PEG/DCF L 已移除, 性能优化) |
 | `/t-earnings-blowout` | R3 启动期反转信号, 找 10x 票 |
 
 已删: `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking`。

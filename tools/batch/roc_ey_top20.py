@@ -344,59 +344,41 @@ def main() -> int:
 # ============================================================
 
 def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
-    """Top 20 + PEG/DCF/ROC 4 项摘要
+    """Top 20 + 4 季财务大表摘要
 
-    解析 roc-ey-top20.md 拿排名, 逐只补 PEG/DCF (走 report_section_evaluators), 写 docs/roc-ey-top20-summary.md
+    解析 roc-ey-top20.md 拿排名, 逐只补 4 季财务大表 (复用 report_renderer._section_quarterly_table)
+    2026-09-15 改: 删 EPS/PEG/DCF (避免 datacenter 拉取 + 跟 /t-analyze 22 section 第 1 张表完全一致)
     """
-    from tools.analysis.render_data import RenderData  # 避免循环
     # 解析 Top N 拿 code/name/industry/roc/ey 5 字段
     rank_data = parse_top20_md(top_md_path)
     code_to_rank = {r["code"]: r for r in rank_data}
 
-    # 逐只补 4 项 (PEG/DCF/ROC/卡点⭐)
+    from tools.render.report_renderer import _section_quarterly_table
+    from tools.analysis.render_data import RenderData
+    from tools.analysis.analysis_engine import AnalysisEngine
+    from tools.storage.store import DataStore as _DS
+
+    # 逐只补 4 季大表 (复用 /t-analyze 22 section 的 _section_quarterly_table)
     items = []
     for r in top_n:
         code = r["code"]
-        # EPS 走 datacenter (绕开 watchlist gate, 写本地 cache)
-        eps_table = get_eps_for_summary(code)
-        # ctx 准备: 只用 EPS + current_price, 不需要 K线全量
-        from tools.storage.store import DataStore
-        db = DataStore.get_daily_basic(code)
-        market_cap_yi = (db.get("total_mv") or 0) / 1e4 if db else None
-        from tools.storage.store import DataStore as _DS
-        ctx = _DS.get_ctx(code)
-        current_price = ctx.current_price or (db.get("close") if db else None) or 0
-
-        from tools.factors.valuation.factor_lib import compute_peg, compute_dcf_l
-
-        item = {"code": code, "name": r["name"], "industry": r["industry"], "card": "N/A",
-                "rank": code_to_rank.get(code, {}).get("rank", "—"),
-                "roc_rank": code_to_rank.get(code, {}).get("rank", "—"),
-                "ey_rank": r.get("ey_rank", "—"),
-                "combined_rank": code_to_rank.get(code, {}).get("combined_rank", "—")}
-
-        if eps_table and current_price:
-            item["peg"] = compute_peg(eps_table, current_price)
-        else:
-            item["peg"] = {"error": "EPS 或价格缺"}
-        if eps_table and market_cap_yi:
-            item["dcf"] = compute_dcf_l(eps_table, market_cap_yi)
-        else:
-            item["dcf"] = {"error": "市值或 EPS 缺"}
-        item["price"] = current_price
-        item["roc"] = r.get("roc")
-        item["ey"] = r.get("ey")
-
-        # 4 季大表 markdown (复用 /t-analyze 22 section 的 _section_quarterly_table)
-        # 2026-09-11 改: 跟 /t-analyze 22 section 第 1 张表完全一致 (14 列, 含季末市值/EV/投入资本)
-        from tools.render.report_renderer import _section_quarterly_table
-        from tools.analysis.render_data import RenderData
-        from tools.analysis.analysis_engine import AnalysisEngine
-        full_ctx = DataStore.get_ctx(code)
+        full_ctx = _DS.get_ctx(code)
         full_result = AnalysisEngine().analyze(full_ctx)
         rd = RenderData.from_result(full_ctx, full_result)
-        item["quarterly_table_md"] = _section_quarterly_table(rd)
 
+        item = {
+            "code": code,
+            "name": r["name"],
+            "industry": r["industry"],
+            "card": "N/A",
+            "rank": code_to_rank.get(code, {}).get("rank", "—"),
+            "roc_rank": code_to_rank.get(code, {}).get("rank", "—"),
+            "ey_rank": r.get("ey_rank", "—"),
+            "combined_rank": code_to_rank.get(code, {}).get("combined_rank", "—"),
+            "roc": r.get("roc"),
+            "ey": r.get("ey"),
+            "quarterly_table_md": _section_quarterly_table(rd),
+        }
         items.append(item)
 
     md = render_summary_md(items)
@@ -478,74 +460,36 @@ def parse_top20_md(md_path: Path) -> list[dict]:
     return out
 
 
-def _fmt_peg(peg: dict) -> str:
-    if "error" in peg:
-        return f"❌ {peg['error'][:20]}"
-    p = peg.get("peg")
-    if p is None:
-        return "—"
-    if p < 1.0:   icon = "🟢"
-    elif p < 1.5: icon = "🟡"
-    elif p < 2.0: icon = "🟠"
-    else:         icon = "🔴"
-    g = peg.get("g")
-    g_s = f"{g:.0f}%" if isinstance(g, (int, float)) else "—"
-    return f"{icon} {p:.2f} (g={g_s})"
-
-
-def _fmt_dcf(dcf: dict) -> str:
-    if "error" in dcf:
-        return f"❌ {dcf['error'][:20]}"
-    parts = []
-    L = dcf.get("L_r10")
-    e3 = dcf.get("L_E3_r10")
-    if L is not None:
-        parts.append(f"L={L:.0f}亿")
-    if e3 is not None:
-        parts.append(f"L/E3={e3:.1f}x")
-    reach = dcf.get("L_achievable", "")
-    if reach:
-        parts.append(reach)
-    return " ".join(parts) if parts else "—"
-
-
 def render_summary_md(items: list[dict]) -> str:
-    """Top 20 摘要 markdown (2026-09-11 重写)
+    """Top 20 摘要 markdown (2026-09-15 重写)
 
-    每票 1 个 4 季大表 (复用 _section_quarterly_table, 跟 /t-analyze 22 section 第 1 张表一致)
-    + 1 行 PEG/DCF L 摘要
-
-    字段 (跟 /t-analyze 22 section 1 表一致):
-      季 / 营收 yoy / 净利 yoy / 毛利率 / ROE / 营收 / 净利 / EBIT / ROC / EY / 市值 / 净负债 / EV / 投入资本
+    每票 1 个 4 季大表 (复用 _section_quarterly_table, 跟 /t-analyze 22 section 第 1 张表完全一致)
+    2026-09-15 改: 删 PEG/DCF L/L-E3 (避免 datacenter 拉取; 4 季大表已含 ROC/EY/Magic 估值列)
     """
     today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     md = f"# ROC + EY Top 20 摘要 — {today}\n\n"
     md += "> **范围:** ROC + EY 联合排名 Top 20 (Greenblatt 公式: ROC 降序 + EY 降序, 综合 = (ROC 排名 + EY 排名) / 2)\n"
     md += "> **4 季大表:** 复用 `tools/render/report_renderer.py::_section_quarterly_table` (跟 /t-analyze 22 section 第 1 张表完全一致)\n"
-    md += "> **PEG/DCF:** datacenter.eastmoney.com 机构一致预期 (LLM 后续补卡点⭐)\n\n"
+    md += "> **2026-09-15 改:** 删 PEG/DCF L (避免 datacenter 拉取, 4 季大表已含 ROC/EY 估值列)\n\n"
     md += "## 📊 Top 20 排名速览 (按综合排名)\n\n"
-    md += "| 综合 | 代码 | 名称 | 行业 | ROC | EY | PEG | DCF L (r=10%) | L/E3 |\n"
-    md += "|------|------|------|------|------|------|------|---------------|------|\n"
+    md += "| 综合 | 代码 | 名称 | 行业 | ROC | EY |\n"
+    md += "|------|------|------|------|------|------|\n"
     for it in items:
+        roc_v = it.get("roc")
+        ey_v = it.get("ey")
+        roc_s = f"{roc_v:.1f}%" if isinstance(roc_v, (int, float)) else "—"
+        ey_s = f"{ey_v:.2f}%" if isinstance(ey_v, (int, float)) else "—"
         md += (
             f"| {it.get('combined_rank', '—'):.1f} | {it['code']} | {it['name']} | {it['industry']} | "
-            f"{it.get('roc','—'):.1f}% | {it.get('ey','—'):.2f}% | "
-            f"{_fmt_peg(it['peg'])} | "
-            f"{_fmt_dcf_l(it['dcf'])} | "
-            f"{_fmt_dcf_l_e3(it['dcf'])} |\n"
+            f"{roc_s} | {ey_s} |\n"
         )
 
     md += "\n---\n\n## 📋 Top 20 详表 (4 季财务 + Magic 估值)\n\n"
-    md += "> 每只票 1 张 4 季大表 (14 列: 季/营收yoy/净利yoy/毛利率/ROE/营收/净利/EBIT/ROC/EY/市值/净负债/EV/投入资本)\n"
-    md += "> + 1 行 PEG (机构一致预期 g%) + 1 行 DCF L (r=10% 隐含市值)\n\n"
+    md += "> 每只票 1 张 4 季大表 (14 列: 季/营收yoy/净利yoy/毛利率/ROE/营收/净利/EBIT/ROC/EY/市值/净负债/EV/投入资本)\n\n"
     for i, it in enumerate(items, 1):
         md += f"### #{i} {it['code']} {it['name']} ({it['industry']})\n\n"
-        # 4 季大表
+        # 4 季大表 (复用 _section_quarterly_table)
         md += it["quarterly_table_md"] + "\n\n"
-        # PEG / DCF 1 行
-        md += f"**PEG:** {_fmt_peg(it['peg'])}  |  "
-        md += f"**DCF L (r=10%):** {_fmt_dcf_l(it['dcf'])}  |  "
-        md += f"**L/E3:** {_fmt_dcf_l_e3(it['dcf'])}\n\n"
         md += "---\n\n"
 
     md += f"\n📅 **生成:** {today}  |  "

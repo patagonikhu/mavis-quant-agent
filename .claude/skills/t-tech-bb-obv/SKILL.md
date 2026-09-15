@@ -36,4 +36,4 @@ bash tools/with_venv.sh python -m tools.batch.tech_bb_obv_scan              # �
 
 ## 相关
 
-- `/t-analyze` / `/t-near-low` / `/t-finance` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest` / `/t-sync-data`
+- `/t-analyze` / `/t-near-low` / `/t-roc-ey` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest` / `/t-sync-data`

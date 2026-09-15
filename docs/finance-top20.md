@@ -1,4 +1,4 @@
-# ROC + EY 联合排名 Top 20 — 2026-09-14
+# ROC + EY 联合排名 Top 20 — 2026-09-15
 
 > **报告期:** 2026Q2  |  **股票池:** 1923 只科技股 (client-side 筛选)  |  **跳过:** 2611 只 (含行业 EXCLUDED + 无数据)
 > **公式:** ROC = EBIT / (净营运资本 + 固定资产), EY = EBIT / EV (Greenblatt 2005)
@@ -70,4 +70,4 @@ bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --period 2026Q1
 
 ---
 
-📅 **生成时间:** 2026-09-14 08:05:47  |  🔧 **脚本:** `tools/batch/roc_ey_top20.py`  |  📊 **数据:** `data/history/financials/2026Q2.parquet`
+📅 **生成时间:** 2026-09-15 09:58:27  |  🔧 **脚本:** `tools/batch/roc_ey_top20.py`  |  📊 **数据:** `data/history/financials/2026Q2.parquet`

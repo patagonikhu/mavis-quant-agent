@@ -14,7 +14,7 @@
 | `/t-analyze <code> [name]` | 单只详报 (22 section: 投资四问 + T 框架 + PEG + DCF + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 8 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
-| `/t-finance` | 跑财务多维分析 (ROC+EY 联合排名 + 4 季大表 + PEG + DCF L), Top 20 写到 docs/finance-top20.md | `/t-finance` |
+| `/t-roc-ey` | 跑 ROC+EY 联合排名 + 4 季大表 (PEG/DCF L 已移除, 性能优化), Top 20 写到 docs/finance-top20.md | `/t-roc-ey` |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单, 写 docs/oversold-watchlist.md | `/t-near-low --gap 2` |
 | `/t-bb-obv` | 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 三重确认 (每天 0-2 只) | `/t-bb-obv --window 5` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |

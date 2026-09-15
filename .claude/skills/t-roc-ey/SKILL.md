@@ -1,5 +1,5 @@
 ---
-name: t-finance
+name: t-roc-ey
 description: 财务多维分析 (ROC+EY 联合排名 + 4 季财务大表 + PEG + DCF L). 0 网络, 走 DataStore. 触发词: "财务分析"、"ROC+EY 排名"、"好公司+便宜股"、"低估优质"、"4 季财务".
 user-invocable: true
 allowed-tools:
@@ -12,7 +12,7 @@ allowed-tools:
 ## 用法
 
 ```bash
-bash tools/with_venv.sh python -m tools.batch.finance_top20               # 默认跑 3 件事: 排名 + 摘要 + 加 watchlist
+bash tools/with_venv.sh python -m tools.batch.roc_ey_top20               # 默认跑 排名 + 摘要 (2026-09-15 删 EPS 拉取 + PEG/DCF, 摘要改用 4 季大表)
 ... --rank-only            # 只排名 (不加 watchlist, 不出摘要)
 ... --summary-only         # 排名 + 4 项摘要 (不加 watchlist)
 ... --add-watchlist        # 显式加 Top 20 到 watchlist (list_type=ROC_EY初筛)

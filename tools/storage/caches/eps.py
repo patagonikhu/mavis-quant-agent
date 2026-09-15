@@ -92,7 +92,12 @@ def get_eps(code: str, force: bool = False) -> list[dict]:
     force=True 强制重拉 (跳过 stale 检查)
 
     v6.2.7 改: 不在 watchlist 也尝试读 parquet, 命中即返 (避免误杀)
+    2026-09-15 改: 加 _in_watchlist gate, 非 watchlist 直接返 [] (修历史 bug)
     """
+    # 2026-09-15: watchlist gate (历史行为恢复)
+    if not force and not _in_watchlist(code):
+        return []
+
     # v6.2.7 改: 不强制过滤 watchlist, parquet 有就返
     if not force and not _is_stale(EPS_FILE, _TTL_EPS):
         try:
