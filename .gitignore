@@ -30,6 +30,7 @@ data/*
 !data/watchlist.json
 !data/events.json
 !data/sectors.json
+!data/ths_whitelist.json
 !data/fetch_log.jsonl  # 稳定性 log 也 git, 跨机器共享
 # 超跌股 watchlist (auto-generated, 跟 git 备份)
 # 但 dump_oversold/ 还是 ignore (70MB, 太大不入 git)
