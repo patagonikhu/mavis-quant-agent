@@ -193,15 +193,13 @@ if __name__ == "__main__":
     sys.path.insert(0, '/Users/I514959/workspace/mavis-quant-agent')
 
     from tools.storage.store import DataStore
-    from tools.storage.store import read_kline
-    from tools.storage.store import _to_ts_code
 
     code = '603893'
     print(f"=== 测试 {code} (czsc 计算) ===")
     print(f"czsc 版本: {czsc.__version__}")
 
-    # 读 K 线
-    rows = read_kline(_to_ts_code(code), limit=300)
+    # 读 K 线 (走 DataStore 自动前复权)
+    rows = DataStore.get_kline(code, limit=300)
     klines = []
     for r in rows:
         klines.append({

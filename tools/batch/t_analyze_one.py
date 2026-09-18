@@ -94,6 +94,17 @@ def process_one(code: str, name: str | None = None) -> dict:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(md, encoding="utf-8")
 
+        # 自动 lint (2026-09-15 加: 防止 column mismatch 漏检)
+        try:
+            from tools.render.report_linter import lint_report
+            lint_result = lint_report(str(out))
+            if lint_result.get("warnings"):
+                print(f"  ⚠️  Lint 报警 ({len(lint_result['warnings'])} 条):")
+                for warn in lint_result["warnings"][:5]:
+                    print(f"    {warn}")
+        except Exception as e:
+            print(f"  ⚠️  Lint 失败: {e}")
+
         # 今日信号 (stdout 输出)
         rows = data.factor_history_rows
         signals = []

@@ -14,8 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent
 
 def get_kline(code, limit=1250):
-    from tools.storage.store import read_kline, _to_ts_code
-    rows = read_kline(_to_ts_code(code), limit=limit)
+    from tools.storage.store import DataStore
+    rows = DataStore.get_kline(code, limit=limit)
     if not rows: return None
     df = pd.DataFrame(rows)
     df['trade_date'] = df['trade_date'].astype(str).str.replace('-', '').str[:8]

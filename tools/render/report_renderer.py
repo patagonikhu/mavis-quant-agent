@@ -1397,8 +1397,9 @@ def _has_signal(row: dict) -> bool:
 # 因子历史走势 — 20 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | MACD | DIF | DEA | BARΔ | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | RSI6 | KDJ-K | ATR% | 量比 | MACD状态 |"
-FACTOR_HISTORY_SEP    = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | KDJ-K | ATR% | MACD状态 |"
+# 23 列 = 24 个 '|' (写法: '|---' + '|---'*(n-1) + '|'); 2026-09-15 之前误为 26 / 25 个 '|'
+FACTOR_HISTORY_SEP    = "|---|" + "---|" * 22
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
@@ -1502,9 +1503,30 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         bar_d_s = "—"
 
+    # RSI6 列 (2026-09-15 挪到 MACD 左边, line 拼接前必须先算)
+    rsi6_v = row.get('rsi6')
+    if rsi6_v is not None:
+        if rsi6_v > 80:   rsi6_s = f"🔴{rsi6_v:.0f}"
+        elif rsi6_v > 70: rsi6_s = f"🟠{rsi6_v:.0f}"
+        elif rsi6_v < 20: rsi6_s = f"🟢{rsi6_v:.0f}"
+        elif rsi6_v < 30: rsi6_s = f"🟡{rsi6_v:.0f}"
+        else:             rsi6_s = f"{rsi6_v:.0f}"
+    else:
+        rsi6_s = "—"
+
+    # 量比列 (2026-09-15 挪到 BARΔ 后, line 拼接前必须先算)
+    vol_r_v = row.get('vol_ratio')
+    if vol_r_v is not None:
+        if vol_r_v > 2.0:   vol_s = f"🔴{vol_r_v:.1f}x"
+        elif vol_r_v > 1.2: vol_s = f"🟡{vol_r_v:.1f}x"
+        elif vol_r_v < 0.7: vol_s = f"🟢{vol_r_v:.1f}x"
+        else:               vol_s = f"{vol_r_v:.1f}x"
+    else:
+        vol_s = "—"
+
     line = (
         f"| {row['date']} | ¥{row['close']:.1f} "
-        f"| {macd_s} | {dif_str} | {dea_str} | {bar_d_s} "
+        f"| {rsi6_s} | {macd_s} | {dif_str} | {dea_str} | {bar_d_s} | {vol_s} "
         f"| {slope_s} | {ma_s} "
         f"| {wy} | {se} "
         f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
@@ -1540,15 +1562,6 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     # ATR% 列: 波动率
     atr_s = f"{atr_pct_v:.1f}%" if atr_pct_v is not None else "—"
 
-    # 量比列: 缩量/正常/放量
-    if vol_r_v is not None:
-        if vol_r_v > 2.0:   vol_s = f"🔴{vol_r_v:.1f}x"
-        elif vol_r_v > 1.2: vol_s = f"🟡{vol_r_v:.1f}x"
-        elif vol_r_v < 0.7: vol_s = f"🟢{vol_r_v:.1f}x"
-        else:               vol_s = f"{vol_r_v:.1f}x"
-    else:
-        vol_s = "—"
-
     # MACD 状态列: DIF/DEA 关系 + 正负区
     if macd_dif_v is not None and macd_dea_v is not None:
         if macd_dif_v > macd_dea_v and macd_dif_v > 0:
@@ -1562,7 +1575,7 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         macd_state = "—"
 
-    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {rsi6_s} | {kdj_s} | {atr_s} | {vol_s} | {macd_state} |"
+    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {kdj_s} | {atr_s} | {macd_state} |"
 
 
 def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
@@ -1727,10 +1740,10 @@ def _section_market_context(data: RenderData) -> str:
     """🌍 大盘 + 美股背景 (2026-09-03 v6.1.1 改: 读本地 parquet, 不直连 tushare)
 
     之前: from tools.storage.sources.tushare import _safe_call; _safe_call("index_daily", ...)
-    现在: read_kline(ts_code, limit=2) 走本地 parquet
+    现在: DataStore.get_kline(ts_code, limit=2) 走本地 parquet (2026-09-17 改: 统一接口)
     """
     try:
-        from tools.storage.store import read_kline
+        from tools.storage.store import DataStore
     except Exception:
         return "> **数据状态:** ⚠️ kline_store 不可用\n"
     indices = [("000001.SH", "上证指数"), ("000300.SH", "沪深300"),
@@ -1738,7 +1751,10 @@ def _section_market_context(data: RenderData) -> str:
     rows = ["| 指数 | 价格 | 涨跌幅 | 状态 |", "|---|---|---|---|"]
     for tc, iname in indices:
         try:
-            bars = read_kline(tc, limit=2)
+            # tc 是 ts_code 格式, DataStore.get_kline 接受 ts_code 字符串
+            # 但 sync 存的是 '000001.SH' 形式, 直接传 tc 即可
+            code_6 = tc[:6] if '.' in tc else tc
+            bars = DataStore.get_kline(code_6, limit=2)
             if bars and len(bars) >= 1:
                 cur = bars[0]
                 prev = bars[1] if len(bars) > 1 else {}

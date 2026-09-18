@@ -44,8 +44,7 @@ def _load_index_state(min_date: str, code: str = "000688.SH") -> dict:
       bear  (<-0.3%/日): 熊市, 关闭
     """
     try:
-        from tools.storage.store import read_kline
-        idx = read_kline(code, start_date=min_date)
+        idx = DataStore.get_kline(code, limit=10000)
         if not idx or len(idx) < 25:
             return {}
         closes = [float(b.get("close", 0) or 0) for b in idx]

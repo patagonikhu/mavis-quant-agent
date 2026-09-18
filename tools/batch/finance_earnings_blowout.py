@@ -1,5 +1,5 @@
 """
-tools/batch/earnings_blowout_scan.py — Earnings Blowout 财季炸裂扫描 (v6.2.7, 2026-09-09 改自 quality_growth_scan.py)
+tools/batch/finance_earnings_blowout.py — Earnings Blowout 财季炸裂扫描 (v6.2.7, 2026-09-09 改自 quality_growth_scan.py)
 
 原名 quality_growth_scan.py, 改名理由: "财季炸裂 (Earnings Blowout)" 更贴切 R3 反转信号语义,
 跟 /t-roc-ey 形成 "质量" 主题兄弟 skill, 用户更容易理解"营收+净利+毛利率同向爆量"是什么
@@ -32,10 +32,10 @@ v6.2.7 关键改动:
   - --top-np-jump N: 追加按 np_jump pp 差降序的 Top N 表 (默认 0=不输出)
 
 用法:
-  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan
-  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan --rev-yoy 30 --np-yoy 80
-  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan --jump-mode leader
-  bash tools/with_venv.sh python -m tools.batch.earnings_blowout_scan --top-np-jump 200
+  bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout
+  bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --rev-yoy 30 --np-yoy 80
+  bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --jump-mode leader
+  bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --top-np-jump 200
 """
 import argparse
 import sys

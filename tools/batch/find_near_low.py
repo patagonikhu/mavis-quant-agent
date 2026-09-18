@@ -190,6 +190,11 @@ def main():
         except Exception as e:
             daily_map[code] = (None, str(e))
 
+    # 2026-09-18 加: 读最近季报 (营收 yoy / 净利 yoy / 毛利率 / ROE / 营收亿 / 净利亿 / EBIT 亿)
+    # 2026-09-18: 复用 DataStore.get_latest_financials_map() (公共接口, 一处定义 3 处用)
+    print(f"读最近季报 ({len(rough_codes)} 只, 0 网络)...")
+    fin_map = DataStore.get_latest_financials_map(code6_set=set(rough_codes))
+
     candidates = []
     for r in rough_pool:
         code = r["code"]
@@ -229,6 +234,8 @@ def main():
             "n_b": r["n_b"],
             "cur_date": cur_date,
             "price_source": price_source,
+            # 2026-09-18 加: 财务字段 (fin_map 里是最新季报, key=code6 6 位)
+            "fin": fin_map.get(code, {}),
         })
 
     candidates.sort(key=lambda r: r["daily_gap"])
@@ -244,20 +251,30 @@ def main():
         return
 
     print(
-        f"{'代码':<8} {'名称':<10} {'行业':<12} {'现价':>7} {'上周':>7} {'5y低':>7} "
-        f"{'5y最大回撤':>10} {'距5y高':>8} {'今gap':>6} {'反弹':>5}"
+        f"{'代码':<7} {'名称':<10} {'行业':<10} {'现价':>7} {'5y低':>7} "
+        f"{'5y回撤':>8} {'gap%':>5} {'反弹':>4} "
+        f"{'营收yoy%':>9} {'净利yoy%':>9} {'毛利率%':>8} {'ROE%':>7} "
+        f"{'营收亿':>7} {'净利亿':>7} {'EBIT亿':>7}"
     )
-    print("-" * 100)
+    print("-" * 156)
     for r in candidates:
-        # 2026-09-11 修: 打印精筛后的 daily_gap_v2 (用 daily_basic close 算), 不用粗筛的 daily_gap
-        # 修前: 用 K 线最后价算的 daily_gap, 跟精筛阈值 (gap_th) 不一致
-        # 修后: 输出跟精筛保持一致
+        fin = r.get("fin", {})
+        def _f(v, fmt='.1f', suffix=''):
+            if v is None or (isinstance(v, float) and v != v):  # NaN check
+                return '—'
+            return f"{float(v):{fmt}}{suffix}"
         print(
-            f"{r['code']:<8} {r['name']:<10} {r['sector'][:10]:<12} "
-            f"{r['cur']:>7.2f} {r['daily_cur']:>7.2f} {r['lo_5y']:>7.2f} "
-            f"{r['max_dd_5y'] * 100:>+9.1f}% "
-            f"{r['current_drop'] * 100:>+7.1f}% "
-            f"{r['daily_gap_v2'] * 100:>+5.2f}% {r['n_b']:>4d}次"
+            f"{r['code']:<7} {r['name'][:9]:<10} {r['sector'][:9]:<10} "
+            f"{r['cur']:>7.2f} {r['lo_5y']:>7.2f} "
+            f"{r['max_dd_5y'] * 100:>+7.1f}% "
+            f"{r['daily_gap_v2'] * 100:>+4.1f}% {r['n_b']:>3d}次 "
+            f"{_f(fin.get('or_yoy'), '+8.1f', '%'):>9} "
+            f"{_f(fin.get('netprofit_yoy'), '+8.1f', '%'):>9} "
+            f"{_f(fin.get('gross_margin'), '7.1f', '%'):>8} "
+            f"{_f(fin.get('roe'), '6.1f', '%'):>7} "
+            f"{_f(fin.get('revenue_yi'), '7.1f'):>7} "
+            f"{_f(fin.get('np_yi'), '7.1f'):>7} "
+            f"{_f(fin.get('ebit_yi'), '7.1f'):>7}"
         )
 
     # 写 md 报告
@@ -268,11 +285,22 @@ def main():
         ts = time.strftime("%Y-%m-%d %H:%M")
         rows_md = ""
         for r in candidates:
+            fin = r.get("fin", {})
+            def _f(v, fmt='.1f', suffix=''):
+                if v is None or (isinstance(v, float) and v != v):
+                    return '—'
+                return f"{float(v):{fmt}}{suffix}"
             rows_md += (
                 f"| {r['code']} | {r['name']} | {r['sector']} | "
-                f"{r['cur']:.2f} | {r['daily_cur']:.2f} | {r['lo_5y']:.2f} | "
-                f"{r['max_dd_5y']*100:+.1f}% | {r['current_drop']*100:+.1f}% | "
-                f"{r['daily_gap']*100:+.2f}% | {r['n_b']}次 |\n"
+                f"{r['cur']:.2f} | {r['lo_5y']:.2f} | "
+                f"{r['max_dd_5y']*100:+.1f}% | {r['daily_gap_v2']*100:+.2f}% | {r['n_b']}次 | "
+                f"{_f(fin.get('or_yoy'), '+.1f', '%')} | "
+                f"{_f(fin.get('netprofit_yoy'), '+.1f', '%')} | "
+                f"{_f(fin.get('gross_margin'), '.1f', '%')} | "
+                f"{_f(fin.get('roe'), '.1f', '%')} | "
+                f"{_f(fin.get('revenue_yi'), '.1f')} | "
+                f"{_f(fin.get('np_yi'), '.1f')} | "
+                f"{_f(fin.get('ebit_yi'), '.1f')} |\n"
             )
 
         md = f"""# 超跌观察清单 · {ts}
@@ -293,8 +321,8 @@ def main():
 
 ## 清单 ({len(candidates)} 只)
 
-| 代码 | 名称 | 行业 | 现价 | 上周 | 5y低 | 5y最大回撤 | 距5y高 | 今gap | 反弹 |
-|---|---|---|---|---|---|---|---|---|---|
+| 代码 | 名称 | 行业 | 现价 | 5y低 | 5y最大回撤 | 今gap | 反弹 | 营收yoy | 净利yoy | 毛利率 | ROE | 营收亿 | 净利亿 | EBIT亿 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 {rows_md}
 """
         out_path = Path("docs/oversold-watchlist.md")

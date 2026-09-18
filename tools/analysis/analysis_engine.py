@@ -583,7 +583,8 @@ class ObvStrategy:
 
             pct5  = (closes[i] / closes[i-5]  - 1) * 100 if i >= 5  else 0
             pct20 = (closes[i] / closes[i-20] - 1) * 100 if i >= 20 else 0
-            vr    = vols[i] / (sum(vols[i-19:i+1]) / 20) if i >= 20 else 1.0
+            ma20_vol = sum(vols[i-19:i+1]) / 20 if i >= 20 else 0
+            vr    = vols[i] / ma20_vol if (i >= 20 and ma20_vol > 0) else 1.0
             d120  = (p / m120 - 1) * 100 if m120 else 0
 
             signals = []; score = 0
@@ -712,6 +713,23 @@ class TechnicalStrategy:
         # 取 series 引用
         macd_dif = result.get("macd", {}).get("dif_series", [])
         macd_dea = result.get("macd", {}).get("dea_series", [])
+        # v6.2.x 加: MACD 柱 + 柱变化 (板块合成 K线 / 个股 BARΔ 共用)
+        macd_bar_series = []
+        if macd_dif and macd_dea:
+            for _i in range(len(macd_dif)):
+                if _i < len(macd_dea) and macd_dif[_i] is not None and macd_dea[_i] is not None:
+                    macd_bar_series.append(round((macd_dif[_i] - macd_dea[_i]) * 2, 4))
+                else:
+                    macd_bar_series.append(None)
+        else:
+            macd_bar_series = [None] * (len(macd_dif) if macd_dif else 0)
+        # BARΔ = BAR[i] - BAR[i-1]
+        macd_bar_delta_series = [None]
+        for _i in range(1, len(macd_bar_series)):
+            if macd_bar_series[_i] is not None and macd_bar_series[_i-1] is not None:
+                macd_bar_delta_series.append(round(macd_bar_series[_i] - macd_bar_series[_i-1], 4))
+            else:
+                macd_bar_delta_series.append(None)
         rsi6     = result.get("rsi",  {}).get("rsi6_series", [])
         rsi12    = result.get("rsi",  {}).get("rsi12_series", [])
         kdj_k    = result.get("kdj",  {}).get("k_series", [])
@@ -824,6 +842,8 @@ class TechnicalStrategy:
                 "verdict": verdict,
                 "macd_dif": dif_v,
                 "macd_dea": dea_v,
+                "macd_bar": macd_bar_series[i] if i < len(macd_bar_series) else None,
+                "macd_bar_delta": macd_bar_delta_series[i] if i < len(macd_bar_delta_series) else None,
                 "rsi6":     r6_v,
                 "rsi12":    r12_v,
                 "kdj_k":    kk_v,

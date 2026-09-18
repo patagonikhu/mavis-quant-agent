@@ -217,15 +217,13 @@ if __name__ == "__main__":
     sys.path.insert(0, '/Users/I514959/workspace/mavis-quant-agent')
 
     from tools.storage.store import DataStore
-    from tools.storage.store import read_kline
-    from tools.storage.store import _to_ts_code
     from tools.factors.chan.hub import analyze_hub_v2  # 现有
     from tools.factors.chan.czsc_adapter import analyze_hub_v2_czsc
 
     code = '603893'
     print(f"=== 对比 {code}: 现有 hub.py vs czsc adapter ===")
 
-    rows = read_kline(_to_ts_code(code), limit=300)
+    rows = DataStore.get_kline(code, limit=300)
     dates = [r.get('trade_date', '') for r in rows]
     closes = [r.get('close', 0) for r in rows]
     highs = [r.get('high', 0) for r in rows]

@@ -210,7 +210,10 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         # 从 tech_raw 抽 per-date 字段 (TechnicalStrategy.analyze_history 算出)
         "macd_dif":   tech_raw.get("macd_dif"),
         "macd_dea":   tech_raw.get("macd_dea"),
+        "macd_bar":   tech_raw.get("macd_bar"),       # v6.2.x 加: MACD 柱
+        "macd_bar_delta": tech_raw.get("macd_bar_delta"),  # v6.2.x 加: 柱变化
         "rsi6":       tech_raw.get("rsi6"),
+        "rsi12":      tech_raw.get("rsi12"),          # 2026-09-17 加: 中期 RSI
         "kdj_k":      tech_raw.get("kdj_k"),
         "atr_pct":    tech_raw.get("atr_pct"),
         "vol_ratio":  tech_raw.get("vol_ratio"),

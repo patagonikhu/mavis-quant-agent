@@ -22,6 +22,22 @@ stocks = wl
 today = datetime.date.today().isoformat()
 output_path = Path('docs/signal-watchlist.md')
 
+# === 2026-09-15 加: 清理 watchlist 之外的孤儿 md (残留旧详报, 让用户以为"没刷新") ===
+# 保留本次 watchlist 中所有 (code, name) 的目标文件, 其余全部删除
+import re
+expected_files = {f'analyze-{s["code"]}-{s["name"]}.md' for s in stocks}
+for sub in ('portfolio', 'watchlist'):
+    d = Path(f'docs/{sub}')
+    if not d.exists():
+        continue
+    removed = 0
+    for f in d.glob('analyze-*.md'):
+        if f.name not in expected_files:
+            f.unlink()
+            removed += 1
+    if removed:
+        print(f'  🧹 docs/{sub}: 清理 {removed} 个孤儿 md (不在 watchlist.json)', flush=True)
+
 buy_rows, sell_rows, all_table_rows = [], [], []
 md_written = 0
 errs = []

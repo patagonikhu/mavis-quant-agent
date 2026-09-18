@@ -25,9 +25,8 @@ COOLDOWN = 30  # 同一只票最少间隔天数，避免重复计数
 def scan_one(code):
     """单只票: 优先读 signal_cache（boll_bpct），没有缓存才回退到 K 线计算"""
     try:
-        from tools.storage.store import read_kline
-        from tools.storage.store import _to_ts_code
-        rows = read_kline(_to_ts_code(code), limit=300)
+        from tools.storage.store import DataStore
+        rows = DataStore.get_kline(code, limit=300)
         if len(rows) < 130:
             return []
 
@@ -158,9 +157,8 @@ def main():
     # 读 K 线（只用 close + amount，不算 boll）
     def scan_one_cache(code):
         try:
-            from tools.storage.store import read_kline
-            from tools.storage.store import _to_ts_code
-            krows = read_kline(_to_ts_code(code), limit=300)
+            from tools.storage.store import DataStore
+            krows = DataStore.get_kline(code, limit=300)
             if len(krows) < 130:
                 return []
             valid = [(r['close'], r.get('amount', 0), r.get('trade_date','').replace('-','')[:8])
@@ -238,9 +236,8 @@ def main():
 
     def scan_bsp(code):
         try:
-            from tools.storage.store import read_kline
-            from tools.storage.store import _to_ts_code
-            krows = read_kline(_to_ts_code(code), limit=300)
+            from tools.storage.store import DataStore
+            krows = DataStore.get_kline(code, limit=300)
             if len(krows) < 30:
                 return []
             valid = [(r['close'], r.get('trade_date','').replace('-','')[:8])

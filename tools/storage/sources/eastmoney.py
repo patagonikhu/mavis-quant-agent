@@ -682,13 +682,13 @@ def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
         "_source": "local",
     }
 
-    from ..store import read_kline
+    from ..store import DataStore
     from ..caches.eps import get_daily_basic, get_stock_basic, get_eps
 
     ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"
 
     # 1. K线（从 parquet 读，升序）
-    bars_raw = read_kline(ts_code, limit=kline_days)
+    bars_raw = DataStore.get_kline(code, limit=kline_days)
     if bars_raw:
         kline = []
         for r in bars_raw:

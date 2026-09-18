@@ -1,7 +1,7 @@
 {
   "version": "v2.1",
-  "last_updated": "2026-09-11",
-  "description": "21 持仓 + 33 自选 (R3 v6.2.7 命中) | 2026-09-08 用户指定替换",
+  "last_updated": "2026-09-18",
+  "description": "23 持仓 (删了 47 只自选/手工/ROC初筛, 9-18 持仓集中维护)",
   "stocks": [
     {
       "code": "000001",
@@ -30,6 +30,13 @@
       "sector": "指数",
       "list_type": "持仓",
       "notes": "成长股基准指数"
+    },
+    {
+      "code": "000688",
+      "name": "科创50",
+      "sector": "指数",
+      "list_type": "持仓",
+      "notes": "科创板核心指数, 半导体/AI主题 (2026-09-15 用户加入)"
     },
     {
       "code": "000725",
@@ -161,389 +168,11 @@
       "notes": "锂电正极前驱体龙头, 2026-09-03 /t-bb-obv 命中 (BOLL -9.7% 最强信号)"
     },
     {
-      "code": "002458",
-      "name": "益生股份",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "301366",
-      "name": "一博科技",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "300613",
-      "name": "富瀚微",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "001313",
-      "name": "粤海饲料",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "688255",
-      "name": "凯尔达",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "688449",
-      "name": "联芸科技",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "301536",
-      "name": "星宸科技",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "003032",
-      "name": "传智教育",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "301099",
-      "name": "雅创电子",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "603595",
-      "name": "ST东尼",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "002196",
-      "name": "方正电机",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "000042",
-      "name": "中洲控股",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "688135",
-      "name": "利扬芯片",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "688012",
-      "name": "中微公司",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "002841",
-      "name": "视源股份",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "001339",
-      "name": "智微智能",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "300458",
-      "name": "全志科技",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "688535",
-      "name": "华海诚科",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "001287",
-      "name": "中电港",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "000833",
-      "name": "粤桂股份",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "688620",
-      "name": "安凯微",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "002557",
-      "name": "洽洽食品",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "301085",
-      "name": "亚康股份",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "301321",
-      "name": "翰博高新",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "603068",
-      "name": "博通集成",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "002925",
-      "name": "盈趣科技",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "688256",
-      "name": "寒武纪",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "603085",
-      "name": "天成自控",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "920045",
-      "name": "蘅东光",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "300964",
-      "name": "本川智能",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "002876",
-      "name": "三利谱",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "000925",
-      "name": "众合科技",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "002479",
-      "name": "富春环保",
-      "list_type": "自选",
-      "added_at": "2026-09-08",
-      "note": "[latest=2026Q2 R3 v6.2.7 命中]"
-    },
-    {
-      "code": "600865",
-      "name": "百大集团",
-      "sector": "百货",
-      "list_type": "手工添加",
-      "notes": "[2026-09-09 手工] 用户要求加入 watchlist + 分析"
-    },
-    {
-      "code": "600741",
-      "name": "华域汽车",
-      "sector": "汽车配件",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top1] ROC=77.9% (rank 16) EY=32.60% (rank 4) 综合=10.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "000719",
-      "name": "中原传媒",
-      "sector": "出版业",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top2] ROC=234.6% (rank 8) EY=20.10% (rank 24) 综合=16.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601919",
-      "name": "中远海控",
-      "sector": "水运",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top3] ROC=38.3% (rank 30) EY=21.70% (rank 18) 综合=24.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601083",
-      "name": "锦江航运",
-      "sector": "水运",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top4] ROC=84.4% (rank 13) EY=15.90% (rank 37) 综合=25.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "920599",
-      "name": "同力股份",
-      "sector": "工程机械",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top5] ROC=78.3% (rank 15) EY=15.60% (rank 42) 综合=28.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600720",
-      "name": "中交设计",
-      "sector": "建筑工程",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top6] ROC=28.7% (rank 54) EY=22.80% (rank 17) 综合=35.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600938",
-      "name": "中国海油",
-      "sector": "石油开采",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top7] ROC=165.9% (rank 9) EY=12.50% (rank 68) 综合=38.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "688330",
-      "name": "宏力达",
-      "sector": "电气设备",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top8] ROC=30.7% (rank 48) EY=15.00% (rank 48) 综合=48.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601000",
-      "name": "唐山港",
-      "sector": "港口",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top9] ROC=35.7% (rank 36) EY=13.10% (rank 61) 综合=48.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601225",
-      "name": "陕西煤业",
-      "sector": "煤炭开采",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top10] ROC=34.4% (rank 40) EY=13.60% (rank 57) 综合=48.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600018",
-      "name": "上港集团",
-      "sector": "港口",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top11] ROC=31.6% (rank 43) EY=13.20% (rank 59) 综合=51.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600066",
-      "name": "宇通客车",
-      "sector": "汽车整车",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top12] ROC=997.1% (rank 2) EY=11.30% (rank 114) 综合=58.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601600",
-      "name": "中国铝业",
-      "sector": "铝",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top13] ROC=24.7% (rank 72) EY=15.10% (rank 47) 综合=59.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603279",
-      "name": "景津装备",
-      "sector": "环境保护",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top14] ROC=27.3% (rank 59) EY=12.80% (rank 63) 综合=61.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600398",
-      "name": "海澜之家",
-      "sector": "服饰",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top15] ROC=57.8% (rank 21) EY=11.40% (rank 110) 综合=65.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "600551",
-      "name": "时代出版",
-      "sector": "出版业",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top16] ROC=20.1% (rank 95) EY=14.70% (rank 49) 综合=72.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601369",
-      "name": "陕鼓动力",
-      "sector": "机械基件",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top17] ROC=140.3% (rank 10) EY=10.50% (rank 143) 综合=76.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "601598",
-      "name": "中国外运",
-      "sector": "仓储物流",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top18] ROC=24.7% (rank 71) EY=12.00% (rank 82) 综合=76.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "002867",
-      "name": "周大生",
-      "sector": "服饰",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top19] ROC=25.5% (rank 67) EY=11.60% (rank 99) 综合=83.0 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603565",
-      "name": "中谷物流",
-      "sector": "水运",
-      "list_type": "ROC_EY初筛",
-      "notes": "[2026-09-11 ROC_EY Top20] ROC=56.4% (rank 23) EY=9.90% (rank 170) 综合=96.5 | 卡点⭐ 待 LLM 补"
-    },
-    {
-      "code": "603986",
-      "name": "兆易创新",
-      "sector": "半导体",
-      "list_type": "自选",
-      "notes": "2026-09-11 用户加"
+      "code": "603662",
+      "name": "柯力传感",
+      "sector": "仪器仪表",
+      "list_type": "持仓",
+      "notes": "应变式传感器龙头, 力矩传感器/人形机器人主题 (2026-09-15 用户加仓)"
     }
   ],
   "changelog": [
@@ -656,6 +285,26 @@
       "date": "2026-09-11",
       "change": "加 20 只 Magic Top 20 (list_type=Magic初筛, 跳过 0 只已存在)",
       "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+    },
+    {
+      "date": "2026-09-17",
+      "change": "加 15 个 THS 概念板块白名单, 准备接入 sync --ths",
+      "source": "用户拍板"
+    },
+    {
+      "date": "2026-09-17",
+      "change": "调整 ths_whitelist 4 项 (CPO概念→共封装光学, HBM概念→芯片概念, AI算力→算力租赁, 国产芯片→芯片替代)",
+      "source": "ths_index 实际查名"
+    },
+    {
+      "date": "2026-09-17",
+      "change": "ths_whitelist (15 项) 拆到独立文件 data/ths_whitelist.json",
+      "source": "watchlist v3 重构"
+    },
+    {
+      "date": "2026-09-18",
+      "change": "删 58 只 (自选 26 + 手工 1 + ROC_EY初筛 20), 保留 23 只持仓",
+      "source": "用户手动: 持仓详报在 docs/portfolio/, 自选详报从 watchlist/ 删除, 一致清理 watchlist"
     }
   ]
 }

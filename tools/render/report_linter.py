@@ -483,15 +483,23 @@ def append_lint_to_md(md_path: str, result: dict | None = None) -> dict:
 # ============================================================
 
 def lint_all_reports(docs_dir: str = "docs") -> list[dict]:
-    """批量校验 docs/ 下所有 analyze-*.md"""
+    """批量校验 docs/ 下所有 analyze-*.md (含 portfolio/ + watchlist/)"""
     docs_path = Path(docs_dir)
     if not docs_path.exists():
         return []
 
     results = []
+    # 顶层 analyze-*.md
     for md_file in sorted(docs_path.glob("analyze-*.md")):
         result = lint_report(str(md_file))
         results.append(result)
+    # 子目录 portfolio/ + watchlist/ (详报)
+    for sub in ("portfolio", "watchlist", "sector"):
+        sub_dir = docs_path / sub
+        if sub_dir.exists():
+            for md_file in sorted(sub_dir.glob("analyze-*.md")):
+                result = lint_report(str(md_file))
+                results.append(result)
 
     return results
 

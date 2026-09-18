@@ -71,6 +71,27 @@ _load_dotenv()
 _TOKEN = os.environ.get("TUSHARE_TOKEN", "").strip()
 _PRO = None  # lazy init
 
+# 2026-09-18 加: tushare API 调用统计 (按 API 名分组, sync 末尾打印)
+# 用途: sync summary 展示每接口调用次数, 0 网络排查 + 性能监控
+_API_CALL_STATS: dict[str, int] = {}
+
+
+def reset_api_stats() -> None:
+    """sync 入口重置, 每次跑独立统计"""
+    global _API_CALL_STATS
+    _API_CALL_STATS = {}
+
+
+def get_api_stats() -> dict[str, int]:
+    """读当前调用统计"""
+    return dict(_API_CALL_STATS)
+
+
+def _record_call(api_name: str) -> None:
+    """_safe_call 内部调用时 +1"""
+    _API_CALL_STATS[api_name] = _API_CALL_STATS.get(api_name, 0) + 1
+
+
 if _TOKEN:
     try:
         import tushare as ts
@@ -177,6 +198,8 @@ def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
         return cached, "OK_CACHED"
 
     # 2. 实际调 tushare (v5.10.18 改: 0 retry, 1 次失败直接报)
+    # 2026-09-18 加: 每次实际调用都 +1, 给 sync summary 统计用
+    _record_call(api_name)
     # 用户原话: "现在还需要个毛的retry" — 5000 积分档不限流, retry 是浪费 1+2=3s/只
     # 真撞频控/异常 1 次立刻报, 让人看 log 定位, 别假装 retry 3 次骗自己
     try:
@@ -691,6 +714,51 @@ def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: i
     data.sort(key=lambda x: x["trade_date"])
     if limit and not start_date:
         data = data[-limit:]
+    return data, "OK"
+
+
+# ============================================================
+# 10.5 THS 同花顺概念板块 (2026-09-17 加)
+# ============================================================
+
+def get_ths_index() -> tuple[list[dict] | None, str]:
+    """同花顺概念/风格/指数 列表 (~2517 行)。
+
+    Tushare.ths_index 接口, 一次性拉全量永久缓存。
+    字段: ts_code, name, count, exchange, list_date, type
+          (type: N=概念, S=风格, I=指数)
+
+    同步节奏: list_date 几乎不变, 建议每 30 天重新拉一次检查新概念。
+    """
+    data, status = _safe_call("ths_index")
+    return data, status
+
+
+def get_ths_daily(ts_code: str, start_date: str = "", end_date: str = "") -> tuple[list[dict] | None, str]:
+    """THS 概念板块日线 K 线 (Tushare.ths_daily)。
+
+    字段 (实测):
+      ts_code, trade_date, open, high, low, close, pre_close,
+      avg_price, change, pct_change, vol, turnover_rate
+
+    注意:
+      - 没有 amount 字段 (DataStore.get_kline 会 NaN 兜底填 0)
+      - pct_change 跟个股 daily 的 pct_chg 字段同名不同 schema, 写入时 rename
+      - 单概念 K 线 ~5y ~1250 行, parquet ~30KB
+
+    ts_code 示例: '886033.TI' (CPO概念) / '883440.TI' (高成长股)
+    """
+    if not ts_code.endswith(".TI"):
+        ts_code = f"{ts_code}.TI"
+    kwargs = {"ts_code": ts_code, "fields": "ts_code,trade_date,open,high,low,close,pre_close,avg_price,change,pct_change,vol,turnover_rate"}
+    if start_date:
+        kwargs["start_date"] = start_date
+    if end_date:
+        kwargs["end_date"] = end_date
+    data, status = _safe_call("ths_daily", **kwargs)
+    if not data:
+        return None, status
+    data.sort(key=lambda x: x["trade_date"])
     return data, "OK"
 
 

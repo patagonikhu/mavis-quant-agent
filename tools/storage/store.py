@@ -60,6 +60,11 @@ FIN_DIR.mkdir(parents=True, exist_ok=True)
 FFLOW_HISTORY_DIR = Path("data/history/fflow_history")
 FFLOW_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
+# 2026-09-17 加: THS 同花顺概念板块 (跟 daily 个股完全隔离, 1 概念 1 parquet)
+THS_HISTORY_DIR = Path("data/history/ths")
+THS_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+(THS_HISTORY_DIR / "kline").mkdir(parents=True, exist_ok=True)
+
 
 # ============================================================
 # Config
@@ -96,6 +101,8 @@ _INDEX_NAMES = {
     "399001": "深证成指",
     "399006": "创业板指",
     "399808": "中证新能源",
+    "930955": "中证红利低波100",   # 2026-09-17 加注释: 高股息+低波动 选股指数
+    "000922": "中证红利",
 }
 
 
@@ -202,6 +209,61 @@ def _conn():
 # 1. K线 写入/读取 (data/history/daily/)
 # ============================================================
 
+def _append_records_target(records: list[dict], target_dir: Path) -> int:
+    """THS 概念板块专用写盘 (1 概念 1 parquet, 不分季度)
+
+    跟 _append_records 区别:
+      - 不分 year/quarter
+      - 直接拼出 parquet 路径: target_dir/{ts_code}.parquet
+      - ts_code 字段做合并主键 (跟 daily 兼容)
+    """
+    if not records:
+        return 0
+
+    import duckdb
+    import pandas as pd
+
+    df = pd.DataFrame(records)
+    if df.empty:
+        return 0
+    df["trade_date"] = df["trade_date"].astype(str)
+    for col in ["open", "high", "low", "close", "pre_close", "pct_chg", "avg_price", "change", "turnover_rate"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    for col in ["vol", "amount"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    total = 0
+
+    # 按 ts_code 分组, 每概念 1 文件
+    for ts_code, group in df.groupby("ts_code"):
+        path = target_dir / f"{ts_code}.parquet"
+        if path.exists():
+            old_df = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
+            # 老 df 可能没新字段, 加空列对齐
+            for col in df.columns:
+                if col not in old_df.columns:
+                    old_df[col] = None
+            # 反之同理
+            for col in old_df.columns:
+                if col not in df.columns:
+                    df[col] = None
+            combined = pd.concat([old_df, group], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["trade_date"], keep="last")
+            combined = combined.sort_values(["trade_date"])
+        else:
+            combined = group.sort_values(["trade_date"])
+
+        _conn().execute(
+            f"COPY (SELECT * FROM combined) TO '{path}' (FORMAT PARQUET)"
+        )
+        total += len(group)
+
+    return total
+
+
 def _append_records(records: list[dict]):
     """把 records 写入按年分片的 parquet 文件。records 可能跨多年。"""
     if not records:
@@ -244,7 +306,7 @@ def _append_records(records: list[dict]):
     return total
 
 
-def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: int = 0) -> list[dict]:
+def _read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: int = 0) -> list[dict]:
     """从本地 parquet 读单只股票的K线，格式与 tushare get_daily 一致。
 
     Args:
@@ -317,7 +379,7 @@ def read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: in
         df = _conn().execute(sql).df()
         return df.to_dict("records")
     except Exception as e:
-        print(f"  ⚠️ read_kline {ts_code} 失败: {e}", file=sys.stderr)
+        print(f"  ⚠️ _read_kline {ts_code} 失败: {e}", file=sys.stderr)
         return []
 
 
@@ -483,7 +545,7 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
                 print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
                 continue
             all_records.extend(records)
-            print(f"    ✅ {date}: {len(records)} 只")
+            print(f"    ✅ {date} daily: {len(records)} 只")
             time.sleep(0.3)
 
         # 所有缺失天收集完后一次性写入，避免每天读写一次文件
@@ -1172,16 +1234,36 @@ class DataStore:
     @classmethod
     def get_kline(cls, code: str, limit: int = 0) -> list[dict]:
         """日线 K线，升序。limit=0 表示全量（默认取 config 里的 kline_days）。
-        统一字段名：vol → volume（parquet 存的是 Tushare 原始 vol，计算层期望 volume）。
+
+        2026-09-17 改: Tushare daily API 的 OHLC 字段本身就是前复权价（同同花顺前复权画面同源），
+        不应再 × adj_factor，那段逻辑反而把 5-07 的 1252.68 错算成 840.05。
+        现在只做: NaN 兜底 + vol 改名 volume。
         """
         if limit == 0:
             limit = _PROJECT_CFG.get("data", {}).get("kline_days", 1250)
         ts_code = _to_ts_code(code)
-        rows = read_kline(ts_code, limit=limit)
-        # 统一 vol → volume，保留 vol 做兼容
+        rows = _read_kline(ts_code, limit=limit)
+
+        # Tushare 推过来的 OHLC = 前复权价（同同花顺前复权画面），不再二次复权
+        last_valid_pre_close = None
         for r in rows:
+            # 字段别名: vol → volume (raw 股数, 不动)
             if 'vol' in r and 'volume' not in r:
                 r['volume'] = r['vol']
+            # NaN 兜底 (Tushare 除权日附近偶尔丢 amount/pct_chg)
+            # pre_close → 前向填充 (上一交易日有效 close 复用), amount/pct_chg → 0
+            pc = r.get('pre_close')
+            if pc is None or (isinstance(pc, float) and pc != pc):
+                r['pre_close'] = last_valid_pre_close if last_valid_pre_close is not None else (r.get('close') or 0)
+            else:
+                last_valid_pre_close = r['pre_close']
+            amt = r.get('amount')
+            if amt is None or (isinstance(amt, float) and amt != amt):
+                r['amount'] = 0.0
+            pct = r.get('pct_chg')
+            if pct is None or (isinstance(pct, float) and pct != pct):
+                r['pct_chg'] = 0.0
+
         return rows
 
     @classmethod
@@ -1190,6 +1272,151 @@ class DataStore:
         from .sources.eastmoney import _synthesize_weekly
         kline = cls.get_kline(code, limit=limit * 5 if limit else 0)
         return _synthesize_weekly(kline)
+
+    @classmethod
+    def get_latest_financials_map(cls, code6_set: set[str] | None = None) -> dict[str, dict]:
+        """每只股票最新一季财务 dict (0 网络, 走 financials parquet)
+
+        2026-09-18 加: 替代 3 处 batch 脚本里散落的 financials 拉取逻辑 (find_near_low,
+        finance_earnings_blowout, finance_roc_ey). 一处定义, 3 处复用.
+
+        Args:
+            code6_set: 只返回这个集合里的 code (可选, 减少 dict 体积). None = 全市场.
+        Returns:
+            {code6: {
+                'or_yoy':            float|None,   # 营收 yoy %
+                'netprofit_yoy':     float|None,   # 净利 yoy %
+                'gross_margin':      float|None,   # 毛利率 %
+                'roe':               float|None,   # ROE %
+                'revenue_yi':        float|None,   # 营收 亿 (op_income / 1e8)
+                'np_yi':             float|None,   # 净利 亿 (profit_dedt / 1e8)
+                'ebit_yi':           float|None,   # EBIT 亿
+                'ebit':              float|None,   # EBIT 原值 (元)
+                'roe_yoy':           float|None,   # ROE yoy
+                'end_date':          str,           # '20260630'
+            }}
+            注: NaN 在 dict 中转为 None.
+        """
+        import pandas as pd
+        df = cls.load_all_financials()
+        if df.empty:
+            return {}
+        # 过滤 fetch_status=ok
+        df = df[df["fetch_status"] == "ok"].copy()
+        if df.empty:
+            return {}
+        # 6 位 code (ts_code '000858.SZ' → '000858')
+        df["code6"] = df["code"].astype(str).str[:6]
+        if code6_set is not None:
+            df = df[df["code6"].isin(code6_set)]
+            if df.empty:
+                return {}
+        # 取每只股票最新一季 (end_date 最大)
+        latest = df.sort_values("end_date").groupby("code6").tail(1)
+
+        def _safe(v, scale=1.0):
+            if v is None or (isinstance(v, float) and v != v):
+                return None
+            try:
+                return float(v) * scale
+            except (TypeError, ValueError):
+                return None
+
+        out: dict[str, dict] = {}
+        for _, row in latest.iterrows():
+            code6 = row["code6"]
+            out[code6] = {
+                'or_yoy':         _safe(row.get("or_yoy")),
+                'netprofit_yoy':  _safe(row.get("netprofit_yoy")),
+                'gross_margin':   _safe(row.get("grossprofit_margin")),
+                'roe':            _safe(row.get("roe")),
+                'revenue_yi':     _safe(row.get("op_income"), scale=1/1e8),
+                'np_yi':          _safe(row.get("profit_dedt"), scale=1/1e8),
+                'ebit_yi':        _safe(row.get("ebit"), scale=1/1e8),
+                'ebit':           _safe(row.get("ebit")),
+                'roe_yoy':        _safe(row.get("roe_yoy")),
+                'end_date':       str(row.get("end_date", "")),
+            }
+        return out
+
+    @classmethod
+    def get_ths_index(cls) -> list[dict]:
+        """同花顺概念/风格/指数 完整列表 (~2517 行, 0 网络永久缓存).
+
+        字段: ts_code, name, count, exchange, list_date, type
+        """
+        import pandas as pd
+        path = THS_HISTORY_DIR / "ths_index.parquet"
+        if not path.exists():
+            return []
+        df = pd.read_parquet(path)
+        return df.to_dict("records")
+
+    @classmethod
+    def lookup_ths_code(cls, name: str) -> list[dict]:
+        """通过 name 模糊匹配 ths 概念代码。
+
+        Args:
+            name: 'CPO' / '机器人' / '高成长股' (支持子串匹配)
+        Returns:
+            匹配到的概念列表 (含 ts_code, name, type), 多个全返
+        """
+        rows = cls.get_ths_index()
+        return [r for r in rows if name in str(r.get("name", ""))]
+
+    @classmethod
+    def get_ths_kline(cls, code_or_name: str, limit: int = 0) -> list[dict]:
+        """THS 概念板块 K 线 (升序).
+
+        Args:
+            code_or_name: 'CPO' 模糊匹配 ths_index 找代码 / '886033.TI' 直接读
+            limit: 0=全量, N=最近 N 根
+        Returns:
+            跟个股 get_kline 同形态: [{trade_date, open, high, low, close, vol, ...}, ...]
+            NaN 兜底跟 get_kline 一致.
+
+        使用前需先 sync --ths 把数据落盘. parquet 路径:
+          data/history/ths/kline/{ts_code}.parquet
+        """
+        ts_code = code_or_name
+        if "." not in ts_code:
+            # 模糊反查
+            matches = cls.lookup_ths_code(ts_code)
+            if not matches:
+                return []
+            # 多匹配: 优先 type=N (概念板块, 一般是想要的)
+            n_match = [m for m in matches if m.get("type") == "N"]
+            ts_code = (n_match or matches)[0]["ts_code"]
+
+        path = THS_HISTORY_DIR / "kline" / f"{ts_code}.parquet"
+        if not path.exists():
+            return []
+
+        try:
+            df = _conn().execute(f"SELECT * FROM read_parquet('{path}') ORDER BY trade_date").df()
+        except Exception as e:
+            print(f"  ⚠️ get_ths_kline {ts_code} 失败: {e}", file=sys.stderr)
+            return []
+
+        rows = df.to_dict("records")
+        if limit and len(rows) > limit:
+            rows = rows[-limit:]
+
+        # 字段对齐: pct_change → pct_chg (跟个股 daily schema 同)
+        for r in rows:
+            if "pct_change" in r and "pct_chg" not in r:
+                r["pct_chg"] = r.pop("pct_change")
+            # NaN 兜底跟个股一致
+            pc = r.get("pre_close")
+            if pc is None or (isinstance(pc, float) and pc != pc):
+                r["pre_close"] = r.get("close") or 0
+            amt = r.get("amount")
+            if amt is None or (isinstance(amt, float) and amt != amt):
+                r["amount"] = 0.0
+            pct = r.get("pct_chg")
+            if pct is None or (isinstance(pct, float) and pct != pct):
+                r["pct_chg"] = 0.0
+        return rows
 
     @classmethod
     def get_daily_basic(cls, code: str) -> dict:

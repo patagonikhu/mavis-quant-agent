@@ -1,15 +1,20 @@
 """
-roc_ey_top20.py — ROC + EY 联合排名 (Greenblatt 公式) + 摘要 + 加 watchlist (3 合 1, 2026-09-09 改名)
+finance_roc_ey.py — ROC + EY 联合排名 (Greenblatt 公式) + 摘要 + 加 watchlist (3 合 1, 2026-09-18 改名前缀)
 
-原名 magic_top20.py (Magic Formula), 改名理由: 跟 t-earnings-blowout 形成 "质量" 主题兄弟 skill
+历史命名:
+    - magic_top20.py (2026-07 起, Magic Formula)
+    - finance_roc_ey.py (2026-09-09 改名, 跟 t-earnings-blowout 形成 "质量" 主题兄弟 skill)
+    - **finance_roc_ey.py (2026-09-18)** — 加 finance- 前缀, 跟 /t-rsi6-tech (技术类) 区分
 
 用法:
-    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20              # 默认: 跑全 3 步
-    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --top 50    # Top N (默认 20)
-    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --period 2026Q2
-    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --rank-only          # 只排名, 不出摘要不加 watchlist
-    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --summary-only       # 排名 + 摘要, 不加 watchlist
-    bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --skip-watchlist     # 跳过加 watchlist
+    bash tools/with_venv.sh python -m tools.batch.finance_roc_ey              # 默认: 跑全 3 步
+    bash tools/with_venv.sh python -m tools.batch.finance_roc_ey --top 50    # Top N (默认 20)
+    bash tools/with_venv.sh python -m tools.batch.finance_roc_ey --period 2026Q2
+    bash tools/with_venv.sh python -m tools.batch.finance_roc_ey --rank-only          # 只排名, 不出摘要不加 watchlist
+    bash tools/with_venv.sh python -m tools.batch.finance_roc_ey --summary-only       # 排名 + 摘要, 不加 watchlist
+    bash tools/with_venv.sh python -m tools.batch.finance_roc_ey --skip-watchlist     # 跳过加 watchlist
+
+跑节奏: 季报披露后跑一次 (1/5/9/11月, 跟 SKILL /t-finance-roc-ey 一致)
 
 公式 (Greenblatt 2005):
     ROC = EBIT / (净营运资本 + 固定资产)            ← 排名 1
@@ -197,19 +202,19 @@ def render_markdown(top20: list[dict], period: str, skipped: int) -> str:
     lines.append("")
     lines.append("```bash")
     lines.append("# 跑全市场排名 (默认 1923 科技股, Top 20)")
-    lines.append("bash tools/with_venv.sh python -m tools.batch.roc_ey_top20")
+    lines.append("bash tools/with_venv.sh python -m tools.batch.finance_roc_ey")
     lines.append("")
     lines.append("# 自定义 Top 数")
-    lines.append("bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --top 50")
+    lines.append("bash tools/with_venv.sh python -m tools.batch.finance_roc_ey --top 50")
     lines.append("")
     lines.append("# 改报告期 (缺数据请先 /t-sync-data)")
-    lines.append("bash tools/with_venv.sh python -m tools.batch.roc_ey_top20 --period 2026Q1")
+    lines.append("bash tools/with_venv.sh python -m tools.batch.finance_roc_ey --period 2026Q1")
     lines.append("```")
     lines.append("")
     lines.append("---")
     lines.append("")
     lines.append(f"📅 **生成时间:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  |  "
-                 f"🔧 **脚本:** `tools/batch/roc_ey_top20.py`  |  "
+                 f"🔧 **脚本:** `tools/batch/finance_roc_ey.py`  |  "
                  f"📊 **数据:** `data/history/financials/{period}.parquet`")
     lines.append("")
 
@@ -270,12 +275,12 @@ def main() -> int:
             print(f"❌ 找不到 {args.period} 季度财务, 请先 /t-sync-data --financials --period {args.period}")
             return 1
     else:
-        # 取最新季: load_all_financials 找 max end_date
-        all_fin = DataStore.load_all_financials()
-        if all_fin.empty:
+        # 2026-09-18 改: 用 DataStore.get_latest_financials_map() 拿最新季 end_date (替代 load_all_financials 再算 max)
+        latest_map = DataStore.get_latest_financials_map()
+        if not latest_map:
             print("❌ 财务数据空, 请先 /t-sync-data --financials")
             return 1
-        latest_end = all_fin["end_date"].max()
+        latest_end = max(d["end_date"] for d in latest_map.values() if d.get("end_date"))
         # end_date '20251231' → 季度 '2025Q4' (跟 parquet file stem 对齐)
         y, m = latest_end[:4], latest_end[4:6]
         quarter = {"03": "Q1", "06": "Q2", "09": "Q3", "12": "Q4"}.get(m, "Q4")
@@ -493,7 +498,7 @@ def render_summary_md(items: list[dict]) -> str:
         md += "---\n\n"
 
     md += f"\n📅 **生成:** {today}  |  "
-    md += f"🔧 **脚本:** `tools/batch/roc_ey_top20.py`\n"
+    md += f"🔧 **脚本:** `tools/batch/finance_roc_ey.py`\n"
     return md
 
 

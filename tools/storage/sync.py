@@ -68,8 +68,139 @@ def action_kline(codes: list[str], target_date: str | None = None) -> int:
     """增量 K 线 (含 6 个指数) — sync_incremental 是全局操作, 不按 codes 过滤"""
     from .store import sync_incremental
     n = sync_incremental(target_date=target_date)
-    print(f"  ✅ K 线: {n} 条新增")
+    print(f"  ✅ K线: {n} 条新增")
     return n
+
+
+def action_ths(years_back: int = 3) -> int:
+    """同步 THS 同花顺概念板块 (按 watchlist.ths_whitelist, 默认 3 年历史)
+
+    2026-09-17 加: --ths flag 调用入口.
+
+    流程:
+      1. 拉 ths_index() 全量 → 写 data/history/ths/ths_index.parquet (1 次 API)
+      2. 对每个 ths_whitelist 条目:
+           a. 模糊匹配 ths_index 找 ts_code (找不到 warn)
+           b. 看 data/history/ths/kline/<code>.parquet 最大 trade_date
+           c. start_date = (没有 → today - years_back; 有 → max_local+1)
+           d. ths_daily(ts_code, start, today) → 拉增量
+           e. 写盘 (1 概念 1 parquet, 字段: OHLCV + avg_price + change + pct_change + turnover_rate)
+    """
+    import sys
+    import time
+    import pandas as pd
+    from datetime import datetime, timedelta
+    from .store import THS_HISTORY_DIR, _append_records_target
+    from .sources.tushare import get_ths_index, get_ths_daily
+
+    today = datetime.now().strftime("%Y%m%d")
+    full_backfill_start = (datetime.now() - timedelta(days=365 * years_back)).strftime("%Y%m%d")
+
+    # 1. ths_index 30 天缓存 (ths_index() 概念上线几乎不变, 避免重复网络)
+    index_path = THS_HISTORY_DIR / "ths_index.parquet"
+    index_rows = None
+    if index_path.exists():
+        age_days = (time.time() - index_path.stat().st_mtime) / 86400
+        if age_days < 30:
+            print(f"  ⏭ ths_index {age_days:.1f} 天内已刷, 用本地缓存 (避免重复网络)")
+            index_df = pd.read_parquet(index_path)
+            index_rows = index_df.to_dict("records")
+    if index_rows is None:
+        print("  📋 拉 ths_index 名码映射 (距上次 > 30 天 或 首次)")
+        index_rows, status = get_ths_index()
+        if not index_rows:
+            print(f"  ⚠️ ths_index 失败: {status}, 跳过")
+            return 0
+        index_df = pd.DataFrame(index_rows)
+        index_df["sync_date"] = today
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_df.to_parquet(index_path, index=False)
+        print(f"  ✅ ths_index: {len(index_rows)} 行, status=OK")
+
+    # 2. 读 ths_whitelist.json (2026-09-17 拆出独立文件)
+    wl_file = Path("data/ths_whitelist.json")
+    if not wl_file.exists():
+        # 兼容老路径 watchlist.json ths_whitelist 字段
+        fallback = Path("data/watchlist.json")
+        if fallback.exists():
+            wl = json.loads(fallback.read_text(encoding="utf-8"))
+            whitelist = wl.get("ths_whitelist", [])
+            if whitelist:
+                print(f"  ⚠️ ths_whitelist.json 不存在, 暂时从 watchlist.json 读 (老路径兼容)")
+            else:
+                whitelist = []
+        else:
+            whitelist = []
+    else:
+        wl = json.loads(wl_file.read_text(encoding="utf-8"))
+        # 字段从 ths_whitelist → concepts
+        whitelist = wl.get("concepts") or wl.get("ths_whitelist", [])
+
+    if not whitelist:
+        print(f"  ⚠️ ths_whitelist.json 没有 concepts 字段, 跳过")
+        return 0
+    print(f"  📌 白名单: {len(whitelist)} 个 THS 概念 (data/ths_whitelist.json)")
+
+    # 3. 反查 + 增量续存
+    total_pulled = 0
+    code_map = {}  # 本次 session 内 ths_index 反查缓存
+    for item in whitelist:
+        match_name = item.get("match", "")
+        if not match_name:
+            continue
+
+        # 模糊匹配 ths_index
+        if match_name not in code_map:
+            candidates = [r for r in index_rows if match_name in str(r.get("name", ""))]
+            if not candidates:
+                print(f"    ⚠️ 未找到: {match_name} (在 ths_index 里)")
+                code_map[match_name] = None
+                continue
+            # 优先 type=N (普通概念), 退而求其次 type=S 风格
+            prefer_n = [c for c in candidates if c.get("type") == "N"]
+            chosen = (prefer_n or candidates)[0]
+            code_map[match_name] = chosen["ts_code"]
+            print(f"    ✅ {match_name} → {chosen['ts_code']} ({chosen['name']}, type={chosen.get('type')})")
+
+        ts_code = code_map[match_name]
+        if not ts_code:
+            continue
+
+        # 看本地最大日期
+        kline_path = THS_HISTORY_DIR / "kline" / f"{ts_code}.parquet"
+        if kline_path.exists():
+            try:
+                local_df = pd.read_parquet(kline_path)
+                local_max = local_df["trade_date"].max()
+            except Exception:
+                local_max = None
+        else:
+            local_max = None
+
+        start_date = str(int(local_max) + 1) if local_max else full_backfill_start
+
+        # 关键: 提前判断, 无交易缺就不发网络
+        if int(start_date) > int(today):
+            print(f"    ⏭ {ts_code}: 本地最新 {local_max}, 无交易日缺, 跳过网络")
+            continue
+
+        records, _status = get_ths_daily(ts_code, start_date=start_date, end_date=today)
+        if not records:
+            print(f"    ⏭ {ts_code}: API 返空 (start={start_date}, end={today}, 无新数据)")
+            continue
+
+        # rename: pct_change → pct_chg (对齐 daily schema)
+        for r in records:
+            if "pct_change" in r:
+                r["pct_chg"] = r.pop("pct_change")
+
+        _append_records_target(records, THS_HISTORY_DIR / "kline")
+        total_pulled += len(records)
+        print(f"    ✅ {ts_code}: {len(records)} 根 (start={start_date}, end={today})")
+        time.sleep(0.3)  # 限频 200ms
+
+    print(f"  ✅ THS: {total_pulled} 条新增 (落盘 {len(list((THS_HISTORY_DIR / 'kline').glob('*.parquet')))} 个概念)")
+    return total_pulled
 
 
 # v6.2.4 加: stk_factor_pro 替代 daily_basic, 17 列 (含 ps/dv_ratio/free_float_turnover)
@@ -709,6 +840,8 @@ def main():
                          help="主力资金流历史 (按天全市场, 按季存 parquet)")
     actions.add_argument("--cache", action="store_true",
                          help="signal_cache 缓存 (analysis_cache.db)")
+    actions.add_argument("--ths", action="store_true",
+                         help="[2026-09-17 加] THS 同花顺概念板块 K 线 (按 watchlist.ths_whitelist, 默认回填 3 年)")
     # 2026-09-09 删: --meta (板块/事件元数据, 引用不存在的 refresh_sectors, 死代码 + broken)
     actions.add_argument("--all-data", action="store_true",
                          help="[一键] --kline --stock-basic --financials 一起跑 (最常用)")
@@ -776,14 +909,23 @@ def main():
         scope_label = f"watchlist {len(codes)} 只"
     _last_codes = codes
 
+    # 2026-09-18 加: 重置 tushare API 统计 (跟 EPS 守门员放一起)
+    try:
+        from .sources.tushare import reset_api_stats
+        reset_api_stats()
+    except ImportError:
+        pass
+
     # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
     any_sync_flag = any([
         args.kline, args.stk_factor, args.stock_basic, args.financials,
-        args.eps, args.fflow, args.cache, args.all_data,
+        args.eps, args.fflow, args.cache, args.all_data, args.ths,
     ])
     if not any_sync_flag:
         print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")
-        return action_auto(force=False, quiet=False)
+        rc = action_auto(force=False, quiet=False)
+        _print_api_call_stats()
+        return rc
 
     print(f"=== Mavis sync_data (scope: {scope_label}) ===")
     start = time.time()
@@ -823,16 +965,55 @@ def main():
         print("\n[6/7] --cache (signal_cache)")
         action_cache(codes)
 
+    # 2026-09-17 加: --ths (THS 同花顺概念板块)
+    if args.ths:
+        print(f"\n[7/7] --ths (THS 概念板块)")
+        action_ths(years_back=3)
+
     # 全部 flag 都没开 + 也不是 --status → 给个友好提示
     if not any([args.kline, args.stock_basic, args.financials,
-                args.eps, args.fflow, args.cache]):
+                args.eps, args.fflow, args.cache, args.ths]):
         print("\n💡 没指定任何行为, 看 --help 选 flag")
         print("   最常用: python -m tools.sync --all-data")
 
     elapsed = time.time() - start
     print(f"\n=== 完成, 耗时 {elapsed:.1f} 秒 ===")
+    _print_api_call_stats()
     print_data_freshness_summary()
     return 0
+
+
+def _print_api_call_stats() -> None:
+    """2026-09-18 加: 打印 tushare API 调用统计 (按 API 分组)
+
+    输出示例:
+      网络请求统计:
+        daily:                  1 次
+        index_daily:            0 次
+        fina_indicator_vip:     0 次
+        ──────────────
+        总计:                    1 次
+    """
+    try:
+        from .sources.tushare import get_api_stats, reset_api_stats
+    except ImportError:
+        return
+
+    stats = get_api_stats()
+    if not stats:
+        print("\n🌐 网络请求统计: 0 次 (全部走本地缓存或已最新)")
+        return
+
+    total = sum(stats.values())
+    print(f"\n🌐 网络请求统计 (总计 {total} 次):")
+    # 按调用次数降序, 0 次的不显示
+    for api_name in sorted(stats.keys(), key=lambda x: (-stats[x], x)):
+        cnt = stats[api_name]
+        if cnt > 0:
+            print(f"   {api_name:25s} {cnt:>4d} 次")
+
+    # 重置为下次跑
+    reset_api_stats()
 
 
 if __name__ == "__main__":
