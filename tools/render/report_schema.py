@@ -56,8 +56,9 @@ REPORT_SECTIONS = [
         "title": "📊 技术指标 (8 种) ⭐",
         "category": "📋",
         "render": "render_tech_indicators",
-        "required": True,
+        "required": False,  # 2026-09-18 砍: 跟 📈 因子历史走势重复 (含当日 MACD/RSI/KDJ/ATR)
         "refresh": "REGEN",
+        "_deprecated": True,  # 标记废弃, renderer 不输出
     },
     # 2026-07-25: 5 方法 × 3 周期 矩阵 (独立 section, 整合原 5 合 1 顶部预警)
     # 注: chan_signals / chan_supplement 已于 7-29 合并入 factor_history + method_matrix, 废弃删除

@@ -40,11 +40,9 @@ from tools.render.report_renderer import render_report
 
 
 def load_watchlist_map() -> dict[str, dict]:
-    """code → watchlist entry"""
+    """code → watchlist entry (走 DataStore, 不硬编码路径)"""
     try:
-        return {s["code"]: s for s in json.loads(
-            Path("data/watchlist.json").read_text(encoding="utf-8")
-        )["stocks"]}
+        return {s["code"]: s for s in DataStore.load_watchlist().get("stocks", [])}
     except Exception:
         return {}
 

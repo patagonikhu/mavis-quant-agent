@@ -1848,11 +1848,19 @@ def render_report(data: RenderData, sector: str = "—") -> str:
     name = data.name or "—"
     code = data.code
 
-    # 完整性表
+    # 完整性表 (横向紧凑: 列=数据源, 行=状态/详情)
     comp = data.completeness_report()
-    comp_table = "| 数据源 | 状态 | 详情 |\n|---|---|---|\n"
-    for k, (emoji, detail) in comp.items():
-        comp_table += f"| {k} | {emoji} | {detail} |\n"
+    keys = list(comp.keys())
+    # 第一行: 表头 (数据源名)
+    comp_table = "| 维度 | " + " | ".join(keys) + " |\n"
+    # 第二行: 分隔符 (跟表头列数对齐)
+    comp_table += "|---|" + "|".join(["---"] * len(keys)) + "|\n"
+    # 第三行: 状态 (emoji)
+    statuses = [comp[k][0] for k in keys]
+    comp_table += "| 状态 | " + " | ".join(statuses) + " |\n"
+    # 第四行: 详情
+    details = [comp[k][1] for k in keys]
+    comp_table += "| 详情 | " + " | ".join(details) + " |\n"
 
     # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 5️⃣PEG → 6️⃣fflow → 7️⃣仓位)
     # 2026-08-31: 6️⃣fflow section 已停用 (OBV 噪声大, CLAUDE.md 板块适用性限制)
@@ -1875,14 +1883,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## MA 均线
 {_section_ma(data)}
-
----
-
-## 📊 技术指标 (8 种) ⭐
-
-> Wilder 标准公式 (MACD/RSI/KDJ/BOLL/ATR/量比)
-
-{_section_technical(data)}
 
 ---
 

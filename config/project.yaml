@@ -97,7 +97,6 @@ paths:
   baseline: tests/baselines/v0_baseline.json
   watchlist: data/watchlist.json
   events: data/events.json
-  factors_config: config/factors.yaml
 
 # === 评分表 (analysis_evaluators) ===
 scores:

@@ -34,8 +34,9 @@ echo "=================================================="
 echo ""
 echo "📋 Step 1: 读 watchlist..."
 WATCHLIST_COUNT=$(bash tools/with_venv.sh python3 -c "
-import json
-wl = json.load(open('data/watchlist.json'))['stocks']
+import sys; sys.path.insert(0, '.')
+from tools.storage.store import DataStore
+wl = DataStore.load_watchlist().get('stocks', [])
 print(len(wl))
 ")
 echo "  ✅ watchlist 共 $WATCHLIST_COUNT 只"
@@ -68,7 +69,7 @@ from tools.render.report_renderer import (
     _format_factor_row, FACTOR_HISTORY_HEADER, FACTOR_HISTORY_SEP,
 )
 
-watchlist = json.load(open('data/watchlist.json'))['stocks']
+watchlist = DataStore.load_watchlist().get('stocks', [])
 output_path = Path('docs') / 'signal-watchlist.md'
 
 # lookback=10: 至少留 5 日给 MA20 斜率 (5 日前 vs 当下), 多留 5 日 buffer
@@ -141,8 +142,10 @@ echo "✅ Step 4: 验证 watchlist 内 57 只全部 8/25 后新数据..."
 bash tools/with_venv.sh python3 << 'PYEOF' 2>&1 | tail -10
 import os, re, json, datetime
 import sys
+sys.path.insert(0, '.')
+from tools.storage.store import DataStore
 
-wl = json.load(open('data/watchlist.json'))['stocks']
+wl = DataStore.load_watchlist().get('stocks', [])
 watchlist_codes = {s['code']: s['name'] for s in wl}
 
 today = datetime.date.today().isoformat()  # 2026-08-25

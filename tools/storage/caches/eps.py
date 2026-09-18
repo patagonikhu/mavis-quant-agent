@@ -33,9 +33,9 @@ _TTL_EPS = 30 * 24 * 3600  # 30 天 (机构预期每月更新)
 
 def _watchlist_codes() -> set:
     try:
-        return {s["code"] for s in json.loads(
-            Path("data/watchlist.json").read_text(encoding="utf-8")
-        ).get("stocks", [])}
+        # 走 DataStore（统一读 config/watchlist.json），不硬编码 data/watchlist.json
+        from tools.storage.store import DataStore
+        return {s["code"] for s in DataStore.load_watchlist().get("stocks", [])}
     except Exception:
         return set()
 
@@ -197,8 +197,9 @@ def refresh_all(codes: list[str], force: bool = False):
 
 def _load_watchlist_codes() -> list[str]:
     try:
-        d = json.loads(Path("data/watchlist.json").read_text(encoding="utf-8"))
-        return [s["code"] for s in d.get("stocks", [])]
+        # 走 DataStore（统一读 config/watchlist.json）
+        from tools.storage.store import DataStore
+        return [s["code"] for s in DataStore.load_watchlist().get("stocks", [])]
     except Exception:
         return []
 

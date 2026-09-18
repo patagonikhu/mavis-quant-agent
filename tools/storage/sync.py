@@ -893,9 +893,8 @@ def main():
         )
 
     # Scope 解析
-    if args.codes and args.all:
-        print("❌ --codes 跟 --all 互斥, 二选一")
-        return 1
+    # 2026-09-18 修: --all default=True 是历史包袱; --codes / --watchlist 显式传入时优先
+    # (下面是真正的优先级解析: codes > all > watchlist)
     if args.codes:
         codes = [c.zfill(6) for c in args.codes]
         scope_label = f"指定 {len(codes)} 只"

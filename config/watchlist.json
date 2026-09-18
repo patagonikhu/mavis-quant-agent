@@ -1,7 +1,7 @@
 {
   "version": "v2.1",
   "last_updated": "2026-09-18",
-  "description": "23 持仓 (删了 47 只自选/手工/ROC初筛, 9-18 持仓集中维护)",
+  "description": "23 持仓 + 6 自选",
   "stocks": [
     {
       "code": "000001",
@@ -98,13 +98,6 @@
       "notes": ""
     },
     {
-      "code": "002531",
-      "name": "天顺风能",
-      "sector": "风电-塔筒",
-      "list_type": "持仓",
-      "notes": ""
-    },
-    {
       "code": "300699",
       "name": "光威复材",
       "sector": "碳纤维-军工",
@@ -173,138 +166,48 @@
       "sector": "仪器仪表",
       "list_type": "持仓",
       "notes": "应变式传感器龙头, 力矩传感器/人形机器人主题 (2026-09-15 用户加仓)"
-    }
-  ],
-  "changelog": [
-    {
-      "date": "2026-07-22",
-      "action": "删 14 只 (半导体板块精简: 35→21)",
-      "deleted": [
-        "688521",
-        "603690",
-        "688720",
-        "688535",
-        "688106",
-        "688584",
-        "688549",
-        "688234",
-        "688372",
-        "688001",
-        "688652",
-        "688432",
-        "688200",
-        "002185"
-      ],
-      "reason": "前 15 名龙头 + 4 唯一细分代表 (安集/晶晨/聚辰/神工) 保留, 14 只杂毛+亏损删除"
     },
     {
-      "date": "2026-08-13",
-      "change": "删除 rating + rating_history 字段（57 只股票，共 114 处），实战改读 report 5 方法矩阵\"行动\"信号"
+      "code": "002458",
+      "name": "益生股份",
+      "sector": "农业",
+      "list_type": "自选",
+      "notes": "R3 反转 信号最强: 净利 yoy +4897% (+4013pp), 农业反转 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
-      "date": "2026-09-01",
-      "change": "加 19 只 Magic Top 20 (list_type=Magic初筛, 跳过 1 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名 H1 2026)"
+      "code": "301366",
+      "name": "一博科技",
+      "sector": "元器件-PCB",
+      "list_type": "自选",
+      "notes": "R3 反转: 净利 yoy +1561% (+1289pp), 元器件 PCB AI 算力 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
-      "date": "2026-09-02",
-      "change": "加 10 只 Magic Top 20 (list_type=Magic初筛, 跳过 10 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+      "code": "300613",
+      "name": "富瀚微",
+      "sector": "半导体-IC设计",
+      "list_type": "自选",
+      "notes": "R3 反转: 营收 +113% / 净利 yoy +1419% (+938pp), 半导体 IC 设计 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
-      "date": "2026-09-03",
-      "change": "加 18 只 Magic Top 20 (list_type=Magic初筛, 跳过 2 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+      "code": "688449",
+      "name": "联芸科技",
+      "sector": "半导体-存储",
+      "list_type": "自选",
+      "notes": "R3 反转: 净利 yoy +825% (+690pp), 半导体存储主控 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
-      "date": "2026-09-04",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
+      "code": "301536",
+      "name": "星宸科技",
+      "sector": "半导体-SOC",
+      "list_type": "自选",
+      "notes": "R3 反转: 营收 +89% / 净利 yoy +619% (+290pp), 半导体 SOC (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
-      "date": "2026-09-04",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-04",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-04",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-04",
-      "change": "加 7 只 Magic Top 20 (list_type=Magic初筛, 跳过 13 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 20 只 Magic Top 20 (list_type=Magic初筛, 跳过 0 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 14 只 Magic Top 20 (list_type=Magic初筛, 跳过 6 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-09",
-      "change": "加 0 只 Magic Top 20 (list_type=Magic初筛, 跳过 20 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-11",
-      "change": "加 20 只 Magic Top 20 (list_type=Magic初筛, 跳过 0 只已存在)",
-      "source": "docs/magic-top20.md (Greenblatt 联合排名)"
-    },
-    {
-      "date": "2026-09-17",
-      "change": "加 15 个 THS 概念板块白名单, 准备接入 sync --ths",
-      "source": "用户拍板"
-    },
-    {
-      "date": "2026-09-17",
-      "change": "调整 ths_whitelist 4 项 (CPO概念→共封装光学, HBM概念→芯片概念, AI算力→算力租赁, 国产芯片→芯片替代)",
-      "source": "ths_index 实际查名"
-    },
-    {
-      "date": "2026-09-17",
-      "change": "ths_whitelist (15 项) 拆到独立文件 data/ths_whitelist.json",
-      "source": "watchlist v3 重构"
-    },
-    {
-      "date": "2026-09-18",
-      "change": "删 58 只 (自选 26 + 手工 1 + ROC_EY初筛 20), 保留 23 只持仓",
-      "source": "用户手动: 持仓详报在 docs/portfolio/, 自选详报从 watchlist/ 删除, 一致清理 watchlist"
+      "code": "688255",
+      "name": "凯尔达",
+      "sector": "机械-机器人",
+      "list_type": "自选",
+      "notes": "R3 反转: 净利 yoy +1095% (+974pp), 机械基件/人形机器人 (2026-09-18 /t-finance-earnings-blowout)"
     }
   ]
 }
