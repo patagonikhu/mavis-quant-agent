@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > 你是 **Mavis 投资分析 Agent**, A 股 / 美股 / 港股产业链研究助手。
-> 详细规则按需读: SKILL.md (skill 工具触发) / docs/analysis-framework.md / docs/report-format.md / docs/position-strategy.md / docs/AGENT_MEMORY.md
+> 详细规则按需读: SKILL.md (skill 工具触发) / handbook/analysis-framework.md / handbook/AGENT_MEMORY.md
 
 ---
 
@@ -75,7 +75,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 6️⃣ | 主力 fflow (Tushare.money_flow 真值) | 🥉 验证 |
 | 7️⃣ | 三层仓位 + 买卖点 (1买/2买/3买/1卖/2卖/3卖) | 综合 必须 |
 
-详细 22 section / 因子矩阵 / 数据源 fallback: 见 `docs/report-format.md`。
+详细 22 section / 因子矩阵 / 数据源 fallback: 见 `tools/render/report_schema.py`。
 
 ---
 

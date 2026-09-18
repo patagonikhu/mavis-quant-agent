@@ -51,9 +51,9 @@
 - 包含: 缠论三要素 (周/日 中枢+背驰) + 缠论补充 4 方法 + 退出判定 + 3 层仓位 + 止盈止损 4 档 (走缠论, 不走 strategy 权重)
 
 ### 阶段 2: 套框架 (LLM, 必读本文件)
-- 投资四问 (卡点/TAM/龙头/估值) ← docs/analysis-framework.md §2
-- T 框架 (T 位置计算) ← docs/analysis-framework.md §3
-- 缠论 1买/2买/3买 + 估值双指标 (PEG + DCF L) ← docs/analysis-framework.md §2.4
+- 投资四问 (卡点/TAM/龙头/估值) ← handbook/analysis-framework.md §2
+- T 框架 (T 位置计算) ← handbook/analysis-framework.md §3
+- 缠论 1买/2买/3买 + 估值双指标 (PEG + DCF L) ← handbook/analysis-framework.md §2.4
 - 因子 × 2 周期 综合矩阵 (5 类等权投票, 仅作参考, 不进仓位/退出决策)
 
 ### 阶段 3: 落报告 (LLM 套 22 section 模板)
@@ -124,6 +124,6 @@ PEG + DCF L (basic_data/peg_calc/dcf_calc) — **决策第二维**
 
 ## 8. 关联文件
 
-- `docs/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行)
+- `handbook/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行)
 - `tools/factors/` — 22 个 factor 库 (缠论/威科夫/SMC/量价/多市场 + 估值/风控/仓位)
 - `tools/render/report_renderer.py` — 22 section 报告模板

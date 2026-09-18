@@ -13,7 +13,7 @@
   - 容错: pip install 失败不 raise, 只 warning (避免阻塞主流程)
   - 不破坏虚拟环境: 直接装到当前 python3 的 site-packages
 
-Memory: 见 docs/AGENT_MEMORY.md "Tushare 接入 (已完成 2026-07-24)"
+Memory: 见 handbook/AGENT_MEMORY.md "Tushare 接入 (已完成 2026-07-24)"
 """
 import subprocess
 import sys

@@ -24,7 +24,7 @@ def _load_ga_config() -> dict:
     if not config_path.exists():
         raise FileNotFoundError(
             f"❌ 找不到 {config_path}\n"
-            f"   首次使用请: 手动创建 config/project.yaml (不在 git 里, 参考 git history 或 docs/AGENT_MEMORY.md)"
+            f"   首次使用请: 手动创建 config/project.yaml (不在 git 里, 参考 git history 或 handbook/AGENT_MEMORY.md)"
         )
     with open(config_path) as f:
         return yaml.safe_load(f).get("ga", {})

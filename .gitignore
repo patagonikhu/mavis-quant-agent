@@ -24,48 +24,32 @@ ENV/
 .env
 .env.local
 
-# Data (但保留 sources.yaml + watchlist.json + events.json + sectors.json)
-data/*
-!data/sources.yaml
-!data/watchlist.json
-!data/events.json
-!data/sectors.json
-!data/ths_whitelist.json
-!data/fetch_log.jsonl  # 稳定性 log 也 git, 跨机器共享
+# Data: 整体 ignore (派生数据: parquet/jsonl/cache/oversold 等)
+data/
 
-# Config (用户维护的配置文件, 全部 git 跟踪)
-# config/ 默认全部 include (factors.yaml / project.yaml / sources.yaml /
-# ths_whitelist.json / watchlist.json 都进 git)
-# 无需特别 allow
+# 但保留手工维护的 fetcher log (跨机器共享 fetch 进度)
+!data/fetch_log.jsonl
+
 # 超跌股 watchlist (auto-generated, 跟 git 备份)
-# 但 dump_oversold/ 还是 ignore (70MB, 太大不入 git)
 !data/watchlist_oversold.json
-*.db
-*.sqlite3
-# app/data/ 是源码目录，不受上方 data/ 规则影响
-!app/data/
-# LLM-driven 框架用手维护的数据文件 (项目级配置, 应入库)
-!data/events.json
-!data/watchlist.json
-!data/sectors.json
+
 # 信号存档 (signal_tracker.py 维护, 应入库以便回测胜率)
 !data/signals/
 !data/signals/**
 
-# Docs (其他入库, analyze-* 单独 ignore)
-!docs/
-!docs/**
-# analyze-* 是 /t-analyze 自动生成的缓存报告, 跟代码无关, 不入库 (历史存量用 git rm --cached 清理)
-docs/analyze-*.md
-docs/portfolio/analyze-*.md
-docs/watchlist/analyze-*.md
-docs/sector/analyze-*.md
-# 2026-09-18 加: 中间产物 (skill 跑出来的报告, 跑对应 skill 自动产出)
-docs/finance-top20.md
-docs/finance-top20-summary.md
-docs/concept-macd/*.md
-docs/rsi6-tech-watchlist.md
-docs/rsi6-backtest-trades.md
+# app/data/ 是源码目录, 不受上方 data/ 规则影响
+!app/data/
+
+# SQLite 数据库
+*.db
+*.sqlite3
+
+# Docs (2026-09-18 拆掉: skill 自动产物全 ignore, 手工文档迁 handbook/)
+# docs/ 整目录不入库, 历史存量已删除
+docs/
+# handbook/ 是手工维护的知识库, 全入库
+!handbook/
+!handbook/**
 
 # Cache
 .cache/
