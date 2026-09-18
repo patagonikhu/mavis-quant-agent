@@ -92,7 +92,9 @@ def _load_basic_map() -> dict:
     """预加载 stock_basic (避免每只票单独查)
 
     Returns:
-        {code: {"name": ..., "industry": ...}, ...}
+        {code: {"name": ..., "industry": ..., "is_st": bool}, ...}
+
+    2026-09-18 加: is_st 字段 (基于名称前缀 "ST" / "*ST")
     """
     try:
         from tools.storage.store import DataStore
@@ -100,8 +102,11 @@ def _load_basic_map() -> dict:
         if df.empty:
             return {}
         return {
-            row["code"]: {"name": row.get("name", "") or "",
-                          "industry": row.get("industry", "") or ""}
+            row["code"]: {
+                "name": row.get("name", "") or "",
+                "industry": row.get("industry", "") or "",
+                "is_st": (row.get("name", "") or "").startswith(("ST", "*ST", "S ", "S*")),
+            }
             for _, row in df.iterrows()
         }
     except Exception as e:
@@ -387,6 +392,7 @@ def main():
                         help="按本季-上季净利 yoy 差 (pp) 降序取前 N, 追加到 md (默认 0=不输出, 例 --top-np-jump 200)")
     parser.add_argument("--out", default="docs/earnings-blowout-watchlist.md", help="md 输出路径")
     parser.add_argument("--include-cycle", action="store_true", help="包含周期股 (默认排除, 周期股景气突破是 β 不是 α)")
+    parser.add_argument("--include-st", action="store_true", help="包含 ST/*ST 票 (默认排除, 退市风险)")
     parser.add_argument("--tolerance", type=float, default=0.0, help="3 季单调回踩容忍 (pp, 默认 0 = 严格; 例 1.0 允许 prev vs prev2 差 -1pp, 解决财务披露口径跳跃问题)")
     parser.add_argument("--cycle-industries", default="小金属,铜,铝,化工原料,农药化肥,铅锌,矿物制品,钢铁,煤炭,石油,化纤,水运,仓储物流,电器仪表,家用电器,工程机械,石油开采,黄金,塑料,造纸,建材,玻璃,陶瓷,纺织,化纤,电气设备",
                         help="周期股白名单 (默认 SW 周期类 + 电气设备, 因为光伏/储能/电池 跟锂电材料强相关)")
@@ -411,7 +417,7 @@ def main():
     print("│   - 位置  : 距 1y 低<=200% AND 距 1y 高>=-30%               │")
     print("│             (--no-position-filter 可关)                     │")
     print("│                                                          │")
-    print(f"│ 当前: jump={args.jump_mode} | 周期股={'排除' if not args.include_cycle else '包含'} | 位置={'过滤' if not args.no_position_filter else '不过滤'} │")
+    print(f"│ 当前: jump={args.jump_mode} | 周期股={'排除' if not args.include_cycle else '包含'} | ST={'排除' if not args.include_st else '包含'} | 位置={'过滤' if not args.no_position_filter else '不过滤'} │")
     print("└──────────────────────────────────────────────────────────┘")
     print()
     print(f"  1. 营收 yoy  >= {args.rev_yoy}%")
@@ -538,6 +544,23 @@ def main():
         n_excluded = before - len(hits_df)
         if n_excluded > 0:
             print(f"🚫 周期股过滤: 排除 {n_excluded} 只次 ({before} → {len(hits_df)}) [周期股景气突破是 β 不是 α, --include-cycle 可关]")
+
+    # 6.5b ST 过滤 (2026-09-18 加): ST/*ST 票风险高, 默认排除 (用户请求)
+    if not getattr(args, 'include_st', False) and not hits_df.empty:
+        before = len(hits_df)
+        hits_df["_is_st"] = hits_df["ts_code"].str.split(".").str[0].map(
+            lambda c: bool(basic_map.get(c, {}).get("is_st", False))
+        )
+        st_names = hits_df[hits_df["_is_st"]]["ts_code"].str.split(".").str[0].map(
+            lambda c: basic_map.get(c, {}).get("name", "") + f"({c})"
+        ).tolist()
+        hits_df = hits_df[~hits_df["_is_st"]].copy()
+        hits_df = hits_df.drop(columns=["_is_st"])
+        n_excluded = before - len(hits_df)
+        if n_excluded > 0:
+            print(f"🚫 ST 过滤: 排除 {n_excluded} 只次 ({before} → {len(hits_df)}) [ST/*ST 退市风险, --include-st 可开]")
+            if st_names:
+                print(f"   📛 排除名单: {', '.join(st_names[:10])}" + (" ..." if len(st_names) > 10 else ""))
 
     # 6.6 位置过滤: startup 模式默认开启 (其他模式 --position-filter 显式开启)
     # 距 1 年低点 <= 200% 且 距 1 年高点 >= -30%, 排除"已涨 7 倍以上 + 距高点 < 30%" 的高位票
