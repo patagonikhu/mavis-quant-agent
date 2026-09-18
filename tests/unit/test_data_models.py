@@ -169,29 +169,6 @@ class TestCacheKeys:
 
     def test_kline_key(self):
         assert cache_key_kline("600519", "daily", 120) == "kline:600519:daily:120"
-
-
-# ---- AKShare Provider 辅助函数测试 ----
-
-class TestHelpers:
-    def test_safe_float(self):
-        from app.data.akshare_provider import _safe_float
-
-        assert _safe_float(100) == 100.0
-        assert _safe_float("100.5") == 100.5
-        assert _safe_float("12.3%") == 12.3
-        assert _safe_float(None) == 0.0
-        assert _safe_float("") == 0.0
-        assert _safe_float("-") == 0.0
-        assert _safe_float("--") == 0.0
-        assert _safe_float("nan") == 0.0
-
-    def test_detect_market(self):
-        from app.data.akshare_provider import _detect_market
-
-        assert _detect_market("600519") == "沪市主板"
-        assert _detect_market("000001") == "深市主板"
-        assert _detect_market("300750") == "创业板"
         assert _detect_market("688981") == "科创板"
         assert _detect_market("830799") == "北交所"
         assert _detect_market("999999") == "未知"

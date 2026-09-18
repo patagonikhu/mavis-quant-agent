@@ -129,24 +129,16 @@ class TushareProvider(DataProvider):
 
         ts_code = self._to_ts_code(symbol)
 
-        period_map = {
-            Period.DAILY: "D",
-            Period.WEEKLY: "W",
-            Period.MONTHLY: "M",
-        }
-
         try:
             end_date = dt.datetime.now().strftime("%Y%m%d")
             days_back = count * 3 if period == Period.DAILY else count * 30
             start_date = (dt.datetime.now() - dt.timedelta(days=days_back)).strftime("%Y%m%d")
 
             df = await self._call(
-                "pro_bar",
+                period.value,
                 ts_code=ts_code,
-                freq=period_map[period],
                 start_date=start_date,
                 end_date=end_date,
-                adj="qfq",
             )
 
             if df is None or df.empty:

@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     )
 
     # ---- 数据源 ----
-    data_provider: Literal["akshare", "tushare", "auto"] = Field(
-        default="akshare",
+    data_provider: Literal["tushare"] = Field(
+        default="tushare",
         description="数据提供者",
     )
     tushare_token: str = Field(

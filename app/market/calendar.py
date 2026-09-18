@@ -3,7 +3,7 @@
 判断交易日和市场状态。
 
 数据源策略：
-- 优先用 akshare.tool_trade_date_hist_sina() 拿到 1990-2026 的全部 A 股交易日（8797+ 天）
+- 优先用 Tushare.trade_cal() 拿到 1990-2026 的全部 A 股交易日（8797+ 天）
 - 一次性加载 + 内存缓存（永不过期，节假日表一年就更新一次）
 - 加载失败时降级到"仅排除周末"（老逻辑）
 """
@@ -13,12 +13,14 @@ from __future__ import annotations
 import datetime
 import logging
 
-import akshare as ak
 import pandas as pd
+
+from app.config import get_settings
+from app.data.tushare_provider import _get_tushare_api
 
 logger = logging.getLogger(__name__)
 
-# 缓存：从 akshare 加载的全部 A 股交易日
+# 缓存：从 Tushare 加载的全部 A 股交易日
 _TRADING_DAYS_CACHE: set[datetime.date] = set()
 _TRADING_DAYS_LOAD_ATTEMPTED: bool = False
 
@@ -31,7 +33,7 @@ def is_weekend(dt: datetime.date | None = None) -> bool:
 
 
 def _load_trading_days() -> set[datetime.date]:
-    """从 akshare 加载完整 A 股交易日历（一次性 + 永久缓存）
+    """从 Tushare 加载完整 A 股交易日历（一次性 + 永久缓存）
 
     Returns:
         set[date]: 全部已知交易日（含历史 + 未来预排的 1-2 年）
@@ -44,11 +46,19 @@ def _load_trading_days() -> set[datetime.date]:
 
     _TRADING_DAYS_LOAD_ATTEMPTED = True
     try:
-        df = ak.tool_trade_date_hist_sina()
-        if df is None or df.empty:
-            logger.warning("akshare.tool_trade_date_hist_sina 返回空")
+        settings = get_settings()
+        if not settings.tushare_token:
+            logger.warning("tushare_token 未配置, 降级到 weekend-only 模式")
             return set()
-        days: set[datetime.date] = set(pd.to_datetime(df["trade_date"]).dt.date.tolist())
+        api = _get_tushare_api(settings.tushare_token)
+        df = api.trade_cal(exchange="SSE", start_date="19900101", end_date="20261231",
+                           fields="cal_date,is_open")
+        if df is None or df.empty:
+            logger.warning("Tushare.trade_cal 返回空")
+            return set()
+        days: set[datetime.date] = set(
+            pd.to_datetime(df.loc[df["is_open"] == 1, "cal_date"]).dt.date.tolist()
+        )
         _TRADING_DAYS_CACHE = days
         if days:
             logger.info("加载 A 股交易日历: %d 天 (范围 %s ~ %s)",
@@ -70,7 +80,7 @@ def reload_trading_days() -> set[datetime.date]:
 def is_trading_day(dt: datetime.date | None = None) -> bool:
     """判断是否为 A 股交易日（排除周末 + 排除节假日）
 
-    节假日判断依赖 akshare 交易日历：
+    节假日判断依赖 Tushare 交易日历：
     - 加载成功：用真实日历（端午/国庆/春节都识别）
     - 加载失败：降级到 weekend-only（之前的老逻辑）
 

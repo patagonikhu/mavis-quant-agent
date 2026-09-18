@@ -19,10 +19,5 @@ def get_data_provider() -> DataProvider:
     from app.config import get_settings
     settings = get_settings()
 
-    if settings.data_provider == "akshare":
-        from app.data.akshare_provider import AKShareProvider
-        return AKShareProvider()
-
-    # auto: 默认 akshare
-    from app.data.akshare_provider import AKShareProvider
-    return AKShareProvider()
+    from app.data.tushare_provider import TushareProvider
+    return TushareProvider(token=settings.tushare_token)

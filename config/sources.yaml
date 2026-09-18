@@ -16,8 +16,7 @@ real_time:
 
 kline_daily:
   primary: Tushare.daily
-  fallback: Tushare.pro_bar (复权)
-  unit: 元 (不复权)
+  unit: 元
   note: 日 K 线, 默认 250 根
 
 kline_weekly:

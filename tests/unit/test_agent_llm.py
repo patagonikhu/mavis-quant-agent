@@ -4,8 +4,7 @@ import json
 
 import pytest
 
-from app.agent.prompts import SYSTEM_PROMPT, build_sector_analysis_prompt
-from app.agent.state import AgentState, SectorSignalState
+from app.agent.prompts import SYSTEM_PROMPT
 from app.llm.structured import extract_json_from_text, parse_structured_output
 from app.strategy.models import Signal, Direction
 from pydantic import BaseModel, Field
@@ -21,43 +20,19 @@ class TestPrompts:
         assert "涨跌停" in SYSTEM_PROMPT
 
     def test_build_sector_analysis_prompt(self):
-        prompt = build_sector_analysis_prompt(
-            sector="半导体",
-            volume_signals="放量上涨: 触发",
-            capital_signals="主力净流入: 触发",
-            leader_signals="龙头启动: 触发",
-            policy_signals="政策利好: 触发",
-            sentiment_signals="热度上升: 触发",
-            rule_score=75.0,
-            rating="强信号 ⭐⭐⭐⭐⭐",
-        )
-        assert "半导体" in prompt
-        assert "75.0" in prompt
-        assert "is_launching" in prompt
+        # sector analysis prompt 已删除 (2026-09-18 清理 sector 工具同步删)
+        # 板块相关功能未来重新设计时再加回
+        assert SYSTEM_PROMPT is not None
 
 
 # ---- Agent 状态测试 ----
 
 class TestAgentState:
-    def test_sector_signal_state_keys(self):
-        state: SectorSignalState = {
-            "user_query": "扫描板块信号",
-            "intent": "sector_scan",
-            "sectors_to_analyze": ["半导体"],
-            "raw_signals": {},
-            "llm_analysis": {},
-            "final_report": "",
-            "messages": [],
-            "error": None,
-        }
-        assert state["user_query"] == "扫描板块信号"
-        assert state["intent"] == "sector_scan"
-
     def test_agent_state_class(self):
-        state = AgentState()
-        state.set_current_stock("600519", "贵州茅台")
-        assert state.current_symbol == "600519"
-        assert state.current_name == "贵州茅台"
+        # AgentState 已删除 (2026-09-18 清理 sector 工具同步删)
+        # 简化 ReAct 模式无独立 State, 通过 history list 传递
+        from app.agent.graph import chat
+        assert callable(chat)
 
 
 # ---- 结构化输出测试 ----
@@ -150,11 +125,11 @@ class TestToolImports:
         assert screen_stocks.name == "screen_stocks"
 
     def test_sector_tools(self):
-        from app.agent.tools.sector import scan_sector_signal, scan_all_sectors, get_sector_list
-        assert scan_sector_signal.name == "scan_sector_signal"
-        assert scan_all_sectors.name == "scan_all_sectors"
-        assert get_sector_list.name == "get_sector_list"
+        # sector 工具已删除 (2026-09-18 清理 akshare/pro_bar/hfq/qfq 同步删)
+        # 板块相关功能未来通过 Tushare.ths_index 等接口重新设计时再加回
+        pass
 
     def test_all_tools_count(self):
         from app.agent.graph import ALL_TOOLS
-        assert len(ALL_TOOLS) == 16
+        # 删 sector/backtest/optimize 后剩 9 个工具 (个股 + 搜索 + 大盘)
+        assert len(ALL_TOOLS) == 9

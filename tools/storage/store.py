@@ -1233,18 +1233,12 @@ class DataStore:
 
     @classmethod
     def get_kline(cls, code: str, limit: int = 0) -> list[dict]:
-        """日线 K线，升序。limit=0 表示全量（默认取 config 里的 kline_days）。
-
-        2026-09-17 改: Tushare daily API 的 OHLC 字段本身就是前复权价（同同花顺前复权画面同源），
-        不应再 × adj_factor，那段逻辑反而把 5-07 的 1252.68 错算成 840.05。
-        现在只做: NaN 兜底 + vol 改名 volume。
-        """
+        """日线 K线，升序。limit=0 表示全量（默认取 config 里的 kline_days）。"""
         if limit == 0:
             limit = _PROJECT_CFG.get("data", {}).get("kline_days", 1250)
         ts_code = _to_ts_code(code)
         rows = _read_kline(ts_code, limit=limit)
 
-        # Tushare 推过来的 OHLC = 前复权价（同同花顺前复权画面），不再二次复权
         last_valid_pre_close = None
         for r in rows:
             # 字段别名: vol → volume (raw 股数, 不动)

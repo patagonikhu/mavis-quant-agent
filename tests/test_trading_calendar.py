@@ -75,7 +75,7 @@ class TestKnownHolidays:
         (datetime.date(2025, 10, 1), False, "2025 国庆"),
         (datetime.date(2025, 10, 8), False, "2025 国庆最后一天"),
         (datetime.date(2025, 10, 9), True, "2025 国庆后第一天交易"),
-        # 2024 春节：2/9 除夕 - 2/18 共 10 天（akshare 真实数据）
+        # 2024 春节：2/9 除夕 - 2/18 共 10 天（Tushare.trade_cal 真实数据）
         (datetime.date(2024, 2, 8), True, "2024 春节前最后一个交易日"),
         (datetime.date(2024, 2, 9), False, "2024 春节除夕"),
         (datetime.date(2024, 2, 18), False, "2024 春节最后一天（周日仍休）"),
@@ -95,7 +95,7 @@ class TestCompensationDays:
     def test_2024_spring_festival_compensation(self):
         # 2024-02-04 周日 春节调休上班，但 A 股不交易
         # 实际 A 股 2024-02-04 不开盘，调休上班是工作日但股市不开
-        # 这个测试需要根据真实数据，可能 akshare 返回 False（正确）或 True（看交易所安排）
+        # 这个测试需要根据真实数据，可能 Tushare 返回 False（正确）或 True（看交易所安排）
         # 实际上 A 股的调休都是"股市跟随国家调休"，调休上班日股市也开
         # 但 2024-02-04 是周日 + 春节假期内，所以肯定不开
         assert is_trading_day(datetime.date(2024, 2, 4)) is False
@@ -181,7 +181,7 @@ class TestCacheAndFallback:
         assert before == after
 
     def test_is_trading_day_fallback(self, monkeypatch):
-        """当 akshare 加载失败时，is_trading_day 降级为"只排除周末" """
+        """当 Tushare 加载失败时，is_trading_day 降级为"只排除周末" """
         from app.market import calendar as cal_mod
 
         # 模拟加载失败

@@ -12,7 +12,7 @@ data_fetcher.py — 统一数据抓取层 (v4.0, 2026-07-22)
   │ 数据         │  唯一源                                     │
   ├──────────────┼─────────────────────────────────────────┤
   │ 实时价       │  Tushare.daily (close) + Tushare.daily_basic (pe_ttm/pb) │
-  │ 历史 K 线    │  Tushare.daily (qfq 复权从 amount 字段推)   │
+  │ 历史 K 线    │  Tushare.daily                                 │
   │ 主力资金     │  Tushare.moneyflow (5000 积分档, 24h 稳定)  │
   │ EPS / 财务   │  Tushare.fina_indicator (ROE/EPS/CAGR 自建) │
   │ 总股本/市值  │  Tushare.stock_basic.total_share + daily_basic.total_mv │
@@ -232,8 +232,6 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
     """
     v4.0 (2026-07-22): 单一源 Tushare.daily
       - 字段: trade_date / open / high / low / close / vol (amount 在 tushare 是成交额)
-      - 注: Tushare.daily 默认不复权, 但 daily_basic 已经能算 MA 偏离等,
-        真要复权用 Tushare.pro_bar (另需 5000 积分), 暂用不复权
 
     v5.3 (2026-07-28): 加增量缓存 use_cache=True
       - 读 data/_old_d/{code}.json 找 kline 最后一日

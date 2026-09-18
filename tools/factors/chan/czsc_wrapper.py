@@ -198,7 +198,7 @@ if __name__ == "__main__":
     print(f"=== 测试 {code} (czsc 计算) ===")
     print(f"czsc 版本: {czsc.__version__}")
 
-    # 读 K 线 (走 DataStore 自动前复权)
+    # 读 K 线 (走 DataStore)
     rows = DataStore.get_kline(code, limit=300)
     klines = []
     for r in rows:

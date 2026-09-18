@@ -524,10 +524,6 @@ def beichi(hist, closes, t0, p1, t1, p2):
 
 所有补充分析的数据来自同一个API：
 
-```
-https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={sh/sz}{code},day,,,250,qfq
-```
-
 每根K线7个字段：
 ```
 [日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额]
