@@ -26,7 +26,7 @@ output_path = Path('docs/signal-watchlist.md')
 # 保留本次 watchlist 中所有 (code, name) 的目标文件, 其余全部删除
 import re
 expected_files = {f'analyze-{s["code"]}-{s["name"]}.md' for s in stocks}
-for sub in ('portfolio', 'watchlist'):
+for sub in ('portfolio', 'watchlist', 'blowout'):
     d = Path(f'docs/{sub}')
     if not d.exists():
         continue
@@ -51,8 +51,17 @@ t_total = time.time()
 def process_one(s):
     code = s['code']
     name = s['name']
-    subdir = 'portfolio' if s.get('list_type') == '持仓' else 'watchlist'
-    list_type_label = '持仓' if s.get('list_type') == '持仓' else '自选'
+    # 2026-09-18 加: 3 路分流 — 持仓→portfolio, 自选→watchlist, blowout→blowout
+    lt = s.get('list_type', '自选')
+    if lt == '持仓':
+        subdir = 'portfolio'
+        list_type_label = '持仓'
+    elif lt == 'blowout':
+        subdir = 'blowout'
+        list_type_label = 'blowout'
+    else:
+        subdir = 'watchlist'
+        list_type_label = '自选'
     t0 = time.time()
     try:
         ctx = DataStore.get_ctx(code)

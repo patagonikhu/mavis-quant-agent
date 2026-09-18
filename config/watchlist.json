@@ -171,43 +171,232 @@
       "code": "002458",
       "name": "益生股份",
       "sector": "农业",
-      "list_type": "自选",
+      "list_type": "blowout",
       "notes": "R3 反转 信号最强: 净利 yoy +4897% (+4013pp), 农业反转 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
       "code": "301366",
       "name": "一博科技",
       "sector": "元器件-PCB",
-      "list_type": "自选",
+      "list_type": "blowout",
       "notes": "R3 反转: 净利 yoy +1561% (+1289pp), 元器件 PCB AI 算力 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
       "code": "300613",
       "name": "富瀚微",
       "sector": "半导体-IC设计",
-      "list_type": "自选",
+      "list_type": "blowout",
       "notes": "R3 反转: 营收 +113% / 净利 yoy +1419% (+938pp), 半导体 IC 设计 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
       "code": "688449",
       "name": "联芸科技",
       "sector": "半导体-存储",
-      "list_type": "自选",
+      "list_type": "blowout",
       "notes": "R3 反转: 净利 yoy +825% (+690pp), 半导体存储主控 (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
       "code": "301536",
       "name": "星宸科技",
       "sector": "半导体-SOC",
-      "list_type": "自选",
+      "list_type": "blowout",
       "notes": "R3 反转: 营收 +89% / 净利 yoy +619% (+290pp), 半导体 SOC (2026-09-18 /t-finance-earnings-blowout)"
     },
     {
       "code": "688255",
       "name": "凯尔达",
       "sector": "机械-机器人",
-      "list_type": "自选",
+      "list_type": "blowout",
       "notes": "R3 反转: 净利 yoy +1095% (+974pp), 机械基件/人形机器人 (2026-09-18 /t-finance-earnings-blowout)"
+    },
+    {
+      "code": "001313",
+      "name": "粤海饲料",
+      "sector": "饲料",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "003032",
+      "name": "传智教育",
+      "sector": "文教休闲",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "301099",
+      "name": "雅创电子",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "603595",
+      "name": "ST东尼",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "002196",
+      "name": "方正电机",
+      "sector": "纺织机械",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "000042",
+      "name": "中洲控股",
+      "sector": "全国地产",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "688135",
+      "name": "利扬芯片",
+      "sector": "半导体",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "688012",
+      "name": "中微公司",
+      "sector": "半导体",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "002841",
+      "name": "视源股份",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "001339",
+      "name": "智微智能",
+      "sector": "IT设备",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "300458",
+      "name": "全志科技",
+      "sector": "半导体",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "688535",
+      "name": "华海诚科",
+      "sector": "半导体",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "001287",
+      "name": "中电港",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "000833",
+      "name": "粤桂股份",
+      "sector": "综合类",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "688620",
+      "name": "安凯微",
+      "sector": "半导体",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "002557",
+      "name": "洽洽食品",
+      "sector": "食品",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "301085",
+      "name": "亚康股份",
+      "sector": "软件服务",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "301321",
+      "name": "翰博高新",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "603068",
+      "name": "博通集成",
+      "sector": "半导体",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "002925",
+      "name": "盈趣科技",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "688256",
+      "name": "寒武纪",
+      "sector": "半导体",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "603085",
+      "name": "天成自控",
+      "sector": "汽车配件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "920045",
+      "name": "蘅东光",
+      "sector": "通信设备",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "300964",
+      "name": "本川智能",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "002876",
+      "name": "三利谱",
+      "sector": "元器件",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "000925",
+      "name": "众合科技",
+      "sector": "运输设备",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "002479",
+      "name": "富春环保",
+      "sector": "新型电力",
+      "list_type": "blowout",
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
     }
   ]
 }

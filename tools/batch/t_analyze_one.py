@@ -56,8 +56,13 @@ def process_one(code: str, name: str | None = None) -> dict:
     wl_map = load_watchlist_map()
     s = wl_map.get(code, {"code": code, "name": name or "", "list_type": "自选"})
     list_type = s.get("list_type", "自选")
-    subdir = "portfolio" if list_type == "持仓" else "watchlist"
-    list_type_label = "持仓" if list_type == "持仓" else "自选"
+    # 2026-09-18 加: 3 路分流 — 持仓/自选/blowout
+    if list_type == "持仓":
+        subdir, list_type_label = "portfolio", "持仓"
+    elif list_type == "blowout":
+        subdir, list_type_label = "blowout", "blowout"
+    else:
+        subdir, list_type_label = "watchlist", "自选"
 
     try:
         ctx = DataStore.get_ctx(code)
