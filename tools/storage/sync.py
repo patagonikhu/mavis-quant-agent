@@ -853,8 +853,6 @@ def main():
                         help="[默认行为] 自动检测 stale flag, 只跑需跑的 (解决'忘记 sync'问题)")
     parser.add_argument("--auto-force", action="store_true",
                         help="自动检测 + 强刷所有 stale flag")
-    parser.add_argument("--auto-dry", action="store_true",
-                        help="只打印会跑什么, 不真跑 (--auto + 试运行)")
     parser.add_argument("--period", help="财务指定季度 (例: 20251231, 跟 --financials 一起用)")
 
     args = parser.parse_args()
@@ -875,8 +873,8 @@ def main():
             print("⚠️  --eps 不允许全市场 (datacenter API 限频), 强制缩到 watchlist")
         args.all = False
 
-    # --auto / --auto-force / --auto-dry 短路 (忽略其他 flag)
-    if args.auto or args.auto_force or args.auto_dry:
+    # --auto / --auto-force 短路 (忽略其他 flag)
+    if args.auto or args.auto_force:
         # 先解析 codes
         if args.codes:
             _last_codes = [c.zfill(6) for c in args.codes]
@@ -887,11 +885,11 @@ def main():
         scope = f"watchlist {len(_last_codes)} 只" if not (args.codes or args.all) else (
             f"指定 {len(_last_codes)} 只" if args.codes else f"全市场 {len(_last_codes)} 只"
         )
-        mode = "auto-force" if args.auto_force else ("auto-dry" if args.auto_dry else "auto")
+        mode = "auto-force" if args.auto_force else "auto"
         print(f"=== Mavis sync_data (scope: {scope}) [{mode}] ===")
         return action_auto(
             force=args.auto_force,
-            quiet=args.auto_dry,
+            quiet=False,
         )
 
     # Scope 解析

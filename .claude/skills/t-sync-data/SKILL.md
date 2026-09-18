@@ -12,9 +12,8 @@ allowed-tools:
 ## 用法
 
 ```bash
-# 默认智能 (推荐, 多数 0 网络)
+# 默认智能 (推荐, 多数 0 网络, 末尾输出网络统计)
 bash tools/with_venv.sh python -m tools.storage.sync
-bash tools/with_venv.sh python -m tools.storage.sync --auto-dry       # 试运行
 
 # 8 个正交 flag (按需刷单个)
 ... --kline              # 增量 K 线 (每天)
