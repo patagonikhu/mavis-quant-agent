@@ -66,7 +66,7 @@ def _load_ths_whitelist() -> list[str]:
         [{ "match": "CPO", "note": "..." }, ...]
     兼容老路径: data/watchlist.json ths_whitelist 字段
     """
-    p = Path("data/ths_whitelist.json")
+    p = Path("config/ths_whitelist.json")
     if p.exists():
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
@@ -74,7 +74,7 @@ def _load_ths_whitelist() -> list[str]:
         except Exception:
             pass
     # 兼容老路径
-    fallback = Path("data/watchlist.json")
+    fallback = Path("config/watchlist.json")
     if fallback.exists():
         try:
             data = json.loads(fallback.read_text(encoding="utf-8"))

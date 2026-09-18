@@ -32,6 +32,11 @@ data/*
 !data/sectors.json
 !data/ths_whitelist.json
 !data/fetch_log.jsonl  # 稳定性 log 也 git, 跨机器共享
+
+# Config (用户维护的配置文件, 全部 git 跟踪)
+# config/ 默认全部 include (factors.yaml / project.yaml / sources.yaml /
+# ths_whitelist.json / watchlist.json 都进 git)
+# 无需特别 allow
 # 超跌股 watchlist (auto-generated, 跟 git 备份)
 # 但 dump_oversold/ 还是 ignore (70MB, 太大不入 git)
 !data/watchlist_oversold.json
@@ -55,6 +60,12 @@ docs/analyze-*.md
 docs/portfolio/analyze-*.md
 docs/watchlist/analyze-*.md
 docs/sector/analyze-*.md
+# 2026-09-18 加: 中间产物 (skill 跑出来的报告, 跑对应 skill 自动产出)
+docs/finance-top20.md
+docs/finance-top20-summary.md
+docs/concept-macd/*.md
+docs/rsi6-tech-watchlist.md
+docs/rsi6-backtest-trades.md
 
 # Cache
 .cache/

@@ -1820,7 +1820,7 @@ class DataStore:
     def watchlist_codes(cls) -> list[str]:
         """返回 watchlist.json 里的股票代码列表。"""
         try:
-            d = json.loads(Path("data/watchlist.json").read_text(encoding="utf-8"))
+            d = json.loads(Path("config/watchlist.json").read_text(encoding="utf-8"))
             return [s["code"] for s in d.get("stocks", [])]
         except Exception:
             return []
@@ -1829,7 +1829,7 @@ class DataStore:
     # 7 个 schema 接口 (2026-09-03 v6.2 加, 解决 watchlist/sectors/events 散落读)
     # ============================================================
 
-    _WATCHLIST_PATH = Path("data/watchlist.json")
+    _WATCHLIST_PATH = Path("config/watchlist.json")
 
     @classmethod
     def load_watchlist(cls) -> dict:

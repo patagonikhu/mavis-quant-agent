@@ -38,7 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-WATCHLIST = ROOT / "data" / "watchlist.json"
+WATCHLIST = ROOT / "config" / "watchlist.json"
 
 
 def _get_codes(scope: str, codes_arg: list[str], all_market: bool) -> list[str]:
@@ -118,10 +118,10 @@ def action_ths(years_back: int = 3) -> int:
         print(f"  ✅ ths_index: {len(index_rows)} 行, status=OK")
 
     # 2. 读 ths_whitelist.json (2026-09-17 拆出独立文件)
-    wl_file = Path("data/ths_whitelist.json")
+    wl_file = Path("config/ths_whitelist.json")
     if not wl_file.exists():
         # 兼容老路径 watchlist.json ths_whitelist 字段
-        fallback = Path("data/watchlist.json")
+        fallback = Path("config/watchlist.json")
         if fallback.exists():
             wl = json.loads(fallback.read_text(encoding="utf-8"))
             whitelist = wl.get("ths_whitelist", [])
@@ -139,7 +139,7 @@ def action_ths(years_back: int = 3) -> int:
     if not whitelist:
         print(f"  ⚠️ ths_whitelist.json 没有 concepts 字段, 跳过")
         return 0
-    print(f"  📌 白名单: {len(whitelist)} 个 THS 概念 (data/ths_whitelist.json)")
+    print(f"  📌 白名单: {len(whitelist)} 个 THS 概念 (config/ths_whitelist.json)")
 
     # 3. 反查 + 增量续存
     total_pulled = 0

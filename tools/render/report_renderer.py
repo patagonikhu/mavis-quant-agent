@@ -1778,7 +1778,7 @@ def _section_data_sources(data: RenderData) -> str:
     try:
         import yaml
         from pathlib import Path
-        yaml_path = Path(__file__).parent.parent.parent / "data" / "sources.yaml"
+        yaml_path = Path(__file__).parent.parent.parent / "config" / "sources.yaml"
         cfg = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) if yaml_path.exists() else {}
     except Exception:
         return "> **数据状态:** ⚠️ sources.yaml 不可用\n"
