@@ -87,11 +87,17 @@ def process_one(code: str, name: str | None = None) -> dict:
         # 文件名: code 用 6 位 (去掉 .SZ/.SH 后缀), name 中文
         code6 = code.split(".")[0] if "." in code else code
         name_for_file = s.get("name") or name or ctx.name or code6
-        if not name_for_file or name_for_file == "未知":
+        # 2026-09-18 修: 把"占位符/未知/空"统一回退到 stock_basic; 真没有再回退 code6
+        # 避免 file=`analyze-601091-601091.md` 这种双重 code
+        if not name_for_file or name_for_file in ("未知", "C", f"{code6}"):
             try:
                 sb = DataStore.get_stock_basic(code6)
-                name_for_file = sb.get("name", code6)
+                cand = sb.get("name", "")
+                if cand and cand != "未知" and cand != code6:
+                    name_for_file = cand
             except Exception:
+                pass
+            if not name_for_file or name_for_file == "未知":
                 name_for_file = code6
         out = Path(f"docs/{subdir}/analyze-{code6}-{name_for_file}.md")
         out.parent.mkdir(parents=True, exist_ok=True)
