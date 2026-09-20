@@ -390,6 +390,41 @@
       "sector": "新型电力",
       "list_type": "blowout",
       "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+    },
+    {
+      "code": "300620",
+      "name": "光库科技",
+      "sector": "通信设备",
+      "list_type": "持仓",
+      "notes": "AI 算力光模块核心元件 (隔离器/泵浦合束器), 2026-09-21 加"
+    },
+    {
+      "code": "000988",
+      "name": "华工科技",
+      "sector": "专用机械",
+      "list_type": "持仓",
+      "notes": "激光设备+光通信模块, AI 算力光模块老玩家, 2026-09-21 加"
+    },
+    {
+      "code": "688048",
+      "name": "长光华芯",
+      "sector": "半导体",
+      "list_type": "持仓",
+      "notes": "半导体激光芯片 (VCSEL/DFB/EML), AI 算力光芯片国产替代, 2026-09-21 加"
+    },
+    {
+      "code": "688498",
+      "name": "源杰科技",
+      "sector": "半导体",
+      "list_type": "持仓",
+      "notes": "半导体激光器芯片 (DFB/EML/1310nm), AI 算力光模块+高速光芯片, 2026-09-21 加"
+    },
+    {
+      "code": "300476",
+      "name": "胜宏科技",
+      "sector": "元器件-PCB",
+      "list_type": "持仓",
+      "notes": "AI 算力高速 PCB 龙头 (英伟达/AMD 服务器主板), 2026-09-21 加"
     }
   ]
 }
