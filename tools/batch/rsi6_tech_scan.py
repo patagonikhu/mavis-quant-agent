@@ -279,18 +279,22 @@ def scan_one_worker(args_tuple):
             rev_yoy = yoy.get("rev_yoy") if isinstance(yoy, dict) else None
             np_yoy_prev = yoy.get("np_yoy_prev") if isinstance(yoy, dict) else None
             if strict_yoy:
-                # 四重严过滤 (新增边际项)
+                # 四重严过滤: 排除业绩差的票 (方向: 业绩差的 → 排除)
+                # 1) 本季净利 yoy 必须 > 0 (盈利同比转正, 排除亏损)
                 if np_yoy is None or np_yoy <= 0:
                     return None
+                # 2) 上季净利 yoy 必须 > 0 (连续两季盈利, 排除单季反转)
                 if np_yoy_prev is None or np_yoy_prev <= 0:
                     return None
+                # 3) 营收 yoy >= -10% (营收不能太差; yoy=-50% 等差业绩会被排除)
                 if rev_yoy is not None and rev_yoy < -10:
-                    return None  # 营收 yoy 大幅下滑
-                # 2026-09-21 新增: 净利 yoy 边际放缓 < -10pp
+                    return None  # 营收 yoy 业绩差 → 排除
+                # 4) 净利 yoy 边际放缓 < -10pp (断崖式业绩见顶 → 排除)
+                #    业绩差 = 本季 yoy 比上季 yoy 降超过 10pp
                 if (np_yoy is not None and np_yoy_prev is not None):
                     margin_change = np_yoy - np_yoy_prev
                     if margin_change < -10:
-                        return None  # 净利 yoy 断崖式放缓
+                        return None  # 业绩断崖式下滑 → 排除
             else:
                 # 旧单重过滤
                 if np_yoy is None or np_yoy <= 0:
@@ -358,7 +362,7 @@ def main():
     if tech_only: print(f"  + 科技板块限定: {', '.join(sorted(TECH_INDUSTRIES))}")
     if yoy_only:
         if strict_yoy:
-            print(f"  + 最新季净利 yoy > 0 + 上季净利 yoy > 0 + 营收 yoy >= -10% + 边际 yoy 放缓 < 10pp (严)")
+            print(f"  + 业绩严 (排除差): 两季净利 yoy>0 + 营收 yoy>=-10% + 边际放缓<10pp (4 重)")
         else:
             print(f"  + 最新季报 netprofit_yoy > 0 (基础)")
     print(f"  扫描: 全市场 (--tech 可加严)")
