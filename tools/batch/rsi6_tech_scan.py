@@ -274,17 +274,23 @@ def scan_one_worker(args_tuple):
             # 2026-09-21 加严: 默认要求 两季都盈利
             # 旧逻辑: np_yoy > 0
             # 新逻辑 (strict_yoy=True 时): np_yoy > 0 AND np_yoy_prev > 0 AND rev_yoy >= -10
+            # 2026-09-21 再加: 增速边际 (本季 - 上季 >= -10pp) 避免"断崖式放缓"
             np_yoy = yoy.get("np_yoy") if isinstance(yoy, dict) else yoy
             rev_yoy = yoy.get("rev_yoy") if isinstance(yoy, dict) else None
             np_yoy_prev = yoy.get("np_yoy_prev") if isinstance(yoy, dict) else None
             if strict_yoy:
-                # 三重严过滤
+                # 四重严过滤 (新增边际项)
                 if np_yoy is None or np_yoy <= 0:
                     return None
                 if np_yoy_prev is None or np_yoy_prev <= 0:
                     return None
                 if rev_yoy is not None and rev_yoy < -10:
                     return None  # 营收 yoy 大幅下滑
+                # 2026-09-21 新增: 净利 yoy 边际放缓 < -10pp
+                if (np_yoy is not None and np_yoy_prev is not None):
+                    margin_change = np_yoy - np_yoy_prev
+                    if margin_change < -10:
+                        return None  # 净利 yoy 断崖式放缓
             else:
                 # 旧单重过滤
                 if np_yoy is None or np_yoy <= 0:
@@ -352,7 +358,7 @@ def main():
     if tech_only: print(f"  + 科技板块限定: {', '.join(sorted(TECH_INDUSTRIES))}")
     if yoy_only:
         if strict_yoy:
-            print(f"  + 最新季净利 yoy > 0 + 上季净利 yoy > 0 + 营收 yoy >= -10% (严)")
+            print(f"  + 最新季净利 yoy > 0 + 上季净利 yoy > 0 + 营收 yoy >= -10% + 边际 yoy 放缓 < 10pp (严)")
         else:
             print(f"  + 最新季报 netprofit_yoy > 0 (基础)")
     print(f"  扫描: 全市场 (--tech 可加严)")
