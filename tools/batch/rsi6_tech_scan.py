@@ -153,28 +153,65 @@ def _load_industry_map(codes: list[str]) -> dict[str, str]:
         return {}
 
 
-def _load_yoy_map() -> dict[str, float]:
-    """code → netprofit_yoy 映射 (最新季报)."""
+def _load_yoy_map() -> dict[str, dict]:
+    """code → yoy 详情 映射.
+
+    Returns:
+        {code: {
+            "np_yoy":     float 最新季净利 yoy (单季),
+            "rev_yoy":    float 最新季营收 yoy (单季),
+            "np_yoy_prev": float 上季净利 yoy (单季),
+            "np_yoy_yoy": float 最新季 yoy 同比变动 pp (相对上季 +50pp 等)
+        }}
+        任何 yoy 缺失 → None
+    """
     import pandas as pd
     try:
         fin_dir = Path("data/history/financials")
         files = sorted(fin_dir.glob("2026Q*.parquet"), reverse=True)
         if not files:
             return {}
-        df = pd.read_parquet(files[0])
-        yoy_col = "netprofit_yoy"
-        if yoy_col not in df.columns:
+        df_cur = pd.read_parquet(files[0])
+        if "netprofit_yoy" not in df_cur.columns:
             return {}
+
+        # 上季: 第二个最新季度文件
+        prev_df = None
+        if len(files) >= 2:
+            try:
+                prev_df = pd.read_parquet(files[1])
+            except Exception:
+                prev_df = None
+
         out = {}
-        for _, row in df.iterrows():
+        for _, row in df_cur.iterrows():
             c = row.get("code")
             if not isinstance(c, str) or len(c) < 6:
                 continue
-            v = row.get(yoy_col)
-            try:
-                out[c[:6]] = float(v) if v is not None else None
-            except (TypeError, ValueError):
-                out[c[:6]] = None
+            code6 = c[:6]
+            np_yoy  = row.get("netprofit_yoy")
+            rev_yoy = row.get("tr_yoy")
+            np_yoy_prev = None
+            if prev_df is not None:
+                prev_rows = prev_df[prev_df["code"].str[:6] == code6] if "code" in prev_df.columns else pd.DataFrame()
+                if not prev_rows.empty:
+                    v = prev_rows.iloc[0].get("netprofit_yoy")
+                    try:
+                        np_yoy_prev = float(v) if v is not None else None
+                    except (TypeError, ValueError):
+                        np_yoy_prev = None
+
+            def _to_float(x):
+                try:
+                    return float(x) if x is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            out[code6] = {
+                "np_yoy":      _to_float(np_yoy),
+                "rev_yoy":     _to_float(rev_yoy),
+                "np_yoy_prev": np_yoy_prev,
+            }
         return out
     except Exception as e:
         print(f"  [WARN] 加载 yoy 失败: {e}")
@@ -192,7 +229,7 @@ def scan_one_worker(args_tuple):
         dict 或 None 或 {"code", "error"}
     """
     (code, rsi6_th, rsi12_th, kline_limit,
-     tech_only, yoy_only, use_rsi12, industry, yoy) = args_tuple
+     tech_only, yoy_only, use_rsi12, industry, yoy, strict_yoy) = args_tuple
     try:
         from tools.storage.store import DataStore
         with redirect_stdout(io.StringIO()):
@@ -230,10 +267,28 @@ def scan_one_worker(args_tuple):
         if tech_only and industry not in TECH_INDUSTRIES:
             return None
 
-        # ── 条件 4: 季报 yoy > 0 ──
+        # ── 条件 4: 季报 yoy > 0 (基本) ──
         if yoy_only:
-            if yoy is None or yoy <= 0:
+            if yoy is None:
                 return None
+            # 2026-09-21 加严: 默认要求 两季都盈利
+            # 旧逻辑: np_yoy > 0
+            # 新逻辑 (strict_yoy=True 时): np_yoy > 0 AND np_yoy_prev > 0 AND rev_yoy >= -10
+            np_yoy = yoy.get("np_yoy") if isinstance(yoy, dict) else yoy
+            rev_yoy = yoy.get("rev_yoy") if isinstance(yoy, dict) else None
+            np_yoy_prev = yoy.get("np_yoy_prev") if isinstance(yoy, dict) else None
+            if strict_yoy:
+                # 三重严过滤
+                if np_yoy is None or np_yoy <= 0:
+                    return None
+                if np_yoy_prev is None or np_yoy_prev <= 0:
+                    return None
+                if rev_yoy is not None and rev_yoy < -10:
+                    return None  # 营收 yoy 大幅下滑
+            else:
+                # 旧单重过滤
+                if np_yoy is None or np_yoy <= 0:
+                    return None
 
         # 质量分级: RSI6 越低越强
         if cur6 < 5:
@@ -245,6 +300,9 @@ def scan_one_worker(args_tuple):
         else:
             quality = "normal"
 
+        # 输出原始 yoy 信息, 让 caller 能用
+        yoy_out = yoy if isinstance(yoy, dict) else {"np_yoy": yoy}
+
         return {
             "code": code,
             "trigger_date": all_dates[-1],
@@ -252,7 +310,9 @@ def scan_one_worker(args_tuple):
             "rsi6": cur6,
             "rsi12": cur12 if cur12 == cur12 else None,
             "industry": industry,
-            "yoy": yoy,
+            "yoy":       np_yoy,
+            "rev_yoy":   rev_yoy,
+            "np_yoy_prev": np_yoy_prev,
             "quality": quality,
             "days_ago": 0,
         }
@@ -277,17 +337,24 @@ def main():
     # 2026-09-21 改: 默认全市场扫描; --tech 显式启用旧科技板块过滤
     parser.add_argument("--tech",            action="store_true",      help="仅科技板块 (默认否, 全市场扫描)")
     parser.add_argument("--no-yoy",          action="store_true",      help="不限季报 yoy>0")
+    # 2026-09-21 加: yoy 严过滤 (最近两季净利 yoy > 0 + 营收 yoy >= -10%)
+    parser.add_argument("--strict-yoy",      action="store_true",      help="严 yoy: 最近两季净利 yoy>0 + 营收 yoy >= -10%")
     parser.add_argument("--kline-limit",     type=int,   default=120,  help="K 线条数 (默认 120, 够 RSI12 + 历史)")
     args = parser.parse_args()
 
     use_rsi12 = not args.no_rsi12
     tech_only = args.tech   # 2026-09-21 改: 默认 False (全市场)
     yoy_only = not args.no_yoy
+    strict_yoy = args.strict_yoy  # 2026-09-21 加: 严 yoy 模式
 
     print(f"=== RSI6+RSI12 超卖 (全市场, 0 网络) ===")
     print(f"  条件: RSI6 < {args.threshold_rsi6}" + (f" + RSI12 < {args.threshold_rsi12}" if use_rsi12 else ""))
     if tech_only: print(f"  + 科技板块限定: {', '.join(sorted(TECH_INDUSTRIES))}")
-    if yoy_only:  print(f"  + 最新季报 netprofit_yoy > 0")
+    if yoy_only:
+        if strict_yoy:
+            print(f"  + 最新季净利 yoy > 0 + 上季净利 yoy > 0 + 营收 yoy >= -10% (严)")
+        else:
+            print(f"  + 最新季报 netprofit_yoy > 0 (基础)")
     print(f"  扫描: 全市场 (--tech 可加严)")
 
     from tools.storage.store import DataStore
@@ -311,7 +378,7 @@ def main():
 
     work_items = [(c, args.threshold_rsi6, args.threshold_rsi12, args.kline_limit,
                    tech_only, yoy_only, use_rsi12,
-                   industry_map.get(c, ""), yoy_map.get(c))
+                   industry_map.get(c, ""), yoy_map.get(c), strict_yoy)
                   for c in codes]
 
     print(f"\n线程池: {args.workers} workers | 喂料: {len(work_items)} 只")
