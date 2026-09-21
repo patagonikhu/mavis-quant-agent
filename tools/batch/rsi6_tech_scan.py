@@ -274,19 +274,21 @@ def main():
     parser.add_argument("--threshold-rsi6",  type=int,   default=25,   help="RSI6 阈值 (默认 25)")
     parser.add_argument("--threshold-rsi12", type=int,   default=30,   help="RSI12 阈值 (默认 30, 需 --no-rsi12 才生效)")
     parser.add_argument("--no-rsi12",        action="store_true",      help="关闭 RSI12 确认 (仅 RSI6<25)")
-    parser.add_argument("--no-tech",         action="store_true",      help="不限科技板块")
+    # 2026-09-21 改: 默认全市场扫描; --tech 显式启用旧科技板块过滤
+    parser.add_argument("--tech",            action="store_true",      help="仅科技板块 (默认否, 全市场扫描)")
     parser.add_argument("--no-yoy",          action="store_true",      help="不限季报 yoy>0")
     parser.add_argument("--kline-limit",     type=int,   default=120,  help="K 线条数 (默认 120, 够 RSI12 + 历史)")
     args = parser.parse_args()
 
     use_rsi12 = not args.no_rsi12
-    tech_only = not args.no_tech
+    tech_only = args.tech   # 2026-09-21 改: 默认 False (全市场)
     yoy_only = not args.no_yoy
 
-    print(f"=== RSI6+RSI12 科技超卖 (0 网络) ===")
+    print(f"=== RSI6+RSI12 超卖 (全市场, 0 网络) ===")
     print(f"  条件: RSI6 < {args.threshold_rsi6}" + (f" + RSI12 < {args.threshold_rsi12}" if use_rsi12 else ""))
     if tech_only: print(f"  + 科技板块限定: {', '.join(sorted(TECH_INDUSTRIES))}")
     if yoy_only:  print(f"  + 最新季报 netprofit_yoy > 0")
+    print(f"  扫描: 全市场 (--tech 可加严)")
 
     from tools.storage.store import DataStore
     codes = DataStore.list_codes()
