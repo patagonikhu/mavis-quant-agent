@@ -346,26 +346,24 @@ def main():
     parser.add_argument("--no-rsi12",        action="store_true",      help="关闭 RSI12 确认 (仅 RSI6<25)")
     # 2026-09-21 改: 默认全市场扫描; --tech 显式启用旧科技板块过滤
     parser.add_argument("--tech",            action="store_true",      help="仅科技板块 (默认否, 全市场扫描)")
-    parser.add_argument("--no-yoy",          action="store_true",      help="不限季报 yoy>0")
-    # 2026-09-21 加: yoy 严过滤 (最近两季净利 yoy > 0 + 营收 yoy >= -10%)
-    parser.add_argument("--strict-yoy",      action="store_true",      help="严 yoy: 最近两季净利 yoy>0 + 营收 yoy >= -10%")
+    # 2026-09-21 改: 默认严 yoy 模式 — 6 条反向排除, 不再支持 --no-yoy / --strict-yoy
     parser.add_argument("--kline-limit",     type=int,   default=120,  help="K 线条数 (默认 120, 够 RSI12 + 历史)")
     args = parser.parse_args()
 
     use_rsi12 = not args.no_rsi12
-    tech_only = args.tech   # 2026-09-21 改: 默认 False (全市场)
-    yoy_only = not args.no_yoy
-    strict_yoy = args.strict_yoy  # 2026-09-21 加: 严 yoy 模式
+    tech_only = args.tech   # 默认 False (全市场)
+    yoy_only = True         # 2026-09-21: 默认严 yoy 模式, 不再可关
+    strict_yoy = True       # 2026-09-21: 默认严 yoy 模式, 不再可关
 
-    print(f"=== RSI6+RSI12 超卖 (全市场, 0 网络) ===")
-    print(f"  条件: RSI6 < {args.threshold_rsi6}" + (f" + RSI12 < {args.threshold_rsi12}" if use_rsi12 else ""))
+    print(f"=== RSI6+RSI12 超卖 (6 重严过滤, 全市场, 0 网络) ===")
+    print(f"  1. RSI6 < {args.threshold_rsi6}")
+    print(f"  2. RSI12 < {args.threshold_rsi12}" if use_rsi12 else "  2. RSI12 已关闭")
+    print(f"  3. 本季净利 yoy > 0")
+    print(f"  4. 上季净利 yoy > 0")
+    print(f"  5. 营收 yoy >= -10%")
+    print(f"  6. 净利 yoy 边际放缓 < -10pp")
+    print(f"  全部 6 条反向排除 (业绩差 → 排除)")
     if tech_only: print(f"  + 科技板块限定: {', '.join(sorted(TECH_INDUSTRIES))}")
-    if yoy_only:
-        if strict_yoy:
-            print(f"  + 业绩严 (排除差): 两季净利 yoy>0 + 营收 yoy>=-10% + 边际放缓<10pp (4 重)")
-        else:
-            print(f"  + 最新季报 netprofit_yoy > 0 (基础)")
-    print(f"  扫描: 全市场 (--tech 可加严)")
 
     from tools.storage.store import DataStore
     codes = DataStore.list_codes()
