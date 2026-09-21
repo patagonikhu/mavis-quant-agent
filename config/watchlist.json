@@ -4,27 +4,6 @@
   "description": "23 持仓 + 6 自选",
   "stocks": [
     {
-      "code": "000001",
-      "name": "上证指数",
-      "sector": "指数",
-      "list_type": "持仓",
-      "notes": "大盘基准指数"
-    },
-    {
-      "code": "000300",
-      "name": "沪深300",
-      "sector": "指数",
-      "list_type": "持仓",
-      "notes": "A股核心蓝筹基准"
-    },
-    {
-      "code": "399001",
-      "name": "深证成指",
-      "sector": "指数",
-      "list_type": "持仓",
-      "notes": "深市基准指数"
-    },
-    {
       "code": "399006",
       "name": "创业板指",
       "sector": "指数",
