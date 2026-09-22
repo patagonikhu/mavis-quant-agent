@@ -3,6 +3,14 @@
 
 策略: RSI6 < threshold 当日, 次日开盘买入, 持有 N 天
 阈值扫描: < 5 / < 10 / < 15 / < 20 / < 30
+
+2026-09-22 加: --yoy-strict 复用 /t-rsi6-tech 6 重业绩过滤 (业绩差 → 排除)
+   1. 本季净利 yoy > 0
+   2. 上季净利 yoy > 0 (连续两季盈利)
+   3. 营收 yoy >= -10%
+   4. 净利 yoy 边际放缓 >= -10pp (避免断崖)
+   默认关闭 (向后兼容老用法); 加 --yoy-strict 启用
+   启用后: 6 重过滤 = RSI6 < thr + 4 重业绩 (本脚本没 RSI12/thr)
 """
 import argparse
 import sys
@@ -46,12 +54,50 @@ def rsi6(closes):
     return rsi
 
 
+# 2026-09-22 加: /t-rsi6-tech 4 重业绩过滤 helper (从 rsi6_tech_scan 复用)
+def _load_yoy_map() -> dict:
+    """加载最新季报 yoy 映射 (复用 rsi6_tech_scan._load_yoy_map)."""
+    try:
+        from tools.batch.rsi6_tech_scan import _load_yoy_map as _src
+        return _src()
+    except Exception as e:
+        print(f"  ⚠️ yoy 加载失败: {e}")
+        return {}
+
+
+def _passes_yoy_filter(yoy: dict) -> bool:
+    """4 重业绩过滤 (本季 + 上季 yoy > 0, 营收 yoy >= -10%, 边际放缓 >= -10pp)
+
+    与 /t-rsi6-tech 6 重过滤中后 4 重一致 (前 2 重是 RSI6/RSI12 已在外层)
+    yoy 缺失 → 视为不通过 (保守)
+    """
+    if not yoy:
+        return False
+    np_yoy = yoy.get("np_yoy")
+    rev_yoy = yoy.get("rev_yoy")
+    np_yoy_prev = yoy.get("np_yoy_prev")
+    if np_yoy is None or np_yoy <= 0:
+        return False
+    if np_yoy_prev is None or np_yoy_prev <= 0:
+        return False
+    if rev_yoy is not None and rev_yoy < -10:
+        return False
+    if np_yoy is not None and np_yoy_prev is not None:
+        if (np_yoy - np_yoy_prev) < -10:
+            return False
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--hold-days', type=int, default=20)
+    # 2026-09-22 改: hold-days 默认 30 (从 20 升, 用户回测 30 天持有)
+    parser.add_argument('--hold-days', type=int, default=30)
     parser.add_argument('--limit', type=int, default=0)
     parser.add_argument('--thresholds', type=str, default='5,10,15,20,30')
     parser.add_argument('--write-md', action='store_true')
+    # 2026-09-22 加: --yoy-strict 启用 /t-rsi6-tech 4 重业绩过滤
+    parser.add_argument('--yoy-strict', action='store_true',
+                        help='启用 /t-rsi6-tech 业绩过滤 (净利yoy>0 + 净利yoy_prev>0 + 营收yoy>=-10% + 边际放缓>=10pp)')
     args = parser.parse_args()
 
     thresholds = [int(t) for t in args.thresholds.split(',')]
@@ -77,13 +123,33 @@ def main():
 
     print(f'RSI 预算完成: {len(code_rsi)} 只 ({time.time()-t0:.0f}s)\n')
 
+    # 2026-09-22 加: --yoy-strict 时加载业绩映射
+    yoy_map = _load_yoy_map() if args.yoy_strict else {}
+    if args.yoy_strict:
+        print(f'业绩过滤已启用: {len(yoy_map)} 只 (--yoy-strict)')
+        # 业绩过滤只能用当前快照, 仅对 2024+ 启用 (避免历史业绩变化误判)
+        YOY_HISTORY_START = '20240101'
+        print(f'业绩过滤窗口: {YOY_HISTORY_START}~ (避免历史快照失真)\n')
+    else:
+        YOY_HISTORY_START = None
+        print('业绩过滤关闭 (默认)\n')
+
     # 跑每个阈值
     summary = []
     trade_db = {t: [] for t in thresholds}
     for thr in thresholds:
         for code, (closes, dates, rsi) in code_rsi.items():
+            # 2026-09-22 加: 业绩过滤预查 (只算一次 / 只)
+            yoy = yoy_map.get(code) if args.yoy_strict else None
             for i in range(30, len(closes) - args.hold_days):
                 if np.isnan(rsi[i]) or rsi[i] >= thr: continue
+                # 2026-09-22 加: 业绩过滤 (4 重反向排除)
+                if args.yoy_strict:
+                    # 仅对 2024+ 信号启用业绩过滤
+                    if dates[i] < YOY_HISTORY_START:
+                        continue
+                    if not _passes_yoy_filter(yoy):
+                        continue
                 buy = closes[i + 1] if i + 1 < len(closes) else closes[i]
                 sell_idx = i + args.hold_days
                 if sell_idx >= len(closes): break
