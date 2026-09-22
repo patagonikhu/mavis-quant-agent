@@ -95,9 +95,15 @@ def main():
     parser.add_argument('--limit', type=int, default=0)
     parser.add_argument('--thresholds', type=str, default='5,10,15,20,30')
     parser.add_argument('--write-md', action='store_true')
+    # 2026-09-22 加: --write-trades 写每笔明细到 parquet (后续失败分析用)
+    parser.add_argument('--write-trades', action='store_true',
+                        help='每笔 trade 写 parquet (data/rsi6_backtest_trades.parquet)')
     # 2026-09-22 加: --yoy-strict 启用 /t-rsi6-tech 4 重业绩过滤
     parser.add_argument('--yoy-strict', action='store_true',
                         help='启用 /t-rsi6-tech 业绩过滤 (净利yoy>0 + 净利yoy_prev>0 + 营收yoy>=-10% + 边际放缓>=10pp)')
+    # 2026-09-22 加: --include-st 默认排除 ST 票 (雪球/退市风险)
+    parser.add_argument('--include-st', action='store_true',
+                        help='包含 ST 票 (默认排除, ST 票大幅拉低胜率)')
     args = parser.parse_args()
 
     thresholds = [int(t) for t in args.thresholds.split(',')]
@@ -123,6 +129,27 @@ def main():
 
     print(f'RSI 预算完成: {len(code_rsi)} 只 ({time.time()-t0:.0f}s)\n')
 
+    # 2026-09-22 加: 行业映射 (用于 trade 明细 + 失败分析)
+    industry_map = {}
+    if args.write_trades:
+        from tools.batch.rsi6_tech_scan import _load_industry_map
+        industry_map = _load_industry_map(list(code_rsi.keys()))
+
+    # 2026-09-22 加: ST 票集合 (默认排除, --include-st 包含)
+    #   ST 票在回测中触发大幅亏损 (002731 *ST 萃华 单票贡献 70%+ 大亏)
+    #   当前快照 vs 历史: 2024Q1 业绩当时快照没 ST, 但 2026Q3 已被 ST
+    #   用当前 name 是否含 ST 来粗筛, 不能完美但能挡掉现行 ST 大坑
+    st_codes = set()
+    if not args.include_st:
+        try:
+            from tools.storage.store import DataStore as _DS
+            _sb = _DS.load_stock_basic()
+            st_codes = set(_sb[_sb['name'].str.contains('ST', na=False)]['code'].tolist())
+            print(f'ST 过滤启用: 排除 {len(st_codes)} 只 (当前快照)')
+        except Exception as e:
+            print(f'  ⚠️ ST 加载失败: {e}')
+    print()
+
     # 2026-09-22 加: --yoy-strict 时加载业绩映射
     yoy_map = _load_yoy_map() if args.yoy_strict else {}
     if args.yoy_strict:
@@ -139,6 +166,9 @@ def main():
     trade_db = {t: [] for t in thresholds}
     for thr in thresholds:
         for code, (closes, dates, rsi) in code_rsi.items():
+            # 2026-09-22 加: ST 票预筛 (单票过滤一次)
+            if code in st_codes:
+                continue
             # 2026-09-22 加: 业绩过滤预查 (只算一次 / 只)
             yoy = yoy_map.get(code) if args.yoy_strict else None
             for i in range(30, len(closes) - args.hold_days):
@@ -160,6 +190,8 @@ def main():
                 max_dd = (future_low - buy) / buy * 100
                 trade_db[thr].append({
                     'code': code, 'date': dates[i], 'rsi6': rsi[i],
+                    'thr': thr,
+                    'industry': industry_map.get(code, ''),
                     'buy': buy, 'sell': closes[sell_idx],
                     'max_gain': max_gain, 'max_dd': max_dd, 'ret': ret,
                 })
@@ -201,6 +233,8 @@ def main():
             with open(out_path, 'w', encoding='utf-8') as f:
                 f.write(f'# RSI6 超卖反弹回测 (持有 {args.hold_days} 天)\n\n')
                 f.write(f'> 推荐阈值: **RSI6 < {best["thr"]}** (单笔期望 {best["expected"]:+.2f}%)\n\n')
+                f.write(f'> 业绩过滤: {"启用" if args.yoy_strict else "关闭"}, '
+                        f'时间窗口: 2024+ (仅启用业绩过滤时)\n\n' if args.yoy_strict else '\n')
                 f.write('## 阈值对比\n\n')
                 f.write('| 阈值 | 笔数 | 5%/5% 胜率 | 持股胜率 | 单笔期望 | 平均终 |\n')
                 f.write('|---|---|---|---|---|---|\n')
@@ -219,6 +253,18 @@ def main():
                             f"{t['max_gain']:+.2f}% | {t['max_dd']:+.2f}% | {t['ret']:+.2f}% |\n")
                 f.write(f'\n(总 {len(best_trades)} 笔, 仅显示前 200)\n')
             print(f'\n📄 {out_path}')
+
+    # 2026-09-22 加: --write-trades 写所有 trade 明细到 parquet
+    if args.write_trades:
+        all_trades = []
+        for thr, trades in trade_db.items():
+            all_trades.extend(trades)
+        if all_trades:
+            trades_df = pd.DataFrame(all_trades)
+            out_trades = ROOT / 'data' / 'rsi6_backtest_trades.parquet'
+            out_trades.parent.mkdir(parents=True, exist_ok=True)
+            trades_df.to_parquet(out_trades, index=False)
+            print(f'\n📊 {len(all_trades):,} trades → {out_trades}')
 
 
 if __name__ == '__main__':
