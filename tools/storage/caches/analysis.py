@@ -1,14 +1,19 @@
 """
 analysis_cache.py — AnalysisResult SQLite 缓存
 
-Schema (24列):
-  code / date_str / kline_hash
-  wy_stage + wy_sub_events (9 bool)
-  chan hub (4列)
-  chan 买卖点 (5 bool)
-  MA偏离% (3列)
-  Boll% (1列)
-  updated_at
+Schema (41 列 CREATE + 4 列 ALTER, 2026-09-22 加 9 列技术指标):
+  CREATE (41):
+    code / date_str / kline_hash (3)
+    wy_stage + 9 子事件 (10)
+    chan hub (4) + 5 买卖点 + 2 背驰 (11)
+    MA (4: ma5/20/60_dev + ma20_slope 5日斜率%)
+    Boll (2: bpct + bwidth)
+    动量 (4: rsi6/macd_dif/macd_dea/macd_bar_delta)
+    量能 (1: vol_ratio 当日量/MA5)
+    OBV (3: obv/obv5/obv_trend)
+    updated_at (1)
+  ALTER 自动迁移 (4, 2026-09-02 加, 跑 warmup_cache 时 _init() 加):
+    roc / ey / peg / dcf_l (Greenblatt + DCF)
 """
 from __future__ import annotations
 
@@ -60,10 +65,20 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     ma5_dev         REAL,
     ma20_dev        REAL,
     ma60_dev        REAL,
+    ma20_slope      REAL,        -- MA20 5日斜率 % = (ma0 - ma5ago) / ma5ago / 5 * 100
 
     -- Boll
     boll_bpct       REAL,
     boll_bwidth     REAL,        -- BOLL 宽度 % ((upper-lower)/mid * 100)
+
+    -- 动量
+    rsi6            REAL,        -- 6日 Wilder RSI (0-100)
+    macd_dif        REAL,        -- MACD DIF (EMA12-EMA26)
+    macd_dea        REAL,        -- MACD DEA (EMA9 of DIF)
+    macd_bar_delta  REAL,        -- MACD 红/绿柱日变化 = bar_t - bar_{t-1}
+
+    -- 量能
+    vol_ratio       REAL,        -- 当日量 / MA5 量 (1.0=平, >1.5=放量)
 
     -- OBV (实用信号, 不用 60d 段背离)
     obv             REAL,        -- OBV 累计值
@@ -107,6 +122,14 @@ def _init():
                              ("ey", "REAL"),        # Greenblatt EY % (TTM)
                              ("peg", "REAL"),       # Forward PE / CAGR
                              ("dcf_l", "REAL"),     # DCF r=10% 隐含 L/E3
+                             # 2026-09-22 加: 技术指标 9 列 (RSI6/MACD/量比/MA20 斜率, backfill/rsi6_tech 用)
+                             ("ma20_slope", "REAL"),    # MA20 5日斜率 %
+                             ("rsi6",          "REAL"), # 6日 Wilder RSI
+                             ("macd_dif",      "REAL"), # MACD DIF
+                             ("macd_dea",      "REAL"), # MACD DEA
+                             ("macd_bar_delta","REAL"), # MACD 柱日变化
+                             ("vol_ratio",     "REAL"), # 当日量 / MA5 量
+                             # 注: 红/绿柱从 BAR delta 推导, 不另存列
                              ]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
@@ -155,6 +178,25 @@ def _boll_bwidth(kline: list[dict]) -> float | None:
         return None
     std = (sum((c - mid) ** 2 for c in closes) / len(closes)) ** 0.5
     return round(4 * std / mid * 100, 2)   # (upper-lower) = 4*std, /mid*100 = 4*std/mid*100
+
+
+def _ma20_slope(kline: list[dict]) -> float | None:
+    """MA20 5日斜率 % = (MA20[-1] - MA20[-6]) / MA20[-6] / 5 * 100
+
+    2026-09-22 加: 同算法与 analysis_result_signals.py:114-134 一致
+    (MA20 通过 close / (1 + 0) 即直接拿 close[-(i+20)] 的均值估)
+    不足 25 根 K 线返回 None (需 20 根算 MA20 + 5 根往前)
+    """
+    if not kline or len(kline) < 25:
+        return None
+    closes = [k.get("close", 0) for k in kline if k.get("close")]
+    if len(closes) < 25:
+        return None
+    ma0 = sum(closes[-20:]) / 20
+    ma5 = sum(closes[-25:-5]) / 20
+    if ma5 <= 0:
+        return None
+    return round((ma0 - ma5) / ma5 / 5 * 100, 4)
 
 
 def _result_to_row(code: str, date_str: str,
@@ -207,6 +249,9 @@ def _result_to_row(code: str, date_str: str,
     # OBV 段背离 (来自 ObvStrategy, 已写入 raw['obv'])
     obv = raw.get("obv", {}) or {}
 
+    # 技术指标 (来自 TechnicalStrategy, 已写入 raw['technical'])
+    tech = raw.get("technical", {}) or {}
+
     # chan hub
     def _hub_str(h: Any) -> str | None:
         if not h or not isinstance(h, dict):
@@ -240,12 +285,20 @@ def _result_to_row(code: str, date_str: str,
         "chan_bot_div": 1 if any('底背' in k for k in bsp_daily) else None,
         "chan_top_div": 1 if any('顶背' in k for k in bsp_daily) else None,
         # MA
-        "ma5_dev":  _ma_dev(kline, 5),
-        "ma20_dev": _ma_dev(kline, 20),
-        "ma60_dev": _ma_dev(kline, 60),
+        "ma5_dev":     _ma_dev(kline, 5),
+        "ma20_dev":    _ma_dev(kline, 20),
+        "ma60_dev":    _ma_dev(kline, 60),
+        "ma20_slope":  _ma20_slope(kline),       # 2026-09-22 加: MA20 5日斜率 %
         # Boll
-        "boll_bpct": _boll_bpct(kline),
+        "boll_bpct":   _boll_bpct(kline),
         "boll_bwidth": _boll_bwidth(kline),
+        # 动量 (2026-09-22 加 4 列, 从 raw['technical'] 取; 红/绿柱从 bar_delta 推导)
+        "rsi6":          tech.get("rsi6"),
+        "macd_dif":      tech.get("macd_dif"),
+        "macd_dea":      tech.get("macd_dea"),
+        "macd_bar_delta":tech.get("macd_bar_delta"),
+        # 量能 (2026-09-22 加)
+        "vol_ratio":     tech.get("vol_ratio"),
         # OBV
         "obv":         obv.get("obv"),
         "obv5":        obv.get("obv5"),
