@@ -448,8 +448,15 @@ def _calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
         buf_start = max(0, first_stale_idx - 120)
         compute_dates = all_dates[buf_start : last_stale_idx + 1]
 
-        from tools.analysis.analysis_engine import AnalysisEngine
-        history = AnalysisEngine().analyze_history(ctx, compute_dates)
+        from tools.analysis.analysis_engine import (
+            AnalysisEngine, ObvStrategy, TechnicalStrategy,
+        )
+        # 2026-09-22 改: 只跑真存 db 的 2 strategy
+        #   Wyckoff/Chan/Smc/Fflow/Finance 字段已 9-22 删列
+        #   (roc/ey/peg/dcf_l 由 backfill_roc_ey_cache.py 单写, 不走 warmup)
+        #   跳过 5 个 strategy 省 60-70% 时间
+        history = AnalysisEngine(strategies=[ObvStrategy, TechnicalStrategy]) \
+                          .analyze_history(ctx, compute_dates)
         stale_set = set(stale_dates)
         to_write = {}
         for d in compute_dates:
