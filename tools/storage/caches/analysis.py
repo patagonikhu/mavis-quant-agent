@@ -1,19 +1,19 @@
 """
 analysis_cache.py — AnalysisResult SQLite 缓存
 
-Schema (41 列 CREATE + 4 列 ALTER, 2026-09-22 加 9 列技术指标):
-  CREATE (41):
+Schema (15 列 CREATE + 4 列 ALTER, 2026-09-22 删 26 列威科夫/缠论/BOLL/MA偏离):
+  CREATE (15):
     code / date_str / kline_hash (3)
-    wy_stage + 9 子事件 (10)
-    chan hub (4) + 5 买卖点 + 2 背驰 (11)
-    MA (4: ma5/20/60_dev + ma20_slope 5日斜率%)
-    Boll (2: bpct + bwidth)
+    MA (1: ma20_slope 5日斜率%)
     动量 (4: rsi6/macd_dif/macd_dea/macd_bar_delta)
     量能 (1: vol_ratio 当日量/MA5)
     OBV (3: obv/obv5/obv_trend)
     updated_at (1)
   ALTER 自动迁移 (4, 2026-09-02 加, 跑 warmup_cache 时 _init() 加):
     roc / ey / peg / dcf_l (Greenblatt + DCF)
+  + ALTER 自动迁移 (1, 2026-09-22 加): ma20_slope
+  已删 (26 列): wy_*(10) + chan_hub/bsps/div(11) + ma_dev(3) + boll(2)
+  原因: 真值由 AnalysisEngine.analyze() 实时算, cache 是镜像, 删 26 列空白存储
 """
 from __future__ import annotations
 
@@ -24,8 +24,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-_ROOT = Path(__file__).parent.parent.parent
+_ROOT = Path(__file__).parent.parent.parent.parent
 _DB = _ROOT / "data" / "analysis_cache.db"
+# 2026-09-22 修复 path bug: 之前 .parent.parent.parent 是 3 层 (= tools/), 正确应为 4 层 (项目根 mavis-quant-agent/)
+#   影响: 9-03 v6.2 大迁移后所有 warmup_cache 写到 tools/data/analysis_cache.db (sandbox)
+#   主 db data/analysis_cache.db (461MB) 从未被回填过
+#   修复后下次 /t-sync-data --cache 会写项目根 data/analysis_cache.db
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS analysis_cache (
@@ -33,43 +37,16 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     date_str        TEXT NOT NULL,
     kline_hash      TEXT NOT NULL,
 
-    -- wy
-    wy_stage        TEXT,
-    wy_markup_entry INTEGER,
-    wy_spring       INTEGER,
-    wy_lps          INTEGER,
-    wy_evr          INTEGER,
-    wy_sos          INTEGER,
-    wy_compression  INTEGER,
-    wy_trendpullback INTEGER,
-    wy_distributionstart INTEGER,
-    wy_utad         INTEGER,
+    -- 2026-09-22 删: wy_* (10列), chan hub/买卖点/背驰 (11列), ma_dev (3列), boll_* (2列)
+    -- 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 是镜像, 删除减少 26 列空白存储
+    -- 已删: wy_stage, wy_markup_entry/spring/lps/evr/sos/compression/trendpullback/distributionstart/utad
+    --       chan_daily_hub/pos, chan_weekly_hub/pos
+    --       chan_1buy/2buy/3buy/1sell/2sell/3sell + chan_bot_div/top_div
+    --       ma5_dev/ma20_dev/ma60_dev
+    --       boll_bpct/boll_bwidth
 
-    -- chan hub
-    chan_daily_hub  TEXT,
-    chan_daily_pos  TEXT,
-    chan_weekly_hub TEXT,
-    chan_weekly_pos TEXT,
-
-    -- chan 买卖点
-    chan_1buy       INTEGER,
-    chan_2buy       INTEGER,
-    chan_3buy       INTEGER,
-    chan_1sell      INTEGER,
-    chan_2sell      INTEGER,
-    chan_3sell      INTEGER,
-    chan_bot_div    INTEGER,  -- MACD底背驰
-    chan_top_div    INTEGER,  -- MACD顶背驰
-
-    -- MA
-    ma5_dev         REAL,
-    ma20_dev        REAL,
-    ma60_dev        REAL,
+    -- MA 斜率
     ma20_slope      REAL,        -- MA20 5日斜率 % = (ma0 - ma5ago) / ma5ago / 5 * 100
-
-    -- Boll
-    boll_bpct       REAL,
-    boll_bwidth     REAL,        -- BOLL 宽度 % ((upper-lower)/mid * 100)
 
     -- 动量
     rsi6            REAL,        -- 6日 Wilder RSI (0-100)
@@ -92,7 +69,7 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_code_date ON analysis_cache(code, date_str);
-CREATE INDEX IF NOT EXISTS idx_wy_stage ON analysis_cache(code, wy_stage);
+-- 2026-09-22 删: idx_wy_stage (随 wy_stage 列删除)
 """
 
 # ── 工具 ──────────────────────────────────────────────────
@@ -114,9 +91,8 @@ def _init():
         c.executescript(_SCHEMA)
         # 自动迁移：加新列（若已存在则忽略）
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
-        for col, typedef in [("chan_bot_div", "INTEGER"), ("chan_top_div", "INTEGER"),
-                             ("boll_bwidth", "REAL"),
-                             ("obv5", "INTEGER"), ("obv_trend", "INTEGER"),
+        for col, typedef in [
+                             # 2026-09-22 删: boll_bwidth/chan_bot_div/chan_top_div (随 26 列一并删)
                              # 2026-09-02 加: 估值 4 列 (Magic Formula 回测用)
                              ("roc", "REAL"),       # Greenblatt ROC % (TTM)
                              ("ey", "REAL"),        # Greenblatt EY % (TTM)
@@ -129,7 +105,6 @@ def _init():
                              ("macd_dea",      "REAL"), # MACD DEA
                              ("macd_bar_delta","REAL"), # MACD 柱日变化
                              ("vol_ratio",     "REAL"), # 当日量 / MA5 量
-                             # 注: 红/绿柱从 BAR delta 推导, 不另存列
                              ]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
@@ -144,40 +119,8 @@ def _kline_hash(kline: list[dict]) -> str:
 
 # ── result → row ──────────────────────────────────────────
 
-# ── kline → ma/boll ────────────────────────────────────────
-
-def _ma_dev(kline: list[dict], n: int) -> float | None:
-    if not kline or len(kline) < n:
-        return None
-    closes = [k.get("close", 0) for k in kline[-n:]]
-    ma = sum(closes) / len(closes)
-    return round((kline[-1]["close"] / ma - 1) * 100, 1) if ma > 0 else None
-
-
-def _boll_bpct(kline: list[dict]) -> float | None:
-    if not kline or len(kline) < 20:
-        return None
-    closes = [k.get("close", 0) for k in kline[-20:]]
-    mid = sum(closes) / len(closes)
-    std = (sum((c - mid) ** 2 for c in closes) / len(closes)) ** 0.5
-    upper = mid + 2 * std
-    lower = mid - 2 * std
-    c = kline[-1]["close"]
-    if upper <= lower:
-        return 50.0
-    return round((c - lower) / (upper - lower) * 100, 1)
-
-
-def _boll_bwidth(kline: list[dict]) -> float | None:
-    """BOLL 宽度 % = (upper - lower) / mid * 100"""
-    if not kline or len(kline) < 20:
-        return None
-    closes = [k.get("close", 0) for k in kline[-20:]]
-    mid = sum(closes) / len(closes)
-    if mid <= 0:
-        return None
-    std = (sum((c - mid) ** 2 for c in closes) / len(closes)) ** 0.5
-    return round(4 * std / mid * 100, 2)   # (upper-lower) = 4*std, /mid*100 = 4*std/mid*100
+# 2026-09-22 删: _ma_dev, _boll_bpct, _boll_bwidth (随 wy/chan/boll 列一并删除)
+#   get_boll_bpct / get_boll_bpct_all 也需同步删 (下游已替换为实时算)
 
 
 def _ma20_slope(kline: list[dict]) -> float | None:
@@ -201,50 +144,9 @@ def _ma20_slope(kline: list[dict]) -> float | None:
 
 def _result_to_row(code: str, date_str: str,
                    kline: list[dict], result) -> dict[str, Any]:
-    # result 可能是 dict 或 AnalysisResult dataclass
+    # 2026-09-22 改: 删 wy_* / chan_* / boll_* / ma_dev 全部赋值
+    # 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 只存 OBV + 技术指标 + 估值
     raw = getattr(result, "raw", None) or (result.get("raw", {}) if isinstance(result, dict) else {})
-    wy = raw.get("wyckoff", {}) or {}
-    chan = raw.get("chan", {}) or {}
-
-    # wy sub_events → bool
-    se = wy.get("sub_events", [])
-    se_names = set()
-    if isinstance(se, list):
-        for e in se:
-            if isinstance(e, dict):
-                se_names.add(e.get("name"))
-
-    se_cols = {
-        "wy_markup_entry": "MarkupEntry",
-        "wy_spring":       "Spring",
-        "wy_lps":          "LPS",
-        "wy_evr":          "EVR",
-        "wy_sos":          "SOS",
-        "wy_compression":  "Compression",
-        "wy_trendpullback": "TrendPullback",
-        "wy_distributionstart": "DistributionStart",
-        "wy_utad":         "UTAD",
-    }
-
-    # chan bsp → bool（买卖点 key 包含关键字即触发）
-    bsp_daily = {}
-    bsp_src = chan.get("buy_sell_points", {}) or {}
-    if isinstance(bsp_src, dict):
-        bsp_daily = bsp_src.get("daily", {}) or {}
-        if not isinstance(bsp_daily, dict):
-            bsp_daily = {}
-
-    def _has_bsp(keyword: str) -> int | None:
-        return 1 if any(keyword in k for k in bsp_daily) else None
-
-    bsp_flags = {
-        "chan_1buy":  _has_bsp("1买"),
-        "chan_2buy":  _has_bsp("2买"),
-        "chan_3buy":  _has_bsp("3买"),
-        "chan_1sell": _has_bsp("1卖"),
-        "chan_2sell": _has_bsp("2卖"),
-        "chan_3sell": _has_bsp("3卖"),
-    }
 
     # OBV 段背离 (来自 ObvStrategy, 已写入 raw['obv'])
     obv = raw.get("obv", {}) or {}
@@ -252,46 +154,12 @@ def _result_to_row(code: str, date_str: str,
     # 技术指标 (来自 TechnicalStrategy, 已写入 raw['technical'])
     tech = raw.get("technical", {}) or {}
 
-    # chan hub
-    def _hub_str(h: Any) -> str | None:
-        if not h or not isinstance(h, dict):
-            return None
-        lo, hi = h.get("low"), h.get("high")
-        return f"¥{lo:.0f}~{hi:.0f}" if lo and hi else None
-
-    def _hub_pos(h: Any) -> str | None:
-        if not h:
-            return None
-        p = str(h.get("pos", ""))
-        for kw in ["下方", "上方", "内部", "跌穿"]:
-            if kw in p:
-                return kw
-        return None
-
     return {
         "code": code,
         "date_str": date_str,
         "kline_hash": _kline_hash(kline),
-        # wy
-        "wy_stage": wy.get("stage"),
-        **{col: 1 if name in se_names else None for col, name in se_cols.items()},
-        # chan hub
-        "chan_daily_hub":  _hub_str(chan.get("daily", {}).get("hub")),
-        "chan_daily_pos":  _hub_pos(chan.get("daily", {}).get("hub")),
-        "chan_weekly_hub": _hub_str(chan.get("weekly", {}).get("hub")),
-        "chan_weekly_pos": _hub_pos(chan.get("weekly", {}).get("hub")),
-        # chan 买卖点 + 背驰
-        **bsp_flags,
-        "chan_bot_div": 1 if any('底背' in k for k in bsp_daily) else None,
-        "chan_top_div": 1 if any('顶背' in k for k in bsp_daily) else None,
-        # MA
-        "ma5_dev":     _ma_dev(kline, 5),
-        "ma20_dev":    _ma_dev(kline, 20),
-        "ma60_dev":    _ma_dev(kline, 60),
-        "ma20_slope":  _ma20_slope(kline),       # 2026-09-22 加: MA20 5日斜率 %
-        # Boll
-        "boll_bpct":   _boll_bpct(kline),
-        "boll_bwidth": _boll_bwidth(kline),
+        # MA 斜率 (仅存的 MA 列)
+        "ma20_slope":  _ma20_slope(kline),
         # 动量 (2026-09-22 加 4 列, 从 raw['technical'] 取; 红/绿柱从 bar_delta 推导)
         "rsi6":          tech.get("rsi6"),
         "macd_dif":      tech.get("macd_dif"),
@@ -444,26 +312,19 @@ def update_obv_batch(rows: list[dict]) -> int:
         return 0
 
 
+# 2026-09-22 删: get_boll_bpct, get_boll_bpct_all (随 boll_bpct/boll_bwidth 列删除)
+#   下游 tools/backtest/double_touch_30d.py 改走 AnalysisEngine.analyze() 实时算
+#   暂留 compat stub 返空 (避免破坏 import path, 由调用方 try/except 兜底)
+
+
 def get_boll_bpct(code: str, dates: list[str]) -> dict[str, float]:
-    """返 code 在指定 dates 里的 boll_bpct"""
-    if not dates:
-        return {}
-    placeholders = ",".join(["?"] * len(dates))
-    rows = _query(
-        f"SELECT date_str, boll_bpct FROM analysis_cache "
-        f"WHERE code=? AND date_str IN ({placeholders})",
-        (code, *dates),
-    )
-    return {r["date_str"]: r["boll_bpct"] for r in rows}
+    """compat stub — boll_bpct 列已删 (2026-09-22), 返空 dict, 下游 try/except 会回退滑动算"""
+    return {}
 
 
 def get_boll_bpct_all() -> list[tuple[str, str, float]]:
-    """返所有 (code, date_str, boll_bpct)"""
-    rows = _query(
-        "SELECT code, date_str, boll_bpct FROM analysis_cache "
-        "WHERE boll_bpct IS NOT NULL ORDER BY code, date_str"
-    )
-    return [(r["code"], r["date_str"], r["boll_bpct"]) for r in rows]
+    """compat stub — boll_bpct 列已删 (2026-09-22), 返空 list"""
+    return []
 
 
 def check_stale_batch(code: str, dates: list[str],
