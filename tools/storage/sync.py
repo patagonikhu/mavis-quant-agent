@@ -572,7 +572,8 @@ def action_cache(codes: list[str]) -> int:
     之前 subprocess 调 tools.storage.sync --cache (已删, 合并到 caches/)
     """
     from tools.storage.caches.analysis import warmup_cache
-    scope = "codes" if codes else "tech"
+    # 2026-09-22 改: 默认 scope='all' (回测场景需要全市场, tech 子集不全)
+    scope = "codes" if codes else "all"
     warmup_cache(codes=codes, scope=scope)
     return 0
 

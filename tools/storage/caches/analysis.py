@@ -463,12 +463,15 @@ def _calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
 
 
 def warmup_cache(codes: list[str] | None = None,
-                 scope: str = "tech",  # 'tech' | 'all' | 'portfolio' | 'codes'
+                 scope: str = "all",  # 'all' (默认,全市场) | 'tech' | 'portfolio' | 'codes'
                  timeout: int = 600,
                  workers: int = 2,
                  batch_size: int = 250,
                  full: bool = False) -> dict:
     """预热 analysis_cache.db (sync_data --cache 唯一入口)
+
+    2026-09-22 改: 默认 scope='all' (回测场景需要全市场 5555 只)
+        之前默认 'tech' = 申万科技子集 (~1923), 缺金融/消费/医药, 回测不全
 
     Args:
         codes: 显式 codes 列表 (scope='codes' 时用)
@@ -495,9 +498,13 @@ def warmup_cache(codes: list[str] | None = None,
         print(f"持仓: {len(CODES)} 只")
     elif scope == "codes" and codes:
         CODES = codes
-    else:
+    elif scope == "tech":
+        # 兼容老调用 (deprecated): 申万科技子集, 回测不全
         CODES = _load_tech_codes()
-        print(f"科技股: {len(CODES)} 只 (申万行业筛选 ∩ 本地K线)")
+        print(f"科技股: {len(CODES)} 只 (申万行业筛选 ∩ 本地K线, [deprecated] 改用 scope='all')")
+    else:
+        # 未知 scope: 不静默 fallback, 报错
+        raise ValueError(f"warmup_cache: 未知 scope={scope}, 期待 'all'|'tech'|'portfolio'|'codes'")
 
     mode = "全量重算最老段" if full else "增量(从最老缺口补)"
     print(f"预热 {len(CODES)} 只 | batch_size={batch_size}根/只 | {workers}并发 | {mode} | timeout={timeout}s")
