@@ -186,7 +186,7 @@ def _scan_one_worker(args):
 
         # 1. 读 THS K 线 (走 DataStore.get_ths_kline, 反查名 + 落盘 parquet)
         ths_kline = DataStore.get_ths_kline(match_name)
-        if not ths_kline or len(ths_kline) < 60:
+        if not ths_kline or len(ths_kline) < 30:
             return {'match_name': match_name, 'error': f'数据不足: {len(ths_kline) if ths_kline else 0} 根'}
 
         # 截取最近 lookback 天

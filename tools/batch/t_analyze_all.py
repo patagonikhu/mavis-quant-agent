@@ -5,8 +5,13 @@ t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-wa
   - 不再偷偷调 sync_incremental (改走 /t-sync skill, 入口 tools/sync_data.py)
   - 缺数据时直接报"请先 /t-sync", 不再调单只兜底
   - 跑前用户先 `python -m tools.storage.sync --all-data`
+
+2026-09-23 改造: 加 --exclude-blowout (默认 True, 默认跳过 watchlist.json 里 list_type=blowout 的票)
+  - 默认只跑 持仓 + 自选 (快, 详报)
+  - 加 --include-blowout 才全跑 (blowout 段可单独 deep-dive)
 """
 import json, sys, datetime, time, os
+import argparse
 from pathlib import Path
 sys.path.insert(0, '.')
 
@@ -17,8 +22,23 @@ from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report
 
 
+# === 2026-09-23 加: CLI 参数 — 默认跳过 blowout 段 ===
+_arg_parser = argparse.ArgumentParser(description="t-analyze --all 批量分析")
+_arg_parser.add_argument("--include-blowout", action="store_true",
+                         help="包含 watchlist.json 里 list_type=blowout 的票 (默认排除, 防止一次跑几十个详报太慢)")
+_args, _unknown = _arg_parser.parse_known_args()  # 兼容老调用 `python -m ... t_analyze_all --all`
+
+
 wl = DataStore.load_watchlist()['stocks']
-stocks = wl
+if _args.include_blowout:
+    stocks = wl
+    print(f'  ℹ️  --include-blowout: 全跑 ({len(stocks)} 只含 blowout)', flush=True)
+else:
+    # 默认排除 blowout, 只跑 持仓 + 自选
+    stocks = [s for s in wl if s.get('list_type', '自选') != 'blowout']
+    excluded = len(wl) - len(stocks)
+    if excluded:
+        print(f'  ℹ️  默认跳过 blowout 段 {excluded} 只 (加 --include-blowout 才跑)', flush=True)
 today = datetime.date.today().isoformat()
 output_path = Path('docs/signal-watchlist.md')
 

@@ -1,7 +1,7 @@
 {
-  "version": "v2.1",
-  "last_updated": "2026-09-18",
-  "description": "23 持仓 + 6 自选",
+  "version": "v2.2",
+  "last_updated": "2026-09-23",
+  "description": "23 持仓 + 14 自选 (8 只 9 月连板妖股 + 业绩暴增股, 2026-09-23 加)",
   "stocks": [
     {
       "code": "399006",
@@ -144,224 +144,320 @@
       "name": "益生股份",
       "sector": "农业",
       "list_type": "blowout",
-      "notes": "R3 反转 信号最强: 净利 yoy +4897% (+4013pp), 农业反转 (2026-09-18 /t-finance-earnings-blowout)"
+      "notes": "R3 反转 信号最强: 净利 yoy +4897% (+4013pp), 农业反转 (2026-09-18 /t-finance-earnings-blowout)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "301366",
       "name": "一博科技",
       "sector": "元器件-PCB",
       "list_type": "blowout",
-      "notes": "R3 反转: 净利 yoy +1561% (+1289pp), 元器件 PCB AI 算力 (2026-09-18 /t-finance-earnings-blowout)"
+      "notes": "R3 反转: 净利 yoy +1561% (+1289pp), 元器件 PCB AI 算力 (2026-09-18 /t-finance-earnings-blowout)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "300613",
       "name": "富瀚微",
       "sector": "半导体-IC设计",
       "list_type": "blowout",
-      "notes": "R3 反转: 营收 +113% / 净利 yoy +1419% (+938pp), 半导体 IC 设计 (2026-09-18 /t-finance-earnings-blowout)"
+      "notes": "R3 反转: 营收 +113% / 净利 yoy +1419% (+938pp), 半导体 IC 设计 (2026-09-18 /t-finance-earnings-blowout)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "688449",
       "name": "联芸科技",
       "sector": "半导体-存储",
       "list_type": "blowout",
-      "notes": "R3 反转: 净利 yoy +825% (+690pp), 半导体存储主控 (2026-09-18 /t-finance-earnings-blowout)"
+      "notes": "R3 反转: 净利 yoy +825% (+690pp), 半导体存储主控 (2026-09-18 /t-finance-earnings-blowout)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "301536",
       "name": "星宸科技",
       "sector": "半导体-SOC",
       "list_type": "blowout",
-      "notes": "R3 反转: 营收 +89% / 净利 yoy +619% (+290pp), 半导体 SOC (2026-09-18 /t-finance-earnings-blowout)"
+      "notes": "R3 反转: 营收 +89% / 净利 yoy +619% (+290pp), 半导体 SOC (2026-09-18 /t-finance-earnings-blowout)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "688255",
       "name": "凯尔达",
       "sector": "机械-机器人",
       "list_type": "blowout",
-      "notes": "R3 反转: 净利 yoy +1095% (+974pp), 机械基件/人形机器人 (2026-09-18 /t-finance-earnings-blowout)"
+      "notes": "R3 反转: 净利 yoy +1095% (+974pp), 机械基件/人形机器人 (2026-09-18 /t-finance-earnings-blowout)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "001313",
       "name": "粤海饲料",
       "sector": "饲料",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "003032",
       "name": "传智教育",
       "sector": "文教休闲",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "301099",
       "name": "雅创电子",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "002196",
       "name": "方正电机",
       "sector": "纺织机械",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "000042",
       "name": "中洲控股",
       "sector": "全国地产",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "688135",
       "name": "利扬芯片",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "688012",
       "name": "中微公司",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "002841",
       "name": "视源股份",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "001339",
       "name": "智微智能",
       "sector": "IT设备",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "300458",
       "name": "全志科技",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "688535",
       "name": "华海诚科",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "001287",
       "name": "中电港",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "000833",
       "name": "粤桂股份",
       "sector": "综合类",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "688620",
       "name": "安凯微",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "002557",
       "name": "洽洽食品",
       "sector": "食品",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "301085",
       "name": "亚康股份",
       "sector": "软件服务",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "301321",
       "name": "翰博高新",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "603068",
       "name": "博通集成",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "002925",
       "name": "盈趣科技",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "688256",
       "name": "寒武纪",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "603085",
       "name": "天成自控",
       "sector": "汽车配件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "920045",
       "name": "蘅东光",
       "sector": "通信设备",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "300964",
       "name": "本川智能",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "002876",
       "name": "三利谱",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "000925",
       "name": "众合科技",
       "sector": "运输设备",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "002479",
       "name": "富春环保",
       "sector": "新型电力",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)"
+      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
+      "tags": [
+        "blowout-2026Q2"
+      ]
     },
     {
       "code": "300620",
@@ -397,6 +493,3011 @@
       "sector": "元器件-PCB",
       "list_type": "持仓",
       "notes": "AI 算力高速 PCB 龙头 (英伟达/AMD 服务器主板), 2026-09-21 加"
+    },
+    {
+      "code": "000504",
+      "name": "南华生物",
+      "sector": "医疗保健",
+      "list_type": "自选",
+      "tags": [
+        "妖股",
+        "业绩暴增",
+        "连板3板"
+      ],
+      "notes": "2026-09 本月 3 板妖股 + 营收 +473.6% / 净利 +272.0% (业绩暴增), 量比 3.17, 2026-09-23 加"
+    },
+    {
+      "code": "601086",
+      "name": "国芳集团",
+      "sector": "百货",
+      "list_type": "自选",
+      "tags": [
+        "妖股",
+        "净利暴增",
+        "连板2板"
+      ],
+      "notes": "2026-09 本月 2 板妖股 + 净利 +214.1% (暴增), 量比 3.34, 2026-09-23 加"
+    },
+    {
+      "code": "603068",
+      "name": "博通集成",
+      "sector": "半导体",
+      "list_type": "持仓",
+      "tags": [
+        "妖股",
+        "blowout",
+        "连板2板",
+        "业绩+妖股双驱动"
+      ],
+      "notes": "2026-09 本月 2 板妖股 + 营收 +70.2% / 净利 +162.6% (业绩强), 量比 2.86, earnings-blowout 命中, 已持仓, 2026-09-23 补标签"
+    },
+    {
+      "code": "600354",
+      "name": "敦煌种业",
+      "sector": "种植业",
+      "list_type": "自选",
+      "tags": [
+        "妖股",
+        "净利暴增",
+        "ROE高",
+        "连板2板"
+      ],
+      "notes": "2026-09 本月 2 板妖股 + 净利 +165.7% (暴增), ROE 18.7% 最高, 量比 1.05, 2026-09-23 加"
+    },
+    {
+      "code": "002585",
+      "name": "双星新材",
+      "sector": "塑料",
+      "list_type": "自选",
+      "tags": [
+        "妖股",
+        "净利暴增",
+        "连板2板"
+      ],
+      "notes": "2026-09 本月 2 板妖股 + 净利 +130.6% (暴增), 量比 3.29, 2026-09-23 加"
+    },
+    {
+      "code": "001317",
+      "name": "三羊马",
+      "sector": "铁路",
+      "list_type": "自选",
+      "tags": [
+        "妖股",
+        "净利反转",
+        "连板2板"
+      ],
+      "notes": "2026-09 本月 2 板妖股 + 营收 -22% 但净利 +117.5% (低基数反转), 量比 3.07, 2026-09-23 加"
+    },
+    {
+      "code": "600630",
+      "name": "龙头股份",
+      "sector": "服饰",
+      "list_type": "自选",
+      "tags": [
+        "妖股",
+        "稳健增长",
+        "连板2板"
+      ],
+      "notes": "2026-09 本月 2 板妖股 + 营收 +9.6% / 净利 +41.1%, 量比 5.75, 2026-09-23 加"
+    },
+    {
+      "code": "003026",
+      "name": "中晶科技",
+      "sector": "半导体",
+      "list_type": "自选",
+      "tags": [
+        "妖股",
+        "稳健增长",
+        "连板2板"
+      ],
+      "notes": "2026-09 本月 2 板妖股 + 营收 +23.3% / 净利 +61.5%, ROE 6.2%, 量比 4.78, 2026-09-23 加"
+    },
+    {
+      "code": "000070",
+      "name": "特发信息",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1008% | 营收 yoy +19%"
+    },
+    {
+      "code": "000089",
+      "name": "深圳机场",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +136% | 营收 yoy +6%"
+    },
+    {
+      "code": "000100",
+      "name": "TCL科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +4%"
+    },
+    {
+      "code": "000685",
+      "name": "中山公用",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +104% | 营收 yoy +2%"
+    },
+    {
+      "code": "000938",
+      "name": "紫光股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +108% | 营收 yoy +34%"
+    },
+    {
+      "code": "000977",
+      "name": "浪潮信息",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +270% | 营收 yoy +5%"
+    },
+    {
+      "code": "001256",
+      "name": "炜冈科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +215% | 营收 yoy +19%"
+    },
+    {
+      "code": "001314",
+      "name": "亿道信息",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1615% | 营收 yoy +81%"
+    },
+    {
+      "code": "002132",
+      "name": "恒星科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +293% | 营收 yoy +11%"
+    },
+    {
+      "code": "002134",
+      "name": "天津普林",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +560% | 营收 yoy +43%"
+    },
+    {
+      "code": "002156",
+      "name": "通富微电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +317% | 营收 yoy +23%"
+    },
+    {
+      "code": "002185",
+      "name": "华天科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +259% | 营收 yoy +35%"
+    },
+    {
+      "code": "002200",
+      "name": "交投生态",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +188% | 营收 yoy +209%"
+    },
+    {
+      "code": "002213",
+      "name": "大为股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +303% | 营收 yoy +1%"
+    },
+    {
+      "code": "002266",
+      "name": "浙富控股",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +26%"
+    },
+    {
+      "code": "002292",
+      "name": "奥飞娱乐",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +371% | 营收 yoy +11%"
+    },
+    {
+      "code": "002319",
+      "name": "乐通股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +328% | 营收 yoy +18%"
+    },
+    {
+      "code": "002587",
+      "name": "奥拓电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +64% | 营收 yoy +33%"
+    },
+    {
+      "code": "002633",
+      "name": "申科股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +198% | 营收 yoy +11%"
+    },
+    {
+      "code": "002635",
+      "name": "安洁科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +165% | 营收 yoy +11%"
+    },
+    {
+      "code": "002645",
+      "name": "华宏科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +330% | 营收 yoy +77%"
+    },
+    {
+      "code": "002653",
+      "name": "海思科",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +427% | 营收 yoy +55%"
+    },
+    {
+      "code": "002745",
+      "name": "木林森",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +331% | 营收 yoy +24%"
+    },
+    {
+      "code": "002747",
+      "name": "埃斯顿",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2314% | 营收 yoy +1%"
+    },
+    {
+      "code": "002786",
+      "name": "银宝山新",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +226% | 营收 yoy +2%"
+    },
+    {
+      "code": "002921",
+      "name": "联诚精密",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +133% | 营收 yoy +31%"
+    },
+    {
+      "code": "002990",
+      "name": "盛视科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +343% | 营收 yoy +34%"
+    },
+    {
+      "code": "300005",
+      "name": "探路者",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +155% | 营收 yoy +42%"
+    },
+    {
+      "code": "300016",
+      "name": "北陆药业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +166% | 营收 yoy +15%"
+    },
+    {
+      "code": "300184",
+      "name": "力源信息",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +209% | 营收 yoy +59%"
+    },
+    {
+      "code": "300219",
+      "name": "鸿利智汇",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +167% | 营收 yoy +12%"
+    },
+    {
+      "code": "300252",
+      "name": "金信诺",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +385% | 营收 yoy +22%"
+    },
+    {
+      "code": "300323",
+      "name": "华灿光电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +65%"
+    },
+    {
+      "code": "300404",
+      "name": "博济医药",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +26%"
+    },
+    {
+      "code": "300497",
+      "name": "富祥股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2660% | 营收 yoy +73%"
+    },
+    {
+      "code": "300504",
+      "name": "天邑股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +232% | 营收 yoy +20%"
+    },
+    {
+      "code": "300540",
+      "name": "蜀道装备",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +235% | 营收 yoy +46%"
+    },
+    {
+      "code": "300556",
+      "name": "丝路视觉",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +101% | 营收 yoy +33%"
+    },
+    {
+      "code": "300558",
+      "name": "贝达药业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +116% | 营收 yoy +14%"
+    },
+    {
+      "code": "300590",
+      "name": "移为通信",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +184% | 营收 yoy +68%"
+    },
+    {
+      "code": "300607",
+      "name": "拓斯达",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +263% | 营收 yoy +19%"
+    },
+    {
+      "code": "300611",
+      "name": "美力科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +45% | 营收 yoy +132%"
+    },
+    {
+      "code": "300661",
+      "name": "圣邦股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +109% | 营收 yoy +43%"
+    },
+    {
+      "code": "300681",
+      "name": "英搏尔",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +217% | 营收 yoy +77%"
+    },
+    {
+      "code": "300687",
+      "name": "赛意信息",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +208% | 营收 yoy +14%"
+    },
+    {
+      "code": "300691",
+      "name": "联合光电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +17%"
+    },
+    {
+      "code": "300738",
+      "name": "奥飞数据",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +124% | 营收 yoy +28%"
+    },
+    {
+      "code": "300747",
+      "name": "锐科激光",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +118% | 营收 yoy +15%"
+    },
+    {
+      "code": "300823",
+      "name": "建科智能",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +443% | 营收 yoy +22%"
+    },
+    {
+      "code": "300866",
+      "name": "安克创新",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +46% | 营收 yoy +29%"
+    },
+    {
+      "code": "300901",
+      "name": "中胤时尚",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +222% | 营收 yoy +21%"
+    },
+    {
+      "code": "300972",
+      "name": "万辰集团",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +157% | 营收 yoy +54%"
+    },
+    {
+      "code": "301041",
+      "name": "金百泽",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +226% | 营收 yoy +19%"
+    },
+    {
+      "code": "301176",
+      "name": "逸豪新材",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +242% | 营收 yoy +69%"
+    },
+    {
+      "code": "301421",
+      "name": "波长光电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +103% | 营收 yoy +9%"
+    },
+    {
+      "code": "301500",
+      "name": "飞南资源",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +307% | 营收 yoy +53%"
+    },
+    {
+      "code": "301607",
+      "name": "富特科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +136% | 营收 yoy +66%"
+    },
+    {
+      "code": "600116",
+      "name": "三峡水利",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +689% | 营收 yoy +4%"
+    },
+    {
+      "code": "600150",
+      "name": "中国船舶",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +164% | 营收 yoy +26%"
+    },
+    {
+      "code": "600288",
+      "name": "大恒科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2964% | 营收 yoy +0%"
+    },
+    {
+      "code": "600292",
+      "name": "电投水电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +123% | 营收 yoy +2%"
+    },
+    {
+      "code": "600390",
+      "name": "五矿资本",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +105% | 营收 yoy +16%"
+    },
+    {
+      "code": "600520",
+      "name": "三佳科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +198% | 营收 yoy +51%"
+    },
+    {
+      "code": "601222",
+      "name": "林洋能源",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +32% | 营收 yoy +82%"
+    },
+    {
+      "code": "601368",
+      "name": "绿城水务",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +1%"
+    },
+    {
+      "code": "601500",
+      "name": "通用股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +115% | 营收 yoy +11%"
+    },
+    {
+      "code": "603032",
+      "name": "德新科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +23%"
+    },
+    {
+      "code": "603110",
+      "name": "东方材料",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1573% | 营收 yoy +13%"
+    },
+    {
+      "code": "603127",
+      "name": "昭衍新药",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1127% | 营收 yoy +5%"
+    },
+    {
+      "code": "603317",
+      "name": "天味食品",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +100% | 营收 yoy +46%"
+    },
+    {
+      "code": "603459",
+      "name": "红板科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +125% | 营收 yoy +22%"
+    },
+    {
+      "code": "603768",
+      "name": "常青股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +191% | 营收 yoy +20%"
+    },
+    {
+      "code": "603980",
+      "name": "吉华集团",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1235% | 营收 yoy +12%"
+    },
+    {
+      "code": "603997",
+      "name": "继峰股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +137% | 营收 yoy +24%"
+    },
+    {
+      "code": "605151",
+      "name": "西上海",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +582% | 营收 yoy +7%"
+    },
+    {
+      "code": "688002",
+      "name": "睿创微纳",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +259% | 营收 yoy +73%"
+    },
+    {
+      "code": "688179",
+      "name": "阿拉丁",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +35%"
+    },
+    {
+      "code": "688183",
+      "name": "生益电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +109% | 营收 yoy +53%"
+    },
+    {
+      "code": "688209",
+      "name": "英集芯",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +100% | 营收 yoy +15%"
+    },
+    {
+      "code": "688211",
+      "name": "中科微至",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +121% | 营收 yoy +12%"
+    },
+    {
+      "code": "688218",
+      "name": "江苏北人",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +167% | 营收 yoy +21%"
+    },
+    {
+      "code": "688231",
+      "name": "隆达股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +62%"
+    },
+    {
+      "code": "688235",
+      "name": "百济神州",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +627% | 营收 yoy +27%"
+    },
+    {
+      "code": "688258",
+      "name": "卓易信息",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +292% | 营收 yoy +2%"
+    },
+    {
+      "code": "688261",
+      "name": "东微半导",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +285% | 营收 yoy +20%"
+    },
+    {
+      "code": "688291",
+      "name": "金橙子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +131% | 营收 yoy +1%"
+    },
+    {
+      "code": "688332",
+      "name": "中科蓝讯",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +266% | 营收 yoy +12%"
+    },
+    {
+      "code": "688368",
+      "name": "晶丰明源",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +449% | 营收 yoy +99%"
+    },
+    {
+      "code": "688385",
+      "name": "复旦微电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +339% | 营收 yoy +21%"
+    },
+    {
+      "code": "688396",
+      "name": "华润微",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +113% | 营收 yoy +17%"
+    },
+    {
+      "code": "688400",
+      "name": "凌云光",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +583% | 营收 yoy +6%"
+    },
+    {
+      "code": "688536",
+      "name": "思瑞浦",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +369% | 营收 yoy +69%"
+    },
+    {
+      "code": "688569",
+      "name": "铁科轨道",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +32% | 营收 yoy +25%"
+    },
+    {
+      "code": "688633",
+      "name": "星球石墨",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +168% | 营收 yoy +41%"
+    },
+    {
+      "code": "688699",
+      "name": "明微电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +340% | 营收 yoy +69%"
+    },
+    {
+      "code": "688700",
+      "name": "东威科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +133% | 营收 yoy +52%"
+    },
+    {
+      "code": "688727",
+      "name": "恒坤新材",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +16%"
+    },
+    {
+      "code": "688796",
+      "name": "百奥赛图",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +402% | 营收 yoy +52%"
+    },
+    {
+      "code": "920186",
+      "name": "中科仪",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1230% | 营收 yoy +9%"
+    },
+    {
+      "code": "920981",
+      "name": "晶赛科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +206% | 营收 yoy +56%"
+    },
+    {
+      "code": "002039",
+      "name": "黔源电力",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +83% | 营收 yoy +26%"
+    },
+    {
+      "code": "002111",
+      "name": "威海广泰",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +91% | 营收 yoy +19%"
+    },
+    {
+      "code": "002377",
+      "name": "国创高新",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +93% | 营收 yoy +30%"
+    },
+    {
+      "code": "002406",
+      "name": "远东传动",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +84% | 营收 yoy +26%"
+    },
+    {
+      "code": "002826",
+      "name": "易明医药",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +78% | 营收 yoy +15%"
+    },
+    {
+      "code": "300083",
+      "name": "创世纪",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +29% | 营收 yoy +31%"
+    },
+    {
+      "code": "301376",
+      "name": "致欧科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +29% | 营收 yoy +19%"
+    },
+    {
+      "code": "600123",
+      "name": "兰花科创",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +45% | 营收 yoy +18%"
+    },
+    {
+      "code": "600460",
+      "name": "士兰微",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +95% | 营收 yoy +15%"
+    },
+    {
+      "code": "603223",
+      "name": "恒通股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +85% | 营收 yoy +8%"
+    },
+    {
+      "code": "603933",
+      "name": "睿能科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +85% | 营收 yoy +38%"
+    },
+    {
+      "code": "688380",
+      "name": "中微半导",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +98% | 营收 yoy +44%"
+    },
+    {
+      "code": "688712",
+      "name": "北芯生命",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +88% | 营收 yoy +49%"
+    },
+    {
+      "code": "688981",
+      "name": "中芯国际",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +94% | 营收 yoy +19%"
+    },
+    {
+      "code": "000066",
+      "name": "中国长城",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +126% | 营收 yoy +25%"
+    },
+    {
+      "code": "000096",
+      "name": "广聚能源",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +636% | 营收 yoy +20%"
+    },
+    {
+      "code": "000421",
+      "name": "南京公用",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +164% | 营收 yoy +28%"
+    },
+    {
+      "code": "000626",
+      "name": "远大控股",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +640% | 营收 yoy +10%"
+    },
+    {
+      "code": "000716",
+      "name": "黑芝麻",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +303% | 营收 yoy +28%"
+    },
+    {
+      "code": "000819",
+      "name": "岳阳兴长",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +148% | 营收 yoy +59%"
+    },
+    {
+      "code": "000829",
+      "name": "天音控股",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +125% | 营收 yoy +25%"
+    },
+    {
+      "code": "000966",
+      "name": "长源电力",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +82% | 营收 yoy +4%"
+    },
+    {
+      "code": "001298",
+      "name": "好上好",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +332% | 营收 yoy +90%"
+    },
+    {
+      "code": "001366",
+      "name": "播恩集团",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +170% | 营收 yoy +9%"
+    },
+    {
+      "code": "001389",
+      "name": "广合科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +94% | 营收 yoy +81%"
+    },
+    {
+      "code": "001395",
+      "name": "亚联机械",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +60% | 营收 yoy +37%"
+    },
+    {
+      "code": "002008",
+      "name": "大族激光",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +164% | 营收 yoy +76%"
+    },
+    {
+      "code": "002054",
+      "name": "德美化工",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +103% | 营收 yoy +28%"
+    },
+    {
+      "code": "002115",
+      "name": "三维通信",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1826% | 营收 yoy +174%"
+    },
+    {
+      "code": "002151",
+      "name": "北斗星通",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2784% | 营收 yoy +38%"
+    },
+    {
+      "code": "002197",
+      "name": "证通电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +116% | 营收 yoy +18%"
+    },
+    {
+      "code": "002209",
+      "name": "达意隆",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +31% | 营收 yoy +17%"
+    },
+    {
+      "code": "002210",
+      "name": "飞马国际",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +557% | 营收 yoy +16%"
+    },
+    {
+      "code": "002297",
+      "name": "博云新材",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1912% | 营收 yoy +88%"
+    },
+    {
+      "code": "002365",
+      "name": "永安药业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +247% | 营收 yoy +53%"
+    },
+    {
+      "code": "002384",
+      "name": "东山精密",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +290% | 营收 yoy +64%"
+    },
+    {
+      "code": "002389",
+      "name": "航天彩虹",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +15493% | 营收 yoy +10%"
+    },
+    {
+      "code": "002396",
+      "name": "星网锐捷",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +76% | 营收 yoy +21%"
+    },
+    {
+      "code": "002436",
+      "name": "兴森科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +283% | 营收 yoy +18%"
+    },
+    {
+      "code": "002440",
+      "name": "闰土股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +319% | 营收 yoy +32%"
+    },
+    {
+      "code": "002491",
+      "name": "通鼎互联",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +326% | 营收 yoy +61%"
+    },
+    {
+      "code": "002552",
+      "name": "宝鼎科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +519% | 营收 yoy +55%"
+    },
+    {
+      "code": "002558",
+      "name": "巨人网络",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +176% | 营收 yoy +182%"
+    },
+    {
+      "code": "002582",
+      "name": "好想你",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +3852% | 营收 yoy +3%"
+    },
+    {
+      "code": "002593",
+      "name": "日上集团",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +104% | 营收 yoy +5%"
+    },
+    {
+      "code": "002636",
+      "name": "金安国纪",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +987% | 营收 yoy +66%"
+    },
+    {
+      "code": "002685",
+      "name": "华东重机",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +137% | 营收 yoy +108%"
+    },
+    {
+      "code": "002712",
+      "name": "思美传媒",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +109% | 营收 yoy +20%"
+    },
+    {
+      "code": "002780",
+      "name": "三夫户外",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +216% | 营收 yoy +39%"
+    },
+    {
+      "code": "002793",
+      "name": "罗欣药业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +182% | 营收 yoy +7%"
+    },
+    {
+      "code": "002923",
+      "name": "润都股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +213% | 营收 yoy +29%"
+    },
+    {
+      "code": "002952",
+      "name": "亚世光电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +170% | 营收 yoy +9%"
+    },
+    {
+      "code": "002956",
+      "name": "西麦食品",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +82% | 营收 yoy +22%"
+    },
+    {
+      "code": "002969",
+      "name": "嘉美包装",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +256% | 营收 yoy +9%"
+    },
+    {
+      "code": "002975",
+      "name": "博杰股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +747% | 营收 yoy +67%"
+    },
+    {
+      "code": "003009",
+      "name": "中天火箭",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +329% | 营收 yoy +27%"
+    },
+    {
+      "code": "003010",
+      "name": "若羽臣",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +132% | 营收 yoy +73%"
+    },
+    {
+      "code": "003016",
+      "name": "欣贺股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +197% | 营收 yoy +8%"
+    },
+    {
+      "code": "300033",
+      "name": "同花顺",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +90% | 营收 yoy +49%"
+    },
+    {
+      "code": "300058",
+      "name": "蓝色光标",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +119% | 营收 yoy +7%"
+    },
+    {
+      "code": "300067",
+      "name": "安诺其",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +214% | 营收 yoy +34%"
+    },
+    {
+      "code": "300171",
+      "name": "东富龙",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +134% | 营收 yoy +4%"
+    },
+    {
+      "code": "300213",
+      "name": "佳讯飞鸿",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +142% | 营收 yoy +4%"
+    },
+    {
+      "code": "300223",
+      "name": "君正股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +490% | 营收 yoy +76%"
+    },
+    {
+      "code": "300233",
+      "name": "金城医药",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +220% | 营收 yoy +6%"
+    },
+    {
+      "code": "300302",
+      "name": "同有科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1503% | 营收 yoy +50%"
+    },
+    {
+      "code": "300308",
+      "name": "中际旭创",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +242% | 营收 yoy +182%"
+    },
+    {
+      "code": "300358",
+      "name": "楚天科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1281% | 营收 yoy +9%"
+    },
+    {
+      "code": "300378",
+      "name": "鼎捷数智",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +318% | 营收 yoy +5%"
+    },
+    {
+      "code": "300399",
+      "name": "天利科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +61% | 营收 yoy +20%"
+    },
+    {
+      "code": "300426",
+      "name": "华智数媒",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +161% | 营收 yoy +22%"
+    },
+    {
+      "code": "300464",
+      "name": "星徽股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +158% | 营收 yoy +2%"
+    },
+    {
+      "code": "300471",
+      "name": "厚普股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +519% | 营收 yoy +8%"
+    },
+    {
+      "code": "300475",
+      "name": "香农芯创",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2207% | 营收 yoy +252%"
+    },
+    {
+      "code": "300486",
+      "name": "东杰智能",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +110% | 营收 yoy +26%"
+    },
+    {
+      "code": "300502",
+      "name": "新易盛",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +91% | 营收 yoy +100%"
+    },
+    {
+      "code": "300503",
+      "name": "昊志机电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +267% | 营收 yoy +66%"
+    },
+    {
+      "code": "300531",
+      "name": "优博讯",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +114% | 营收 yoy +33%"
+    },
+    {
+      "code": "300548",
+      "name": "长芯博创",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +91% | 营收 yoy +41%"
+    },
+    {
+      "code": "300582",
+      "name": "英飞特",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +151% | 营收 yoy +3%"
+    },
+    {
+      "code": "300583",
+      "name": "赛托生物",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +157% | 营收 yoy +21%"
+    },
+    {
+      "code": "300604",
+      "name": "长川科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +126% | 营收 yoy +60%"
+    },
+    {
+      "code": "300619",
+      "name": "金银河",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +136% | 营收 yoy +44%"
+    },
+    {
+      "code": "300629",
+      "name": "新劲刚",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +293% | 营收 yoy +39%"
+    },
+    {
+      "code": "300642",
+      "name": "透景生命",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +316% | 营收 yoy +18%"
+    },
+    {
+      "code": "300666",
+      "name": "江丰电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +114% | 营收 yoy +31%"
+    },
+    {
+      "code": "300672",
+      "name": "国科微",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +873% | 营收 yoy +86%"
+    },
+    {
+      "code": "300706",
+      "name": "阿石创",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +225% | 营收 yoy +16%"
+    },
+    {
+      "code": "300741",
+      "name": "华宝股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +720% | 营收 yoy +20%"
+    },
+    {
+      "code": "300757",
+      "name": "罗博特科",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +120% | 营收 yoy +145%"
+    },
+    {
+      "code": "300765",
+      "name": "石药创新",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +46026% | 营收 yoy +209%"
+    },
+    {
+      "code": "300771",
+      "name": "智莱科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +125% | 营收 yoy +28%"
+    },
+    {
+      "code": "300773",
+      "name": "拉卡拉",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +192% | 营收 yoy +23%"
+    },
+    {
+      "code": "300838",
+      "name": "浙江力诺",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +21% | 营收 yoy +18%"
+    },
+    {
+      "code": "300839",
+      "name": "博汇股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +132% | 营收 yoy +53%"
+    },
+    {
+      "code": "300857",
+      "name": "协创数据",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +326% | 营收 yoy +153%"
+    },
+    {
+      "code": "300865",
+      "name": "大宏立",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +217% | 营收 yoy +22%"
+    },
+    {
+      "code": "300884",
+      "name": "狄耐克",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1444% | 营收 yoy +11%"
+    },
+    {
+      "code": "300921",
+      "name": "南凌科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +134% | 营收 yoy +5%"
+    },
+    {
+      "code": "300975",
+      "name": "商络电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +493% | 营收 yoy +122%"
+    },
+    {
+      "code": "300981",
+      "name": "中红医疗",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2662% | 营收 yoy +19%"
+    },
+    {
+      "code": "301021",
+      "name": "英诺激光",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +315% | 营收 yoy +19%"
+    },
+    {
+      "code": "301053",
+      "name": "远信工业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +85% | 营收 yoy +3%"
+    },
+    {
+      "code": "301062",
+      "name": "上海艾录",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +480% | 营收 yoy +14%"
+    },
+    {
+      "code": "301086",
+      "name": "鸿富瀚",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +222% | 营收 yoy +66%"
+    },
+    {
+      "code": "301116",
+      "name": "益客食品",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +119% | 营收 yoy +13%"
+    },
+    {
+      "code": "301123",
+      "name": "奕东电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +322% | 营收 yoy +40%"
+    },
+    {
+      "code": "301136",
+      "name": "招标股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +166% | 营收 yoy +15%"
+    },
+    {
+      "code": "301200",
+      "name": "大族数控",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +263% | 营收 yoy +109%"
+    },
+    {
+      "code": "301217",
+      "name": "铜冠铜箔",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +515% | 营收 yoy +34%"
+    },
+    {
+      "code": "301239",
+      "name": "普瑞眼科",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +501% | 营收 yoy +10%"
+    },
+    {
+      "code": "301308",
+      "name": "江波龙",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +71529% | 营收 yoy +136%"
+    },
+    {
+      "code": "301316",
+      "name": "慧博云通",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +245% | 营收 yoy +24%"
+    },
+    {
+      "code": "301338",
+      "name": "凯格精机",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +105% | 营收 yoy +62%"
+    },
+    {
+      "code": "301377",
+      "name": "鼎泰高科",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +325% | 营收 yoy +115%"
+    },
+    {
+      "code": "301396",
+      "name": "宏景科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +127% | 营收 yoy +156%"
+    },
+    {
+      "code": "301448",
+      "name": "开创电气",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +141% | 营收 yoy +27%"
+    },
+    {
+      "code": "301563",
+      "name": "云汉芯城",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +208% | 营收 yoy +91%"
+    },
+    {
+      "code": "301638",
+      "name": "南网数字",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1454% | 营收 yoy +42%"
+    },
+    {
+      "code": "600105",
+      "name": "永鼎股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +58% | 营收 yoy +48%"
+    },
+    {
+      "code": "600118",
+      "name": "中国卫星",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +213% | 营收 yoy +43%"
+    },
+    {
+      "code": "600120",
+      "name": "浙江东方",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +115% | 营收 yoy +6%"
+    },
+    {
+      "code": "600148",
+      "name": "长春一东",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +279% | 营收 yoy +19%"
+    },
+    {
+      "code": "600183",
+      "name": "生益科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +130% | 营收 yoy +50%"
+    },
+    {
+      "code": "600191",
+      "name": "华资实业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +723% | 营收 yoy +58%"
+    },
+    {
+      "code": "600201",
+      "name": "生物股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +72% | 营收 yoy +22%"
+    },
+    {
+      "code": "600203",
+      "name": "福日电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +277% | 营收 yoy +49%"
+    },
+    {
+      "code": "600232",
+      "name": "金鹰股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +324% | 营收 yoy +20%"
+    },
+    {
+      "code": "600257",
+      "name": "大湖股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +756% | 营收 yoy +2%"
+    },
+    {
+      "code": "600272",
+      "name": "开开实业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +88% | 营收 yoy +6%"
+    },
+    {
+      "code": "600310",
+      "name": "广西能源",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +275% | 营收 yoy +17%"
+    },
+    {
+      "code": "600316",
+      "name": "洪都航空",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +172% | 营收 yoy +80%"
+    },
+    {
+      "code": "600419",
+      "name": "天润乳业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +348% | 营收 yoy +4%"
+    },
+    {
+      "code": "600487",
+      "name": "亨通光电",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +93% | 营收 yoy +31%"
+    },
+    {
+      "code": "600506",
+      "name": "统一股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +107% | 营收 yoy +36%"
+    },
+    {
+      "code": "600508",
+      "name": "上海能源",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +38% | 营收 yoy +27%"
+    },
+    {
+      "code": "600540",
+      "name": "新赛股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1820% | 营收 yoy +77%"
+    },
+    {
+      "code": "600593",
+      "name": "大连圣亚",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +202% | 营收 yoy +2%"
+    },
+    {
+      "code": "600601",
+      "name": "方正科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +232% | 营收 yoy +73%"
+    },
+    {
+      "code": "600661",
+      "name": "昂立教育",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +977% | 营收 yoy +8%"
+    },
+    {
+      "code": "600663",
+      "name": "陆家嘴",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +36% | 营收 yoy +23%"
+    },
+    {
+      "code": "600686",
+      "name": "金龙汽车",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +138% | 营收 yoy +7%"
+    },
+    {
+      "code": "600692",
+      "name": "亚通股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +284% | 营收 yoy +444%"
+    },
+    {
+      "code": "600776",
+      "name": "东方通信",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +143% | 营收 yoy +16%"
+    },
+    {
+      "code": "600805",
+      "name": "悦达投资",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +322% | 营收 yoy +9%"
+    },
+    {
+      "code": "600893",
+      "name": "航发动力",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +59% | 营收 yoy +47%"
+    },
+    {
+      "code": "600969",
+      "name": "郴电国际",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +100% | 营收 yoy +3%"
+    },
+    {
+      "code": "601061",
+      "name": "中信金属",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +85% | 营收 yoy +37%"
+    },
+    {
+      "code": "601121",
+      "name": "宝地矿业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +207% | 营收 yoy +23%"
+    },
+    {
+      "code": "601138",
+      "name": "工业富联",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +96% | 营收 yoy +55%"
+    },
+    {
+      "code": "601360",
+      "name": "三六零",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +177% | 营收 yoy +9%"
+    },
+    {
+      "code": "601869",
+      "name": "长飞光纤",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +889% | 营收 yoy +54%"
+    },
+    {
+      "code": "601969",
+      "name": "海南矿业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +83% | 营收 yoy +13%"
+    },
+    {
+      "code": "603030",
+      "name": "全筑股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +95% | 营收 yoy +16%"
+    },
+    {
+      "code": "603038",
+      "name": "华立股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +320% | 营收 yoy +26%"
+    },
+    {
+      "code": "603042",
+      "name": "华脉科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +185% | 营收 yoy +5%"
+    },
+    {
+      "code": "603061",
+      "name": "金海通",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +125% | 营收 yoy +95%"
+    },
+    {
+      "code": "603083",
+      "name": "剑桥科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +171% | 营收 yoy +33%"
+    },
+    {
+      "code": "603099",
+      "name": "长白山",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +162% | 营收 yoy +18%"
+    },
+    {
+      "code": "603186",
+      "name": "华正新材",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +305% | 营收 yoy +41%"
+    },
+    {
+      "code": "603188",
+      "name": "亚邦股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +433% | 营收 yoy +17%"
+    },
+    {
+      "code": "603197",
+      "name": "保隆科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +96% | 营收 yoy +19%"
+    },
+    {
+      "code": "603236",
+      "name": "移远通信",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +28% | 营收 yoy +32%"
+    },
+    {
+      "code": "603316",
+      "name": "诚邦股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +315% | 营收 yoy +65%"
+    },
+    {
+      "code": "603588",
+      "name": "高能环境",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +103% | 营收 yoy +54%"
+    },
+    {
+      "code": "603629",
+      "name": "利通电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1275% | 营收 yoy +39%"
+    },
+    {
+      "code": "603630",
+      "name": "拉芳家化",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +484% | 营收 yoy +7%"
+    },
+    {
+      "code": "603709",
+      "name": "中源家居",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +135% | 营收 yoy +40%"
+    },
+    {
+      "code": "603719",
+      "name": "良品铺子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +117% | 营收 yoy +11%"
+    },
+    {
+      "code": "603738",
+      "name": "泰晶科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +130% | 营收 yoy +19%"
+    },
+    {
+      "code": "603839",
+      "name": "安正时尚",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +239% | 营收 yoy +6%"
+    },
+    {
+      "code": "603929",
+      "name": "亚翔集成",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +205% | 营收 yoy +51%"
+    },
+    {
+      "code": "603986",
+      "name": "兆易创新",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1091% | 营收 yoy +179%"
+    },
+    {
+      "code": "605136",
+      "name": "丽人丽妆",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +169% | 营收 yoy +8%"
+    },
+    {
+      "code": "605138",
+      "name": "盛泰集团",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +413% | 营收 yoy +1%"
+    },
+    {
+      "code": "605299",
+      "name": "舒华体育",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +130% | 营收 yoy +28%"
+    },
+    {
+      "code": "688025",
+      "name": "杰普特",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +105% | 营收 yoy +69%"
+    },
+    {
+      "code": "688059",
+      "name": "华锐精密",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +178% | 营收 yoy +20%"
+    },
+    {
+      "code": "688072",
+      "name": "拓荆科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1324% | 营收 yoy +49%"
+    },
+    {
+      "code": "688108",
+      "name": "赛诺医疗",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +264% | 营收 yoy +27%"
+    },
+    {
+      "code": "688110",
+      "name": "东芯股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +694% | 营收 yoy +336%"
+    },
+    {
+      "code": "688111",
+      "name": "金山办公",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +237% | 营收 yoy +25%"
+    },
+    {
+      "code": "688127",
+      "name": "蓝特光学",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +163% | 营收 yoy +76%"
+    },
+    {
+      "code": "688146",
+      "name": "中船特气",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +96% | 营收 yoy +83%"
+    },
+    {
+      "code": "688166",
+      "name": "博瑞医药",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +243% | 营收 yoy +26%"
+    },
+    {
+      "code": "688200",
+      "name": "华峰测控",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +113% | 营收 yoy +38%"
+    },
+    {
+      "code": "688205",
+      "name": "德科立",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +250% | 营收 yoy +26%"
+    },
+    {
+      "code": "688257",
+      "name": "新锐股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +461% | 营收 yoy +80%"
+    },
+    {
+      "code": "688308",
+      "name": "欧科亿",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +47734% | 营收 yoy +100%"
+    },
+    {
+      "code": "688321",
+      "name": "微芯生物",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +141% | 营收 yoy +34%"
+    },
+    {
+      "code": "688328",
+      "name": "深科达",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +198% | 营收 yoy +21%"
+    },
+    {
+      "code": "688336",
+      "name": "三生国健",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +95% | 营收 yoy +35%"
+    },
+    {
+      "code": "688378",
+      "name": "奥来德",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +551% | 营收 yoy +64%"
+    },
+    {
+      "code": "688383",
+      "name": "新益昌",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1707% | 营收 yoy +36%"
+    },
+    {
+      "code": "688409",
+      "name": "富创精密",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +993% | 营收 yoy +34%"
+    },
+    {
+      "code": "688416",
+      "name": "恒烁股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +297% | 营收 yoy +203%"
+    },
+    {
+      "code": "688488",
+      "name": "艾迪药业",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +150% | 营收 yoy +1%"
+    },
+    {
+      "code": "688519",
+      "name": "南亚新材",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +429% | 营收 yoy +83%"
+    },
+    {
+      "code": "688525",
+      "name": "佰维存储",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +3273% | 营收 yoy +298%"
+    },
+    {
+      "code": "688530",
+      "name": "欧莱新材",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1098% | 营收 yoy +133%"
+    },
+    {
+      "code": "688575",
+      "name": "亚辉龙",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +167% | 营收 yoy +10%"
+    },
+    {
+      "code": "688577",
+      "name": "浙海德曼",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +479% | 营收 yoy +46%"
+    },
+    {
+      "code": "688630",
+      "name": "芯碁微装",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +98% | 营收 yoy +69%"
+    },
+    {
+      "code": "688655",
+      "name": "迅捷兴",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +616% | 营收 yoy +77%"
+    },
+    {
+      "code": "688678",
+      "name": "福立旺",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +486% | 营收 yoy +65%"
+    },
+    {
+      "code": "688766",
+      "name": "普冉股份",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1930% | 营收 yoy +337%"
+    },
+    {
+      "code": "920125",
+      "name": "鸿仕达",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +332% | 营收 yoy +39%"
+    },
+    {
+      "code": "920136",
+      "name": "永励精密",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +65% | 营收 yoy +25%"
+    },
+    {
+      "code": "920156",
+      "name": "海昌智能",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +112% | 营收 yoy +59%"
+    },
+    {
+      "code": "920212",
+      "name": "智新电子",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +198% | 营收 yoy +16%"
+    },
+    {
+      "code": "920238",
+      "name": "长鹰硬科",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1069% | 营收 yoy +174%"
+    },
+    {
+      "code": "920249",
+      "name": "利尔达",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +346% | 营收 yoy +35%"
+    },
+    {
+      "code": "920344",
+      "name": "三元基因",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +127% | 营收 yoy +2%"
+    },
+    {
+      "code": "920415",
+      "name": "恒拓开源",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +103% | 营收 yoy +20%"
+    },
+    {
+      "code": "920422",
+      "name": "润普食品",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +174% | 营收 yoy +29%"
+    },
+    {
+      "code": "920425",
+      "name": "乐创技术",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +106% | 营收 yoy +80%"
+    },
+    {
+      "code": "920438",
+      "name": "戈碧迦",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +150% | 营收 yoy +33%"
+    },
+    {
+      "code": "920570",
+      "name": "坤博精工",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +239% | 营收 yoy +19%"
+    },
+    {
+      "code": "920580",
+      "name": "科创新材",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +116% | 营收 yoy +42%"
+    },
+    {
+      "code": "920641",
+      "name": "格利尔",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +261% | 营收 yoy +26%"
+    },
+    {
+      "code": "920726",
+      "name": "朱老六",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +179% | 营收 yoy +17%"
+    },
+    {
+      "code": "920765",
+      "name": "美之高",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +203% | 营收 yoy +28%"
+    },
+    {
+      "code": "920976",
+      "name": "视声智能",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q2"
+      ],
+      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +40% | 营收 yoy +29%"
     }
   ]
 }

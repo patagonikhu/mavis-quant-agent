@@ -21,3 +21,21 @@
 - 找不到老实说"没找到", 不补 plausible
 - 不以"我记得/应该是"开头
 - 错就老实说"我之前是瞎编的"
+
+## v6.2.4 重构教训: stk_factor 接 auto 链路 (2026-09-22 修)
+
+**症状:** 用户每天跑 `--auto`(默认行为),stk_factor 静默跳过 14 天不断流,直到用户手动查才发现。
+
+**根因:** v6.2.4 把 `daily_basic` 重构成 `stk_factor_pro`,只加了 `--stk-factor` 手动 flag,但:
+- `detect_stale_flags()` 的 `flags` 字典里没加 `stk_factor` key
+- 检测函数没读 `STK_FACTOR_DIR`
+- `action_auto()` 真跑分支没接 `action_stk_factor`
+
+**修法:** `tools/storage/sync.py` 三处改动:
+1. `flags` 字典加 `stk_factor: False`
+2. `# 4. stk_factor` 检测块(读 parquet metadata `done_dates` 合并集,距今天 ≥ 1 天 → True)
+3. `action_auto()` 加 `if flags["stk_factor"]: action_stk_factor(force=False)`
+
+**铁律:** 任何新增的 sync action flag,**必须同步在 `detect_stale_flags()` + `action_auto()` 两处加**。加完跑 dry-run 模拟 stale 场景验证。
+
+**验收:** `python -c "from tools.storage.sync import detect_stale_flags; print(detect_stale_flags())"` 应该带 `stk_factor` key。
