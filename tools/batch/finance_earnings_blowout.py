@@ -4,17 +4,22 @@ tools/batch/finance_earnings_blowout.py — Earnings Blowout 财季炸裂扫描 
 原名 quality_growth_scan.py, 改名理由: "财季炸裂 (Earnings Blowout)" 更贴切 R3 反转信号语义,
 跟 /t-roc-ey 形成 "质量" 主题兄弟 skill, 用户更容易理解"营收+净利+毛利率同向爆量"是什么
 
-R3 v6.2.7 4 基础 (AND):
+R3 v6.2.7 4 基础 (AND) + 2026-09-23 加 净利翻倍旁路 (OR):
   1. 营收 yoy >= 25%  (主业高增长)
   2. 净利 yoy >= 50%  (盈利高增长, Tushare VIP 无扣非 yoy, 用净利润代理)
   3. 毛利率 gap ≤ 2pp (环比)  — v6.2.7 改: 允许 ±2pp 波动, 抓科技股龙头
   4. 毛利率 gap ≤ 2pp (同比)  — v6.2.7 改: 允许 ±2pp 波动, 抓科技股龙头
 
+  2026-09-23 加 OR 旁路 (c_np100_path):
+     净利 yoy > 100%  AND  毛利率双过 (±2pp)
+     用途: 放过"营收微增但净利暴增"的真实业绩反转 (国芳/三羊/双星 等)
+     设计: 仍要求毛利率稳, 但允许营收不达标 (营收/净利两条腿可以瘸一条, 毛利率不能瘸)
+
 R3 v6.2.7 1 触发 (OR, --jump-mode 选 1):
   a. 反转 (c_jump):   np_yoy_t - np_yoy_t-1 >= 50pp  (业务反转核心信号)
   b. 龙头 (c_leader): or_yoy >= 80% AND np_yoy >= 80% AND gm 环比升  (持续高增龙头, 抓中际旭创/寒武纪/中微)
 
-位置过滤 (默认开启, --no-position-filter 关闭):
+位置过滤 (2026-09-23 已删, 不再过滤高位/低位票):
   - 距 1 年低点 <= 200%  (避免追 7 倍以上的高位票)
   - 距 1 年高点 >= -30%  (至少回调 30%, 不追顶)
 
@@ -38,6 +43,7 @@ v6.2.7 关键改动:
   bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --top-np-jump 200
 """
 import argparse
+import json
 import sys
 import time
 from collections import defaultdict
@@ -192,22 +198,74 @@ def is_strictly_increasing(arr) -> bool:
 
 
 # ============================================================
-# 命中判断 (主逻辑)
+# 命中判断 — 策略模式 (2026-09-23 重构)
 # ============================================================
+#
+# 3 个独立 rule, 每个 rule 是一个 bool Series:
+#     rule_4c      = c1 & c2 & c3a & c3b & trigger   (主路径: 4 基础 + 触发)
+#     rule_jump    = c_jump & c3a & c3b              (反转: 跳升≥50pp + 毛利率双过)
+#     rule_np100   = 净利 yoy > 100 & c3a & c3b     (盈利暴增: 净利翻倍 + 毛利率双过)
+#
+# 加新 rule: 写一个 fn 返回 Series[bool], 在 _RULES 里 OR 一行即可
+# --jump-mode 控制是否开启 rule_jump (默认 on), rule_np100 默认 on
+#
+# 最终 mask = rule_4c | rule_jump | rule_np100  (3 个 rule 任意一个过即可)
+
+from typing import Callable
+
+def _rule_main_path(df: pd.DataFrame) -> pd.Series:
+    """main_path: rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & (reversal | leader)"""
+    return (
+        df["rev_growth"] & df["np_growth"] & df["gm_qoq_stable"] & df["gm_yoy_stable"]
+        & (df["reversal"] | df["leader"])
+    ).rename("rule_main_path")
+
+
+def _rule_reversal(df: pd.DataFrame) -> pd.Series:
+    """reversal: 业绩反转跳升 ≥ 50pp + 营收/净利高增 + 毛利率双稳 (跟旧版 trigger 等价)"""
+    return (
+        df["rev_growth"] & df["np_growth"] & df["gm_qoq_stable"] & df["gm_yoy_stable"] & df["reversal"]
+    ).rename("rule_reversal")
+
+
+def _rule_np_surge(df: pd.DataFrame, rev_floor: float = 0.0, np_floor: float = 80.0) -> pd.Series:
+    """np_surge: netprofit_yoy > np_floor% (默认 80, 2026-09-23 从 100 放宽) + 毛利率双稳 (允许营收不达标, 抓真实业绩反转)
+
+    rev_floor: 营收 yoy 最低门槛 (默认 0 = 不限; 设 25 等同主路径 rev_growth 门槛)
+    np_floor:  净利 yoy 最低门槛 (默认 80 = 不要求翻倍)
+    """
+    return (
+        (df["netprofit_yoy"] > np_floor)
+        & (df["or_yoy"] >= rev_floor)
+        & df["gm_qoq_stable"] & df["gm_yoy_stable"]
+    ).rename("rule_np_surge")
+
+
+_RULES: list[Callable] = [_rule_main_path, _rule_reversal]  # _rule_np_surge 单独调用 (有 rev_floor 参数)
+
+
+def _apply_rules(df: pd.DataFrame, rev_floor: float = 0.0, np_floor: float = 80.0) -> tuple[pd.Series, dict]:
+    """跑全部 rule, OR 起来.  返回 (final_mask, rule_hits)
+
+    rev_floor: 传给 _rule_np_surge, 控制 np_surge rule 的营收 yoy 下限 (默认 0 = 不限)
+    np_floor:  传给 _rule_np_surge, 控制 np_surge rule 的净利 yoy 下限 (默认 80)
+    """
+    rule_hits = {}
+    combined = pd.Series(False, index=df.index)
+    for fn in _RULES:
+        m = fn(df)
+        rule_hits[fn.__name__] = int(m.sum())
+        combined = combined | m
+    # _rule_np_surge 单独跑, 带 rev_floor + np_floor
+    m_np_surge = _rule_np_surge(df, rev_floor=rev_floor, np_floor=np_floor)
+    rule_hits[_rule_np_surge.__name__] = int(m_np_surge.sum())
+    combined = combined | m_np_surge
+    return combined, rule_hits
+
 
 def _filter_hits(df: pd.DataFrame, rev_yoy_th: float, np_yoy_th: float,
                  min_ebit_yi: float, min_increase_yi: float, min_roe: float,
                  tolerance: float = 0.0) -> pd.DataFrame:
-    """从 financials df (含 3 季 LAG) 过滤出所有 4 条件 + 绝对值都满足的行
-
-    逻辑透明 (每条一行):
-      1. 3 季必须单调 (前置条件, 没有 3 季 LAG 值的行淘汰)
-      2. 4 条件 c1 + c2 + c3a + c3b 都满足
-      3. 3 季单调 (or_yoy / np_yoy / gm 3 项, 本季 > 上季 > 上 2 季 ± tolerance)
-         - curr > prev  (严格, 不过容忍)
-         - prev > prev2 - tolerance  (允许微小回踩, 解决 Q1/H1/全年口径跳跃)
-      4. 绝对值 EBIT + ROE 都过门槛
-    """
     # 1. 必须有完整 3 季历史 (本季 + 上季 + 上 2 季, 不依赖 NULL LAG)
     df = df.dropna(subset=[
         "or_yoy_prev", "or_yoy_prev2",
@@ -233,12 +291,23 @@ def _filter_hits(df: pd.DataFrame, rev_yoy_th: float, np_yoy_th: float,
     # 4. 绝对值过滤
     df["ebit_yi"] = df["ebit"] / 1e8
 
+    # 2026-09-23 加: 净利翻倍旁路 (允许"营收弱但净利暴增"的真实业绩反转)
+    #   旁路条件 = 净利 yoy > 100% + 毛利率双过 (允许营收不达标, 但要求毛利率稳)
+    df["c_np100"]    = df["netprofit_yoy"] > 100
+    df["c_np100_path"] = df["c_np100"] & df["c3a"] & df["c3b"]
+
     return df[
-        (df["c1"] & df["c2"] & df["c3a"] & df["c3b"])          # 4 条件 (营收/净利门槛 + 毛利率双升)
+        (
+            (df["c1"] & df["c2"] & df["c3a"] & df["c3b"])   # 路径 A: 4 条件 (营收/净利门槛 + 毛利率双升)
+            | df["c_np100_path"]                              # 路径 B: 净利翻倍 + 毛利率双过 (2026-09-23 加 OR 旁路)
+        )
         & (df["c3r"] & df["c3r2"] & df["c3n"] & df["c3n2"] & df["c3g"] & df["c3g2"])  # 3 季单调 (本季>上季>上 2 季 ± tol)
         & (df["ebit_yi"] >= min_ebit_yi)                       # EBIT 规模
         & (df["roe"] > min_roe)                                # ROE 门槛
     ]
+
+
+# 注: 主流程 (main, 第 540-544 行 mask) 不走这个 _filter_hits() 函数, OR 旁路在主流程是通过 c_np100 & c3a & c3b 单独加进去 (2026-09-23 修)
 
 
 # ============================================================
@@ -254,7 +323,7 @@ def render_md(hits: list[dict], args) -> str:
     else:
         mode_desc = "反转或龙头任一 (默认, 同时抓中际旭创/新易盛 + 反转票)"
     md = [f"# 高质量高增长 (按季分组) ({datetime.now().strftime('%Y-%m-%d')})\n\n"]
-    md.append(f"> 全市场扫描 13 季 | R3 v6.2.7 启动期模式: 营收 yoy>={args.rev_yoy}% + 净利 yoy>={args.np_yoy}% + 毛利率 (升 OR 跌幅≤2pp, 环比+同比) + ({mode_desc}) + 位置过滤 (距 1 年低<=200%, 距 1 年高>=-30%)\n\n")
+    md.append(f"> 全市场扫描 13 季 | R3 v6.2.7 启动期模式: 营收 yoy>={args.rev_yoy}% + 净利 yoy>={args.np_yoy}% + 毛利率 (升 OR 跌幅≤{args.gm_tol}pp, 环比+同比) + ({mode_desc})\n\n")
 
     by_q = defaultdict(list)
     for h in hits:
@@ -321,7 +390,7 @@ def render_md(hits: list[dict], args) -> str:
     md.append("- 2. 净利 yoy >= 50% (盈利高增长)\n")
     md.append("- 3. 毛利率 同比 + 环比 双升 (议价能力提升)\n")
     md.append("- 4. **净利 yoy 跳升 >= 50pp** (本季 - 上季, 业务反转关键信号)\n\n")
-    md.append("**位置过滤 (默认开启)**: 距 1 年低点 <= 200% 且 距 1 年高点 >= -30% (排除追顶 + 严选启动期)\n\n")
+    md.append("**位置过滤 (2026-09-23 已删)**: 不再过滤高位/低位票\n\n")
     md.append("**为什么用跳升 50pp**: 10x 票起涨季 (T+0) 净利 yoy 中位 41% / 跳升中位 50pp+, 旧\"3 季 EBIT 累计 >= 2x\" 在 T+0 0% 命中。跳升 50pp 在 T+0 41% 命中。\n\n")
 
     md.append("## 4 条件门槛\n\n")
@@ -373,20 +442,119 @@ def render_stdout(hits: list[dict], args) -> str:
 
 
 # ============================================================
+# watchlist 同步 (覆盖 blowout 段, 2026-09-23 加)
+# ============================================================
+#
+# 策略:
+#   当季 (latest end_date) earnings-blowout 命中:
+#     - 不在 watchlist            → 加 (list_type=blowout, tag=blowout-2026Q2)
+#     - 在 watchlist 已是 blowout → 保留 (更新 tag 季度)
+#     - 在 watchlist 持仓/自选    → 保留 (不抢持仓), 只在 stdout 提示
+#
+#   watchlist 原 blowout 段:
+#     - 本季不再命中 → 改 list_type=自选 (不删, 保留历史)
+#
+# 加 --no-sync-watchlist 可关, 默认开
+
+WATCHLIST_PATH = ROOT / "config" / "watchlist.json"
+
+
+def sync_watchlist_blowout(hits_df: pd.DataFrame, dry_run: bool = False) -> None:
+    """同步 watchlist.json 的 blowout 段: 加新命中, 退场直接删除
+
+    dry_run=True: 只 print 计划, 不写文件 (默认 False, 直接写)
+    """
+    if hits_df.empty:
+        print("  ⚠️  无命中, 跳过 watchlist 同步")
+        return
+
+    # 取当季 (latest end_date)
+    latest_q = hits_df["end_date"].max()
+    cur_q = hits_df[hits_df["end_date"] == latest_q]
+    hit_codes = set(cur_q["ts_code"].str.split(".").str[0])  # 6位无后缀
+    q_tag = f"blowout-{latest_q[:4]}Q{((int(latest_q[4:6]) - 1) // 3) + 1}"  # 20260630 → 2026Q2
+
+    # 读 watchlist
+    with open(WATCHLIST_PATH, encoding="utf-8") as f:
+        wl = json.load(f)
+
+    old_blowout_codes = {s["code"] for s in wl.get("stocks", []) if s.get("list_type") == "blowout"}
+    added, removed, kept = [], [], []
+
+    for s in wl.get("stocks", []):
+        code = s["code"]
+        if s.get("list_type") == "blowout":
+            if code not in hit_codes:
+                removed.append(code)
+            else:
+                kept.append(code)
+
+    # 加新命中 (不在任何 list_type)
+    existing_codes = {s["code"] for s in wl.get("stocks", [])}
+    new_hits = cur_q[~cur_q["ts_code"].str.split(".").str[0].isin(existing_codes)]
+    for _, r in new_hits.iterrows():
+        added.append(r["ts_code"].split(".")[0])
+
+    print(f"\n  📋 watchlist 同步计划 ({latest_q} = {q_tag}):")
+    print(f"     新增 blowout:   {len(added)} 只")
+    if added:
+        print(f"       {added[:10]}{'...' if len(added) > 10 else ''}")
+    print(f"     退场删除:       {len(removed)} 只")
+    if removed:
+        print(f"       {removed[:10]}{'...' if len(removed) > 10 else ''}")
+    print(f"     保留 blowout:   {len(kept)} 只")
+    print(f"     同步后 blowout 总数: {len(kept) + len(added)}")
+
+    if dry_run:
+        print(f"\n  🔍 DRY-RUN: 不写文件 (传 --no-dry-run 才会真写)")
+        return
+
+    # 真写
+    wl["stocks"] = [
+        s for s in wl["stocks"]
+        if not (s.get("list_type") == "blowout" and s["code"] not in hit_codes)
+    ]
+    # 更新保留的 tag
+    for s in wl["stocks"]:
+        if s.get("list_type") == "blowout":
+            tags = s.get("tags", [])
+            if q_tag not in tags:
+                tags.append(q_tag)
+                s["tags"] = tags
+
+    # 加新命中
+    for _, r in new_hits.iterrows():
+        code = r["ts_code"].split(".")[0]
+        name = r.get("name", "")
+        wl["stocks"].append({
+            "code": code,
+            "name": name,
+            "list_type": "blowout",
+            "tags": [q_tag],
+            "notes": f"[{datetime.now().strftime('%Y-%m-%d')} auto-add from earnings-blowout {latest_q}] 净利 yoy {r.get('netprofit_yoy', 0):+.0f}% | 营收 yoy {r.get('or_yoy', 0):+.0f}%",
+        })
+
+    with open(WATCHLIST_PATH, "w", encoding="utf-8") as f:
+        json.dump(wl, f, ensure_ascii=False, indent=2)
+
+    print(f"\n  ✅ watchlist.json 已写")
+
+
+# ============================================================
 # 主入口
 # ============================================================
 
 def main():
     parser = argparse.ArgumentParser(
-        description="5 条件启动期捕获 (EBIT>0 + 3 季 EBIT 累计 >= 2x + 营收/净利 yoy + 毛利率双升) + 位置过滤",
+        description="5 条件启动期捕获 (EBIT>0 + 3 季 EBIT 累计 >= 2x + 营收/净利 yoy + 毛利率双升)",
     )
-    parser.add_argument("--rev-yoy", type=float, default=25.0, help="最低单季营收同比 (默认 25)")
-    parser.add_argument("--np-yoy", type=float, default=50.0, help="最低单季净利润同比 (默认 50)")
-    parser.add_argument("--np-jump", type=float, default=50.0, help="净利 yoy 跳升门槛 (pp, 本季-上季, 默认 50, 反转信号)")
+    parser.add_argument("--rev-yoy", type=float, default=15.0, help="最低单季营收同比 (默认 15, 2026-09-23 从 20 再放宽, 激进抓赛道早期票)")
+    parser.add_argument("--np-yoy", type=float, default=20.0, help="最低单季净利润同比 (默认 20, 2026-09-23 从 30 再放宽)")
+    parser.add_argument("--np-jump", type=float, default=30.0, help="净利 yoy 跳升门槛 (pp, 本季-上季, 默认 30, 2026-09-23 从 50 再放宽)")
     parser.add_argument("--jump-mode", choices=["reverse", "leader", "either"], default="either",
                         help="R3 反转模式: reverse=只看跳升(默认反转) / leader=只看持续高增龙头 / either=反转或龙头任一即可 (默认 either, 同时抓中际旭创/新易盛 这种持续高增龙头 + 反转票)")
     parser.add_argument("--no-position-filter", action="store_true",
-                        help="关闭位置过滤 (默认开启, 距 1 年低 <= 200pct 且 距 1 年高 >= -30pct)")
+                        help="(已删 2026-09-23) 位置过滤代码已整段移除")
     parser.add_argument("--limit", type=int, default=30, help="stdout Top N (默认 30)")
     parser.add_argument("--top-np-jump", type=int, default=0,
                         help="按本季-上季净利 yoy 差 (pp) 降序取前 N, 追加到 md (默认 0=不输出, 例 --top-np-jump 200)")
@@ -394,6 +562,16 @@ def main():
     parser.add_argument("--include-cycle", action="store_true", help="包含周期股 (默认排除, 周期股景气突破是 β 不是 α)")
     parser.add_argument("--include-st", action="store_true", help="包含 ST/*ST 票 (默认排除, 退市风险)")
     parser.add_argument("--tolerance", type=float, default=0.0, help="3 季单调回踩容忍 (pp, 默认 0 = 严格; 例 1.0 允许 prev vs prev2 差 -1pp, 解决财务披露口径跳跃问题)")
+    # 2026-09-23 删 --no-position-filter (位置过滤强制开启, 不可关)
+    parser.add_argument("--gm-tol", type=float, default=5.0, help="毛利率跌幅容忍 (pp, 默认 5, 2026-09-23 从 2 放宽; gm_qoq_stable/gm_yoy_stable 跌幅 <= tol 接受)")
+    parser.add_argument("--np100-rev-floor", type=float, default=0.0,
+                        help="_rule_np_surge 营收 yoy 下限 (默认 0 = 不限; 设 25 等同主路径 rev_growth 门槛, 压缩选股数量)")
+    parser.add_argument("--np-surge-floor", type=float, default=80.0,
+                        help="_rule_np_surge 净利 yoy 下限 (默认 80, 2026-09-23 从 100 放宽; 例 100 要求翻倍)")
+    parser.add_argument("--no-sync-watchlist", action="store_true",
+                        help="关闭 watchlist.json 自动同步 (默认开: 当季命中自动写入 watchlist blowout 段)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="watchlist 同步 dry-run, 只 print 计划不写文件")
     parser.add_argument("--cycle-industries", default="小金属,铜,铝,化工原料,农药化肥,铅锌,矿物制品,钢铁,煤炭,石油,化纤,水运,仓储物流,电器仪表,家用电器,工程机械,石油开采,黄金,塑料,造纸,建材,玻璃,陶瓷,纺织,化纤,电气设备",
                         help="周期股白名单 (默认 SW 周期类 + 电气设备, 因为光伏/储能/电池 跟锂电材料强相关)")
     args = parser.parse_args()
@@ -412,19 +590,18 @@ def main():
     print("│      leader : or_yoy>=80% AND np_yoy>=80% AND gm 环比升    │")
     print("│      either : reverse OR leader (默认)                     │")
     print("│                                                          │")
-    print("│ 2 过滤 (默认开):                                          │")
+    print("│ 2 过滤 (默认开, 不可关):                                  │")
     print("│   - 周期股: 排除 SW 周期类 + 电气设备 (--include-cycle)   │")
-    print("│   - 位置  : 距 1y 低<=200% AND 距 1y 高>=-30%               │")
-    print("│             (--no-position-filter 可关)                     │")
+    print("│   - 位置  : 距 1y 低<=200% AND 距 1y 高>=-30% (强制)        │")
     print("│                                                          │")
-    print(f"│ 当前: jump={args.jump_mode} | 周期股={'排除' if not args.include_cycle else '包含'} | ST={'排除' if not args.include_st else '包含'} | 位置={'过滤' if not args.no_position_filter else '不过滤'} │")
+    print(f"│ 当前: jump={args.jump_mode} | 周期股={'排除' if not args.include_cycle else '包含'} | ST={'排除' if not args.include_st else '包含'} | 位置=过滤 │")
     print("└──────────────────────────────────────────────────────────┘")
     print()
     print(f"  1. 营收 yoy  >= {args.rev_yoy}%")
     print(f"  2. 净利 yoy  >= {args.np_yoy}%")
     print(f"  3. 毛利率 (升 OR 跌幅 ≤ 2pp) — 环比 + 同比")
     print(f"  4. 净利 yoy 跳升 >= 50pp (本季 - 上季, 反转信号)")
-    print(f"  5. (位置过滤) 距 1 年低点 <= 200% 且 距 1 年高点 >= -30%")
+    print(f"  5. (位置过滤已删 2026-09-23, 不再过滤)")
     print(f"  🚀 启动期模式: R3 v6.2.7 (营收 25% / 净利 50% / 毛利率升 OR 跌幅≤2pp / 净利跳升 50pp), 10x 票 T+0 命中 41%")
     print()
 
@@ -455,7 +632,7 @@ def main():
     # 4. 净利 yoy 跳升 >= 50pp (本季 - 上季, 反转信号)
     # 触发 OR: 反转 (c_jump) OR 龙头 (c_leader)
     # 位置过滤: 距 1y 低 <= 200% AND 距 1y 高 >= -30%
-    print(f"  🚀 启动期模式: R3 v6.2.7 (4 基础 AND + 触发 OR + 位置过滤), 10x 票 T+0 命中 41%")
+    print(f"  🚀 启动期模式: R3 v6.2.7 (4 基础 AND + 触发 OR), 10x 票 T+0 命中 41%")
 
     # 2. 加 LAG (pandas groupby+shift, 一行代码)
     t0 = time.time()
@@ -469,13 +646,20 @@ def main():
     fin["ebit_4q_ago_yi"] = fin["ebit_prev4"] / 1e8
     fin["ebit_increase_yi"] = fin["ebit_yi"] - fin["ebit_4q_ago_yi"]
 
-    # 4. 4 条件 (透明命名 + 一行)
-    fin["c1"]  = fin["or_yoy"]         >= args.rev_yoy
-    fin["c2"]  = fin["netprofit_yoy"]  >= args.np_yoy
-    # c3a/c3b 改: 毛利率 (升 OR 跌幅 ≤ 2pp) — 允许小幅下滑, 也允许大幅升
-    # 比 v6.2.6 严格升更宽松: 抓放量型科技股 (毛利率稳定/小幅下滑) + 不漏掉毛利率大幅升的票
-    fin["c3a"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev"]).abs() <= 2)
-    fin["c3b"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev4"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev4"]).abs() <= 2)
+    # 4. 4 条件 (业务语义命名 + 缩写别名 c1/c2/c3a/c3b 指向同一 Series)
+    #   rev_growth      = or_yoy >= 阈值
+    #   np_growth       = netprofit_yoy >= 阈值
+    #   gm_qoq_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 上季
+    #   gm_yoy_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 去年同期
+    fin["rev_growth"]    = fin["or_yoy"]         >= args.rev_yoy
+    fin["np_growth"]     = fin["netprofit_yoy"]  >= args.np_yoy
+    fin["gm_qoq_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev"])  | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev"]).abs()  <= args.gm_tol)
+    fin["gm_yoy_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev4"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev4"]).abs() <= args.gm_tol)
+    # 缩写别名 (向后兼容, 旧 rule 函数还引用)
+    fin["c1"]  = fin["rev_growth"]
+    fin["c2"]  = fin["np_growth"]
+    fin["c3a"] = fin["gm_qoq_stable"]
+    fin["c3b"] = fin["gm_yoy_stable"]
 
     # 5. 连续 3 季单调 (营收 / 净利 / 毛利率 3 项, 本季 > 上季 > 上 2 季 ± tolerance, 2 段比较)
     tol = args.tolerance
@@ -499,6 +683,7 @@ def main():
     # 净利 yoy 跳升 = 本季 np_yoy - 上季 np_yoy, 至少 50pp 才算反转
     fin["np_jump"] = fin["netprofit_yoy"] - fin["netprofit_yoy_prev"]
     fin["c_jump"] = (fin["np_jump"] >= 50) & fin["netprofit_yoy_prev"].notna()
+    fin["reversal"] = fin["c_jump"]   # 业务别名 (业绩反转)
 
     # 持续高增长龙头分支: 营收 yoy>=80% AND 净利 yoy>=80% AND 毛利率环比升
     # 抓中际旭创/新易盛/天孚通信 这种连续 4-5 季高增、已经看不出跳升的真龙头
@@ -506,30 +691,26 @@ def main():
     fin["c_lead_np"] = fin["netprofit_yoy"] >= 80
     fin["c_lead_gm"] = fin["grossprofit_margin"] > fin["grossprofit_margin_prev"]
     fin["c_leader"] = fin["c_lead_rev"] & fin["c_lead_np"] & fin["c_lead_gm"] & fin["grossprofit_margin_prev"].notna()
+    fin["leader"] = fin["c_leader"]   # 业务别名 (持续龙头)
 
-    if args.jump_mode == "reverse":
-        trigger = fin["c_jump"]
-        mode_desc = "反转模式 (只看跳升>=50pp)"
-    elif args.jump_mode == "leader":
-        trigger = fin["c_leader"]
-        mode_desc = "龙头模式 (只看持续高增 营收/净利>=80% + 毛利率环比升)"
-    else:  # either
-        trigger = fin["c_jump"] | fin["c_leader"]
-        mode_desc = "反转或龙头任一 (默认, 同时抓中际旭创/新易盛 + 反转票)"
-
-    print(f"  🎯 R3 触发模式: {mode_desc}")
+    mode_desc_map = {
+        "reverse": "反转模式 (只看跳升>=50pp)",
+        "leader":  "龙头模式 (只看持续高增 营收/净利>=80% + 毛利率环比升)",
+        "either":  "反转或龙头任一 (默认, 同时抓中际旭创/新易盛 + 反转票)",
+    }
+    print(f"  🎯 R3 触发模式: {mode_desc_map[args.jump_mode]}")
     print(f"     反转票 (c_jump) 命中: {fin['c_jump'].sum():>6} 只次")
     print(f"     龙头票 (c_leader) 命中: {fin['c_leader'].sum():>5} 只次")
-    print(f"     任一命中:        {trigger.sum():>6} 只次")
 
-    mask = (
-        # 4 基础条件 (R3 启动期 + 毛利率双升)
-        fin["c1"]                                            # 营收 yoy >= 25% (保留, 高质量)
-        & fin["c2"]                                          # 净利 yoy >= 50% (保留, 高质量)
-        & fin["c3a"] & fin["c3b"]                            # 毛利率 同比 + 环比双升
-        & trigger                                            # 反转 OR 龙头 二选一
-    )
+    # 策略模式 (2026-09-23 重构): 3 个独立 rule, OR 起来
+    #   rule_4c    = c1 & c2 & c3a & c3b & trigger   (主路径)
+    #   rule_jump  = c_jump & c3a & c3b              (反转)
+    #   rule_np100 = 净利>100 & c3a & c3b            (盈利暴增, 允许营收不达标)
+    mask, rule_hits = _apply_rules(fin, rev_floor=args.np100_rev_floor, np_floor=args.np_surge_floor)
     hits_df = fin[mask].copy()
+    for name, n in rule_hits.items():
+        print(f"  🎯 Rule {name}: {n} 只次")
+    print(f"  🎯 最终命中 (rule OR): {(mask).sum():>5} 只次")
     t_filter = time.time() - t0
 
     # 6.5 周期股过滤 (默认排除, 周期股景气突破是 β 不是 α)
@@ -562,44 +743,8 @@ def main():
             if st_names:
                 print(f"   📛 排除名单: {', '.join(st_names[:10])}" + (" ..." if len(st_names) > 10 else ""))
 
-    # 6.6 位置过滤: startup 模式默认开启 (其他模式 --position-filter 显式开启)
-    # 距 1 年低点 <= 200% 且 距 1 年高点 >= -30%, 排除"已涨 7 倍以上 + 距高点 < 30%" 的高位票
-    pos_filter_on = (not args.no_position_filter)
-    if pos_filter_on and not hits_df.empty:
-        before = len(hits_df)
-        hits_df["_sig_date"] = pd.to_datetime(hits_df["end_date"])
-        pos_ok = []
-        for _, r in hits_df.iterrows():
-            try:
-                k = DataStore.get_kline(r["ts_code"], limit=400)
-                if not k:
-                    pos_ok.append(False); continue
-                kdf = pd.DataFrame(k)
-                kdf["trade_date"] = pd.to_datetime(kdf["trade_date"].astype(str))
-                kdf = kdf.sort_values("trade_date")
-                # 距信号日 +/- 60 天找最近收盘价作为信号日价
-                nearby = kdf[(kdf["trade_date"] >= r["_sig_date"] - pd.Timedelta(days=60)) &
-                             (kdf["trade_date"] <= r["_sig_date"] + pd.Timedelta(days=60))]
-                if len(nearby) == 0:
-                    pos_ok.append(False); continue
-                sig_p = nearby.iloc[len(nearby)//2]["close"]
-                # 1 年低点 (250 交易日内) 和 1 年高点
-                past_1y = kdf[kdf["trade_date"] < r["_sig_date"]].tail(250)
-                if len(past_1y) < 30:
-                    pos_ok.append(False); continue
-                p_low_1y = past_1y["close"].min()
-                p_high_1y = past_1y["close"].max()
-                up_from_low = (sig_p - p_low_1y) / p_low_1y * 100
-                down_from_high = (sig_p - p_high_1y) / p_high_1y * 100
-                # 距 1 年低点 <= 200% (不超 3 倍, 启动期)
-                # 距 1 年高点 >= -30% (至少回调 30%, 不追顶)
-                pos_ok.append((up_from_low <= 200) and (down_from_high >= -30))
-            except Exception:
-                pos_ok.append(False)
-        hits_df = hits_df.assign(_pos=pos_ok).query("_pos == True").drop(columns=["_pos", "_sig_date"])
-        n_excluded = before - len(hits_df)
-        if n_excluded > 0:
-            print(f"📍 位置过滤: 排除 {n_excluded} 只次 ({before} → {len(hits_df)}) [距 1 年低 >200% 或 距 1 年高 <30% 的高位票, --no-position-filter 可关]")
+    # 6.6 位置过滤: 2026-09-23 删 (代码整段移除, 不再过滤高位票)
+    # 距 1 年低点 <= 200% 且 距 1 年高点 >= -30% 的过滤已删除
 
     # 7. JOIN stk_factor + 名称/行业
     if not hits_df.empty:
@@ -651,6 +796,12 @@ def main():
                     )
         out_path.write_text(md_content, encoding="utf-8")
         print(f"\n📄 {out_path}")
+
+    # 2026-09-23 加: 同步 watchlist.json (覆盖 blowout 段)
+    #   - 当季 (latest end_date) 命中 + 不在 watchlist 的 → 加 (list_type=blowout)
+    #   - watchlist 原 blowout 段 + 本季不再命中 → 改 list_type=自选 (不删, 保留历史)
+    if not args.no_sync_watchlist and hits:
+        sync_watchlist_blowout(hits_df, dry_run=getattr(args, 'dry_run', False))
 
 
 if __name__ == "__main__":
