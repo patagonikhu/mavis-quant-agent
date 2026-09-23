@@ -404,11 +404,6 @@ def action_eps(codes: list[str]) -> int:
     v6.2.5 改造: 1 只票 = 1 parquet (4 期 A/E) → 117 票 = 117 文件 (浪费 schema)
                   改成: 全表 = 1 个 parquet, 约 500 行 (117 票 × 4 期)
                   caches.eps.write_eps(code, data) 内部 upsert (删旧 + 加新)
-
-    2026-09-23 注: MCP (Hengsheng ConsensusExpectation) 实现已写在
-    sources/mcp_hengsheng.py,但 MCP 工具是 agent 内置不是 Python 包,无人值守
-    sync 脚本调不到。交互场景 (t-analyze / 单只查询) 由 LLM 现场调 MCP 做对照,
-    无人值守 batch 仍走 eastmoney.
     """
     from .sources.eastmoney import _build_eps_table
     from .caches.eps import write_eps
