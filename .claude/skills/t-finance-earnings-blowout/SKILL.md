@@ -108,7 +108,7 @@ Strategy pattern (`tools/batch/finance_earnings_blowout.py::_apply_rules`). To a
 | `netprofit_yoy_meet` | `netprofit_yoy >= 20` (净利同比达标, 2026-09-23 从 50 大放宽) |
 | `gross_margin_qoq_stable` | `grossprofit_margin > prev` OR `|gm - prev| <= 5` (毛利率环比升或跌幅 ≤ 5pp, 2026-09-23 从 2 放宽) |
 | `gross_margin_yoy_stable` | `grossprofit_margin > prev4` OR `|gm - prev4| <= 5` (毛利率同比升或跌幅 ≤ 5pp) |
-| `reversal` | `(netprofit_yoy - netprofit_yoy_prev) >= 50` (净利同比跳升 ≥ 50pp) |
+| `reversal` | `(netprofit_yoy - netprofit_yoy_last_quarter) >= 50` (净利同比跳升 ≥ 50pp) |
 | `leader` | `or_yoy >= 80 AND netprofit_yoy >= 80 AND grossprofit_margin > prev` (持续高增龙头) |
 | `lead_revenue` | `or_yoy >= 80` (龙头分支 - 营收条件) |
 | `lead_profit` | `netprofit_yoy >= 80` (龙头分支 - 净利条件) |

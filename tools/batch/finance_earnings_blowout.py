@@ -131,14 +131,21 @@ def _add_lags(df: pd.DataFrame, cols: list[str], n_lags: int = 3) -> pd.DataFram
     """给指定列加 LAG (本季/上季/上 2 季/上 3 季), 按 ts_code 分组按 end_date 排序
 
     输入:  df 必须有 ts_code, end_date 列
-    输出:  df 新增 col_prev, col_prev2, col_prev3 列 (lag 1/2/3)
+    输出:  df 新增 col_last_quarter / col_two_quarters_ago / col_three_quarters_ago 列 (业务命名 lag 1/2/3)
     """
     df = df.sort_values(["ts_code", "end_date"]).reset_index(drop=True)
     for col in cols:
         for n in range(1, n_lags + 1):
-            df[f"{col}_prev{n if n > 1 else ''}"] = (
-                df.groupby("ts_code")[col].shift(n)
-            )
+            if n == 1:
+                df[f"{col}_last_quarter"] = df.groupby("ts_code")[col].shift(1)
+            elif n == 2:
+                df[f"{col}_two_quarters_ago"] = df.groupby("ts_code")[col].shift(2)
+            elif n == 3:
+                df[f"{col}_three_quarters_ago"] = df.groupby("ts_code")[col].shift(3)
+            elif n == 4:
+                df[f"{col}_one_year_ago"] = df.groupby("ts_code")[col].shift(4)
+            else:
+                raise ValueError(f"n_lags={n} 不支持, 最大 4 (1 年)")
     return df
 
 
@@ -176,7 +183,7 @@ def is_strictly_increasing(arr) -> bool:
 # 加新 rule: 写一个 fn 返回 Series[bool], 在 _RULES 里 OR 一行即可
 # --jump-mode 控制是否开启 rule_reversal (默认 on), rule_profit_surge 默认 on
 #
-# 最终 mask = rule_4c | rule_jump | rule_np100  (3 个 rule 任意一个过即可)
+# 最终 mask = rule_main_path | rule_reversal | rule_profit_surge  (3 个 rule 任意一个过即可)
 
 from typing import Callable
 
@@ -251,7 +258,7 @@ def _apply_rules(df: pd.DataFrame, revenue_floor: float = 0.0, profit_floor: flo
 def _apply_prefilter(df: pd.DataFrame, basic_map: dict, sf_df: pd.DataFrame, args) -> pd.DataFrame:
     """5 闸前置过滤 (v6.3.0 简化版), 全 0 网络. 返回过滤后的 df.
 
-    df:      load_financials + _add_lags 之后的 dataframe (已含 ebit / ebit_prev 列)
+    df:      load_financials + _add_lags 之后的 dataframe (已含 ebit / ebit_last_quarter 列)
     basic_map: {code: {name, industry, is_st, list_date, ...}}
               注: DataStore 不暴露 total_share, 所以 5 闸去掉股本, 用市值近似
     sf_df:   stk_factor_latest (用于 total_mv 市值判断)
@@ -337,8 +344,8 @@ def _apply_prefilter(df: pd.DataFrame, basic_map: dict, sf_df: pd.DataFrame, arg
 
         # ===== ebit_crash: 单季环比腰斩 =====
         if args.ebit_floor > -100:
-            valid = df["ebit"].notna() & df["ebit_prev"].notna() & (df["ebit_prev"].abs() > 1e-3)
-            ebit_qoq = (df["ebit"] / df["ebit_prev"]) - 1
+            valid = df["ebit"].notna() & df["ebit_last_quarter"].notna() & (df["ebit_last_quarter"].abs() > 1e-3)
+            ebit_qoq = (df["ebit"] / df["ebit_last_quarter"]) - 1
             kick_crash = valid & (ebit_qoq < (1 + args.ebit_floor / 100))
             kick_crash = kick_crash.fillna(False)
             n_crash = int(kick_crash.sum())
@@ -354,23 +361,23 @@ def _apply_prefilter(df: pd.DataFrame, basic_map: dict, sf_df: pd.DataFrame, arg
         #        即 MIN(prev ratio) < 1 + peak_kill/100
         if args.ebit_peak_kill > -100:
             ebit_cur = df["ebit"]
-            ebit_4q_ago = df.get("ebit_prev4")  # LAG 4
-            valid_peak = ebit_cur.notna() & ebit_4q_ago.notna() & (ebit_4q_ago.abs() > 1e-3)
+            ebit_one_year_ago = df.get("ebit_one_year_ago")  # LAG 4
+            valid_peak = ebit_cur.notna() & ebit_one_year_ago.notna() & (ebit_one_year_ago.abs() > 1e-3)
 
             # 4 季内任意一季环比 < 阈值
-            #   ratio = ebit / ebit_prev (本季), prev / prev2, prev2 / prev3, prev3 / prev4
+            #   ratio = ebit / ebit_last_quarter (本季), last / two_ago, two / three_ago, three / year_ago
             #   MIN(ratio) < 1 + peak_kill/100  ==  任意一季环比跌幅超过 peak_kill
-            r1 = df["ebit"] / df["ebit_prev"].replace(0, pd.NA)
-            r2 = df["ebit_prev"] / df.get("ebit_prev2", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
-            r3 = df.get("ebit_prev2", pd.Series(pd.NA, index=df.index)) / df.get("ebit_prev3", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
-            r4 = df.get("ebit_prev3", pd.Series(pd.NA, index=df.index)) / df.get("ebit_prev4", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
-            min_ratio = pd.concat([r1, r2, r3, r4], axis=1).min(axis=1)
+            ratio_curr_to_last  = df["ebit"] / df["ebit_last_quarter"].replace(0, pd.NA)
+            ratio_last_to_two   = df["ebit_last_quarter"] / df.get("ebit_two_quarters_ago", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
+            ratio_two_to_three  = df.get("ebit_two_quarters_ago", pd.Series(pd.NA, index=df.index)) / df.get("ebit_three_quarters_ago", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
+            ratio_three_to_year = df.get("ebit_three_quarters_ago", pd.Series(pd.NA, index=df.index)) / df.get("ebit_one_year_ago", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
+            min_ratio = pd.concat([ratio_curr_to_last, ratio_last_to_two, ratio_two_to_three, ratio_three_to_year], axis=1).min(axis=1)
 
-            # 当前 < 4 季前 (4 季累计负)
-            decline_4q = valid_peak & (ebit_cur < ebit_4q_ago)
+            # 当前 < 1 年前 (4 季累计负)
+            cumulative_decline = valid_peak & (ebit_cur < ebit_one_year_ago)
             # 4 季内任一季环比跌穿 peak_kill (e.g. -30% 即 min_ratio < 0.7)
             sharp_drop = valid_peak & (min_ratio < (1 + args.ebit_peak_kill / 100))
-            kick_peak = decline_4q & sharp_drop
+            kick_peak = cumulative_decline & sharp_drop
             kick_peak = kick_peak.fillna(False)
             n_peak = int(kick_peak.sum())
             print(f"        ebit_peak_down 4 季趋势见顶 (4 季内任一季 < {args.ebit_peak_kill:.0f}%):  {n_peak:>5} 只次")
@@ -444,10 +451,10 @@ def render_md(hits: list[dict], args) -> str:
         for h in sorted(by_q[q], key=lambda x: -x["netprofit_yoy"]):
             row = [
                 h["ts_code"], h["name"], h["industry_display"],
-                h["or_yoy"], h["or_yoy_prev"], h["or_yoy_prev2"],
-                h["netprofit_yoy"], h["netprofit_yoy_prev"], h["netprofit_yoy_prev2"],
-                h["grossprofit_margin"], h["grossprofit_margin_prev"], h["grossprofit_margin_prev2"],
-                h["grossprofit_margin_prev4"],
+                h["or_yoy"], h["or_yoy_last_quarter"], h["or_yoy_two_quarters_ago"],
+                h["netprofit_yoy"], h["netprofit_yoy_last_quarter"], h["netprofit_yoy_two_quarters_ago"],
+                h["grossprofit_margin"], h["grossprofit_margin_last_quarter"], h["grossprofit_margin_two_quarters_ago"],
+                h["grossprofit_margin_one_year_ago"],
                 h["ebit_yi"], h["ebit_increase_yi"], h["roe"],
                 h.get("pe", "—"), h.get("pe_ttm", "—"), h.get("total_mv_yi", "—"),
             ]
@@ -465,7 +472,7 @@ def render_md(hits: list[dict], args) -> str:
     md.append("| 毛利率 | `grossprofit_margin` | 单季毛利率 |\n")
     md.append("| 毛利率 (去年同期) | `LAG(grossprofit_margin, 4)` | 同比基准 |\n")
     md.append("| EBIT | `ebit / 1e8` | 当前季 EBIT (亿) |\n")
-    md.append("| 4 季增量 | `(ebit - ebit_4q_ago) / 1e8` | 业务规模真实扩大 |\n")
+    md.append("| 1 年增量 | `(ebit - ebit_one_year_ago) / 1e8` | 业务规模真实扩大 |\n")
     md.append("| ROE | `roe` | 净资产收益率 |\n")
     md.append("| PE | `pe` (stk_factor 最新一日) | 静态市盈率 |\n")
     md.append("| PE_TTM | `pe_ttm` | TTM 滚动市盈率 |\n")
@@ -519,9 +526,9 @@ def render_stdout(hits: list[dict], args) -> str:
         lines.append(
             f"{h['ts_code']:<10}{(h.get('name') or '')[:8]:<10}{h['industry_display'][:8]:<10}"
             f"{h['end_date']:<10}"
-            f"{h['or_yoy']:<8.1f}{h.get('or_yoy_prev', 0) or 0:<8.1f}{h.get('or_yoy_prev2', 0) or 0:<8.1f}"
-            f"{h['netprofit_yoy']:<9.1f}{h.get('netprofit_yoy_prev', 0) or 0:<8.1f}{h.get('netprofit_yoy_prev2', 0) or 0:<8.1f}"
-            f"{h['grossprofit_margin']:<6.1f}{h.get('grossprofit_margin_prev', 0) or 0:<7.1f}{h.get('grossprofit_margin_prev2', 0) or 0:<7.1f}{h.get('grossprofit_margin_prev4', 0) or 0:<7.1f}"
+            f"{h['or_yoy']:<8.1f}{h.get('or_yoy_last_quarter', 0) or 0:<8.1f}{h.get('or_yoy_two_quarters_ago', 0) or 0:<8.1f}"
+            f"{h['netprofit_yoy']:<9.1f}{h.get('netprofit_yoy_last_quarter', 0) or 0:<8.1f}{h.get('netprofit_yoy_two_quarters_ago', 0) or 0:<8.1f}"
+            f"{h['grossprofit_margin']:<6.1f}{h.get('grossprofit_margin_last_quarter', 0) or 0:<7.1f}{h.get('grossprofit_margin_two_quarters_ago', 0) or 0:<7.1f}{h.get('grossprofit_margin_one_year_ago', 0) or 0:<7.1f}"
             f"{h['ebit_yi']:<10.2f}{h['ebit_increase_yi']:<9.2f}"
             f"{h['roe']:<6.1f}{h.get('pe', 0) or 0:<8.1f}{h.get('pe_ttm', 0) or 0:<8.1f}{h.get('total_mv_yi', 0) or 0:<10.1f}"
         )
@@ -743,8 +750,8 @@ def main():
     # 3. 计算业务字段 (Python 纯函数, 透明)
     t0 = time.time()
     fin["ebit_yi"] = fin["ebit"] / 1e8
-    fin["ebit_4q_ago_yi"] = fin["ebit_prev4"] / 1e8
-    fin["ebit_increase_yi"] = fin["ebit_yi"] - fin["ebit_4q_ago_yi"]
+    fin["ebit_one_year_ago_yi"] = fin["ebit_one_year_ago"] / 1e8
+    fin["ebit_increase_yi"] = fin["ebit_yi"] - fin["ebit_one_year_ago_yi"]
 
     # 4. 4 条件 (业务语义命名)
     #   or_yoy_meet      = or_yoy >= 阈值
@@ -753,18 +760,18 @@ def main():
     #   gross_margin_yoy_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 去年同期
     fin["or_yoy_meet"]    = fin["or_yoy"]         >= args.rev_yoy
     fin["netprofit_yoy_meet"]     = fin["netprofit_yoy"]  >= args.np_yoy
-    fin["gross_margin_qoq_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev"])  | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev"]).abs()  <= args.gm_tol)
-    fin["gross_margin_yoy_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev4"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev4"]).abs() <= args.gm_tol)
+    fin["gross_margin_qoq_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_last_quarter"])  | ((fin["grossprofit_margin"] - fin["grossprofit_margin_last_quarter"]).abs()  <= args.gm_tol)
+    fin["gross_margin_yoy_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_one_year_ago"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_one_year_ago"]).abs() <= args.gm_tol)
 
     # 5. 连续 3 季单调 (营收 / 净利 / 毛利率 3 项, 本季 > 上季 > 上 2 季 ± tolerance, 2 段比较)
     #   注: 派生但未在 mask 中使用, 仅展示/兼容用, 保留派生 (v6.3.0 改名工程命名→业务名)
     tol = args.tolerance
-    fin["or_yoy_qoq_rising"] = fin["or_yoy"]      > fin["or_yoy_prev"]
-    fin["or_yoy_qoq_rising_prev2_tol"] = fin["or_yoy_prev"]  > fin["or_yoy_prev2"] - tol
-    fin["netprofit_yoy_qoq_rising"]  = fin["netprofit_yoy"]      > fin["netprofit_yoy_prev"]
-    fin["netprofit_yoy_qoq_rising_prev2_tol"] = fin["netprofit_yoy_prev"]  > fin["netprofit_yoy_prev2"] - tol
-    fin["gross_margin_qoq_rising"]  = fin["grossprofit_margin"]      > fin["grossprofit_margin_prev"]
-    fin["gross_margin_qoq_rising_prev2_tol"] = fin["grossprofit_margin_prev"]  > fin["grossprofit_margin_prev2"] - tol
+    fin["or_yoy_qoq_rising"] = fin["or_yoy"]      > fin["or_yoy_last_quarter"]
+    fin["or_yoy_qoq_rising_two_quarters_ago_tol"] = fin["or_yoy_last_quarter"]  > fin["or_yoy_two_quarters_ago"] - tol
+    fin["netprofit_yoy_qoq_rising"]  = fin["netprofit_yoy"]      > fin["netprofit_yoy_last_quarter"]
+    fin["netprofit_yoy_qoq_rising_two_quarters_ago_tol"] = fin["netprofit_yoy_last_quarter"]  > fin["netprofit_yoy_two_quarters_ago"] - tol
+    fin["gross_margin_qoq_rising"]  = fin["grossprofit_margin"]      > fin["grossprofit_margin_last_quarter"]
+    fin["gross_margin_qoq_rising_two_quarters_ago_tol"] = fin["grossprofit_margin_last_quarter"]  > fin["grossprofit_margin_two_quarters_ago"] - tol
 
 
     # 6. 绝对值过滤
@@ -777,16 +784,16 @@ def main():
     # 4. 净利 yoy >= 50%
     # 5. R3 净利 yoy 跳升 (替代旧 3 季 EBIT 累计)
     # 净利 yoy 跳升 = 本季 np_yoy - 上季 np_yoy, 至少 50pp 才算反转
-    fin["np_jump"] = fin["netprofit_yoy"] - fin["netprofit_yoy_prev"]
-    fin["reversal"] = (fin["np_jump"] >= 50) & fin["netprofit_yoy_prev"].notna()   # 业绩反转: 跳升 ≥ 50pp
+    fin["np_jump"] = fin["netprofit_yoy"] - fin["netprofit_yoy_last_quarter"]
+    fin["reversal"] = (fin["np_jump"] >= 50) & fin["netprofit_yoy_last_quarter"].notna()   # 业绩反转: 跳升 ≥ 50pp
     # 业务别名 (reversal 即可, 旧 c_jump 是工程列名, 彻底不用)
 
     # 持续高增长龙头分支: 营收 yoy>=80% AND 净利 yoy>=80% AND 毛利率环比升
     # 抓中际旭创/新易盛/天孚通信 这种连续 4-5 季高增、已经看不出跳升的真龙头
     fin["lead_revenue"] = fin["or_yoy"] >= 80
     fin["lead_profit"] = fin["netprofit_yoy"] >= 80
-    fin["lead_margin"] = fin["grossprofit_margin"] > fin["grossprofit_margin_prev"]
-    fin["leader"] = fin["lead_revenue"] & fin["lead_profit"] & fin["lead_margin"] & fin["grossprofit_margin_prev"].notna()
+    fin["lead_margin"] = fin["grossprofit_margin"] > fin["grossprofit_margin_last_quarter"]
+    fin["leader"] = fin["lead_revenue"] & fin["lead_profit"] & fin["lead_margin"] & fin["grossprofit_margin_last_quarter"].notna()
     # leader 本身已是业务名, 不另起别名
 
     mode_desc_map = {
@@ -863,7 +870,7 @@ def main():
                     md_content += (
                         f"| {i} | {r.get('ts_code','')} | {r.get('name','')} | {r.get('industry_display','')} | "
                         f"{r.get('end_date','')} | {r.get('or_yoy',0):+.0f}% | {r.get('netprofit_yoy',0):+.0f}% | "
-                        f"{r.get('netprofit_yoy_prev',0) or 0:+.0f}% | **{r.get('np_jump',0):+.0f}** | "
+                        f"{r.get('netprofit_yoy_last_quarter',0) or 0:+.0f}% | **{r.get('np_jump',0):+.0f}** | "
                         f"{r.get('grossprofit_margin',0):.0f}% | {r.get('roe',0):.1f}% | "
                         f"{r.get('ebit',0)/1e8:.2f} | {r.get('total_mv_yi',0):.0f} | "
                         f"{r.get('pe',0):.0f} | {r.get('pe_ttm',0):.0f} |\n"
