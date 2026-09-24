@@ -8,6 +8,7 @@ allowed-tools:
 > 📐 代码组织: [`architecture.md`](../../architecture.md)
 > 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
 > 📐 新 Strategy: [`strategy_recipe.md`](../../strategy_recipe.md)
+> 📐 **命名规范: `handbook/AGENT_MEMORY.md` 末尾 v6.3.0 段** (7 条硬规则, 5 项 grep 验证)
 
 ## 🕐 跑节奏 (财务类 — 季报驱动)
 
