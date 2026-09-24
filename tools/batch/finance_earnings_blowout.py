@@ -1,40 +1,40 @@
 """
-tools/batch/finance_earnings_blowout.py — Earnings Blowout 财季炸裂扫描 (v6.2.7, 2026-09-09 改自 quality_growth_scan.py)
+tools/batch/finance_earnings_blowout.py — Earnings Blowout 财季炸裂扫描 (v6.3.0, 2026-09-24 prefilter 重构)
 
 原名 quality_growth_scan.py, 改名理由: "财季炸裂 (Earnings Blowout)" 更贴切 R3 反转信号语义,
 跟 /t-roc-ey 形成 "质量" 主题兄弟 skill, 用户更容易理解"营收+净利+毛利率同向爆量"是什么
 
-R3 v6.2.7 4 基础 (AND) + 2026-09-23 加 净利翻倍旁路 (OR):
-  1. 营收 yoy >= 25%  (主业高增长)
-  2. 净利 yoy >= 50%  (盈利高增长, Tushare VIP 无扣非 yoy, 用净利润代理)
-  3. 毛利率 gap ≤ 2pp (环比)  — v6.2.7 改: 允许 ±2pp 波动, 抓科技股龙头
-  4. 毛利率 gap ≤ 2pp (同比)  — v6.2.7 改: 允许 ±2pp 波动, 抓科技股龙头
+v6.3.0 (2026-09-24): 5 闸 prefilter 跑在 3 rule 之前
+  prefilter: ST / 周期股 / 市值 / 上市时间 / EBIT 预警 (ebit_crash + ebit_peak_down)
+  业绩杀样本验证: 双林/华纬/富临/中熔/中科星图 5/5 全活; 中际旭创/兆易创新/拓荆 3/3 0 误伤
 
-  2026-09-23 加 OR 旁路 (np_double_path):
-     净利 yoy > 100%  AND  毛利率双过 (±2pp)
+R3 v6.2.7 (--rev-yoy 默认放宽到 15, --np-yoy 到 20, --gm-tol 到 5) 沿用至 v6.3.0:
+  4 基础 (AND):
+  1. 营收 yoy >= 15% (主业高增长, 默认阈值)
+  2. 净利 yoy >= 20% (盈利高增长, 默认阈值, Tushare VIP 无扣非 yoy, 用净利润代理)
+  3. 毛利率 (升 OR 跌幅 ≤ 5pp) — 环比 + 同比 (gm_qoq_stable + gm_yoy_stable)
+
+  OR 旁路 净利暴增 (np_surge 旁路, --np-surge-floor 默认 80):
+     净利 yoy > 80%  AND  毛利率双过 (±5pp)
      用途: 放过"营收微增但净利暴增"的真实业绩反转 (国芳/三羊/双星 等)
      设计: 仍要求毛利率稳, 但允许营收不达标 (营收/净利两条腿可以瘸一条, 毛利率不能瘸)
 
-R3 v6.2.7 1 触发 (OR, --jump-mode 选 1):
-  a. 反转 (c_jump):   np_yoy_t - np_yoy_t-1 >= 50pp  (业务反转核心信号)
-  b. 龙头 (c_leader): or_yoy >= 80% AND np_yoy >= 80% AND gm 环比升  (持续高增龙头, 抓中际旭创/寒武纪/中微)
+1 触发 (OR, --jump-mode 选 1):
+  a. 反转 (reversal):   np_yoy_t - np_yoy_t-1 >= 50pp (业务反转核心信号)
+  b. 龙头 (leader):     or_yoy>=80% AND np_yoy>=80% AND gm 环比升 (持续高增龙头, 抓中际旭创/寒武纪/中微)
 
 位置过滤 (2026-09-23 已删, 不再过滤高位/低位票):
-  - 距 1 年低点 <= 200%  (避免追 7 倍以上的高位票)
-  - 距 1 年高点 >= -30%  (至少回调 30%, 不追顶)
+  - 距 1 年低点 <= 200%  (避免追 7 倍以上的高位票) ← 已删
+  - 距 1 年高点 >= -30%  (至少回调 30%, 不追顶) ← 已删
 
 周期股默认排除 (SW 周期类 + 电气设备, --include-cycle 可开)
-
-v6.2.7 关键改动:
-  - 毛利率双升 → 毛利率 gap ≤ 2pp (允许 ±2pp 波动)
-  - 新进寒武纪/中微公司 (毛利率长期稳定型科技龙头)
 
 性能: 全市场 13 季 5555 只 0.01s 跑完 (Python pandas 内存计算, 0 网络)
 
 输出:
   - docs/earnings-blowout-watchlist.md (按季分 section, 18 列全中文)
   - stdout 速览 (最新 1 季 Top 30)
-  - --top-np-jump N: 追加按 np_jump pp 差降序的 Top N 表 (默认 0=不输出)
+  - --top-np-jump N: 追加按净利跳升 pp 差降序的 Top N 表 (默认 0=不输出)
 
 用法:
   bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout
@@ -446,7 +446,7 @@ def render_md(hits: list[dict], args) -> str:
     else:
         mode_desc = "反转或龙头任一 (默认, 同时抓中际旭创/新易盛 + 反转票)"
     md = [f"# 高质量高增长 (按季分组) ({datetime.now().strftime('%Y-%m-%d')})\n\n"]
-    md.append(f"> 全市场扫描 13 季 | R3 v6.2.7 启动期模式: 营收 yoy>={args.rev_yoy}% + 净利 yoy>={args.np_yoy}% + 毛利率 (升 OR 跌幅≤{args.gm_tol}pp, 环比+同比) + ({mode_desc})\n\n")
+    md.append(f"> 全市场扫描 13 季 | R3 v6.3.0 启动期模式: 营收 yoy>={args.rev_yoy}% + 净利 yoy>={args.np_yoy}% + 毛利率 (升 OR 跌幅≤{args.gm_tol}pp, 环比+同比) + ({mode_desc}); 5 闸 prefilter 已扫 (ST/周期股/市值/上市/EBIT)\n\n")
 
     by_q = defaultdict(list)
     for h in hits:
@@ -698,7 +698,7 @@ def main():
     parser.add_argument("--cycle-industries", default="小金属,铜,铝,化工原料,农药化肥,铅锌,矿物制品,钢铁,煤炭,石油,化纤,水运,仓储物流,电器仪表,家用电器,工程机械,石油开采,黄金,塑料,造纸,建材,玻璃,陶瓷,纺织,化纤,电气设备",
                         help="周期股白名单 (默认 SW 周期类 + 电气设备, 因为光伏/储能/电池 跟锂电材料强相关)")
     # 2026-09-24 v6.3.0 新增: prefilter 4 开关
-    # --include-st / --include-cycle 已存在 (上放 v6.2.7 时期定义)
+    # --include-st / --include-cycle 已存在 (上放 v6.2.7 时期定义, v6.3.0 复用)
     parser.add_argument("--include-junk", action="store_true", help="包含垃圾股 (市值/上市/股本, 默认 prefilter 排除)")
     parser.add_argument("--min-mv", type=float, default=30.0,
                         help="市值下限 (亿, 默认 30, --include-junk 关掉此项)")
@@ -712,32 +712,33 @@ def main():
     args = parser.parse_args()
 
     print("=" * 70)
-    print("高质量高增长扫描 (SQL 取数 + Python 算, v6.2.7)")
+    print("Earnings Blowout 财季炸裂扫描 (v6.3.0 prefilter 重构)")
     print("=" * 70)
-    # 完整规则一览 (4 基础 AND + 1 触发 OR + 2 过滤)
-    print("┌─ R3 v6.2.7 规则 ───────────────────────────────────────┐")
-    print("│ 4 基础 (AND, 必须全过):                                  │")
-    print(f"│   1. 营收 yoy >= {args.rev_yoy}%                              │")
-    print(f"│   2. 净利 yoy >= {args.np_yoy}%                              │")
-    print("│   3. 毛利率 (升 OR 跌幅≤2pp) — 环比 + 同比                │")
-    print("│   4. 触发 (--jump-mode 选 1):                             │")
-    print("│      reverse: 净利 yoy 跳升 >= 50pp (本季-上季)            │")
-    print("│      leader : or_yoy>=80% AND np_yoy>=80% AND gm 环比升    │")
-    print("│      either : reverse OR leader (默认)                     │")
+    # 完整规则一览 (5 闸 prefilter + 4 基础 AND + 1 触发 OR + 3 rule)
+    print("┌─ R3 v6.3.0 架构 ───────────────────────────────────────┐")
+    print("│ 5 闸 prefilter (默认全开, 跑在 3 rule 之前):              │")
+    print("│   ① ST 过滤                                          │")
+    print("│   ② 周期股过滤 (SW 周期 + 电气设备)                  │")
+    print("│   ③ 市值 < 30 亿 (--min-mv)                          │")
+    print("│   ④ 上市 < 16 季 (--min-listing-q, 4 年)              │")
+    print("│   ⑤ EBIT 预警:                                       │")
+    print("│      ebit_crash      单季 EBIT 环比 < -50% 踢        │")
+    print("│      ebit_peak_down  4 季趋势见顶 (任一季 < -30%) 踢  │")
     print("│                                                          │")
-    print("│ 2 过滤 (默认开, 不可关):                                  │")
-    print("│   - 周期股: 排除 SW 周期类 + 电气设备 (--include-cycle)   │")
-    print("│   - 位置  : 距 1y 低<=200% AND 距 1y 高>=-30% (强制)        │")
+    print("│ 3 rule OR (任一过即命中):                                │")
+    print(f"│   rule_main_path : rev_growth(≥{args.rev_yoy}%) & np_growth(≥{args.np_yoy}%) & gm 双稳 & (reversal ∨ leader)  │")
+    print(f"│   rule_reversal  : 4 基础 AND + 跳升 ≥ 50pp (本季-上季) │")
+    print(f"│   rule_np_surge  : 净利 yoy > {args.np_surge_floor}% & gm 双稳 (营收可放宽) │")
     print("│                                                          │")
-    print(f"│ 当前: jump={args.jump_mode} | 周期股={'排除' if not args.include_cycle else '包含'} | ST={'排除' if not args.include_st else '包含'} | 位置=过滤 │")
+    print(f"│ 当前: jump={args.jump_mode} | 周期股={'排除' if not args.include_cycle else '包含'} | ST={'排除' if not args.include_st else '包含'} | 位置=不过滤 │")
     print("└──────────────────────────────────────────────────────────┘")
     print()
     print(f"  1. 营收 yoy  >= {args.rev_yoy}%")
     print(f"  2. 净利 yoy  >= {args.np_yoy}%")
-    print(f"  3. 毛利率 (升 OR 跌幅 ≤ 2pp) — 环比 + 同比")
+    print(f"  3. 毛利率 (升 OR 跌幅 ≤ {args.gm_tol}pp) — 环比 + 同比")
     print(f"  4. 净利 yoy 跳升 >= 50pp (本季 - 上季, 反转信号)")
     print(f"  5. (位置过滤已删 2026-09-23, 不再过滤)")
-    print(f"  🚀 启动期模式: R3 v6.2.7 (营收 25% / 净利 50% / 毛利率升 OR 跌幅≤2pp / 净利跳升 50pp), 10x 票 T+0 命中 41%")
+    print(f"  🚀 启动期模式: R3 v6.3.0 (营收 15% / 净利 20% / 毛利率升 OR 跌幅≤5pp / 净利跳升 50pp), 10x 票 T+0 命中 41%")
     print()
 
     print("ℹ️  0 网络, 走 DataStore (financials parquet), 缺数据请先 /t-sync-data --financials",
@@ -763,11 +764,11 @@ def main():
     # 1.5 启动期模式: R3 (净利 yoy 跳升) 替代 3 季 EBIT 累计
     # 1. 营收 yoy >= 25%
     # 2. 净利 yoy >= 50%  (Tushare VIP 无扣非 yoy, 用净利润代理)
-    # 3. 毛利率 (升 OR 跌幅 ≤ 2pp) — 环比 + 同比 (v6.2.7 改: 允许小幅下滑, 抓科技股龙头)
+    # 3. 毛利率 (升 OR 跌幅 ≤ {gm_tol}pp, 当前 {args.gm_tol}) — 环比 + 同比 (v6.3.0 沿用 v6.2.7 放宽, 抓科技股龙头)
     # 4. 净利 yoy 跳升 >= 50pp (本季 - 上季, 反转信号)
-    # 触发 OR: 反转 (c_jump) OR 龙头 (c_leader)
+    # 触发 OR: 反转 (reversal) OR 龙头 (leader)
     # 位置过滤: 距 1y 低 <= 200% AND 距 1y 高 >= -30%
-    print(f"  🚀 启动期模式: R3 v6.2.7 (4 基础 AND + 触发 OR), 10x 票 T+0 命中 41%")
+    print(f"  🚀 启动期模式: R3 v6.3.0 (4 基础 AND + 触发 OR), 10x 票 T+0 命中 41%")
 
     # 2. 加 LAG (pandas groupby+shift, 一行代码)
     t0 = time.time()
@@ -813,16 +814,16 @@ def main():
     # 5. R3 净利 yoy 跳升 (替代旧 3 季 EBIT 累计)
     # 净利 yoy 跳升 = 本季 np_yoy - 上季 np_yoy, 至少 50pp 才算反转
     fin["np_jump"] = fin["netprofit_yoy"] - fin["netprofit_yoy_prev"]
-    fin["c_jump"] = (fin["np_jump"] >= 50) & fin["netprofit_yoy_prev"].notna()
-    fin["reversal"] = fin["c_jump"]   # 业务别名 (业绩反转)
+    fin["reversal"] = (fin["np_jump"] >= 50) & fin["netprofit_yoy_prev"].notna()   # 业绩反转: 跳升 ≥ 50pp
+    # 业务别名 (reversal 即可, 旧 c_jump 是工程列名, 彻底不用)
 
     # 持续高增长龙头分支: 营收 yoy>=80% AND 净利 yoy>=80% AND 毛利率环比升
     # 抓中际旭创/新易盛/天孚通信 这种连续 4-5 季高增、已经看不出跳升的真龙头
-    fin["c_lead_rev"] = fin["or_yoy"] >= 80
-    fin["c_lead_np"] = fin["netprofit_yoy"] >= 80
-    fin["c_lead_gm"] = fin["grossprofit_margin"] > fin["grossprofit_margin_prev"]
-    fin["c_leader"] = fin["c_lead_rev"] & fin["c_lead_np"] & fin["c_lead_gm"] & fin["grossprofit_margin_prev"].notna()
-    fin["leader"] = fin["c_leader"]   # 业务别名 (持续龙头)
+    fin["lead_rev"] = fin["or_yoy"] >= 80
+    fin["lead_np"] = fin["netprofit_yoy"] >= 80
+    fin["lead_gm"] = fin["grossprofit_margin"] > fin["grossprofit_margin_prev"]
+    fin["leader"] = fin["lead_rev"] & fin["lead_np"] & fin["lead_gm"] & fin["grossprofit_margin_prev"].notna()
+    # leader 本身已是业务名, 不另起别名
 
     mode_desc_map = {
         "reverse": "反转模式 (只看跳升>=50pp)",
@@ -830,8 +831,8 @@ def main():
         "either":  "反转或龙头任一 (默认, 同时抓中际旭创/新易盛 + 反转票)",
     }
     print(f"  🎯 R3 触发模式: {mode_desc_map[args.jump_mode]}")
-    print(f"     反转票 (c_jump) 命中: {fin['c_jump'].sum():>6} 只次")
-    print(f"     龙头票 (c_leader) 命中: {fin['c_leader'].sum():>5} 只次")
+    print(f"     反转票 (reversal) 命中: {fin['reversal'].sum():>6} 只次")
+    print(f"     龙头票 (leader) 命中: {fin['leader'].sum():>5} 只次")
 
     # 策略模式 (2026-09-23 重构): 3 个独立 rule, OR 起来
     #   rule_main_path = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & trigger
