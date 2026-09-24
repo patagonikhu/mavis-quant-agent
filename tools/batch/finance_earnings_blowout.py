@@ -127,15 +127,15 @@ def _load_basic_map() -> dict:
 # 4 季 LAG 计算 (纯 pandas, 一行代码)
 # ============================================================
 
-def _add_lags(df: pd.DataFrame, cols: list[str], n_lags: int = 3) -> pd.DataFrame:
+def _shift_quarters(df: pd.DataFrame, cols: list[str], lookback_quarters: int = 3) -> pd.DataFrame:
     """给指定列加 LAG (本季/上季/上 2 季/上 3 季), 按 ts_code 分组按 end_date 排序
 
     输入:  df 必须有 ts_code, end_date 列
-    输出:  df 新增 col_last_quarter / col_two_quarters_ago / col_three_quarters_ago 列 (业务命名 lag 1/2/3)
+    输出:  df 新增 col_last_quarter / col_two_quarters_ago / col_three_quarters_ago 列 (业务命名 上季/前两季/前三季)
     """
     df = df.sort_values(["ts_code", "end_date"]).reset_index(drop=True)
     for col in cols:
-        for n in range(1, n_lags + 1):
+        for n in range(1, lookback_quarters + 1):
             if n == 1:
                 df[f"{col}_last_quarter"] = df.groupby("ts_code")[col].shift(1)
             elif n == 2:
@@ -145,7 +145,7 @@ def _add_lags(df: pd.DataFrame, cols: list[str], n_lags: int = 3) -> pd.DataFram
             elif n == 4:
                 df[f"{col}_one_year_ago"] = df.groupby("ts_code")[col].shift(4)
             else:
-                raise ValueError(f"n_lags={n} 不支持, 最大 4 (1 年)")
+                raise ValueError(f"lookback_quarters={n} 不支持, 最大 4 (1 年)")
     return df
 
 
@@ -744,7 +744,7 @@ def main():
     # 2. 加 LAG (pandas groupby+shift, 一行代码)
     t0 = time.time()
     cols_to_lag = ["or_yoy", "netprofit_yoy", "grossprofit_margin", "ebit", "roe"]
-    fin = _add_lags(fin, cols_to_lag, n_lags=4)
+    fin = _shift_quarters(fin, cols_to_lag, lookback_quarters=4)
     t_lag = time.time() - t0
 
     # 3. 计算业务字段 (Python 纯函数, 透明)

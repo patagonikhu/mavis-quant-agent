@@ -62,7 +62,7 @@ bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout
 ## Hit Pipeline (v6.3.0 2026-09-24 重构)
 
 ```
-load financials (13 季) ──▶ add_lags (4 季 prev) ──▶ PRE-FILTER 5 闸 ──▶ 3 rule OR ──▶ 输出
+load financials (13 季) ──▶ shift_quarters (回溯 4 季) ──▶ PRE-FILTER 5 闸 ──▶ 3 rule OR ──▶ 输出
                                                                 ↑
                                                     ① ST  (默认开, --include-st 关)
                                                     ② 周期股  (默认开, --include-cycle 关)
