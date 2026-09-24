@@ -31,8 +31,8 @@ bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout
 ... --include-cycle        # 含周期股 (默认 prefilter 排除)
 ... --include-st           # 含 ST/*ST (默认 prefilter 排除)
 ... --include-junk         # 含垃圾股 (市值/上市, 默认 prefilter 排除)
-... --ebit-floor -100      # 关 EBIT 单季预警 (5a)
-... --ebit-peak-kill -100  # 关 EBIT 4 季趋势见顶 (5b)
+... --ebit-floor -100      # 关 EBIT 单季崩盘预警 (ebit_crash)
+... --ebit-peak-kill -100  # 关 EBIT 业绩见顶预警 (ebit_peak_down)
 ... --jump-mode reverse    # 只看反转 (净利跳升 30pp)
 ... --jump-mode leader     # 只看龙头 (or/np_yoy>=80%)
 ... --dry-run              # 只 print 同步计划, 不写 watchlist.json
@@ -68,8 +68,8 @@ load financials (13 季) ──▶ add_lags (4 季 prev) ──▶ PRE-FILTER 5 
                                                     ② 周期股  (默认开, --include-cycle 关)
                                                     ③ 市值 < 30 亿  (默认开, --include-junk 关)
                                                     ④ 上市 < 16 季  (默认开, --include-junk 关)
-                                                    ⑤ EBIT 预警 (5a 单季 < -50% + 5b 4 季趋势 < -30%)
-                                                       (--ebit-floor/-100 关 5a, --ebit-peak-kill/-100 关 5b)
+                                                    ⑤ EBIT 预警 (ebit_crash 单季 < -50% + ebit_peak_down 4 季趋势 < -30%)
+                                                       (--ebit-floor/-100 关 ebit_crash, --ebit-peak-kill/-100 关 ebit_peak_down)
 ```
 
 **为什么 prefilter 跑在 rule 之前 (v6.3.0 关键改动):**
@@ -80,9 +80,9 @@ load financials (13 季) ──▶ add_lags (4 季 prev) ──▶ PRE-FILTER 5 
 | 业绩杀票 (双林/华纬/富临/中熔/中科星图) 进 3 rule, 然后被规则放过 | **EBIT 预警 1 项剔除 100% 业绩杀样本** (披露日已知 EBIT 暴跌) |
 
 **EBIT 预警设计 (核心):**
-- **5a 单季环比**: 本季 EBIT / 上季 EBIT < 0.5 → 踢 (环比腰斩即踢). 抓披露日业绩腰斩票, **业绩杀 5/5 都能被这一项过滤**.
-- **5b 4 季趋势**: 当前 EBIT < 4 季前 **AND** 4 季内任一季环比 < 0.7 → 踢. 抓"业绩高峰过后被杀"的双林型反弹票 (5a 抓不住).
-- 默认 5a=-50%, 5b=-30%. 关闭 `--ebit-floor -100` 或 `--ebit-peak-kill -100`.
+- **`ebit_crash` 单季崩盘**: 本季 EBIT / 上季 EBIT < 0.5 → 踢 (环比腰斩即踢). 抓披露日业绩腰斩票, **业绩杀 5/5 都能被这一项过滤**.
+- **`ebit_peak_down` 见顶后下行**: 当前 EBIT < 4 季前 **AND** 4 季内任一季环比 < 0.7 → 踢. 抓"业绩高峰过后被杀"的双林型反弹票 (ebit_crash 抓不住).
+- 默认 `ebit_crash`=-50%, `ebit_peak_down`=-30%. 关闭 `--ebit-floor -100` 或 `--ebit-peak-kill -100`.
 
 **为什么不用总股本闸 (v6.3.0 简化):**
 - DataStore.load_stock_basic 返回的列里**没有 total_share** (sync 注释说"用 daily_basic 兜底", 但实际没生效).
@@ -132,8 +132,8 @@ Strategy pattern (`tools/batch/finance_earnings_blowout.py::_apply_rules`). To a
 | `--include-junk` | False | 含垃圾股 (市值+上市, 默认 prefilter 排除) |
 | `--min-mv` | 30 | 市值下限 (亿) |
 | `--min-listing-q` | 16 | 上市时间下限 (季, 4 年) |
-| `--ebit-floor` | -50 | EBIT 单季环比跌幅 > 50% 踢 (5a, 设 -100 关闭) |
-| `--ebit-peak-kill` | -30 | EBIT 4 季趋势见顶踢 (5b, 设 -100 关闭) |
+| `--ebit-floor` | -50 | EBIT 单季环比跌幅 > 50% 踢 (`ebit_crash`, 设 -100 关闭) |
+| `--ebit-peak-kill` | -30 | EBIT 4 季趋势见顶踢 (`ebit_peak_down`, 设 -100 关闭) |
 
 ### Watchlist
 

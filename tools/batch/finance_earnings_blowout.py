@@ -358,29 +358,32 @@ def _apply_prefilter(df: pd.DataFrame, basic_map: dict, sf_df: pd.DataFrame, arg
         df = df.drop(columns=["_list_date", "_total_mv_yi"])
 
     # ===== 5. EBIT 杀业绩预警 (v6.3.0 核心新增) =====
-    #   5a. 本季 EBIT / 上季 EBIT < (1 + floor/100)  → 踢 (环比跌幅 > -floor%)
+    #   业务名:
+    #     ebit_crash: 单季崩盘
+    #       本季 EBIT / 上季 EBIT < (1 + floor/100)  → 踢 (环比跌幅 > -floor%)
     #       默认 floor=-50 (环比腰斩即踢, 抓披露日业绩腰斩票)
     #       经验: 业绩杀样本 5/5 双林/华纬/富临/中熔/中科星图, EBIT 环比 -66%~-94% (披露日已知)
-    #   5b. 业绩见顶: 4 季前 EBIT > 当前 EBIT, 且 4 季内任意一季环比跌 < peak_kill
-    #       抓"业绩高峰过后被杀"的票 (双林 2025Q2 见顶后 2026 已反弹, 5a 抓不住的情况)
-    #       --ebit-peak-kill 控制 5b 阈值 (默认 -30% = 4 季内有任一季环比跌幅 > 30%)
+    #     ebit_peak_down: 业绩见顶后下行
+    #       当前 EBIT < 4 季前 EBIT + 4 季内任意一季环比跌 < peak_kill
+    #       抓"业绩高峰过后被杀"的票 (双林 2025Q2 见顶后 2026 已反弹, 单季崩盘抓不住)
+    #       --ebit-peak-kill 控制阈值 (默认 -30% = 4 季内有任一季环比跌幅 > 30%)
     # 关闭方式: --ebit-floor -100 或 --ebit-peak-kill -100 (永不踢)
     if args.ebit_floor > -100 or args.ebit_peak_kill > -100:
         before = len(df)
 
-        # ===== 5a 单季环比腰斩 =====
+        # ===== ebit_crash: 单季环比腰斩 =====
         if args.ebit_floor > -100:
             valid = df["ebit"].notna() & df["ebit_prev"].notna() & (df["ebit_prev"].abs() > 1e-3)
             ebit_qoq = (df["ebit"] / df["ebit_prev"]) - 1
-            kick_5a = valid & (ebit_qoq < (1 + args.ebit_floor / 100))
-            kick_5a = kick_5a.fillna(False)
-            n_5a = int(kick_5a.sum())
-            print(f"        5a 单季 EBIT 环比 < {-args.ebit_floor:.0f}%:  {n_5a:>5} 只次")
+            kick_crash = valid & (ebit_qoq < (1 + args.ebit_floor / 100))
+            kick_crash = kick_crash.fillna(False)
+            n_crash = int(kick_crash.sum())
+            print(f"        ebit_crash 单季 EBIT 环比 < {-args.ebit_floor:.0f}%:  {n_crash:>5} 只次")
         else:
-            kick_5a = pd.Series(False, index=df.index)
-            n_5a = 0
+            kick_crash = pd.Series(False, index=df.index)
+            n_crash = 0
 
-        # ===== 5b 4 季趋势见顶 =====
+        # ===== ebit_peak_down: 4 季趋势见顶 =====
         #   条件:
         #     1) 当前 EBIT < 4 季前 EBIT (4 季累计负增长)
         #     2) 最近 4 季内 (本季/上季/上2季/上3季) 任意一季环比跌 < peak_kill
@@ -388,7 +391,7 @@ def _apply_prefilter(df: pd.DataFrame, basic_map: dict, sf_df: pd.DataFrame, arg
         if args.ebit_peak_kill > -100:
             ebit_cur = df["ebit"]
             ebit_4q_ago = df.get("ebit_prev4")  # LAG 4
-            valid_5b = ebit_cur.notna() & ebit_4q_ago.notna() & (ebit_4q_ago.abs() > 1e-3)
+            valid_peak = ebit_cur.notna() & ebit_4q_ago.notna() & (ebit_4q_ago.abs() > 1e-3)
 
             # 4 季内任意一季环比 < 阈值
             #   ratio = ebit / ebit_prev (本季), prev / prev2, prev2 / prev3, prev3 / prev4
@@ -400,22 +403,22 @@ def _apply_prefilter(df: pd.DataFrame, basic_map: dict, sf_df: pd.DataFrame, arg
             min_ratio = pd.concat([r1, r2, r3, r4], axis=1).min(axis=1)
 
             # 当前 < 4 季前 (4 季累计负)
-            decline_4q = valid_5b & (ebit_cur < ebit_4q_ago)
+            decline_4q = valid_peak & (ebit_cur < ebit_4q_ago)
             # 4 季内任一季环比跌穿 peak_kill (e.g. -30% 即 min_ratio < 0.7)
-            sharp_drop = valid_5b & (min_ratio < (1 + args.ebit_peak_kill / 100))
-            kick_5b = decline_4q & sharp_drop
-            kick_5b = kick_5b.fillna(False)
-            n_5b = int(kick_5b.sum())
-            print(f"        5b 4 季趋势见顶 (4 季内任一季 < {args.ebit_peak_kill:.0f}%):  {n_5b:>5} 只次")
+            sharp_drop = valid_peak & (min_ratio < (1 + args.ebit_peak_kill / 100))
+            kick_peak = decline_4q & sharp_drop
+            kick_peak = kick_peak.fillna(False)
+            n_peak = int(kick_peak.sum())
+            print(f"        ebit_peak_down 4 季趋势见顶 (4 季内任一季 < {args.ebit_peak_kill:.0f}%):  {n_peak:>5} 只次")
         else:
-            kick_5b = pd.Series(False, index=df.index)
-            n_5b = 0
+            kick_peak = pd.Series(False, index=df.index)
+            n_peak = 0
 
-        kick_mask = kick_5a | kick_5b
+        kick_mask = kick_crash | kick_peak
         df = df[~kick_mask].copy()
         n_after = len(df)
-        n_ebit = n_5a + n_5b
-        print(f"     ⑤ EBIT 预警合计:  排除 {n_ebit:>5} 只次 (单季 5a + 趋势 5b)")
+        n_ebit = n_crash + n_peak
+        print(f"     ⑤ EBIT 预警合计:  排除 {n_ebit:>5} 只次 (crash 单季 + peak_down 趋势)")
 
     n_after = len(df)
     print(f"  🛡️  PRE-FILTER 完成: {n0} → {n_after} 只次 (踢除 {n0 - n_after})\n")
