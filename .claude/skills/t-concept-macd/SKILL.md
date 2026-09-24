@@ -14,7 +14,7 @@ allowed-tools:
 ```bash
 bash tools/with_venv.sh python -m tools.batch.concept_macd_scan              # 默认 watchlist.ths_whitelist 15 个概念
 ... --concepts CPO PCB 机器人                                  # 指定概念名 (空格分隔)
-... --lookback 500                                             # 回看天数 (默认 500=~2 年)
+... --lookback 90                                              # 回看天数 (默认 90, 覆盖 RSI/MACD/BARΔ + 最近反转 + DIF 极值)
 ... --output-dir docs/concept-macd                             # md 输出目录 (默认 docs/concept-macd)
 ... --no-summary                                               # 不输出 chat summary
 ... --workers 4                                                # 进程数 (默认 4)
@@ -51,7 +51,7 @@ bash tools/with_venv.sh python -m tools.batch.concept_macd_scan              # �
 - **顶底信号**:
   - 📉 DIF 新低 (近 1 年最低 + 后续 BARΔ 转正确认)
   - 📈 DIF 新高 (近 1 年最高 + 后续 BARΔ 转负确认)
-- **历史因子走势** (THS K线, 默认 500 天)
+- **历史因子走势** (THS K线, 默认 90 天)
   - 23 列: 跟个股详报完全一致 schema
 
 ### chat summary (默认)

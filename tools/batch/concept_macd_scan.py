@@ -469,7 +469,7 @@ def main():
     parser = argparse.ArgumentParser(description="THS 同花顺概念板块反转信号扫描 (v3, 0 网络)")
     parser.add_argument("--concepts",    type=str, nargs='+', default=None,
                         help="概念名列表 (空格分隔), 默认读 watchlist.json ths_whitelist")
-    parser.add_argument("--lookback",    type=int, default=500, help="回看天数 (默认 500=~2 年)")
+    parser.add_argument("--lookback",    type=int, default=90, help="回看天数 (默认 90, 覆盖 RSI/MACD/BARΔ + 最近反转 + DIF 新低/新高)")
     parser.add_argument("--output-dir",  type=str, default='docs/concept-macd', help="md 输出目录")
     parser.add_argument("--no-summary",  action='store_true', help="不输出 chat summary")
     parser.add_argument("--workers",     type=int, default=4, help="进程数")
