@@ -12,16 +12,16 @@ R3 v6.2.7 (--rev-yoy 默认放宽到 15, --np-yoy 到 20, --gm-tol 到 5) 沿用
   4 基础 (AND):
   1. 营收 yoy >= 15% (主业高增长, 默认阈值)
   2. 净利 yoy >= 20% (盈利高增长, 默认阈值, Tushare VIP 无扣非 yoy, 用净利润代理)
-  3. 毛利率 (升 OR 跌幅 ≤ 5pp) — 环比 + 同比 (gm_qoq_stable + gm_yoy_stable)
+  3. 毛利率 (升 OR 跌幅 ≤ 5pp) — 环比 + 同比 (gross_margin_qoq_stable + gross_margin_yoy_stable)
 
-  OR 旁路 净利暴增 (np_surge 旁路, --np-surge-floor 默认 80):
+  OR 旁路 净利暴增 (profit_surge 旁路, --profit-surge-floor 默认 80):
      净利 yoy > 80%  AND  毛利率双过 (±5pp)
      用途: 放过"营收微增但净利暴增"的真实业绩反转 (国芳/三羊/双星 等)
      设计: 仍要求毛利率稳, 但允许营收不达标 (营收/净利两条腿可以瘸一条, 毛利率不能瘸)
 
 1 触发 (OR, --jump-mode 选 1):
-  a. 反转 (reversal):   np_yoy_t - np_yoy_t-1 >= 50pp (业务反转核心信号)
-  b. 龙头 (leader):     or_yoy>=80% AND np_yoy>=80% AND gm 环比升 (持续高增龙头, 抓中际旭创/寒武纪/中微)
+  a. 反转 (reversal):   净利 yoy_t - 净利 yoy_t-1 >= 50pp (业务反转核心信号)
+  b. 龙头 (leader):     营收 yoy>=80% AND 净利 yoy>=80% AND 毛利率 环比升 (持续高增龙头, 抓中际旭创/寒武纪/中微)
 
 位置过滤 (2026-09-23 已删, 不再过滤高位/低位票):
   - 距 1 年低点 <= 200%  (避免追 7 倍以上的高位票) ← 已删
@@ -169,21 +169,21 @@ def is_strictly_increasing(arr) -> bool:
 # ============================================================
 #
 # 3 个独立 rule, 每个 rule 是一个 bool Series:
-#     rule_main_path   = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & trigger   (主路径: 4 基础 + 触发)
-#     rule_reversal    = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & reversal  (反转: 跳升≥50pp + 毛利率双过)
-#     rule_np_surge    = 净利 yoy > 100 & gm_qoq_stable & gm_yoy_stable     (盈利暴增: 净利翻倍 + 毛利率双过)
+#     rule_main_path   = or_yoy_meet & netprofit_yoy_meet & gross_margin_qoq_stable & gross_margin_yoy_stable & trigger   (主路径: 4 基础 + 触发)
+#     rule_reversal    = or_yoy_meet & netprofit_yoy_meet & gross_margin_qoq_stable & gross_margin_yoy_stable & reversal  (反转: 跳升≥50pp + 毛利率双过)
+#     rule_profit_surge = 净利 yoy > 100 & gross_margin_qoq_stable & gross_margin_yoy_stable     (盈利暴增: 净利翻倍 + 毛利率双过)
 #
 # 加新 rule: 写一个 fn 返回 Series[bool], 在 _RULES 里 OR 一行即可
-# --jump-mode 控制是否开启 rule_reversal (默认 on), rule_np_surge 默认 on
+# --jump-mode 控制是否开启 rule_reversal (默认 on), rule_profit_surge 默认 on
 #
 # 最终 mask = rule_4c | rule_jump | rule_np100  (3 个 rule 任意一个过即可)
 
 from typing import Callable
 
 def _rule_main_path(df: pd.DataFrame) -> pd.Series:
-    """main_path: rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & (reversal | leader)"""
+    """main_path: or_yoy_meet & netprofit_yoy_meet & gross_margin_qoq_stable & gross_margin_yoy_stable & (reversal | leader)"""
     return (
-        df["rev_growth"] & df["np_growth"] & df["gm_qoq_stable"] & df["gm_yoy_stable"]
+        df["or_yoy_meet"] & df["netprofit_yoy_meet"] & df["gross_margin_qoq_stable"] & df["gross_margin_yoy_stable"]
         & (df["reversal"] | df["leader"])
     ).rename("rule_main_path")
 
@@ -191,31 +191,31 @@ def _rule_main_path(df: pd.DataFrame) -> pd.Series:
 def _rule_reversal(df: pd.DataFrame) -> pd.Series:
     """reversal: 业绩反转跳升 ≥ 50pp + 营收/净利高增 + 毛利率双稳 (跟旧版 trigger 等价)"""
     return (
-        df["rev_growth"] & df["np_growth"] & df["gm_qoq_stable"] & df["gm_yoy_stable"] & df["reversal"]
+        df["or_yoy_meet"] & df["netprofit_yoy_meet"] & df["gross_margin_qoq_stable"] & df["gross_margin_yoy_stable"] & df["reversal"]
     ).rename("rule_reversal")
 
 
-def _rule_np_surge(df: pd.DataFrame, rev_floor: float = 0.0, np_floor: float = 80.0) -> pd.Series:
-    """np_surge: netprofit_yoy > np_floor% (默认 80, 2026-09-23 从 100 放宽) + 毛利率双稳 (允许营收不达标, 抓真实业绩反转)
+def _rule_profit_surge(df: pd.DataFrame, revenue_floor: float = 0.0, profit_floor: float = 80.0) -> pd.Series:
+    """profit_surge: netprofit_yoy > profit_floor% (默认 80, 2026-09-23 从 100 放宽) + 毛利率双稳 (允许营收不达标, 抓真实业绩反转)
 
-    rev_floor: 营收 yoy 最低门槛 (默认 0 = 不限; 设 25 等同主路径 rev_growth 门槛)
-    np_floor:  净利 yoy 最低门槛 (默认 80 = 不要求翻倍)
+    revenue_floor: 营收 yoy 最低门槛 (默认 0 = 不限; 设 25 等同主路径 or_yoy_meet 门槛)
+    profit_floor:  净利 yoy 最低门槛 (默认 80 = 不要求翻倍)
     """
     return (
-        (df["netprofit_yoy"] > np_floor)
-        & (df["or_yoy"] >= rev_floor)
-        & df["gm_qoq_stable"] & df["gm_yoy_stable"]
-    ).rename("rule_np_surge")
+        (df["netprofit_yoy"] > profit_floor)
+        & (df["or_yoy"] >= revenue_floor)
+        & df["gross_margin_qoq_stable"] & df["gross_margin_yoy_stable"]
+    ).rename("rule_profit_surge")
 
 
-_RULES: list[Callable] = [_rule_main_path, _rule_reversal]  # _rule_np_surge 单独调用 (有 rev_floor 参数)
+_RULES: list[Callable] = [_rule_main_path, _rule_reversal]  # _rule_profit_surge 单独调用 (有 revenue_floor 参数)
 
 
-def _apply_rules(df: pd.DataFrame, rev_floor: float = 0.0, np_floor: float = 80.0) -> tuple[pd.Series, dict]:
+def _apply_rules(df: pd.DataFrame, revenue_floor: float = 0.0, profit_floor: float = 80.0) -> tuple[pd.Series, dict]:
     """跑全部 rule, OR 起来.  返回 (final_mask, rule_hits)
 
-    rev_floor: 传给 _rule_np_surge, 控制 np_surge rule 的营收 yoy 下限 (默认 0 = 不限)
-    np_floor:  传给 _rule_np_surge, 控制 np_surge rule 的净利 yoy 下限 (默认 80)
+    revenue_floor: 传给 _rule_profit_surge, 控制 profit_surge rule 的营收 yoy 下限 (默认 0 = 不限)
+    profit_floor:  传给 _rule_profit_surge, 控制 profit_surge rule 的净利 yoy 下限 (默认 80)
     """
     rule_hits = {}
     combined = pd.Series(False, index=df.index)
@@ -223,10 +223,10 @@ def _apply_rules(df: pd.DataFrame, rev_floor: float = 0.0, np_floor: float = 80.
         m = fn(df)
         rule_hits[fn.__name__] = int(m.sum())
         combined = combined | m
-    # _rule_np_surge 单独跑, 带 rev_floor + np_floor
-    m_np_surge = _rule_np_surge(df, rev_floor=rev_floor, np_floor=np_floor)
-    rule_hits[_rule_np_surge.__name__] = int(m_np_surge.sum())
-    combined = combined | m_np_surge
+    # _rule_profit_surge 单独跑, 带 revenue_floor + profit_floor
+    m_profit_surge = _rule_profit_surge(df, revenue_floor=revenue_floor, profit_floor=profit_floor)
+    rule_hits[_rule_profit_surge.__name__] = int(m_profit_surge.sum())
+    combined = combined | m_profit_surge
     return combined, rule_hits
 
 
@@ -650,11 +650,11 @@ def main():
     parser.add_argument("--include-st", action="store_true", help="包含 ST/*ST 票 (默认排除, 退市风险)")
     parser.add_argument("--tolerance", type=float, default=0.0, help="3 季单调回踩容忍 (pp, 默认 0 = 严格; 例 1.0 允许 prev vs prev2 差 -1pp, 解决财务披露口径跳跃问题)")
     # 2026-09-23 删 --no-position-filter (位置过滤强制开启, 不可关)
-    parser.add_argument("--gm-tol", type=float, default=5.0, help="毛利率跌幅容忍 (pp, 默认 5, 2026-09-23 从 2 放宽; gm_qoq_stable/gm_yoy_stable 跌幅 <= tol 接受)")
-    parser.add_argument("--np100-rev-floor", type=float, default=0.0,
-                        help="_rule_np_surge 营收 yoy 下限 (默认 0 = 不限; 设 25 等同主路径 rev_growth 门槛, 压缩选股数量)")
-    parser.add_argument("--np-surge-floor", type=float, default=80.0,
-                        help="_rule_np_surge 净利 yoy 下限 (默认 80, 2026-09-23 从 100 放宽; 例 100 要求翻倍)")
+    parser.add_argument("--gm-tol", type=float, default=5.0, help="毛利率跌幅容忍 (pp, 默认 5, 2026-09-23 从 2 放宽; gross_margin_qoq_stable/gross_margin_yoy_stable 跌幅 <= tol 接受)")
+    parser.add_argument("--profit-surge-revenue-floor", type=float, default=0.0,
+                        help="_rule_profit_surge 营收 yoy 下限 (默认 0 = 不限; 设 25 等同主路径 or_yoy_meet 门槛, 压缩选股数量)")
+    parser.add_argument("--profit-surge-floor", type=float, default=80.0,
+                        help="_rule_profit_surge 净利 yoy 下限 (默认 80, 2026-09-23 从 100 放宽; 例 100 要求翻倍)")
     parser.add_argument("--no-sync-watchlist", action="store_true",
                         help="关闭 watchlist.json 自动同步 (默认开: 当季命中自动写入 watchlist blowout 段)")
     parser.add_argument("--dry-run", action="store_true",
@@ -690,9 +690,9 @@ def main():
     print("│      ebit_peak_down  4 季趋势见顶 (任一季 < -30%) 踢  │")
     print("│                                                          │")
     print("│ 3 rule OR (任一过即命中):                                │")
-    print(f"│   rule_main_path : rev_growth(≥{args.rev_yoy}%) & np_growth(≥{args.np_yoy}%) & gm 双稳 & (reversal ∨ leader)  │")
-    print(f"│   rule_reversal  : 4 基础 AND + 跳升 ≥ 50pp (本季-上季) │")
-    print(f"│   rule_np_surge  : 净利 yoy > {args.np_surge_floor}% & gm 双稳 (营收可放宽) │")
+    print(f"│   rule_main_path     : or_yoy_meet(≥{args.rev_yoy}%) & netprofit_yoy_meet(≥{args.np_yoy}%) & 毛利率双稳 & (reversal ∨ leader)  │")
+    print(f"│   rule_reversal      : 4 基础 AND + 净利跳升 ≥ 50pp (本季-上季) │")
+    print(f"│   rule_profit_surge  : 净利 yoy > {args.profit_surge_floor}% & 毛利率双稳 (营收可放宽) │")
     print("│                                                          │")
     print(f"│ 当前: jump={args.jump_mode} | 周期股={'排除' if not args.include_cycle else '包含'} | ST={'排除' if not args.include_st else '包含'} | 位置=不过滤 │")
     print("└──────────────────────────────────────────────────────────┘")
@@ -747,24 +747,24 @@ def main():
     fin["ebit_increase_yi"] = fin["ebit_yi"] - fin["ebit_4q_ago_yi"]
 
     # 4. 4 条件 (业务语义命名)
-    #   rev_growth      = or_yoy >= 阈值
-    #   np_growth       = netprofit_yoy >= 阈值
-    #   gm_qoq_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 上季
-    #   gm_yoy_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 去年同期
-    fin["rev_growth"]    = fin["or_yoy"]         >= args.rev_yoy
-    fin["np_growth"]     = fin["netprofit_yoy"]  >= args.np_yoy
-    fin["gm_qoq_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev"])  | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev"]).abs()  <= args.gm_tol)
-    fin["gm_yoy_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev4"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev4"]).abs() <= args.gm_tol)
+    #   or_yoy_meet      = or_yoy >= 阈值
+    #   netprofit_yoy_meet       = netprofit_yoy >= 阈值
+    #   gross_margin_qoq_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 上季
+    #   gross_margin_yoy_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 去年同期
+    fin["or_yoy_meet"]    = fin["or_yoy"]         >= args.rev_yoy
+    fin["netprofit_yoy_meet"]     = fin["netprofit_yoy"]  >= args.np_yoy
+    fin["gross_margin_qoq_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev"])  | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev"]).abs()  <= args.gm_tol)
+    fin["gross_margin_yoy_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev4"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev4"]).abs() <= args.gm_tol)
 
     # 5. 连续 3 季单调 (营收 / 净利 / 毛利率 3 项, 本季 > 上季 > 上 2 季 ± tolerance, 2 段比较)
-    #   注: 派生但未在 mask 中使用, 仅展示/兼容用, 保留派生 (2026-09-23 改名 c3* → 业务语义)
+    #   注: 派生但未在 mask 中使用, 仅展示/兼容用, 保留派生 (v6.3.0 改名工程命名→业务名)
     tol = args.tolerance
-    fin["rev_qoq_rising"] = fin["or_yoy"]      > fin["or_yoy_prev"]
-    fin["rev_qoq_rising_prev2_tol"] = fin["or_yoy_prev"]  > fin["or_yoy_prev2"] - tol
-    fin["np_qoq_rising"]  = fin["netprofit_yoy"]      > fin["netprofit_yoy_prev"]
-    fin["np_qoq_rising_prev2_tol"] = fin["netprofit_yoy_prev"]  > fin["netprofit_yoy_prev2"] - tol
-    fin["gm_qoq_rising"]  = fin["grossprofit_margin"]      > fin["grossprofit_margin_prev"]
-    fin["gm_qoq_rising_prev2_tol"] = fin["grossprofit_margin_prev"]  > fin["grossprofit_margin_prev2"] - tol
+    fin["or_yoy_qoq_rising"] = fin["or_yoy"]      > fin["or_yoy_prev"]
+    fin["or_yoy_qoq_rising_prev2_tol"] = fin["or_yoy_prev"]  > fin["or_yoy_prev2"] - tol
+    fin["netprofit_yoy_qoq_rising"]  = fin["netprofit_yoy"]      > fin["netprofit_yoy_prev"]
+    fin["netprofit_yoy_qoq_rising_prev2_tol"] = fin["netprofit_yoy_prev"]  > fin["netprofit_yoy_prev2"] - tol
+    fin["gross_margin_qoq_rising"]  = fin["grossprofit_margin"]      > fin["grossprofit_margin_prev"]
+    fin["gross_margin_qoq_rising_prev2_tol"] = fin["grossprofit_margin_prev"]  > fin["grossprofit_margin_prev2"] - tol
 
 
     # 6. 绝对值过滤
@@ -783,10 +783,10 @@ def main():
 
     # 持续高增长龙头分支: 营收 yoy>=80% AND 净利 yoy>=80% AND 毛利率环比升
     # 抓中际旭创/新易盛/天孚通信 这种连续 4-5 季高增、已经看不出跳升的真龙头
-    fin["lead_rev"] = fin["or_yoy"] >= 80
-    fin["lead_np"] = fin["netprofit_yoy"] >= 80
-    fin["lead_gm"] = fin["grossprofit_margin"] > fin["grossprofit_margin_prev"]
-    fin["leader"] = fin["lead_rev"] & fin["lead_np"] & fin["lead_gm"] & fin["grossprofit_margin_prev"].notna()
+    fin["lead_revenue"] = fin["or_yoy"] >= 80
+    fin["lead_profit"] = fin["netprofit_yoy"] >= 80
+    fin["lead_margin"] = fin["grossprofit_margin"] > fin["grossprofit_margin_prev"]
+    fin["leader"] = fin["lead_revenue"] & fin["lead_profit"] & fin["lead_margin"] & fin["grossprofit_margin_prev"].notna()
     # leader 本身已是业务名, 不另起别名
 
     mode_desc_map = {
@@ -799,17 +799,15 @@ def main():
     print(f"     龙头票 (leader) 命中: {fin['leader'].sum():>5} 只次")
 
     # 策略模式 (2026-09-23 重构): 3 个独立 rule, OR 起来
-    #   rule_main_path = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & trigger
-    #   rule_reversal = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & reversal
-    #   rule_np_surge = np_double & gm_qoq_stable & gm_yoy_stable   (盈利暴增, 允许营收不达标)
+    #   rule_main_path = or_yoy_meet & netprofit_yoy_meet & gross_margin_qoq_stable & gross_margin_yoy_stable & trigger
+    #   rule_reversal = or_yoy_meet & netprofit_yoy_meet & gross_margin_qoq_stable & gross_margin_yoy_stable & reversal
+    #   rule_profit_surge = 净利 yoy > profit_floor & gross_margin_qoq_stable & gross_margin_yoy_stable   (盈利暴增, 允许营收不达标)
     #
-    # v6.3.0 (2026-09-24): prefilter 6 闸一次性跑在 _apply_rules 之前.
-    #   - 旧版周期股/ST 过滤在 3 rule 之后跑 (hit 之后才剔, 完全晚了)
-    #   - 新版: ST/周期股/市值/上市/股本/EBIT 预警 全表扫, 0 网络
+    # v6.3.0 (2026-09-24): prefilter 5 闸一次性跑在 _apply_rules 之前 (ST/周期股/市值/上市/EBIT 预警, 股本闸已删)
     fin = _apply_prefilter(fin, basic_map, sf, args)
     t_filter_start = time.time()
 
-    mask, rule_hits = _apply_rules(fin, rev_floor=args.np100_rev_floor, np_floor=args.np_surge_floor)
+    mask, rule_hits = _apply_rules(fin, revenue_floor=args.profit_surge_revenue_floor, profit_floor=args.profit_surge_floor)
     hits_df = fin[mask].copy()
     for name, n in rule_hits.items():
         print(f"  🎯 Rule {name}: {n} 只次")

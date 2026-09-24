@@ -94,22 +94,27 @@ Strategy pattern (`tools/batch/finance_earnings_blowout.py::_apply_rules`). To a
 
 | Rule | Conditions | Meaning |
 |---|---|---|
-| `_rule_main_path` (`rule_main_path`) | `rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & (reversal OR leader)` | Main path: revenue growth + profit growth + gm stable (both QoQ/YoY) + (reversal OR persistent leader) |
-| `_rule_reversal` (`rule_reversal`) | `rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & reversal` | Reversal: 净利 yoy jump ≥ 30pp + 4 base conditions |
-| `_rule_np_surge` (`rule_np_surge`) | `netprofit_yoy > 80 & gm_qoq_stable & gm_yoy_stable & (or_yoy >= rev_floor)` | Profit surge: np 暴增 + gm stable (revenue may underperform, `--np100-rev-floor` to set threshold) |
+| `_rule_main_path` (`rule_main_path`) | `or_yoy_meet & netprofit_yoy_meet & gross_margin_qoq_stable & gross_margin_yoy_stable & (reversal OR leader)` | Main path: 营收同比达标 + 净利同比达标 + 毛利率双稳 (环比 + 同比) + (反转 OR 持续龙头) |
+| `_rule_reversal` (`rule_reversal`) | `or_yoy_meet & netprofit_yoy_meet & gross_margin_qoq_stable & gross_margin_yoy_stable & reversal` | Reversal: 净利同比跳升 ≥ 30pp + 4 基础条件 |
+| `_rule_profit_surge` (`rule_profit_surge`) | `netprofit_yoy > 80 & gross_margin_qoq_stable & gross_margin_yoy_stable & (or_yoy >= revenue_floor)` | Profit surge: 净利暴增 + 毛利率双稳 (营收可放宽, `--profit-surge-revenue-floor` 设阈值) |
 
-**`Final mask = rule_main_path | rule_reversal | rule_np_surge`** — 任意一个 rule 过即命中
+**`Final mask = rule_main_path | rule_reversal | rule_profit_surge`** — 任意一个 rule 过即命中
 
-### Flag derivation (business name)
+### 派生 Flag (业务名)
 
 | Business name | Definition |
 |---|---|
-| `rev_growth` | `or_yoy >= 15` (2026-09-23 从 25 放宽) |
-| `np_growth` | `netprofit_yoy >= 20` (2026-09-23 从 50 大放宽) |
-| `gm_qoq_stable` | `grossprofit_margin > prev` OR `|gm - prev| <= 5` (gm QoQ up or drop ≤ 5pp, 2026-09-23 从 2 放宽) |
-| `gm_yoy_stable` | `grossprofit_margin > prev4` OR `|gm - prev4| <= 5` (gm YoY up or drop ≤ 5pp) |
-| `reversal` | `(netprofit_yoy - netprofit_yoy_prev) >= 30` (np yoy jump ≥ 30pp, 2026-09-23 从 50 放宽) |
-| `leader` | `or_yoy >= 80 AND netprofit_yoy >= 80 AND grossprofit_margin > prev` (persistent leader) |
+| `or_yoy_meet` | `or_yoy >= 15` (营收同比达标, 2026-09-23 从 25 放宽) |
+| `netprofit_yoy_meet` | `netprofit_yoy >= 20` (净利同比达标, 2026-09-23 从 50 大放宽) |
+| `gross_margin_qoq_stable` | `grossprofit_margin > prev` OR `|gm - prev| <= 5` (毛利率环比升或跌幅 ≤ 5pp, 2026-09-23 从 2 放宽) |
+| `gross_margin_yoy_stable` | `grossprofit_margin > prev4` OR `|gm - prev4| <= 5` (毛利率同比升或跌幅 ≤ 5pp) |
+| `reversal` | `(netprofit_yoy - netprofit_yoy_prev) >= 50` (净利同比跳升 ≥ 50pp) |
+| `leader` | `or_yoy >= 80 AND netprofit_yoy >= 80 AND grossprofit_margin > prev` (持续高增龙头) |
+| `lead_revenue` | `or_yoy >= 80` (龙头分支 - 营收条件) |
+| `lead_profit` | `netprofit_yoy >= 80` (龙头分支 - 净利条件) |
+| `lead_margin` | `grossprofit_margin > prev` (龙头分支 - 毛利率条件) |
+| `ebit_crash` | EBIT 单季环比 < -50% (披露日业绩腰斩即踢, prefilter 5a) |
+| `ebit_peak_down` | EBIT 4 季趋势见顶 (当前 < 4 季前 AND 4 季内任一季 < -30%, prefilter 5b) |
 
 ## 参数速查 (2026-09-24 v6.3.0 当前默认)
 
@@ -119,8 +124,8 @@ Strategy pattern (`tools/batch/finance_earnings_blowout.py::_apply_rules`). To a
 | `--np-yoy` | 20 | 50 | 净利同比门槛 |
 | `--np-jump` | 30 | 50 | 净利跳升门槛 (pp) |
 | `--gm-tol` | 5 | 2 | 毛利率跌幅容忍 (pp) |
-| `--np-surge-floor` | 80 | 100 | OR 旁路净利门槛 |
-| `--np100-rev-floor` | 0 | — | OR 旁路营收下限 |
+| `--profit-surge-floor` | 80 | 100 | OR 旁路净利门槛 (2026-09-24 改名: 旧 `--np-surge-floor`) |
+| `--profit-surge-revenue-floor` | 0 | — | OR 旁路营收下限 (2026-09-24 改名: 旧 `--np100-rev-floor`) |
 | `--tolerance` | 0 | — | 3 季单调回踩容忍 (pp) |
 
 ### Prefilter 5 闸 (v6.3.0 2026-09-24 新增)
