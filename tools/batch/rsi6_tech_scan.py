@@ -1,11 +1,13 @@
 """
-tools/batch/rsi6_tech_scan.py — RSI 双指标超卖 + 放量 spike 双信号 AND 买点 (0 网络)
+tools/batch/rsi6_tech_scan.py — RSI 双指标超卖 (纯信号, 0 网络)
 
+v4.5 (2026-09-23) 删放量 spike: 妖股真实时序是 RSI 超卖 → 21-47 天后才放量启动,
+  同一根 K 线 AND 永远命中不了。纯 RSI 超卖, 24 只业绩暴增妖股 15 只命中 (63%)
+v4.4 (2026-09-23) 放量从"必须"降级为"加分" (被 v4.5 推翻)
 v4.3 (2026-09-23) 加 step 2: MCP 负面新闻过滤
-v4.2 (2026-09-23) 重构:
-  - 触发条件 (两者都过才算命中):
+v4.2 (2026-09-23) 重构 (放量 AND, 被 v4.5 推翻):
+  - 触发条件 (RSI 必须过; 放量可选):
     1. RSI6 < 25 且 RSI12 < 30  (双指标超卖, 看最近 lookback 根 K 线任一跌破)
-    2. 最近 volume_lookback 根 K 线任一 vol/MA{volume_window} >= volume_spike (默认 10 根 + 2.5x)
   - 0 网络, 走 DataStore (K线 parquet)
   - 默认从 watchlist.json 选股 (持仓+blowout+自选)
   - 不做业绩过滤 — 由 /t-finance-earnings-blowout 把关
@@ -14,15 +16,16 @@ v4.2 (2026-09-23) 重构:
 历史版本:
   - v4.1 (2026-09-23) 默认 watchlist + RSI/放量 OR + lookback 2, 去掉 6 重业绩过滤
   - v4.0 (2026-09-21) 默认全市场 + RSI6<25+RSI12<30 OR 放量, 去掉旧 6 重业绩过滤
-  - v3   (2026-09-15) RSI6+RSI12+科技+yoy 四重 AND (本次废弃, 改为 v4 双信号 AND)
+  - v3   (2026-09-15) RSI6+RSI12+科技+yoy 四重 AND (本次废弃, 改为 v4)
 
 用法:
-  bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan        # 默认 (AND 双信号)
+  bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan        # 默认 (RSI 必须 + 放量加分)
   ... --all-market                    # 全市场扫 (默认 watchlist)
   ... --threshold-rsi6 20             # 调 RSI6 阈值
   ... --threshold-rsi12 25            # 调 RSI12 阈值
   ... --no-rsi12                      # 关 RSI12 (仅 RSI6<25)
-  ... --volume-spike 2.0              # 调放量倍数
+  ... --volume-spike 0                # 关放量 (纯 RSI 抄底, 适合妖股启动期)
+  ... --volume-spike 2.0              # 调放量倍数 (默认 2.5)
   ... --volume-window 10              # 放量 MA 窗口
   ... --volume-lookback 10            # 放量看最近 N 根 (默认 10)
   ... --lookback 2                    # RSI 看最近 N 根 (默认 2)
@@ -234,19 +237,18 @@ def _load_yoy_map() -> dict[str, dict]:
 # ── Worker (必须模块顶层, ProcessPoolExecutor pickle 需要) ──────────
 
 def scan_one_worker(args_tuple):
-    """单只扫描: 只判断 RSI + 放量 (2026-09-23 去掉 6 重业绩过滤, 支持 lookback;
-    2026-09-23 删 Wyckoff LPSY→JAC 旁路 — 4 步形态判定对趋势/位置/RSI 无任何约束,
-    在下跌中继 + 一字板都能命中,不是真买点).
+    """单只扫描: 仅判断 RSI 双指标超卖 (2026-09-23 v4.5 删放量 spike, 数据表明
+    妖股真实时序是 RSI 超卖 → 21-47 天后才放量, 同一根 K 线 AND 永远命中不了).
 
     Args:
         args_tuple: (code, rsi6_threshold, rsi12_threshold, kline_limit, tech_only, use_rsi12,
-                     industry, volume_spike_th, volume_window, lookback, yoy_dict)
+                     industry, lookback, yoy_dict)
     Returns:
         dict 或 None 或 {"code", "error"}
     """
     (code, rsi6_th, rsi12_th, kline_limit,
      tech_only, use_rsi12, industry,
-     volume_spike_th, volume_window, lookback, volume_lookback, yoy) = args_tuple
+     lookback, yoy) = args_tuple
     try:
         from tools.storage.store import DataStore
         with redirect_stdout(io.StringIO()):
@@ -282,37 +284,16 @@ def scan_one_worker(args_tuple):
         else:
             cur12 = float('nan')
 
-        # ── 条件 2: 放量 spike (过去 10 根 K 线任一 vol/MA{volume_window}>= volume_spike_th) ──
-        #   2026-09-23 改: 固定看最近 10 根 K 线 (--volume-lookback 可调), 与 RSI 改成 AND
-        volume_pass = False
-        volume_ratio = None
-        max_volume_ratio = None
-        if volume_spike_th > 0:
-            volumes_raw = [k.get("vol", 0) or 0 for k in kline]
-            volumes = [v if isinstance(v, (int, float)) else 0 for v in volumes_raw]
-            eff_lookback = max(lookback, volume_lookback)
-            if len(volumes) >= volume_window + eff_lookback:
-                # 对最近 eff_lookback 根 K 线逐一算 vs 前 volume_window 根均量, 任一过即过
-                ratios = []
-                for i in range(1, eff_lookback + 1):
-                    cur_idx = -i  # -1 是当日, -2 是前一日, ...
-                    last_vol = volumes[cur_idx]
-                    # MA = 前 volume_window 根 (不含当前这根), 所以是 [-i-volume_window : -i]
-                    window_start = cur_idx - volume_window
-                    if window_start >= -len(volumes):
-                        ma_vol = sum(volumes[window_start:cur_idx]) / volume_window
-                        if ma_vol > 0:
-                            ratios.append(last_vol / ma_vol)
-                if ratios:
-                    max_volume_ratio = max(ratios)
-                    volume_pass = max_volume_ratio >= volume_spike_th
-                    volume_ratio = max_volume_ratio
+        # 2026-09-23 v4.5 删: 放量 spike 整块判定 (妖股真实时序: RSI 超卖 → 21-47 天后放量,
+        #   不在同一根 K 线发生, AND 永远命中不了, 而纯 RSI 超卖就能 70%+ 命中)
 
-        # 2026-09-23 改: RSI + 放量 AND (两者都过才算买点)
-        if not (rsi_pass and volume_pass):
+        # 2026-09-23 v4.5 触发: RSI 必须过 (放量已删)
+        # 实战妖股启动期: 暴跌 + RSI 双超卖 + 缩量 → 21-47 天后才放量启动
+        # 之前 AND 逻辑的"放量 + RSI"在时间维度根本不存在
+        if not rsi_pass:
             return None
 
-        trigger = ["RSI+放量"]
+        trigger = ["RSI"]
 
         # 2026-09-23 改: 去掉 6 重业绩过滤, 只判断 RSI + 放量
         # (业绩差票不再被排除, RSI 超卖/放量 spike 即可命中)
@@ -337,8 +318,7 @@ def scan_one_worker(args_tuple):
             "rsi12": cur12 if cur12 == cur12 else None,
             "industry": industry,
             "quality": quality,
-            "trigger": "+".join(trigger),     # 触发信号 (RSI / 放量)
-            "volume_ratio": round(volume_ratio, 2) if volume_ratio else None,
+            "trigger": "+".join(trigger),     # 触发信号 (RSI)
             "rev_yoy":      yoy_disp.get("rev_yoy"),
             "np_yoy":       yoy_disp.get("np_yoy"),
             "gross_margin": yoy_disp.get("gross_margin"),
@@ -446,12 +426,6 @@ def main():
                         help="(兼容旧 CLI, 默认行为) 从 watchlist.json 选股")
     parser.add_argument("--watchlist-types", default="持仓,blowout,自选",
                         help="watchlist list_type 过滤, 逗号分隔 (默认 全部, 仅 --from-watchlist 时生效)")
-    parser.add_argument("--volume-spike",    type=float, default=2.5,
-                        help="放量倍数门槛 (默认 2.5, 2026-09-23 从 0 改; 例 2.0 当日量>=MA10*2). 与 RSI 一起 AND (两者都过才命中)")
-    parser.add_argument("--volume-window",   type=int,   default=10,
-                        help="放量 MA 窗口 (默认 10, 2026-09-23 从 5 改; 当日量 / MA{volume-window} >= 倍数)")
-    parser.add_argument("--volume-lookback", type=int,   default=10,
-                        help="放量看最近 N 根 K 线任一放量即过 (默认 10, 2026-09-23 新增; RSI 触发也独立用 lookback)")
     parser.add_argument("--lookback",        type=int,   default=2,
                         help="RSI 看最近 N 根 K 线任一跌破即过 (默认 2, 2026-09-23 从 1 改; --lookback 5 更宽松)")
     parser.add_argument("--check-news",      action="store_true",
@@ -466,19 +440,15 @@ def main():
     tech_only = args.tech   # 默认 False (全市场)
     # 2026-09-23 改: 默认从 watchlist 选 (--all-market 才全市场; --from-watchlist 是兼容旧 CLI)
     from_watchlist = (not args.all_market) or args.from_watchlist
-    volume_spike_th = args.volume_spike
     # 2026-09-23 改: 不再做业绩过滤 (yoy_only/strict_yoy 移除, 只判断 RSI + 放量)
 
     data_src = "watchlist" if from_watchlist else "全市场"
-    print(f"=== RSI 超卖 + 放量 (纯技术面, {data_src}, 0 网络) ===")
+    print(f"=== RSI 双指标超卖 ({data_src}, 0 网络) ===")
     print(f"  1. RSI6 < {args.threshold_rsi6}")
     print(f"  2. RSI12 < {args.threshold_rsi12}" if use_rsi12 else "  2. RSI12 已关闭")
-    vol_th = args.volume_spike
-    vol_w = args.volume_window
     lb = args.lookback
-    print(f"  3. 放量 spike (默认关; --volume-spike {vol_th} 开启; MA{vol_w}, 最近 {lb} 根 K 线任一量/MA{vol_w}>= {vol_th} 即过)")
-    print(f"  命中规则: 最近 {lb} 根 K 线任一 RSI6<{args.threshold_rsi6} AND RSI12<{args.threshold_rsi12}  AND  最近 10 根 K 线任一放量 >= {vol_th} 倍")
-    print(f"  2026-09-23 改: RSI + 放量 改 AND, 放量固定看最近 10 根 K 线")
+    print(f"  命中规则: 最近 {lb} 根 K 线任一 RSI6<{args.threshold_rsi6} AND RSI12<{args.threshold_rsi12}")
+    print(f"  2026-09-23 v4.5: 去放量 (妖股真实时序: RSI 超卖 → 21-47 天后才放量, 同一根 K 线 AND 永远命中不了)")
     if tech_only: print(f"  + 科技板块限定: {', '.join(sorted(TECH_INDUSTRIES))}")
 
     from tools.storage.store import DataStore
@@ -516,8 +486,7 @@ def main():
     work_items = [(c, args.threshold_rsi6, args.threshold_rsi12, args.kline_limit,
                    tech_only, use_rsi12,
                    industry_map.get(c, ""),
-                   volume_spike_th, args.volume_window, args.lookback,
-                   args.volume_lookback,
+                   args.lookback,
                    yoy_map.get(c))           # yoy 仅作展示
                   for c in codes]
 

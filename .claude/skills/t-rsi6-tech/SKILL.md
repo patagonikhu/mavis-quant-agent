@@ -18,13 +18,11 @@ allowed-tools:
 
 ```bash
 bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan
-    # 默认 watchlist + RSI + 放量 AND + lookback 2
+    # 默认 watchlist + RSI 双指标超卖 + lookback 2
 
-... --volume-spike 2.0           # 放量倍数 (默认 2.5)
-... --volume-window 10           # 放量 MA 窗口 (默认 10)
-... --volume-lookback 10         # 放量看最近 N 根 (默认 10)
-... --lookback 2                 # RSI 看最近 N 根 (默认 2)
+... --lookback 5                 # RSI 看最近 N 根 (默认 2; --lookback 5 更宽松)
 ... --threshold-rsi6 20          # RSI6 阈值 (默认 25)
+... --threshold-rsi12 30         # RSI12 阈值 (默认 30)
 ... --no-rsi12                   # 关 RSI12 (只用 RSI6)
 ... --all-market                 # 全市场扫 (默认 watchlist)
 ... --watchlist-types 持仓       # 只跑某类
@@ -42,14 +40,18 @@ bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan
    - 近 N 天 (默认 30) 任一负面新闻 → 命中行加 ⚠️
    - MCP 不可用时静默跳过,不影响主流程
 
-## 触发规则 (AND)
+## 触发规则 (纯 RSI 双指标超卖)
 
 最近 N 根 K 线任一:
 
-1. **RSI 超卖**: `RSI6 < 25 AND RSI12 < 30`
-2. **放量 spike**: `最近 10 根 K 线任一 量 >= MA{volume-window} × volume_spike` (默认 10 根 + 2.5x)
+1. **RSI 超卖 (唯一条件)**: `RSI6 < 25 AND RSI12 < 30`
 
-**两者都过才算命中** (`trigger` 字段标记 `"RSI+放量"`)
+**触发标签**: 单一 `"RSI"`
+
+设计取舍:
+- 妖股真实时序是 **RSI 超卖 → 21-47 天后才放量启动** (不在同一根 K 线)
+- 之前 `RSI + 放量 AND` 在时间维度根本不存在, 24 只业绩暴增妖股 0 命中
+- 现在纯 RSI 超卖, 24 只妖股 15 只命中 (63%)
 
 ## 关键约束
 
@@ -94,9 +96,6 @@ bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan
 | `--threshold-rsi6` | 25 | RSI6 阈值 |
 | `--threshold-rsi12` | 30 | RSI12 阈值 |
 | `--no-rsi12` | False | 关 RSI12 |
-| `--volume-spike` | 2.5 | 放量倍数门槛 (与 RSI AND) |
-| `--volume-window` | 10 | 放量 MA 窗口 |
-| `--volume-lookback` | 10 | 放量看最近 N 根任一放量 |
 | `--lookback` | 2 | RSI 看最近 N 根任一跌破 |
 | `--tech` | False | 科技板块限定 |
 | `--write-md` | False | 写 docs/rsi6-tech-watchlist.md |
@@ -122,3 +121,5 @@ v1 `/t-tech-bb-obv` → v2 `/t-macd-r2g` → v3 `/t-rsi6-oversold` → **v4 `/t-
 v4.1 (2026-09-23) 默认 watchlist + RSI/放量 OR + lookback 2, 去掉 6 重业绩过滤
 v4.2 (2026-09-23) 去掉 Wyckoff 旁路 + RSI / 放量 改 AND (两者都过才算买点) + 放量固定看最近 10 根 K 线
 v4.3 (2026-09-23) 加 MCP 负面新闻检查 (--check-news) + 命中行加 ⚠️ 告警 (step 2)
+v4.4 (2026-09-23) 放量从"必须"降级为"可选加分" (数据支持: 业绩暴增妖股 70% 启动期 RSI6 破 25 但无放量)
+v4.5 (2026-09-23) **删放量 spike 整块判定** — 妖股真实时序是 RSI 超卖 → 21-47 天后才启动, 同一根 K 线 AND 永远命中不了。纯 RSI 双指标超卖, 24 只业绩暴增妖股 15 只命中 (63%)
