@@ -142,42 +142,6 @@ def _add_lags(df: pd.DataFrame, cols: list[str], n_lags: int = 3) -> pd.DataFram
     return df
 
 
-# ============================================================
-# 4 条件判断 (纯函数, 每条一行)
-# ============================================================
-
-def check_4_conditions(row, rev_yoy_th, np_yoy_th) -> dict:
-    """单季 4 条件判断 (返回 dict 4 个 bool)
-
-    rev_growth: 营收 yoy >= 阈值
-    np_growth:  净利 yoy >= 阈值
-    gm_qoq_stable: 毛利率 环比稳 (本季 > 上季 OR 跌幅 ≤ --gm-tol)
-    gm_yoy_stable: 毛利率 同比稳 (本季 > 去年同期 OR 跌幅 ≤ --gm-tol)
-    """
-    return {
-        "rev_growth":     row["or_yoy"]             >= rev_yoy_th,
-        "np_growth":      row["netprofit_yoy"]      >= np_yoy_th,
-        "gm_qoq_stable":  row["grossprofit_margin"] >  row["grossprofit_margin_prev"],   # 环比
-        "gm_yoy_stable":  row["grossprofit_margin"] >  row["grossprofit_margin_prev4"],  # 同比
-    }
-
-
-def check_4q_monotonic(row, kpis: list[str]) -> dict:
-    """连续 3 季单调递增判断 (kpis 是要检查的字段名列表)
-
-    例 kpis=['or_yoy_prev','or_yoy_prev2','or_yoy_prev3'] 验证
-       rev_yoy_prev > prev2 > prev3
-    """
-    return {
-        f"c4_{kpi}": (
-            row[kpi] > row[f"{kpi}2"] > row[f"{kpi}3"]
-            if kpi.endswith("prev")
-            else row[kpi] > row.get(f"{kpi}_prev", -1e9) > row.get(f"{kpi}_prev2", -1e9)
-        )
-        for kpi in kpis
-    }
-
-
 def is_strictly_increasing(arr) -> bool:
     """数组严格递增判断 (每步 prev < curr, 一步不满足即返 false)
 
