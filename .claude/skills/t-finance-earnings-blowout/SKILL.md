@@ -117,6 +117,42 @@ Strategy pattern (`tools/batch/finance_earnings_blowout.py::_apply_rules`). To a
 | `ebit_crash` | EBIT 单季环比 < -50% (披露日业绩腰斩即踢, prefilter 5a) |
 | `ebit_peak_down` | EBIT 4 季趋势见顶 (当前 < 4 季前 AND 4 季内任一季 < -30%, prefilter 5b) |
 
+## 执行输出: 生效过滤规则总表 (2026-09-24 用户要求)
+
+每次跑完, 无论 dry-run / 真同步, 都会在 banner 之后打印完整生效过滤规则总表:
+
+```
+┌─ 生效过滤规则总表 (本次跑) ─────────────────────────────────────────┐
+│                                                                  │
+│ 【Prefilter 5 闸】 (跑在 3 rule 之前)                              │
+│ ① ST 过滤         : 启用 (默认 启用) / 关闭 (--include-st)        │
+│ ② 周期股过滤      : 启用 (默认 启用) / 关闭 (--include-cycle)     │
+│    周期股白名单 (26 类): 小金属,铜,铝... (共 26 类)               │
+│ ③ 市值 < 30 亿        : 启用 默认 / --include-junk 关            │
+│ ④ 上市 < 16 季 (4 年): 启用 默认 / --include-junk 关            │
+│ ⑤ EBIT 预警 (双闸):                                                    │
+│    a ebit_crash       : 启用 (CLI: --ebit-floor -50) / 关闭 -100  │
+│    b ebit_peak_down   : 启用 (CLI: --ebit-peak-kill -30) / 关闭  │
+│                                                                  │
+│ 【3 Rule OR 触发】                                                  │
+│ _rule_main_path    : 启用, 4 基础 + 触发                  (N 只次) │
+│ _rule_reversal     : 启用, 跳升 ≥ 30pp 触发主路径         (N 只次) │
+│ _rule_profit_surge : 启用, 净利 > 80%, 营收 ≥ 0%           (N 只次) │
+│                                                                  │
+│ 【4 基础条件】                                                       │
+│   or_yoy_meet              ≥ 15%   (营收同比门槛)                  │
+│   netprofit_yoy_meet       ≥ 20%   (净利同比门槛)                  │
+│   gross_margin_qoq_stable  : 升 OR 跌幅 ≤ 5pp            │
+│   gross_margin_yoy_stable  : 升 OR 跌幅 ≤ 5pp (同比)        │
+│   reversal                 : 净利 yoy 跳升 ≥ 30pp (本季-上季)        │
+│   leader                   : 营收 ≥ 80% AND 净利 ≥ 80% AND 毛利率环比升│
+│                                                                  │
+│ 最新 1 季 (YYYYMMDD) 命中 N 只次                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**用途:** 跑完一眼能看出 (1) 哪些闸生效 / 关闭 (2) 阈值是默认还是用户传入 (3) 3 rule 各自命中多少。
+
 ## 参数速查 (2026-09-24 v6.3.0 当前默认)
 
 | CLI | 默认 | 旧值 | 含义 |

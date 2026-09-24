@@ -850,6 +850,44 @@ def main():
     print(f"\n=== 完成 ({elapsed:.2f}s) [SQL 取数 {t_load:.2f}s + LAG {t_lag:.2f}s + 算 {t_calc:.2f}s + 过滤 {t_filter:.2f}s] ===")
     print(f"13 季总命中: {len(hits)} 只次 (按季分 section), 最新 1 季命中 {len([h for h in hits if h['end_date'] == max((h['end_date'] for h in hits), default='')])} 只\n")
 
+    # 生效过滤规则总表 (2026-09-24 用户要求: 跑完看哪些规则生效 + 阈值是否启用)
+    latest_q = max((h['end_date'] for h in hits), default='') if hits else ''
+    latest_hits = [h for h in hits if h['end_date'] == latest_q] if latest_q else []
+    print("┌─ 生效过滤规则总表 (本次跑) ─────────────────────────────────────────┐")
+    print("│                                                                  │")
+    print("│ 【Prefilter 5 闸】 (跑在 3 rule 之前)                              │")
+    print(f"│ ① ST 过滤         : {'启用' if not args.include_st else '关闭 (--include-st)'} (默认 启用)              │")
+    print(f"│ ② 周期股过滤      : {'启用' if not args.include_cycle else '关闭 (--include-cycle)'} (默认 启用)            │")
+    cycle_list = args.cycle_industries.split(",")
+    print(f"│    周期股白名单 ({len(cycle_list)} 类): {','.join(cycle_list[:6])}... (共{len(cycle_list)}类)│")
+    print(f"│ ③ 市值 < {args.min_mv:>4.0f} 亿        : {'启用 (--include-junk 关)' if not args.include_junk else '关闭'}  默认启用       │")
+    print(f"│ ④ 上市 < {args.min_listing_q:>2d} 季 ({args.min_listing_q//4} 年): {'启用 (--include-junk 关)' if not args.include_junk else '关闭'}  默认启用       │")
+    print(f"│ ⑤ EBIT 预警 (双闸):                                                    │")
+    if args.ebit_floor > -100:
+        print(f"│    a ebit_crash       : 启用, 本季/上季 EBIT 跌幅 > {-args.ebit_floor:.0f}% (CLI: --ebit-floor {args.ebit_floor:.0f})  │")
+    else:
+        print(f"│    a ebit_crash       : 关闭 (CLI: --ebit-floor -100)                        │")
+    if args.ebit_peak_kill > -100:
+        print(f"│    b ebit_peak_down   : 启用, 4 季内任一季环比 < {-args.ebit_peak_kill:.0f}% (CLI: --ebit-peak-kill {args.ebit_peak_kill:.0f})  │")
+    else:
+        print(f"│    b ebit_peak_down   : 关闭 (CLI: --ebit-peak-kill -100)                    │")
+    print("│                                                                  │")
+    print("│ 【3 Rule OR 触发】                                                  │")
+    print(f"│ _rule_main_path    : 启用, 4 基础 + 触发                  ({(rule_hits.get('_rule_main_path', 0))} 只次)        │")
+    print(f"│ _rule_reversal     : 启用, 跳升 ≥ {args.np_jump}pp 触发主路径             ({(rule_hits.get('_rule_reversal', 0))} 只次)        │")
+    print(f"│ _rule_profit_surge : 启用, 净利 > {args.profit_surge_floor}%, 营收 ≥ {args.profit_surge_revenue_floor}%     ({(rule_hits.get('_rule_profit_surge', 0))} 只次)        │")
+    print("│                                                                  │")
+    print("│ 【4 基础条件】                                                       │")
+    print(f"│   or_yoy_meet              ≥ {args.rev_yoy}%   (营收同比门槛)         │")
+    print(f"│   netprofit_yoy_meet       ≥ {args.np_yoy}%   (净利同比门槛)         │")
+    print(f"│   gross_margin_qoq_stable  : 升 OR 跌幅 ≤ {args.gm_tol}pp            │")
+    print(f"│   gross_margin_yoy_stable  : 升 OR 跌幅 ≤ {args.gm_tol}pp (同比)        │")
+    print(f"│   reversal                 : 净利 yoy 跳升 ≥ {args.np_jump}pp (本季-上季)        │")
+    print(f"│   leader                   : 营收 ≥ 80% AND 净利 ≥ 80% AND 毛利率环比升           │")
+    print("│                                                                  │")
+    print(f"│ 最新 1 季 ({latest_q}) 命中 {len(latest_hits)} 只次                            │")
+    print("└──────────────────────────────────────────────────────────────────┘")
+
     if not hits:
         print("无命中 (条件严格, 0-3 只/季度为正常)")
     else:
