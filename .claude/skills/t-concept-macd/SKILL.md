@@ -31,13 +31,6 @@ bash tools/with_venv.sh python -m tools.batch.concept_macd_scan              # �
 5. 输出 md (docs/concept-macd/<code>.md) + chat summary
 ```
 
-## v3 改造要点 (2026-09-17)
-
-- **数据源**: 从 top N 龙头股流通市值加权合成 K线 → 直接读 THS 概念板块 K线
-- **加权误差**: 没了 — 板块指数本来是真实加权, 不再跳价
-- **算法简化**: 删 ~150 行加权合成代码, 改 ~50 行 THS 读 + analyse
-- **字段对齐**: THS pct_change rename 成 pct_chg (跟个股 schema 同), 字段齐全可复用 AnalysisEngine
-
 ## 关键约束
 
 - **0 网络**: 走 DataStore.get_ths_kline (读 ths_kline/*.parquet)
@@ -77,6 +70,6 @@ bash tools/with_venv.sh python -m tools.batch.concept_macd_scan              # �
 
 ## 命名沿革
 
-- v1: `/t-sector-ma` (MA5/20/60/120 顶底分数, 2026-07)
-- v2: `/t-sector-macd` (合成 K线 + 流通市值加权, 2026-09-17) ← **已弃**
-- **v3: `/t-concept-macd` (当前, 2026-09-17)** — THS 概念板块直接读
+- **v1 `/t-sector-ma`** (MA5/20/60/120 顶底分数, 2026-07)
+- **v2 `/t-sector-macd`** (合成 K线 + 流通市值加权, 2026-09-17, 已弃)
+- **v3 `/t-concept-macd`** (当前, 2026-09-17) — THS 概念板块直接读 (替代 v2 加权合成, 消除跳价误差, 复用 AnalysisEngine 同 schema)

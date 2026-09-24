@@ -1,6 +1,6 @@
 ---
 name: t-sync-data
-description: 唯一数据同步入口. 8 个正交 flag (kline/stk-factor/stock-basic/financials/eps/fflow/cache/ths), 默认 --auto 智能检测 stale. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务/EPS/fflow"、"sync cache"、"sync 一下".
+description: 唯一数据同步入口. 9 个正交 flag (kline/stk-factor/stock-basic/financials/eps/fflow/cache/ths/all-data), 默认 --auto 智能检测 stale. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务/EPS/fflow"、"sync cache"、"sync 一下".
 user-invocable: true
 allowed-tools:
   - Bash
@@ -15,7 +15,7 @@ allowed-tools:
 # 默认智能 (推荐, 多数 0 网络, 末尾输出网络统计)
 bash tools/with_venv.sh python -m tools.storage.sync
 
-# 8 个正交 flag (按需刷单个)
+# 9 个正交 flag (按需刷单个)
 ... --kline              # 增量 K 线 (每天)
 ... --stk-factor         # 17 列估值因子 (5 季 1 次, 8 分钟)
 ... --stock-basic        # 名称/行业 (30 天 1 次)
@@ -24,6 +24,7 @@ bash tools/with_venv.sh python -m tools.storage.sync
 ... --fflow              # 主力资金 (按天全市场, ~13 分钟)
 ... --cache              # signal_cache (跑回测前)
 ... --ths                 # THS 同花顺概念板块 K 线 (按 ths_whitelist, 默认 3 年回填)
+... --all-data           # [一键] --kline --stock-basic --financials 一起跑 (最常用)
 
 # 范围 (3 选 1, 默认 --all)
 ... --all                 # 全市场
@@ -55,5 +56,4 @@ bash tools/with_venv.sh python -m tools.storage.sync
 
 ## 相关
 
-- 8 个分析 skill (read-only): `/t-analyze` / `/t-near-low` / `/t-rsi6-tech` / `/t-finance-roc-ey` / `/t-finance-earnings-blowout` / `/t-concept-macd` / `/t-backtest`
-- `/t-guardrail` (含 eps-scope-guard)
+- 8 个分析 skill (read-only): `/t-analyze` / `/t-near-low` / `/t-rsi6-tech` / `/t-finance-roc-ey` / `/t-finance-earnings-blowout` / `/t-concept-macd` / `/t-backtest` / `/t-guardrail`
