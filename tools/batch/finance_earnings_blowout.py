@@ -10,7 +10,7 @@ R3 v6.2.7 4 基础 (AND) + 2026-09-23 加 净利翻倍旁路 (OR):
   3. 毛利率 gap ≤ 2pp (环比)  — v6.2.7 改: 允许 ±2pp 波动, 抓科技股龙头
   4. 毛利率 gap ≤ 2pp (同比)  — v6.2.7 改: 允许 ±2pp 波动, 抓科技股龙头
 
-  2026-09-23 加 OR 旁路 (c_np100_path):
+  2026-09-23 加 OR 旁路 (np_double_path):
      净利 yoy > 100%  AND  毛利率双过 (±2pp)
      用途: 放过"营收微增但净利暴增"的真实业绩反转 (国芳/三羊/双星 等)
      设计: 仍要求毛利率稳, 但允许营收不达标 (营收/净利两条腿可以瘸一条, 毛利率不能瘸)
@@ -98,9 +98,10 @@ def _load_basic_map() -> dict:
     """预加载 stock_basic (避免每只票单独查)
 
     Returns:
-        {code: {"name": ..., "industry": ..., "is_st": bool}, ...}
+        {code: {"name", "industry", "is_st", "list_date", "total_share"}, ...}
 
     2026-09-18 加: is_st 字段 (基于名称前缀 "ST" / "*ST")
+    2026-09-24 加: list_date / total_share (供 prefilter 垃圾股闸用)
     """
     try:
         from tools.storage.store import DataStore
@@ -112,6 +113,8 @@ def _load_basic_map() -> dict:
                 "name": row.get("name", "") or "",
                 "industry": row.get("industry", "") or "",
                 "is_st": (row.get("name", "") or "").startswith(("ST", "*ST", "S ", "S*")),
+                "list_date":   str(row.get("list_date", "") or ""),
+                # total_share 不暴露 (DataStore.load_stock_basic 返回列里没有)
             }
             for _, row in df.iterrows()
         }
@@ -144,18 +147,18 @@ def _add_lags(df: pd.DataFrame, cols: list[str], n_lags: int = 3) -> pd.DataFram
 # ============================================================
 
 def check_4_conditions(row, rev_yoy_th, np_yoy_th) -> dict:
-    """单季 4 条件判断 (返回 dict 6 个 bool)
+    """单季 4 条件判断 (返回 dict 4 个 bool)
 
-    c1: 营收 yoy >= 阈值
-    c2: 净利 yoy >= 阈值
-    c3a: 毛利率 环比升 (本季 > 上季)
-    c3b: 毛利率 同比升 (本季 > 去年同期)
+    rev_growth: 营收 yoy >= 阈值
+    np_growth:  净利 yoy >= 阈值
+    gm_qoq_stable: 毛利率 环比稳 (本季 > 上季 OR 跌幅 ≤ --gm-tol)
+    gm_yoy_stable: 毛利率 同比稳 (本季 > 去年同期 OR 跌幅 ≤ --gm-tol)
     """
     return {
-        "c1":  row["or_yoy"]             >= rev_yoy_th,
-        "c2":  row["netprofit_yoy"]      >= np_yoy_th,
-        "c3a": row["grossprofit_margin"] >  row["grossprofit_margin_prev"],   # 环比
-        "c3b": row["grossprofit_margin"] >  row["grossprofit_margin_prev4"],  # 同比
+        "rev_growth":     row["or_yoy"]             >= rev_yoy_th,
+        "np_growth":      row["netprofit_yoy"]      >= np_yoy_th,
+        "gm_qoq_stable":  row["grossprofit_margin"] >  row["grossprofit_margin_prev"],   # 环比
+        "gm_yoy_stable":  row["grossprofit_margin"] >  row["grossprofit_margin_prev4"],  # 同比
     }
 
 
@@ -202,12 +205,12 @@ def is_strictly_increasing(arr) -> bool:
 # ============================================================
 #
 # 3 个独立 rule, 每个 rule 是一个 bool Series:
-#     rule_4c      = c1 & c2 & c3a & c3b & trigger   (主路径: 4 基础 + 触发)
-#     rule_jump    = c_jump & c3a & c3b              (反转: 跳升≥50pp + 毛利率双过)
-#     rule_np100   = 净利 yoy > 100 & c3a & c3b     (盈利暴增: 净利翻倍 + 毛利率双过)
+#     rule_main_path   = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & trigger   (主路径: 4 基础 + 触发)
+#     rule_reversal    = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & reversal  (反转: 跳升≥50pp + 毛利率双过)
+#     rule_np_surge    = 净利 yoy > 100 & gm_qoq_stable & gm_yoy_stable     (盈利暴增: 净利翻倍 + 毛利率双过)
 #
 # 加新 rule: 写一个 fn 返回 Series[bool], 在 _RULES 里 OR 一行即可
-# --jump-mode 控制是否开启 rule_jump (默认 on), rule_np100 默认 on
+# --jump-mode 控制是否开启 rule_reversal (默认 on), rule_np_surge 默认 on
 #
 # 最终 mask = rule_4c | rule_jump | rule_np100  (3 个 rule 任意一个过即可)
 
@@ -263,51 +266,168 @@ def _apply_rules(df: pd.DataFrame, rev_floor: float = 0.0, np_floor: float = 80.
     return combined, rule_hits
 
 
-def _filter_hits(df: pd.DataFrame, rev_yoy_th: float, np_yoy_th: float,
-                 min_ebit_yi: float, min_increase_yi: float, min_roe: float,
-                 tolerance: float = 0.0) -> pd.DataFrame:
-    # 1. 必须有完整 3 季历史 (本季 + 上季 + 上 2 季, 不依赖 NULL LAG)
-    df = df.dropna(subset=[
-        "or_yoy_prev", "or_yoy_prev2",
-        "netprofit_yoy_prev", "netprofit_yoy_prev2",
-        "grossprofit_margin_prev", "grossprofit_margin_prev2", "grossprofit_margin_prev4",
-        "roe_prev", "roe_prev2",
-    ]).copy()
-
-    # 2. 4 条件 (营收 / 净利门槛 + 毛利率双升)
-    df["c1"]  = df["or_yoy"]         >= rev_yoy_th
-    df["c2"]  = df["netprofit_yoy"]  >= np_yoy_th
-    df["c3a"] = df["grossprofit_margin"] > df["grossprofit_margin_prev"]    # 环比升
-    df["c3b"] = df["grossprofit_margin"] > df["grossprofit_margin_prev4"]   # 同比升
-
-    # 3. 3 季单调 (营收 yoy / 净利 yoy / 毛利率 3 项, 本季 > 上季 > 上 2 季 ± tolerance)
-    df["c3r"]  = df["or_yoy"]      > df["or_yoy_prev"]                            # 严格: 本季 > 上季
-    df["c3r2"] = df["or_yoy_prev"]  > df["or_yoy_prev2"] - tolerance               # 容忍: 上季 > 上 2 季 - tol
-    df["c3n"]  = df["netprofit_yoy"]      > df["netprofit_yoy_prev"]
-    df["c3n2"] = df["netprofit_yoy_prev"]  > df["netprofit_yoy_prev2"] - tolerance
-    df["c3g"]  = df["grossprofit_margin"]      > df["grossprofit_margin_prev"]
-    df["c3g2"] = df["grossprofit_margin_prev"]  > df["grossprofit_margin_prev2"] - tolerance
-
-    # 4. 绝对值过滤
-    df["ebit_yi"] = df["ebit"] / 1e8
-
-    # 2026-09-23 加: 净利翻倍旁路 (允许"营收弱但净利暴增"的真实业绩反转)
-    #   旁路条件 = 净利 yoy > 100% + 毛利率双过 (允许营收不达标, 但要求毛利率稳)
-    df["c_np100"]    = df["netprofit_yoy"] > 100
-    df["c_np100_path"] = df["c_np100"] & df["c3a"] & df["c3b"]
-
-    return df[
-        (
-            (df["c1"] & df["c2"] & df["c3a"] & df["c3b"])   # 路径 A: 4 条件 (营收/净利门槛 + 毛利率双升)
-            | df["c_np100_path"]                              # 路径 B: 净利翻倍 + 毛利率双过 (2026-09-23 加 OR 旁路)
-        )
-        & (df["c3r"] & df["c3r2"] & df["c3n"] & df["c3n2"] & df["c3g"] & df["c3g2"])  # 3 季单调 (本季>上季>上 2 季 ± tol)
-        & (df["ebit_yi"] >= min_ebit_yi)                       # EBIT 规模
-        & (df["roe"] > min_roe)                                # ROE 门槛
-    ]
+# ============================================================
+# PRE-FILTER (v6.3.0 2026-09-24 重构)
+# ============================================================
+#
+# 6 闸一次性跑在 _apply_rules 之前, 13 季 5555 只全表扫, 0 网络:
+#   1. ST 过滤     (默认开, --include-st 关)
+#   2. 周期股过滤  (默认开, --include-cycle 关)
+#   3. 市值 < 30 亿 (默认开, --min-mv 控制下限)
+#   4. 上市 < 60 季 (默认开, --min-listing-q 控制下限)
+#   5. 总股本 < 1 亿股 (默认开, --min-shares 控制下限)
+#   6. EBIT 预警   (默认开, --ebit-floor 控制; 环比 < floor 踢)
+#
+# 经验 (2026-09-23 分析):
+#   - 业绩杀样本 5/5 双林/华纬/富临/中熔/中科星图, EBIT 环比 -66%~-94% (披露日已知)
+#   - 单 EBIT 预警 1 项即可剔除 100% 业绩杀样本
+#   - 旧版 (line 670-698) 周期股 + ST 在 3 rule 之后过滤, 抓不到被 RS 误伤的票
 
 
-# 注: 主流程 (main, 第 540-544 行 mask) 不走这个 _filter_hits() 函数, OR 旁路在主流程是通过 c_np100 & c3a & c3b 单独加进去 (2026-09-23 修)
+def _apply_prefilter(df: pd.DataFrame, basic_map: dict, sf_df: pd.DataFrame, args) -> pd.DataFrame:
+    """5 闸前置过滤 (v6.3.0 简化版), 全 0 网络. 返回过滤后的 df.
+
+    df:      load_financials + _add_lags 之后的 dataframe (已含 ebit / ebit_prev 列)
+    basic_map: {code: {name, industry, is_st, list_date, ...}}
+              注: DataStore 不暴露 total_share, 所以 5 闸去掉股本, 用市值近似
+    sf_df:   stk_factor_latest (用于 total_mv 市值判断)
+    args:    argparse Namespace
+
+    设计: 默认全开. --include-st/--include-cycle/--include-junk/--ebit-floor 关闭对应闸.
+    """
+    cycle_industries = set(s.strip() for s in args.cycle_industries.split(","))
+    n0 = len(df)
+    print(f"  🛡️  PRE-FILTER 启动 ({n0} 只次入参)")
+
+    # 提 6 位 code 列 (后续 ST/周期股/上市/市值 都要)
+    df = df.copy()
+    df["_code"] = df["ts_code"].str.split(".").str[0]
+
+    # ===== 1. ST 过滤 =====
+    if not args.include_st:
+        before = len(df)
+        df["_is_st"] = df["_code"].map(lambda c: bool(basic_map.get(c, {}).get("is_st", False)))
+        n_st = int(df["_is_st"].sum())
+        df = df[~df["_is_st"]].copy()
+        n_after = len(df)
+        print(f"     ① ST 过滤:        排除 {before - n_after:>5} 只次 ({n_st} ST 命中, 默认开, --include-st 关)")
+        df = df.drop(columns=["_is_st"])
+
+    # ===== 2. 周期股过滤 =====
+    if not args.include_cycle:
+        before = len(df)
+        df["_industry"] = df["_code"].map(lambda c: basic_map.get(c, {}).get("industry", ""))
+        df = df[~df["_industry"].isin(cycle_industries)].copy()
+        n_after = len(df)
+        print(f"     ② 周期股过滤:     排除 {before - n_after:>5} 只次 (β 主导, 默认开, --include-cycle 关)")
+        df = df.drop(columns=["_industry"])
+
+    # ===== 3+4. 垃圾股 prefilter (市值 + 上市时间) =====
+    #   注: 删 ⑤ 总股本闸, DataStore 不暴露 total_share (sync 注释说"已补"
+    #        但 load_stock_basic 返回列里没有, 留着会全空踢). 靠 ③ 市值 +
+    #   ④ 上市时间 两项已经够了.
+    if not args.include_junk:
+        before = len(df)
+
+        # 拼 basic_map 提供的字段 (list_date)
+        df["_list_date"] = df["_code"].map(lambda c: basic_map.get(c, {}).get("list_date", "") or "")
+        # 拼 stk_factor.total_mv (万元 → 亿)
+        sf_mv = sf_df.set_index("ts_code")["total_mv"].to_dict() if not sf_df.empty else {}
+        df["_total_mv_yi"] = df["ts_code"].map(lambda c: (sf_mv.get(c) or 0) / 1e4)
+
+        # ③ 市值 < min_mv 亿 (默认 30)
+        #   注: 0/NaN 当作未知, 保留 (不对 unknown 误踢)
+        mv_kick = (df["_total_mv_yi"] > 0) & (df["_total_mv_yi"] < args.min_mv)
+        n_mv = int(mv_kick.sum())
+
+        # ④ 上市 < min_listing_q 季 (默认 16=4 年)
+        #   list_date 格式 YYYYMMDD, 当前季 = (今天 - list_date) / 90 天
+        #   0/NaN 当上市时间未知, 默认保留 (上交所最早 1990 年, 4 年内新股才踢)
+        today = pd.Timestamp(datetime.now().strftime("%Y%m%d"))
+        list_dt = pd.to_datetime(df["_list_date"], format="%Y%m%d", errors="coerce")
+        q_since_list = ((today - list_dt).dt.days / 90)
+        lq_kick = q_since_list.notna() & (q_since_list < args.min_listing_q)
+        n_lq = int(lq_kick.sum())
+
+        kick_mask = mv_kick | lq_kick
+        df = df[~kick_mask].copy()
+        n_after = len(df)
+        print(f"     ③ 市值 < {args.min_mv} 亿:    排除 {n_mv:>5} 只次")
+        print(f"     ④ 上市 < {args.min_listing_q} 季:     排除 {n_lq:>5} 只次")
+        print(f"        → 垃圾股合计:   {before - n_after:>5} 只次 (默认开, --include-junk 关)")
+        df = df.drop(columns=["_list_date", "_total_mv_yi"])
+
+    # ===== 5. EBIT 杀业绩预警 (v6.3.0 核心新增) =====
+    #   5a. 本季 EBIT / 上季 EBIT < (1 + floor/100)  → 踢 (环比跌幅 > -floor%)
+    #       默认 floor=-50 (环比腰斩即踢, 抓披露日业绩腰斩票)
+    #       经验: 业绩杀样本 5/5 双林/华纬/富临/中熔/中科星图, EBIT 环比 -66%~-94% (披露日已知)
+    #   5b. 业绩见顶: 4 季前 EBIT > 当前 EBIT, 且 4 季内任意一季环比跌 < peak_kill
+    #       抓"业绩高峰过后被杀"的票 (双林 2025Q2 见顶后 2026 已反弹, 5a 抓不住的情况)
+    #       --ebit-peak-kill 控制 5b 阈值 (默认 -30% = 4 季内有任一季环比跌幅 > 30%)
+    # 关闭方式: --ebit-floor -100 或 --ebit-peak-kill -100 (永不踢)
+    if args.ebit_floor > -100 or args.ebit_peak_kill > -100:
+        before = len(df)
+
+        # ===== 5a 单季环比腰斩 =====
+        if args.ebit_floor > -100:
+            valid = df["ebit"].notna() & df["ebit_prev"].notna() & (df["ebit_prev"].abs() > 1e-3)
+            ebit_qoq = (df["ebit"] / df["ebit_prev"]) - 1
+            kick_5a = valid & (ebit_qoq < (1 + args.ebit_floor / 100))
+            kick_5a = kick_5a.fillna(False)
+            n_5a = int(kick_5a.sum())
+            print(f"        5a 单季 EBIT 环比 < {-args.ebit_floor:.0f}%:  {n_5a:>5} 只次")
+        else:
+            kick_5a = pd.Series(False, index=df.index)
+            n_5a = 0
+
+        # ===== 5b 4 季趋势见顶 =====
+        #   条件:
+        #     1) 当前 EBIT < 4 季前 EBIT (4 季累计负增长)
+        #     2) 最近 4 季内 (本季/上季/上2季/上3季) 任意一季环比跌 < peak_kill
+        #        即 MIN(prev ratio) < 1 + peak_kill/100
+        if args.ebit_peak_kill > -100:
+            ebit_cur = df["ebit"]
+            ebit_4q_ago = df.get("ebit_prev4")  # LAG 4
+            valid_5b = ebit_cur.notna() & ebit_4q_ago.notna() & (ebit_4q_ago.abs() > 1e-3)
+
+            # 4 季内任意一季环比 < 阈值
+            #   ratio = ebit / ebit_prev (本季), prev / prev2, prev2 / prev3, prev3 / prev4
+            #   MIN(ratio) < 1 + peak_kill/100  ==  任意一季环比跌幅超过 peak_kill
+            r1 = df["ebit"] / df["ebit_prev"].replace(0, pd.NA)
+            r2 = df["ebit_prev"] / df.get("ebit_prev2", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
+            r3 = df.get("ebit_prev2", pd.Series(pd.NA, index=df.index)) / df.get("ebit_prev3", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
+            r4 = df.get("ebit_prev3", pd.Series(pd.NA, index=df.index)) / df.get("ebit_prev4", pd.Series(pd.NA, index=df.index)).replace(0, pd.NA)
+            min_ratio = pd.concat([r1, r2, r3, r4], axis=1).min(axis=1)
+
+            # 当前 < 4 季前 (4 季累计负)
+            decline_4q = valid_5b & (ebit_cur < ebit_4q_ago)
+            # 4 季内任一季环比跌穿 peak_kill (e.g. -30% 即 min_ratio < 0.7)
+            sharp_drop = valid_5b & (min_ratio < (1 + args.ebit_peak_kill / 100))
+            kick_5b = decline_4q & sharp_drop
+            kick_5b = kick_5b.fillna(False)
+            n_5b = int(kick_5b.sum())
+            print(f"        5b 4 季趋势见顶 (4 季内任一季 < {args.ebit_peak_kill:.0f}%):  {n_5b:>5} 只次")
+        else:
+            kick_5b = pd.Series(False, index=df.index)
+            n_5b = 0
+
+        kick_mask = kick_5a | kick_5b
+        df = df[~kick_mask].copy()
+        n_after = len(df)
+        n_ebit = n_5a + n_5b
+        print(f"     ⑤ EBIT 预警合计:  排除 {n_ebit:>5} 只次 (单季 5a + 趋势 5b)")
+
+    n_after = len(df)
+    print(f"  🛡️  PRE-FILTER 完成: {n0} → {n_after} 只次 (踢除 {n0 - n_after})\n")
+
+    # 清掉 _code 临时列
+    df = df.drop(columns=["_code"])
+    return df
+
+
+# ============================================================
+# md 输出 (按季分 section)
+# ============================================================
 
 
 # ============================================================
@@ -574,6 +694,18 @@ def main():
                         help="watchlist 同步 dry-run, 只 print 计划不写文件")
     parser.add_argument("--cycle-industries", default="小金属,铜,铝,化工原料,农药化肥,铅锌,矿物制品,钢铁,煤炭,石油,化纤,水运,仓储物流,电器仪表,家用电器,工程机械,石油开采,黄金,塑料,造纸,建材,玻璃,陶瓷,纺织,化纤,电气设备",
                         help="周期股白名单 (默认 SW 周期类 + 电气设备, 因为光伏/储能/电池 跟锂电材料强相关)")
+    # 2026-09-24 v6.3.0 新增: prefilter 4 开关
+    # --include-st / --include-cycle 已存在 (上放 v6.2.7 时期定义)
+    parser.add_argument("--include-junk", action="store_true", help="包含垃圾股 (市值/上市/股本, 默认 prefilter 排除)")
+    parser.add_argument("--min-mv", type=float, default=30.0,
+                        help="市值下限 (亿, 默认 30, --include-junk 关掉此项)")
+    parser.add_argument("--min-listing-q", type=int, default=16,
+                        help="上市时间下限 (季, 默认 16=4 年, 16 季 EBIT 数据完整 + yoy 基准稳)")
+    # 注: 总股本闸已删 (DataStore 不暴露 total_share 字段)
+    parser.add_argument("--ebit-floor", type=float, default=-50.0,
+                        help="EBIT 环比预警 (默认 -50, 本季/上季 < 1 + floor/100 即踢; 设 -100 关闭)")
+    parser.add_argument("--ebit-peak-kill", type=float, default=-30.0,
+                        help="EBIT 4 季趋势见顶 (默认 -30, 当前 < 4 季前 AND 4 季内任一季环比 < 1+peak_kill/100 踢; 设 -100 关闭)")
     args = parser.parse_args()
 
     print("=" * 70)
@@ -646,7 +778,7 @@ def main():
     fin["ebit_4q_ago_yi"] = fin["ebit_prev4"] / 1e8
     fin["ebit_increase_yi"] = fin["ebit_yi"] - fin["ebit_4q_ago_yi"]
 
-    # 4. 4 条件 (业务语义命名 + 缩写别名 c1/c2/c3a/c3b 指向同一 Series)
+    # 4. 4 条件 (业务语义命名)
     #   rev_growth      = or_yoy >= 阈值
     #   np_growth       = netprofit_yoy >= 阈值
     #   gm_qoq_stable   = (毛利率 升 OR 跌幅 ≤ 2pp) — 本季 vs 上季
@@ -655,20 +787,16 @@ def main():
     fin["np_growth"]     = fin["netprofit_yoy"]  >= args.np_yoy
     fin["gm_qoq_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev"])  | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev"]).abs()  <= args.gm_tol)
     fin["gm_yoy_stable"] = (fin["grossprofit_margin"] > fin["grossprofit_margin_prev4"]) | ((fin["grossprofit_margin"] - fin["grossprofit_margin_prev4"]).abs() <= args.gm_tol)
-    # 缩写别名 (向后兼容, 旧 rule 函数还引用)
-    fin["c1"]  = fin["rev_growth"]
-    fin["c2"]  = fin["np_growth"]
-    fin["c3a"] = fin["gm_qoq_stable"]
-    fin["c3b"] = fin["gm_yoy_stable"]
 
     # 5. 连续 3 季单调 (营收 / 净利 / 毛利率 3 项, 本季 > 上季 > 上 2 季 ± tolerance, 2 段比较)
+    #   注: 派生但未在 mask 中使用, 仅展示/兼容用, 保留派生 (2026-09-23 改名 c3* → 业务语义)
     tol = args.tolerance
-    fin["c3r"]  = fin["or_yoy"]      > fin["or_yoy_prev"]
-    fin["c3r2"] = fin["or_yoy_prev"]  > fin["or_yoy_prev2"] - tol
-    fin["c3n"]  = fin["netprofit_yoy"]      > fin["netprofit_yoy_prev"]
-    fin["c3n2"] = fin["netprofit_yoy_prev"]  > fin["netprofit_yoy_prev2"] - tol
-    fin["c3g"]  = fin["grossprofit_margin"]      > fin["grossprofit_margin_prev"]
-    fin["c3g2"] = fin["grossprofit_margin_prev"]  > fin["grossprofit_margin_prev2"] - tol
+    fin["rev_qoq_rising"] = fin["or_yoy"]      > fin["or_yoy_prev"]
+    fin["rev_qoq_rising_prev2_tol"] = fin["or_yoy_prev"]  > fin["or_yoy_prev2"] - tol
+    fin["np_qoq_rising"]  = fin["netprofit_yoy"]      > fin["netprofit_yoy_prev"]
+    fin["np_qoq_rising_prev2_tol"] = fin["netprofit_yoy_prev"]  > fin["netprofit_yoy_prev2"] - tol
+    fin["gm_qoq_rising"]  = fin["grossprofit_margin"]      > fin["grossprofit_margin_prev"]
+    fin["gm_qoq_rising_prev2_tol"] = fin["grossprofit_margin_prev"]  > fin["grossprofit_margin_prev2"] - tol
 
 
     # 6. 绝对值过滤
@@ -703,45 +831,25 @@ def main():
     print(f"     龙头票 (c_leader) 命中: {fin['c_leader'].sum():>5} 只次")
 
     # 策略模式 (2026-09-23 重构): 3 个独立 rule, OR 起来
-    #   rule_4c    = c1 & c2 & c3a & c3b & trigger   (主路径)
-    #   rule_jump  = c_jump & c3a & c3b              (反转)
-    #   rule_np100 = 净利>100 & c3a & c3b            (盈利暴增, 允许营收不达标)
+    #   rule_main_path = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & trigger
+    #   rule_reversal = rev_growth & np_growth & gm_qoq_stable & gm_yoy_stable & reversal
+    #   rule_np_surge = np_double & gm_qoq_stable & gm_yoy_stable   (盈利暴增, 允许营收不达标)
+    #
+    # v6.3.0 (2026-09-24): prefilter 6 闸一次性跑在 _apply_rules 之前.
+    #   - 旧版周期股/ST 过滤在 3 rule 之后跑 (hit 之后才剔, 完全晚了)
+    #   - 新版: ST/周期股/市值/上市/股本/EBIT 预警 全表扫, 0 网络
+    fin = _apply_prefilter(fin, basic_map, sf, args)
+    t_filter_start = time.time()
+
     mask, rule_hits = _apply_rules(fin, rev_floor=args.np100_rev_floor, np_floor=args.np_surge_floor)
     hits_df = fin[mask].copy()
     for name, n in rule_hits.items():
         print(f"  🎯 Rule {name}: {n} 只次")
     print(f"  🎯 最终命中 (rule OR): {(mask).sum():>5} 只次")
-    t_filter = time.time() - t0
+    t_filter = time.time() - t_filter_start
 
-    # 6.5 周期股过滤 (默认排除, 周期股景气突破是 β 不是 α)
-    if not args.include_cycle and not hits_df.empty:
-        cycle_industries = set(s.strip() for s in args.cycle_industries.split(","))
-        before = len(hits_df)
-        hits_df["_industry"] = hits_df["ts_code"].str.split(".").str[0].map(
-            lambda c: basic_map.get(c, {}).get("industry", "")
-        )
-        hits_df = hits_df[~hits_df["_industry"].isin(cycle_industries)].copy()
-        hits_df = hits_df.drop(columns=["_industry"])
-        n_excluded = before - len(hits_df)
-        if n_excluded > 0:
-            print(f"🚫 周期股过滤: 排除 {n_excluded} 只次 ({before} → {len(hits_df)}) [周期股景气突破是 β 不是 α, --include-cycle 可关]")
-
-    # 6.5b ST 过滤 (2026-09-18 加): ST/*ST 票风险高, 默认排除 (用户请求)
-    if not getattr(args, 'include_st', False) and not hits_df.empty:
-        before = len(hits_df)
-        hits_df["_is_st"] = hits_df["ts_code"].str.split(".").str[0].map(
-            lambda c: bool(basic_map.get(c, {}).get("is_st", False))
-        )
-        st_names = hits_df[hits_df["_is_st"]]["ts_code"].str.split(".").str[0].map(
-            lambda c: basic_map.get(c, {}).get("name", "") + f"({c})"
-        ).tolist()
-        hits_df = hits_df[~hits_df["_is_st"]].copy()
-        hits_df = hits_df.drop(columns=["_is_st"])
-        n_excluded = before - len(hits_df)
-        if n_excluded > 0:
-            print(f"🚫 ST 过滤: 排除 {n_excluded} 只次 ({before} → {len(hits_df)}) [ST/*ST 退市风险, --include-st 可开]")
-            if st_names:
-                print(f"   📛 排除名单: {', '.join(st_names[:10])}" + (" ..." if len(st_names) > 10 else ""))
+    # v6.3.0 2026-09-24: 周期股 + ST 过滤已挪到 _apply_prefilter (跑在 3 rule 之前)
+    # 旧版这段逻辑 (line 670-698) 已删
 
     # 6.6 位置过滤: 2026-09-23 删 (代码整段移除, 不再过滤高位票)
     # 距 1 年低点 <= 200% 且 距 1 年高点 >= -30% 的过滤已删除
