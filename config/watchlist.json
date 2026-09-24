@@ -7,36 +7,31 @@
       "code": "399006",
       "name": "创业板指",
       "sector": "指数",
-      "list_type": "持仓",
-      "notes": "成长股基准指数"
+      "list_type": "持仓"
     },
     {
       "code": "000688",
       "name": "科创50",
       "sector": "指数",
-      "list_type": "持仓",
-      "notes": "科创板核心指数, 半导体/AI主题 (2026-09-15 用户加入)"
+      "list_type": "持仓"
     },
     {
       "code": "000725",
       "name": "京东方A",
       "list_type": "持仓",
-      "sector": "面板-LCD+OLED",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实0.64x+L/E3=1.66x低估+面板超跌+龙头5/14,升级观望→轻仓(待fflow转正确认)"
+      "sector": "面板-LCD+OLED"
     },
     {
       "code": "002475",
       "name": "立讯精密",
       "sector": "消费电子-代工",
-      "list_type": "持仓",
-      "notes": "[2026-07-17 batch] PEG_真实0.66便宜+L/E3=1.14合理+fflow-0.3亿中性+大盘弱 → 降一档: 标准→轻仓"
+      "list_type": "持仓"
     },
     {
       "code": "300274",
       "name": "阳光电源",
       "sector": "光伏-逆变器+储能",
       "list_type": "持仓",
-      "notes": "[2026-07-14 fflow 重评] fflow 真实数据重评: 5日主力 -48.5亿 (🔴 主力明显流出 (5日-48.5亿)) | v4: 双 PEG 双绿 (真实 1.08x / 光学 0.97x), DCF L(校正) 213亿 / L-可达 0.85x ✅. ROE 从 41%→24% 周期顶部特征。",
       "tech_params": {
         "vol_high": 1.5,
         "vol_low": 0.7,
@@ -47,104 +42,85 @@
       "code": "600089",
       "name": "特变电工",
       "list_type": "持仓",
-      "sector": "电力变压器",
-      "notes": "2026-08-25 复盘: PEG 0.46x极低估 + DCF L/E3=3.0x叙事已部分priced (矛盾). 1买⭐消失(daily)=SELL警报. fflow 5d/-3.84亿(收窄) / 10d/-13.75亿(持续流出). RSI6=13极度超卖, BOLL跌破下轨, MACD死叉, MA空头排列. 日中枢¥25-28已跌穿(-24.7%). 威科夫Accumulation末段(31%),等Spring触发. 1买窗口关闭,持有者应¥20.84减仓1/3;空仓者不开新仓,等¥17.5+Spring+fflow转正三条件齐.",
-      "tech_params": {
-        "vol_high": 1.3,
-        "vol_low": 0.8,
-        "ma20_slope": 2
-      }
+      "sector": "电力变压器"
     },
     {
       "code": "601958",
       "name": "金钼股份",
       "sector": "贵金属-钼业",
-      "list_type": "持仓",
-      "notes": "[2026-07-27 /t-watchlist 批量] PEG_真实1.74x+L/E3=1.97x合理,但大盘弱势钼价周期,降一档轻仓→观望"
+      "list_type": "持仓"
     },
     {
       "code": "600765",
       "name": "中航重机",
       "sector": "军工-锻铸",
-      "list_type": "持仓",
-      "notes": ""
+      "list_type": "持仓"
     },
     {
       "code": "601888",
       "name": "中国中免",
       "sector": "消费-免税",
-      "list_type": "持仓",
-      "notes": ""
+      "list_type": "持仓"
     },
     {
       "code": "300699",
       "name": "光威复材",
       "sector": "碳纤维-军工",
-      "list_type": "持仓",
-      "notes": ""
+      "list_type": "持仓"
     },
     {
       "code": "603033",
       "name": "三维股份",
       "sector": "输送带",
-      "list_type": "持仓",
-      "notes": ""
+      "list_type": "持仓"
     },
     {
       "code": "002304",
       "name": "洋河股份",
       "sector": "白酒",
-      "list_type": "持仓",
-      "notes": ""
+      "list_type": "持仓"
     },
     {
       "code": "002237",
       "name": "恒邦股份",
       "sector": "黄金冶炼",
-      "list_type": "持仓",
-      "notes": ""
+      "list_type": "持仓"
     },
     {
       "code": "000792",
       "name": "盐湖股份",
       "sector": "盐湖提锂",
-      "list_type": "持仓",
-      "notes": ""
+      "list_type": "持仓"
     },
     {
       "code": "930955",
       "name": "中证红利低波100",
       "sector": "红利低波",
-      "list_type": "持仓",
-      "notes": "中证红利低波100指数, 防御性 ETF 替代, 用于熊市/震荡市对冲"
+      "list_type": "持仓"
     },
     {
       "code": "000858",
       "name": "五粮液",
       "sector": "白酒",
-      "list_type": "持仓",
-      "notes": "[2026-08-31] 加进 watchlist, 之前用 refresh_all.sh 单独跑, 现在批量自动处理"
+      "list_type": "持仓"
     },
     {
       "code": "300919",
       "name": "中伟新材",
       "sector": "电气设备",
-      "list_type": "持仓",
-      "notes": "锂电正极前驱体龙头, 2026-09-03 /t-bb-obv 命中 (BOLL -9.7% 最强信号)"
+      "list_type": "持仓"
     },
     {
       "code": "603662",
       "name": "柯力传感",
       "sector": "仪器仪表",
-      "list_type": "持仓",
-      "notes": "应变式传感器龙头, 力矩传感器/人形机器人主题 (2026-09-15 用户加仓)"
+      "list_type": "持仓"
     },
     {
       "code": "300613",
       "name": "富瀚微",
       "sector": "半导体-IC设计",
       "list_type": "blowout",
-      "notes": "R3 反转: 营收 +113% / 净利 yoy +1419% (+938pp), 半导体 IC 设计 (2026-09-18 /t-finance-earnings-blowout)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -154,7 +130,6 @@
       "name": "粤海饲料",
       "sector": "饲料",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -164,7 +139,6 @@
       "name": "雅创电子",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -174,7 +148,6 @@
       "name": "方正电机",
       "sector": "纺织机械",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -184,7 +157,6 @@
       "name": "中洲控股",
       "sector": "全国地产",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -194,7 +166,6 @@
       "name": "利扬芯片",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -204,7 +175,6 @@
       "name": "中微公司",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -214,7 +184,6 @@
       "name": "视源股份",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -224,7 +193,6 @@
       "name": "智微智能",
       "sector": "IT设备",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -234,7 +202,6 @@
       "name": "全志科技",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -244,7 +211,6 @@
       "name": "粤桂股份",
       "sector": "综合类",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -254,7 +220,6 @@
       "name": "亚康股份",
       "sector": "软件服务",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -264,7 +229,6 @@
       "name": "博通集成",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -274,7 +238,6 @@
       "name": "盈趣科技",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -284,7 +247,6 @@
       "name": "寒武纪",
       "sector": "半导体",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -294,7 +256,6 @@
       "name": "天成自控",
       "sector": "汽车配件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -304,7 +265,6 @@
       "name": "本川智能",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -314,7 +274,6 @@
       "name": "三利谱",
       "sector": "元器件",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -324,7 +283,6 @@
       "name": "富春环保",
       "sector": "新型电力",
       "list_type": "blowout",
-      "notes": "R3 反转 (2026-09-18 /t-finance-earnings-blowout 20260630 季报命中)",
       "tags": [
         "blowout-2026Q2"
       ]
@@ -333,36 +291,31 @@
       "code": "300620",
       "name": "光库科技",
       "sector": "通信设备",
-      "list_type": "持仓",
-      "notes": "AI 算力光模块核心元件 (隔离器/泵浦合束器), 2026-09-21 加"
+      "list_type": "持仓"
     },
     {
       "code": "000988",
       "name": "华工科技",
       "sector": "专用机械",
-      "list_type": "持仓",
-      "notes": "激光设备+光通信模块, AI 算力光模块老玩家, 2026-09-21 加"
+      "list_type": "持仓"
     },
     {
       "code": "688048",
       "name": "长光华芯",
       "sector": "半导体",
-      "list_type": "持仓",
-      "notes": "半导体激光芯片 (VCSEL/DFB/EML), AI 算力光芯片国产替代, 2026-09-21 加"
+      "list_type": "持仓"
     },
     {
       "code": "688498",
       "name": "源杰科技",
       "sector": "半导体",
-      "list_type": "持仓",
-      "notes": "半导体激光器芯片 (DFB/EML/1310nm), AI 算力光模块+高速光芯片, 2026-09-21 加"
+      "list_type": "持仓"
     },
     {
       "code": "300476",
       "name": "胜宏科技",
       "sector": "元器件-PCB",
-      "list_type": "持仓",
-      "notes": "AI 算力高速 PCB 龙头 (英伟达/AMD 服务器主板), 2026-09-21 加"
+      "list_type": "持仓"
     },
     {
       "code": "000504",
@@ -373,8 +326,7 @@
         "妖股",
         "业绩暴增",
         "连板3板"
-      ],
-      "notes": "2026-09 本月 3 板妖股 + 营收 +473.6% / 净利 +272.0% (业绩暴增), 量比 3.17, 2026-09-23 加"
+      ]
     },
     {
       "code": "601086",
@@ -385,8 +337,7 @@
         "妖股",
         "净利暴增",
         "连板2板"
-      ],
-      "notes": "2026-09 本月 2 板妖股 + 净利 +214.1% (暴增), 量比 3.34, 2026-09-23 加"
+      ]
     },
     {
       "code": "603068",
@@ -398,8 +349,7 @@
         "blowout",
         "连板2板",
         "业绩+妖股双驱动"
-      ],
-      "notes": "2026-09 本月 2 板妖股 + 营收 +70.2% / 净利 +162.6% (业绩强), 量比 2.86, earnings-blowout 命中, 已持仓, 2026-09-23 补标签"
+      ]
     },
     {
       "code": "600354",
@@ -411,8 +361,7 @@
         "净利暴增",
         "ROE高",
         "连板2板"
-      ],
-      "notes": "2026-09 本月 2 板妖股 + 净利 +165.7% (暴增), ROE 18.7% 最高, 量比 1.05, 2026-09-23 加"
+      ]
     },
     {
       "code": "002585",
@@ -423,8 +372,7 @@
         "妖股",
         "净利暴增",
         "连板2板"
-      ],
-      "notes": "2026-09 本月 2 板妖股 + 净利 +130.6% (暴增), 量比 3.29, 2026-09-23 加"
+      ]
     },
     {
       "code": "001317",
@@ -435,8 +383,7 @@
         "妖股",
         "净利反转",
         "连板2板"
-      ],
-      "notes": "2026-09 本月 2 板妖股 + 营收 -22% 但净利 +117.5% (低基数反转), 量比 3.07, 2026-09-23 加"
+      ]
     },
     {
       "code": "600630",
@@ -447,8 +394,7 @@
         "妖股",
         "稳健增长",
         "连板2板"
-      ],
-      "notes": "2026-09 本月 2 板妖股 + 营收 +9.6% / 净利 +41.1%, 量比 5.75, 2026-09-23 加"
+      ]
     },
     {
       "code": "003026",
@@ -459,8 +405,7 @@
         "妖股",
         "稳健增长",
         "连板2板"
-      ],
-      "notes": "2026-09 本月 2 板妖股 + 营收 +23.3% / 净利 +61.5%, ROE 6.2%, 量比 4.78, 2026-09-23 加"
+      ]
     },
     {
       "code": "000070",
@@ -468,8 +413,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1008% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "000089",
@@ -477,8 +421,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +136% | 营收 yoy +6%"
+      ]
     },
     {
       "code": "000100",
@@ -486,8 +429,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +4%"
+      ]
     },
     {
       "code": "000685",
@@ -495,8 +437,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +104% | 营收 yoy +2%"
+      ]
     },
     {
       "code": "000938",
@@ -504,8 +445,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +108% | 营收 yoy +34%"
+      ]
     },
     {
       "code": "000977",
@@ -513,8 +453,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +270% | 营收 yoy +5%"
+      ]
     },
     {
       "code": "002132",
@@ -522,8 +461,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +293% | 营收 yoy +11%"
+      ]
     },
     {
       "code": "002134",
@@ -531,8 +469,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +560% | 营收 yoy +43%"
+      ]
     },
     {
       "code": "002156",
@@ -540,8 +477,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +317% | 营收 yoy +23%"
+      ]
     },
     {
       "code": "002185",
@@ -549,8 +485,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +259% | 营收 yoy +35%"
+      ]
     },
     {
       "code": "002213",
@@ -558,8 +493,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +303% | 营收 yoy +1%"
+      ]
     },
     {
       "code": "002266",
@@ -567,8 +501,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +26%"
+      ]
     },
     {
       "code": "002292",
@@ -576,8 +509,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +371% | 营收 yoy +11%"
+      ]
     },
     {
       "code": "002635",
@@ -585,8 +517,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +165% | 营收 yoy +11%"
+      ]
     },
     {
       "code": "002645",
@@ -594,8 +525,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +330% | 营收 yoy +77%"
+      ]
     },
     {
       "code": "002745",
@@ -603,8 +533,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +331% | 营收 yoy +24%"
+      ]
     },
     {
       "code": "002747",
@@ -612,8 +541,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2314% | 营收 yoy +1%"
+      ]
     },
     {
       "code": "002921",
@@ -621,8 +549,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +133% | 营收 yoy +31%"
+      ]
     },
     {
       "code": "002990",
@@ -630,8 +557,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +343% | 营收 yoy +34%"
+      ]
     },
     {
       "code": "300016",
@@ -639,8 +565,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +166% | 营收 yoy +15%"
+      ]
     },
     {
       "code": "300184",
@@ -648,8 +573,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +209% | 营收 yoy +59%"
+      ]
     },
     {
       "code": "300219",
@@ -657,8 +581,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +167% | 营收 yoy +12%"
+      ]
     },
     {
       "code": "300252",
@@ -666,8 +589,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +385% | 营收 yoy +22%"
+      ]
     },
     {
       "code": "300404",
@@ -675,8 +597,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +26%"
+      ]
     },
     {
       "code": "300497",
@@ -684,8 +605,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2660% | 营收 yoy +73%"
+      ]
     },
     {
       "code": "300590",
@@ -693,8 +613,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +184% | 营收 yoy +68%"
+      ]
     },
     {
       "code": "300607",
@@ -702,8 +621,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +263% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "300611",
@@ -711,8 +629,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +45% | 营收 yoy +132%"
+      ]
     },
     {
       "code": "300661",
@@ -720,8 +637,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +109% | 营收 yoy +43%"
+      ]
     },
     {
       "code": "300681",
@@ -729,8 +645,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +217% | 营收 yoy +77%"
+      ]
     },
     {
       "code": "300738",
@@ -738,8 +653,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +124% | 营收 yoy +28%"
+      ]
     },
     {
       "code": "300747",
@@ -747,8 +661,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +118% | 营收 yoy +15%"
+      ]
     },
     {
       "code": "300866",
@@ -756,8 +669,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +46% | 营收 yoy +29%"
+      ]
     },
     {
       "code": "300972",
@@ -765,8 +677,7 @@
       "list_type": "自选",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +157% | 营收 yoy +54%"
+      ]
     },
     {
       "code": "600116",
@@ -774,8 +685,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +689% | 营收 yoy +4%"
+      ]
     },
     {
       "code": "600150",
@@ -783,8 +693,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +164% | 营收 yoy +26%"
+      ]
     },
     {
       "code": "600292",
@@ -792,8 +701,7 @@
       "list_type": "自选",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +123% | 营收 yoy +2%"
+      ]
     },
     {
       "code": "600390",
@@ -801,8 +709,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +105% | 营收 yoy +16%"
+      ]
     },
     {
       "code": "601222",
@@ -810,8 +717,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +32% | 营收 yoy +82%"
+      ]
     },
     {
       "code": "601368",
@@ -819,8 +725,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +1%"
+      ]
     },
     {
       "code": "603032",
@@ -828,8 +733,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +23%"
+      ]
     },
     {
       "code": "603127",
@@ -837,8 +741,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1127% | 营收 yoy +5%"
+      ]
     },
     {
       "code": "603317",
@@ -846,8 +749,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +100% | 营收 yoy +46%"
+      ]
     },
     {
       "code": "603997",
@@ -855,8 +757,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +137% | 营收 yoy +24%"
+      ]
     },
     {
       "code": "688002",
@@ -864,8 +765,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +259% | 营收 yoy +73%"
+      ]
     },
     {
       "code": "688179",
@@ -873,8 +773,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +139% | 营收 yoy +35%"
+      ]
     },
     {
       "code": "688183",
@@ -882,8 +781,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +109% | 营收 yoy +53%"
+      ]
     },
     {
       "code": "688209",
@@ -891,8 +789,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +100% | 营收 yoy +15%"
+      ]
     },
     {
       "code": "688231",
@@ -900,8 +797,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +102% | 营收 yoy +62%"
+      ]
     },
     {
       "code": "688235",
@@ -909,8 +805,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +627% | 营收 yoy +27%"
+      ]
     },
     {
       "code": "688258",
@@ -918,8 +813,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +292% | 营收 yoy +2%"
+      ]
     },
     {
       "code": "688261",
@@ -927,8 +821,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +285% | 营收 yoy +20%"
+      ]
     },
     {
       "code": "688368",
@@ -936,8 +829,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +449% | 营收 yoy +99%"
+      ]
     },
     {
       "code": "688385",
@@ -945,8 +837,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +339% | 营收 yoy +21%"
+      ]
     },
     {
       "code": "688396",
@@ -954,8 +845,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +113% | 营收 yoy +17%"
+      ]
     },
     {
       "code": "688400",
@@ -963,8 +853,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +583% | 营收 yoy +6%"
+      ]
     },
     {
       "code": "688536",
@@ -972,8 +861,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +369% | 营收 yoy +69%"
+      ]
     },
     {
       "code": "688569",
@@ -981,8 +869,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +32% | 营收 yoy +25%"
+      ]
     },
     {
       "code": "688633",
@@ -990,8 +877,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +168% | 营收 yoy +41%"
+      ]
     },
     {
       "code": "688700",
@@ -999,8 +885,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +133% | 营收 yoy +52%"
+      ]
     },
     {
       "code": "002039",
@@ -1008,8 +893,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +83% | 营收 yoy +26%"
+      ]
     },
     {
       "code": "002111",
@@ -1017,8 +901,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +91% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "002406",
@@ -1026,8 +909,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +84% | 营收 yoy +26%"
+      ]
     },
     {
       "code": "002826",
@@ -1035,8 +917,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +78% | 营收 yoy +15%"
+      ]
     },
     {
       "code": "300083",
@@ -1044,8 +925,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +29% | 营收 yoy +31%"
+      ]
     },
     {
       "code": "600460",
@@ -1053,8 +933,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +95% | 营收 yoy +15%"
+      ]
     },
     {
       "code": "603223",
@@ -1062,8 +941,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +85% | 营收 yoy +8%"
+      ]
     },
     {
       "code": "603933",
@@ -1071,8 +949,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +85% | 营收 yoy +38%"
+      ]
     },
     {
       "code": "688380",
@@ -1080,8 +957,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +98% | 营收 yoy +44%"
+      ]
     },
     {
       "code": "688981",
@@ -1089,8 +965,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +94% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "000096",
@@ -1098,8 +973,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +636% | 营收 yoy +20%"
+      ]
     },
     {
       "code": "000626",
@@ -1107,8 +981,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +640% | 营收 yoy +10%"
+      ]
     },
     {
       "code": "000829",
@@ -1116,8 +989,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +125% | 营收 yoy +25%"
+      ]
     },
     {
       "code": "000966",
@@ -1125,8 +997,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +82% | 营收 yoy +4%"
+      ]
     },
     {
       "code": "002008",
@@ -1134,8 +1005,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +164% | 营收 yoy +76%"
+      ]
     },
     {
       "code": "002054",
@@ -1143,8 +1013,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +103% | 营收 yoy +28%"
+      ]
     },
     {
       "code": "002115",
@@ -1152,8 +1021,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1826% | 营收 yoy +174%"
+      ]
     },
     {
       "code": "002197",
@@ -1161,8 +1029,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +116% | 营收 yoy +18%"
+      ]
     },
     {
       "code": "002210",
@@ -1170,8 +1037,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +557% | 营收 yoy +16%"
+      ]
     },
     {
       "code": "002384",
@@ -1179,8 +1045,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +290% | 营收 yoy +64%"
+      ]
     },
     {
       "code": "002396",
@@ -1188,8 +1053,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +76% | 营收 yoy +21%"
+      ]
     },
     {
       "code": "002436",
@@ -1197,8 +1061,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +283% | 营收 yoy +18%"
+      ]
     },
     {
       "code": "002440",
@@ -1206,8 +1069,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +319% | 营收 yoy +32%"
+      ]
     },
     {
       "code": "002491",
@@ -1215,8 +1077,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +326% | 营收 yoy +61%"
+      ]
     },
     {
       "code": "002552",
@@ -1224,8 +1085,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +519% | 营收 yoy +55%"
+      ]
     },
     {
       "code": "002558",
@@ -1233,8 +1093,7 @@
       "list_type": "自选",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +176% | 营收 yoy +182%"
+      ]
     },
     {
       "code": "002593",
@@ -1242,8 +1101,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +104% | 营收 yoy +5%"
+      ]
     },
     {
       "code": "002636",
@@ -1251,8 +1109,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +987% | 营收 yoy +66%"
+      ]
     },
     {
       "code": "002975",
@@ -1260,8 +1117,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +747% | 营收 yoy +67%"
+      ]
     },
     {
       "code": "003010",
@@ -1269,8 +1125,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +132% | 营收 yoy +73%"
+      ]
     },
     {
       "code": "003016",
@@ -1278,8 +1133,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +197% | 营收 yoy +8%"
+      ]
     },
     {
       "code": "300033",
@@ -1287,8 +1141,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +90% | 营收 yoy +49%"
+      ]
     },
     {
       "code": "300058",
@@ -1296,8 +1149,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +119% | 营收 yoy +7%"
+      ]
     },
     {
       "code": "300067",
@@ -1305,8 +1157,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +214% | 营收 yoy +34%"
+      ]
     },
     {
       "code": "300171",
@@ -1314,8 +1165,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +134% | 营收 yoy +4%"
+      ]
     },
     {
       "code": "300223",
@@ -1323,8 +1173,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +490% | 营收 yoy +76%"
+      ]
     },
     {
       "code": "300233",
@@ -1332,8 +1181,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +220% | 营收 yoy +6%"
+      ]
     },
     {
       "code": "300302",
@@ -1341,8 +1189,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1503% | 营收 yoy +50%"
+      ]
     },
     {
       "code": "300308",
@@ -1350,8 +1197,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +242% | 营收 yoy +182%"
+      ]
     },
     {
       "code": "300464",
@@ -1359,8 +1205,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +158% | 营收 yoy +2%"
+      ]
     },
     {
       "code": "300471",
@@ -1368,8 +1213,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +519% | 营收 yoy +8%"
+      ]
     },
     {
       "code": "300475",
@@ -1377,8 +1221,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2207% | 营收 yoy +252%"
+      ]
     },
     {
       "code": "300502",
@@ -1386,8 +1229,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +91% | 营收 yoy +100%"
+      ]
     },
     {
       "code": "300503",
@@ -1395,8 +1237,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +267% | 营收 yoy +66%"
+      ]
     },
     {
       "code": "300531",
@@ -1404,8 +1245,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +114% | 营收 yoy +33%"
+      ]
     },
     {
       "code": "300548",
@@ -1413,8 +1253,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +91% | 营收 yoy +41%"
+      ]
     },
     {
       "code": "300604",
@@ -1422,8 +1261,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +126% | 营收 yoy +60%"
+      ]
     },
     {
       "code": "300666",
@@ -1431,8 +1269,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +114% | 营收 yoy +31%"
+      ]
     },
     {
       "code": "300672",
@@ -1440,8 +1277,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +873% | 营收 yoy +86%"
+      ]
     },
     {
       "code": "300706",
@@ -1449,8 +1285,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +225% | 营收 yoy +16%"
+      ]
     },
     {
       "code": "300741",
@@ -1458,8 +1293,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +720% | 营收 yoy +20%"
+      ]
     },
     {
       "code": "300765",
@@ -1467,8 +1301,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +46026% | 营收 yoy +209%"
+      ]
     },
     {
       "code": "300857",
@@ -1476,8 +1309,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +326% | 营收 yoy +153%"
+      ]
     },
     {
       "code": "300865",
@@ -1485,8 +1317,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +217% | 营收 yoy +22%"
+      ]
     },
     {
       "code": "300921",
@@ -1494,8 +1325,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +134% | 营收 yoy +5%"
+      ]
     },
     {
       "code": "300975",
@@ -1503,8 +1333,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +493% | 营收 yoy +122%"
+      ]
     },
     {
       "code": "300981",
@@ -1512,8 +1341,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +2662% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "301021",
@@ -1521,8 +1349,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +315% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "301086",
@@ -1530,8 +1357,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +222% | 营收 yoy +66%"
+      ]
     },
     {
       "code": "301200",
@@ -1539,8 +1365,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +263% | 营收 yoy +109%"
+      ]
     },
     {
       "code": "301217",
@@ -1548,8 +1373,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +515% | 营收 yoy +34%"
+      ]
     },
     {
       "code": "301239",
@@ -1557,8 +1381,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +501% | 营收 yoy +10%"
+      ]
     },
     {
       "code": "301308",
@@ -1566,8 +1389,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +71529% | 营收 yoy +136%"
+      ]
     },
     {
       "code": "301316",
@@ -1575,8 +1397,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +245% | 营收 yoy +24%"
+      ]
     },
     {
       "code": "301338",
@@ -1584,8 +1405,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +105% | 营收 yoy +62%"
+      ]
     },
     {
       "code": "600105",
@@ -1593,8 +1413,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +58% | 营收 yoy +48%"
+      ]
     },
     {
       "code": "600120",
@@ -1602,8 +1421,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +115% | 营收 yoy +6%"
+      ]
     },
     {
       "code": "600183",
@@ -1611,8 +1429,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +130% | 营收 yoy +50%"
+      ]
     },
     {
       "code": "600191",
@@ -1620,8 +1437,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +723% | 营收 yoy +58%"
+      ]
     },
     {
       "code": "600203",
@@ -1629,8 +1445,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +277% | 营收 yoy +49%"
+      ]
     },
     {
       "code": "600272",
@@ -1638,8 +1453,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +88% | 营收 yoy +6%"
+      ]
     },
     {
       "code": "600487",
@@ -1647,8 +1461,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +93% | 营收 yoy +31%"
+      ]
     },
     {
       "code": "600508",
@@ -1656,8 +1469,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +38% | 营收 yoy +27%"
+      ]
     },
     {
       "code": "600540",
@@ -1665,8 +1477,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1820% | 营收 yoy +77%"
+      ]
     },
     {
       "code": "600601",
@@ -1674,8 +1485,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +232% | 营收 yoy +73%"
+      ]
     },
     {
       "code": "600663",
@@ -1683,8 +1493,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +36% | 营收 yoy +23%"
+      ]
     },
     {
       "code": "600686",
@@ -1692,8 +1501,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +138% | 营收 yoy +7%"
+      ]
     },
     {
       "code": "600776",
@@ -1701,8 +1509,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +143% | 营收 yoy +16%"
+      ]
     },
     {
       "code": "600805",
@@ -1710,8 +1517,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +322% | 营收 yoy +9%"
+      ]
     },
     {
       "code": "600893",
@@ -1719,8 +1525,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +59% | 营收 yoy +47%"
+      ]
     },
     {
       "code": "600969",
@@ -1728,8 +1533,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +100% | 营收 yoy +3%"
+      ]
     },
     {
       "code": "601138",
@@ -1737,8 +1541,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +96% | 营收 yoy +55%"
+      ]
     },
     {
       "code": "601869",
@@ -1746,8 +1549,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +889% | 营收 yoy +54%"
+      ]
     },
     {
       "code": "601969",
@@ -1755,8 +1557,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +83% | 营收 yoy +13%"
+      ]
     },
     {
       "code": "603042",
@@ -1764,8 +1565,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +185% | 营收 yoy +5%"
+      ]
     },
     {
       "code": "603186",
@@ -1773,8 +1573,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +305% | 营收 yoy +41%"
+      ]
     },
     {
       "code": "603197",
@@ -1782,8 +1581,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +96% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "603236",
@@ -1791,8 +1589,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +28% | 营收 yoy +32%"
+      ]
     },
     {
       "code": "603588",
@@ -1800,8 +1597,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +103% | 营收 yoy +54%"
+      ]
     },
     {
       "code": "603629",
@@ -1809,8 +1605,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1275% | 营收 yoy +39%"
+      ]
     },
     {
       "code": "603630",
@@ -1818,8 +1613,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +484% | 营收 yoy +7%"
+      ]
     },
     {
       "code": "603738",
@@ -1827,8 +1621,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +130% | 营收 yoy +19%"
+      ]
     },
     {
       "code": "603929",
@@ -1836,8 +1629,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +205% | 营收 yoy +51%"
+      ]
     },
     {
       "code": "603986",
@@ -1845,8 +1637,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1091% | 营收 yoy +179%"
+      ]
     },
     {
       "code": "605299",
@@ -1854,8 +1645,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +130% | 营收 yoy +28%"
+      ]
     },
     {
       "code": "688025",
@@ -1863,8 +1653,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +105% | 营收 yoy +69%"
+      ]
     },
     {
       "code": "688072",
@@ -1872,8 +1661,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1324% | 营收 yoy +49%"
+      ]
     },
     {
       "code": "688108",
@@ -1881,8 +1669,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +264% | 营收 yoy +27%"
+      ]
     },
     {
       "code": "688110",
@@ -1890,8 +1677,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +694% | 营收 yoy +336%"
+      ]
     },
     {
       "code": "688127",
@@ -1899,8 +1685,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +163% | 营收 yoy +76%"
+      ]
     },
     {
       "code": "688166",
@@ -1908,8 +1693,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +243% | 营收 yoy +26%"
+      ]
     },
     {
       "code": "688200",
@@ -1917,8 +1701,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +113% | 营收 yoy +38%"
+      ]
     },
     {
       "code": "688205",
@@ -1926,8 +1709,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +250% | 营收 yoy +26%"
+      ]
     },
     {
       "code": "688257",
@@ -1935,8 +1717,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +461% | 营收 yoy +80%"
+      ]
     },
     {
       "code": "688308",
@@ -1944,8 +1725,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +47734% | 营收 yoy +100%"
+      ]
     },
     {
       "code": "688328",
@@ -1953,8 +1733,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +198% | 营收 yoy +21%"
+      ]
     },
     {
       "code": "688336",
@@ -1962,8 +1741,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +95% | 营收 yoy +35%"
+      ]
     },
     {
       "code": "688378",
@@ -1971,8 +1749,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +551% | 营收 yoy +64%"
+      ]
     },
     {
       "code": "688383",
@@ -1980,8 +1757,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1707% | 营收 yoy +36%"
+      ]
     },
     {
       "code": "688409",
@@ -1989,8 +1765,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +993% | 营收 yoy +34%"
+      ]
     },
     {
       "code": "688488",
@@ -1998,8 +1773,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +150% | 营收 yoy +1%"
+      ]
     },
     {
       "code": "688519",
@@ -2007,8 +1781,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +429% | 营收 yoy +83%"
+      ]
     },
     {
       "code": "688575",
@@ -2016,8 +1789,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +167% | 营收 yoy +10%"
+      ]
     },
     {
       "code": "688577",
@@ -2025,8 +1797,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +479% | 营收 yoy +46%"
+      ]
     },
     {
       "code": "688630",
@@ -2034,8 +1805,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +98% | 营收 yoy +69%"
+      ]
     },
     {
       "code": "688655",
@@ -2043,8 +1813,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +616% | 营收 yoy +77%"
+      ]
     },
     {
       "code": "688766",
@@ -2052,8 +1821,7 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
-      ],
-      "notes": "[2026-09-23 auto-add from earnings-blowout 20260630] 净利 yoy +1930% | 营收 yoy +337%"
+      ]
     }
   ]
 }
