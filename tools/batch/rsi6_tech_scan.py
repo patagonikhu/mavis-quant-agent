@@ -440,7 +440,7 @@ def main():
     tech_only = args.tech   # 默认 False (全市场)
     # 2026-09-23 改: 默认从 watchlist 选 (--all-market 才全市场; --from-watchlist 是兼容旧 CLI)
     from_watchlist = (not args.all_market) or args.from_watchlist
-    # 2026-09-23 改: 不再做业绩过滤 (yoy_only/strict_yoy 移除, 只判断 RSI + 放量)
+    # 2026-09-23 改: 不再做业绩过滤 (yoy_only/strict_yoy 移除), v4.5 再删放量 spike (妖股真实时序: RSI 超卖 → 21-47 天后才放量, 同一根 K 线 AND 永远命中不了)
 
     data_src = "watchlist" if from_watchlist else "全市场"
     print(f"=== RSI 双指标超卖 ({data_src}, 0 网络) ===")
@@ -588,7 +588,6 @@ def main():
         cond_lines = [f"RSI6 < {args.threshold_rsi6}"]
         if use_rsi12: cond_lines.append(f"RSI12 < {args.threshold_rsi12}")
         if tech_only: cond_lines.append("科技板块")
-        if yoy_only: cond_lines.append("季报 yoy > 0")
         cond_str = " + ".join(cond_lines)
 
         md = [f"# RSI 超卖 + 放量 ({today})\n\n"]
