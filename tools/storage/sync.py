@@ -698,14 +698,41 @@ def detect_stale_flags() -> dict[str, bool]:
     }
 
     # 1. K线 (每天必跑, 距今天 > 1 天就拉)
+    # 改: 不扫 7.5M 行, 读最新季度 parquet footer 拿 max(trade_date) (0.3ms)
+    # fallback: statistics disabled / IO 异常 → 保守标 stale (宁多拉不错过)
+    def _max_trade_date_from_parquet(parquet_file) -> str | None:
+        """从 parquet footer 读 max(trade_date), 毫秒级.
+        
+        Returns:
+            str YYYYMMDD, or None (statistics disabled / 异常)
+        """
+        try:
+            import pyarrow.parquet as pq
+            meta = pq.read_metadata(parquet_file)
+            maxes = []
+            for rg_idx in range(meta.num_row_groups):
+                rg = meta.row_group(rg_idx)
+                for c_idx in range(rg.num_columns):
+                    col = rg.column(c_idx)
+                    if col.path_in_schema == "trade_date":
+                        if col.statistics is None:
+                            return None  # statistics disabled
+                        maxes.append(str(col.statistics.max))
+                        break  # 找到 trade_date 列就退出
+            return max(maxes) if maxes else None
+        except Exception:
+            return None
+
     try:
         files = list(HISTORY_DIR.glob("*.parquet"))
         if files:
-            max_d = duckdb.execute(
-                f"SELECT MAX(trade_date) FROM read_parquet('{HISTORY_DIR}/*.parquet')"
-            ).fetchone()[0]
-            max_d_clean = max_d.replace("-", "") if max_d else ""
-            if max_d_clean:
+            latest_file = sorted(files)[-1]  # 最新季度 parquet
+            max_d = _max_trade_date_from_parquet(latest_file)
+            if max_d is None:
+                # fallback: 保守标 stale (怕错失真实 stale)
+                flags["kline"] = True
+            else:
+                max_d_clean = max_d.replace("-", "")
                 last = datetime.strptime(max_d_clean, "%Y%m%d")
                 gap = (today - last).days
                 # 距今天 >= 1 天 → 拉 (9/3 vs 9/2 gap=1, 也要拉)
