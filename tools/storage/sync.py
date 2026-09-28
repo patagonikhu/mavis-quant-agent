@@ -265,14 +265,25 @@ def action_stk_factor(force: bool = False) -> int:
 
     # 4) 按 trade_date 逐个拉, 按季累积
     from .caches.fflow_history import _quarter_of as _q_of  # 复用同一函数
+    from .caches.stk_factor_history import read_quarter_done_dates
     quarter_data: dict[str, list[dict]] = {q: [] for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
-    quarter_done: dict[str, set[str]] = {q: set() for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
+    # 修 bug: 先读旧 parquet metadata, 避免覆盖历史 done_dates
+    # (原代码 {q: set() for q in ...} 导致每次 sync 写 metadata 只含本次增量, 下次重复拉)
+    quarter_done: dict[str, set[str]] = {
+        q: read_quarter_done_dates(q) for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]
+    }
     t0 = time.time()
     n_total = 0
     for i, d in enumerate(pending, 1):
         data, status = get_stk_factor_by_date(d)
+        # 修 bug: EMPTY 可能因 tushare 限流假阳, 重试 1 次 (睡 5s)
+        if not data and status == "EMPTY":
+            time.sleep(5)
+            data, status = get_stk_factor_by_date(d)
         if not data:
             print(f"  ⚠️ {d}: 拉取失败 ({status})")
+            # 计入 done 避免下次无限 retry, 但不写 parquet metadata (空数据污染)
+            done.add(d)
             continue
         q = _q_of(d)
         quarter_data[q].extend(data)
