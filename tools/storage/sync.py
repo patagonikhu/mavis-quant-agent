@@ -706,15 +706,13 @@ def detect_stale_flags() -> dict[str, bool]:
 
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
+    # --auto 检测范围: 只盯这 4 个 flag
+    # eps / fflow / cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
     flags = {
         "kline": False,         # K线距今天 > 1 天
         "stock_basic": False,   # 距上次 > 30 天
         "financials": False,    # 缺最新季
         "stk_factor": False,    # stk_factor 距今天 > 1 天 (2026-09-22 修 v6.2.4 重构漏接 auto)
-        "eps": False,           # 暂不自动 (用户主动)
-        "fflow": False,         # 暂不自动
-        "cache": False,         # 暂不自动
-        "meta": False,          # 暂不自动
     }
 
     # 1. K线 (每天必跑, 距今天 > 1 天就拉)
@@ -831,7 +829,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
     if force:
         flags = {k: True for k in flags}
         if not quiet:
-            print("  ⚠️  --force, 全部 7 个 flag 强刷")
+            print("  ⚠️  --force, 全部 4 个 flag 强刷 (eps/fflow/cache/meta 仍需手动)")
     if quiet:
         # dry-run 模式: 也要打印结果 (这是 dry 的全部意义)
         print("\n🔍 自动检测 (dry-run, 不真跑):")

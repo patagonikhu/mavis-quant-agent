@@ -1,6 +1,6 @@
 ---
 name: t-sync-data
-description: 唯一数据同步入口. 9 个正交 flag (kline/stk-factor/stock-basic/financials/eps/fflow/cache/ths/all-data), 默认 --auto 智能检测 stale. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务/EPS/fflow"、"sync cache"、"sync 一下".
+description: 唯一数据同步入口. 8 个正交 flag (kline/stk-factor/stock-basic/financials/eps/fflow/cache/ths/all-data). **--auto 只检测 4 个 (kline/stk-factor/stock-basic/financials)**, 其他 (eps/fflow/cache/meta) 按需手动. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务/EPS/fflow"、"sync cache"、"sync 一下".
 user-invocable: true
 allowed-tools:
   - Bash
