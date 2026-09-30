@@ -30,17 +30,17 @@ bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan
 ... --watchlist-types 持仓       # 只跑某类
 ... --tech                       # 仅科技板块
 ... --write-md                   # 写 docs/rsi6-tech-watchlist.md
-... --check-news                 # 命中后 MCP 查近 30 天负面新闻 (有则标 ⚠️)
-... --news-days 30               # 新闻回溯天数 (默认 30)
+... --check-news                 # ⚠️ 占位, 当前代码层不实现 (见下)
+... --news-days 30               # 新闻回溯天数 (默认 30, 需 --check-news)
 ```
 
 ## 跑流程 (2 步)
 
 1. **step 1** — 跑 RSI 双指标超卖扫描 (DataStore 0 网络)
-2. **step 2 (可选, --check-news 时启用)** — 命中后逐只查 MCP 负面新闻
-   - 走 `connector__hengsheng__call_api` (StockNewslist, emotionDirectionCode=负面)
-   - 近 N 天 (默认 30) 任一负面新闻 → 命中行加 ⚠️
-   - MCP 不可用时静默跳过,不影响主流程
+2. **step 2 (负面新闻, 当前 LLM agent 手工兜底)** — 命中后逐只查 MCP 负面新闻
+   - **现状**: `connector__hengsheng__*` 是 LLM agent 内置函数, `bash python -m` 子进程里 MCP 不可用 → `--check-news` 在 rsi6_tech_scan.py 是占位 (代码注释已写明)
+   - **怎么用**: LLM agent 在线时 (比如现在), 手工调 `StockNewslist` + `emotionDirectionCode=负面` 查每只命中的负面新闻, 然后在汇总里加 ⚠️
+   - SKILL.md 描述的"自动加 ⚠️"在脚本层未实现, **不要被 SKILL.md 误导**
 
 ## 触发规则 (v4.5 单一信号)
 

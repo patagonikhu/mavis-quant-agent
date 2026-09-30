@@ -429,9 +429,9 @@ def main():
     parser.add_argument("--lookback",        type=int,   default=2,
                         help="RSI 看最近 N 根 K 线任一跌破即过 (默认 2, 2026-09-23 从 1 改; --lookback 5 更宽松)")
     parser.add_argument("--check-news",      action="store_true",
-                        help="命中后通过 MCP (MiniMax Finance) 查近 30 天负面新闻, 有则标 ⚠️")
+                        help="⚠️ 占位 flag, 当前代码层未实现. bash python -m 子进程里 MCP (connector__hengsheng__*) 不可用, 仅 LLM agent 在线时手工调 MCP 兜底.")
     parser.add_argument("--news-days",       type=int,   default=30,
-                        help="新闻回溯天数 (默认 30, 需 --check-news)")
+                        help="新闻回溯天数 (默认 30, 需 --check-news, 当前 flag 占位)")
     # 2026-09-23 删: Wyckoff LPSY → JAC 买点旁路 (4 步形态判定无趋势/位置/RSI 约束,
     # 在下跌中继 + 一字板都能命中, 不是真买点)
     args = parser.parse_args()
