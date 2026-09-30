@@ -74,10 +74,11 @@ def _section_quarterly_table(data: RenderData) -> str:
                     period_label = latest_q
 
     cols1 = ["季", "营收 yoy", "净利 yoy", "毛利率", "ROE", "营收 (亿)", "净利 (亿)",
-             "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)"]
-    sep1 = ["---"] * 14
+             "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)",
+             "PE", "动态 PE"]
+    sep1 = ["---"] * 16
     rows = [f"### 最近 4 季财务 + Magic 公式 ({period_label if has_magic else 'TTM'})", "",
-            "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期):**", "",
+            "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期; PE=季末市值/YTD净利年化 (Q1×4 / Q2×2 / Q3×4/3 / Q4×1); 动态PE=forward PE, 1致预期净利):**", "",
             "| " + " | ".join(cols1) + " |",
             "| " + " | ".join(sep1) + " |"]
 
@@ -88,6 +89,10 @@ def _section_quarterly_table(data: RenderData) -> str:
         ey_q = r.get('ey')
         roc_s = f"{roc_q:.1f}%" if roc_q is not None else "—"
         ey_s  = f"{ey_q:.2f}%" if ey_q is not None else "—"
+        pe_q = r.get('static_pe')
+        pe_s = f"{pe_q:.1f}" if pe_q is not None else "—"
+        fwd_pe_q = r.get('fwd_pe')
+        fwd_pe_s = f"{fwd_pe_q:.1f}" if fwd_pe_q is not None else "—"
         rows.append(
             f"| {r['quarter']} "
             f"| {r['or_yoy']:+.1f}% "
@@ -102,7 +107,9 @@ def _section_quarterly_table(data: RenderData) -> str:
             f"| {_fmt(r.get('mc_yi'))} "
             f"| {_fmt(r.get('netdebt_yi'))} "
             f"| {_fmt(r.get('ev_yi'))} "
-            f"| {_fmt(r.get('capital_yi'))} |"
+            f"| {_fmt(r.get('capital_yi'))} "
+            f"| {pe_s} "
+            f"| {fwd_pe_s} |"
         )
 
     if has_magic:

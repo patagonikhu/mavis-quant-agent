@@ -1159,6 +1159,11 @@ class FinanceStrategy:
             if ebit_yi == 0:
                 ebit_yi = magic.get("ebit_yi") or 0.0
 
+            # 2026-09-30 改: 静态 PE 用 YTD 倍率年化 (12-31 全年 ×1, 09-30 三季度 ×4/3, 06-30 半年 ×2)
+            # 修前错把 Q1/Q2/Q3 当单季 ×4, 高估净利 4 倍 → PE 偏低 4 倍
+            ytd_factor = {"03-31": 4.0, "06-30": 2.0, "09-30": 4.0/3.0, "12-31": 1.0}.get(q_str[5:10], 1.0)
+            annualized_np_yi = np_yi * ytd_factor if np_yi else 0.0
+
             quarterly.append({
                 "quarter":      q_str[:10],
                 "or_yoy":       float(r.get("or_yoy") or 0),
@@ -1183,6 +1188,10 @@ class FinanceStrategy:
                 "L_r10":        (dcf_out.get("r_10%") or {}).get("L_隐含(亿)"),
                 "L_r12":        (dcf_out.get("r_12%") or {}).get("L_隐含(亿)"),
                 "L_E3_r10":     (dcf_out.get("r_10%") or {}).get("L/E3(每share)"),
+                # 2026-09-30 加: 静态 PE (YTD 净利按季报类型年化 / 该季末市值)
+                # 公式: PE = mc_yi / (np_yi × ytd_factor), ytd_factor 修正为:
+                #   Q1 (03-31) → ×4  Q2 (06-30) → ×2  Q3 (09-30) → ×4/3  Q4 (12-31) → ×1
+                "static_pe":    round(q_mc_yi / annualized_np_yi, 1) if (q_mc_yi > 0 and annualized_np_yi > 0) else None,
             })
 
         # 最新季 Magic（用最后一个财报行重算，确保 period_label 等字段正确）
