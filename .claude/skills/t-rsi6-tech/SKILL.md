@@ -80,10 +80,7 @@ bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan
 - `→±0.xx%/日` = MA20 走平 (震荡/顶部信号)
 - `↘-x.xx%/日` = MA20 在下 (空头通道)
 
-实战解读:
-- RSI 超卖 + ma20 ↘ 加速 (-0.7% 以下) = 同步下跌型 (拉数据: 反而是"超跌反弹"机会)
-- RSI 超卖 + ma20 → 持平 = 弱背离 (关注, 见底前奏)
-- RSI 超卖 + ma20 ↗ 转正 = 真买点 (强反转, 历史胜率最高)
+**注意**: ma20_slope 只展示, 不参与 RSI 过滤 / lookback / quality 分级. 判断留给 LLM 端.
 
 ## 参数速查
 
