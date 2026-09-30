@@ -310,6 +310,14 @@ def scan_one_worker(args_tuple):
 
         # 2026-09-23 改: 不再传 yoy 数据 (业绩过滤已移除), 但保留展示用字段
         yoy_disp = yoy if isinstance(yoy, dict) else {}
+        # 2026-09-30 加: MA20 5 日斜率 (显示用, 不参与过滤). 公式:
+        # (MA20[i] - MA20[i-5]) / MA20[i-5] / 5 * 100
+        # 含义: MA20 当下平均日变化 %; 负值=下降通道, 正值=上升通道
+        ma20_slope = None
+        if len(closes) >= 25:
+            ma20_series = [sum(closes[i-19:i+1]) / 20.0 for i in range(len(closes))]
+            if len(ma20_series) >= 6 and ma20_series[-6] > 0:
+                ma20_slope = (ma20_series[-1] - ma20_series[-6]) / ma20_series[-6] / 5 * 100
         return {
             "code": code,
             "trigger_date": all_dates[-1],
@@ -323,6 +331,7 @@ def scan_one_worker(args_tuple):
             "np_yoy":       yoy_disp.get("np_yoy"),
             "gross_margin": yoy_disp.get("gross_margin"),
             "roe":          yoy_disp.get("roe"),
+            "ma20_slope":   ma20_slope,        # 2026-09-30 加, 仅显示不参与过滤
             "days_ago": 0,
         }
     except Exception as e:
@@ -564,7 +573,7 @@ def main():
     print()
     if hits:
         # 2026-09-23 改: 显示业绩字段 (但不参与过滤, 业绩由 blowout 把关)
-        print(f"{'代码':<8}{'名称':<10}{'行业':<10}{'营收yoy':<8}{'净利yoy':<8}{'毛利%':<6}{'ROE%':<6}{'RSI6':<7}{'RSI12':<7}{'触发':<10}{'放量比':<8}{'价格':<8}{'质量'}")
+        print(f"{'代码':<8}{'名称':<10}{'行业':<10}{'营收yoy':<8}{'净利yoy':<8}{'毛利%':<6}{'ROE%':<6}{'RSI6':<7}{'RSI12':<7}{'触发':<10}{'放量比':<8}{'MA20斜率':<11}{'价格':<8}{'质量'}")
         for h in hits:
             rev_s = f"{h.get('rev_yoy'):+.1f}" if h.get('rev_yoy') is not None else "—"
             np_s  = f"{h.get('np_yoy'):+.1f}" if h.get('np_yoy') is not None else "—"
@@ -572,12 +581,23 @@ def main():
             roe_s = f"{h.get('roe'):.1f}" if h.get('roe') is not None else "—"
             rsi12_s = f"{h['rsi12']:.1f}" if h.get('rsi12') is not None else "—"
             vol_s = f"{h['volume_ratio']:.1f}x" if h.get('volume_ratio') else "—"
+            # MA20 斜率显示 (带箭头 + 数字 + /日)
+            slope = h.get('ma20_slope')
+            if slope is None:
+                slope_s = "—"
+            elif slope > 0.05:
+                slope_s = f"↗{slope:+.2f}%/日"
+            elif slope < -0.05:
+                slope_s = f"↘{slope:+.2f}%/日"
+            else:
+                slope_s = f"→{slope:+.2f}%/日"
             quality_icon = {"extreme": "⭐⭐", "high": "⭐", "medium": "·", "normal": ""}.get(h.get('quality'), "")
             news_warn = " ⚠️" if h.get("news_warn") else ""
             print(f"{h['code']:<8}{h['name'][:8]:<10}{(h['industry'] or '')[:8]:<10}"
                   f"{rev_s:<8}{np_s:<8}{gm_s:<6}{roe_s:<6}"
                   f"{h['rsi6']:<7.2f}{rsi12_s:<7}"
                   f"{h.get('trigger','—'):<10}{vol_s:<8}"
+                  f"{slope_s:<11}"
                   f"{h['trigger_price']:<8.2f}{quality_icon}{news_warn}")
     else:
         print("无命中 (四重条件严格; 默认 5-30 只/天)")
@@ -596,8 +616,8 @@ def main():
         n_high = sum(1 for h in hits if h.get('quality') == 'high')
         n_medium = sum(1 for h in hits if h.get('quality') == 'medium')
         md.append(f"**{len(hits)} 只命中** ({n_extreme} 只极限超卖 ⭐⭐, {n_high} 只强超卖 ⭐, {n_medium} 只中度超卖)\n\n")
-        md.append("| 代码 | 名称 | 行业 | 营收yoy | 净利yoy | 毛利% | ROE% | RSI6 | RSI12 | 触发 | 放量比 | 触发日 | 价格 | 质量 |\n")
-        md.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+        md.append("| 代码 | 名称 | 行业 | 营收yoy | 净利yoy | 毛利% | ROE% | RSI6 | RSI12 | 触发 | 放量比 | MA20斜率 | 触发日 | 价格 | 质量 |\n")
+        md.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
         for h in hits:
             rev_s = f"{h.get('rev_yoy'):+.1f}%" if h.get('rev_yoy') is not None else "—"
             np_s  = f"{h.get('np_yoy'):+.1f}%" if h.get('np_yoy') is not None else "—"
@@ -605,6 +625,16 @@ def main():
             roe_s = f"{h.get('roe'):.1f}" if h.get('roe') is not None else "—"
             rsi12_s = f"{h['rsi12']:.1f}" if h.get('rsi12') is not None else "—"
             vol_s = f"{h['volume_ratio']:.1f}x" if h.get('volume_ratio') else "—"
+            # MA20 斜率 markdown 显示
+            slope = h.get('ma20_slope')
+            if slope is None:
+                slope_md = "—"
+            elif slope > 0.05:
+                slope_md = f"↗{slope:+.2f}%/日"
+            elif slope < -0.05:
+                slope_md = f"↘{slope:+.2f}%/日"
+            else:
+                slope_md = f"→{slope:+.2f}%/日"
             quality_icon = {"extreme": "⭐⭐", "high": "⭐", "medium": "·"}.get(h.get('quality'), "")
             news_mark = " ⚠️" if h.get("news_warn") else ""
             news_info = ""
@@ -612,6 +642,7 @@ def main():
                 news_info = f" ⚠️{h.get('news_neg_count',0)}条:{h['news_neg_sample'][:30]}"
             md.append(f"| {h['code']} | {h['name']} | {h['industry']} | {rev_s} | {np_s} | {gm_s} | {roe_s} | "
                      f"{h['rsi6']:.2f} | {rsi12_s} | {h.get('trigger','—')} | {vol_s} | "
+                     f"{slope_md} | "
                      f"{h['trigger_date']} | ¥{h['trigger_price']:.2f} | {quality_icon}{news_mark}{news_info} |\n")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text("".join(md), encoding='utf-8')
