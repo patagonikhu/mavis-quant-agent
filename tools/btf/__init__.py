@@ -24,7 +24,8 @@ tools/btf/__init__.py — BackTest Framework 统一入口
 
     for StratCls in [EY8Strategy, ROC25Strategy, ROC25EY8Strategy, PEG15Strategy, MarketStrategy]:
         runner = BacktestRunner(data, StratCls(), pf, evals)
-        metrics, _, _ = runner.run(start='20250825', end='20260901', top_n=20)
+        # 默认窗口 = today-1y ~ today (2026-10-14 改: 替硬编码)
+        metrics, _, _ = runner.run(top_n=20)
         print(StratCls.name, metrics)
 """
 from tools.btf.framework import (

@@ -57,6 +57,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.storage.store import DataStore  # noqa: E402  数据访问统一走 DataStore
+from tools.storage.caches.fflow_history import _quarter_of  # noqa: E402  date -> quarter, 替硬编码拼接
 
 
 # ============================================================
@@ -566,7 +567,8 @@ def sync_watchlist_blowout(hits_df: pd.DataFrame, dry_run: bool = False) -> None
     latest_q = hits_df["end_date"].max()
     cur_q = hits_df[hits_df["end_date"] == latest_q]
     hit_codes = set(cur_q["ts_code"].str.split(".").str[0])  # 6位无后缀
-    q_tag = f"blowout-{latest_q[:4]}Q{((int(latest_q[4:6]) - 1) // 3) + 1}"  # 20260630 → 2026Q2
+    # 2026-10-14 改: 用 _quarter_of 替硬编码拼接 (季度切换不维护)
+    q_tag = f"blowout-{_quarter_of(latest_q)}"  # 20260630 → 'blowout-2026Q2'
 
     # 读 watchlist
     with open(WATCHLIST_PATH, encoding="utf-8") as f:

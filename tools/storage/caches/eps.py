@@ -93,28 +93,25 @@ def get_eps(code: str, force: bool = False) -> list[dict]:
 
     v6.2.7 改: 不在 watchlist 也尝试读 parquet, 命中即返 (避免误杀)
     2026-09-15 改: 加 _in_watchlist gate, 非 watchlist 直接返 [] (修历史 bug)
+    2026-10-08 改: parquet 损坏时直接返 [] (不重试, 避免卡死)
     """
     # 2026-09-15: watchlist gate (历史行为恢复)
     if not force and not _in_watchlist(code):
         return []
 
-    # v6.2.7 改: 不强制过滤 watchlist, parquet 有就返
+    # 2026-10-08: parquet 损坏时, _read_all() 抛 TProtocolException, 直接返 [] 不重试
+    # 避免 _is_stale 后 _read_all() 卡住, 让 factor_5y 等能跑过
     if not force and not _is_stale(EPS_FILE, _TTL_EPS):
         try:
             df = _read_all()
             sub = df[df["code"] == code]
             if not sub.empty:
                 return _df_to_table(sub)
-        except Exception:
-            pass
-
-    if not force and not _is_stale(EPS_FILE, _TTL_EPS):
-        try:
-            df = _read_all()
-            sub = df[df["code"] == code]
-            if not sub.empty:
-                return _df_to_table(sub)
-        except Exception:
+        except Exception as e:
+            # parquet 损坏: 2026-10-08 改, 直接返 [], 不重复重试
+            if 'TProtocolException' in str(e) or 'Invalid data' in str(e):
+                return []
+            # 其他异常继续重试
             pass
 
     data = _fetch_eps_one(code)

@@ -52,8 +52,13 @@ def main():
     parser.add_argument("--lookback", type=int, default=2)
     parser.add_argument("--from-watchlist", action="store_true", help="仅 watchlist (默认全市场)")
     parser.add_argument("--max-signals-per-day", type=int, default=3, help="单日最多 3 触发 (过滤低质量)")
-    parser.add_argument("--start-date", default="2021-01-01", help="回测起始日期")
-    parser.add_argument("--end-date", default="2026-06-30", help="回测截止日期")
+    # 2026-10-14 改: 默认窗口动态算 (start=5 年前, end=today-90d 留 30 天结算)
+    from datetime import datetime, timedelta
+    _today = datetime.now().strftime("%Y-%m-%d")
+    _5y_ago = (datetime.now() - timedelta(days=365 * 5)).strftime("%Y-%m-%d")
+    _end_settle = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    parser.add_argument("--start-date", default=_5y_ago, help=f"回测起始日期 (默认 {_5y_ago})")
+    parser.add_argument("--end-date",   default=_end_settle, help=f"回测截止日期 (默认 {_end_settle}, 留 90 天结算)")
     parser.add_argument("--write-md", action="store_true")
     args = parser.parse_args()
 

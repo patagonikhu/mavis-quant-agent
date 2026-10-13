@@ -60,10 +60,11 @@ FIN_DIR.mkdir(parents=True, exist_ok=True)
 FFLOW_HISTORY_DIR = Path("data/history/fflow_history")
 FFLOW_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
-# 2026-09-17 加: THS 同花顺概念板块 (跟 daily 个股完全隔离, 1 概念 1 parquet)
-THS_HISTORY_DIR = Path("data/history/ths")
-THS_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-(THS_HISTORY_DIR / "kline").mkdir(parents=True, exist_ok=True)
+# 2026-10-09 加: ETF 场内基金 (fund_basic + fund_daily 走 tushare)
+ETF_HISTORY_DIR = Path("data/history/etf")
+ETF_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+ETF_KLINE_DIR = ETF_HISTORY_DIR / "kline"   # 季度文件: 2026Q3.parquet (跟个股同格式)
+ETF_KLINE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
@@ -104,6 +105,16 @@ _INDEX_NAMES = {
     "930955": "中证红利低波100",   # 2026-09-17 加注释: 高股息+低波动 选股指数
     "000922": "中证红利",
 }
+
+
+def _to_etf_ts_code(code: str) -> str:
+    """ETF 代码转 ts_code: 515790 → 515790.SH / 159995 → 159995.SZ"""
+    if "." in code:
+        return code
+    c = code.strip()
+    if c.startswith("1"):
+        return f"{c}.SZ"
+    return f"{c}.SH"
 
 
 def _to_ts_code(code: str) -> str:
@@ -209,61 +220,6 @@ def _conn():
 # 1. K线 写入/读取 (data/history/daily/)
 # ============================================================
 
-def _append_records_target(records: list[dict], target_dir: Path) -> int:
-    """THS 概念板块专用写盘 (1 概念 1 parquet, 不分季度)
-
-    跟 _append_records 区别:
-      - 不分 year/quarter
-      - 直接拼出 parquet 路径: target_dir/{ts_code}.parquet
-      - ts_code 字段做合并主键 (跟 daily 兼容)
-    """
-    if not records:
-        return 0
-
-    import duckdb
-    import pandas as pd
-
-    df = pd.DataFrame(records)
-    if df.empty:
-        return 0
-    df["trade_date"] = df["trade_date"].astype(str)
-    for col in ["open", "high", "low", "close", "pre_close", "pct_chg", "avg_price", "change", "turnover_rate"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    for col in ["vol", "amount"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    target_dir.mkdir(parents=True, exist_ok=True)
-    total = 0
-
-    # 按 ts_code 分组, 每概念 1 文件
-    for ts_code, group in df.groupby("ts_code"):
-        path = target_dir / f"{ts_code}.parquet"
-        if path.exists():
-            old_df = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
-            # 老 df 可能没新字段, 加空列对齐
-            for col in df.columns:
-                if col not in old_df.columns:
-                    old_df[col] = None
-            # 反之同理
-            for col in old_df.columns:
-                if col not in df.columns:
-                    df[col] = None
-            combined = pd.concat([old_df, group], ignore_index=True)
-            combined = combined.drop_duplicates(subset=["trade_date"], keep="last")
-            combined = combined.sort_values(["trade_date"])
-        else:
-            combined = group.sort_values(["trade_date"])
-
-        _conn().execute(
-            f"COPY (SELECT * FROM combined) TO '{path}' (FORMAT PARQUET)"
-        )
-        total += len(group)
-
-    return total
-
-
 def _append_records(records: list[dict]):
     """把 records 写入按年分片的 parquet 文件。records 可能跨多年。"""
     if not records:
@@ -330,30 +286,36 @@ def _read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: i
             cur_q = (now.month - 1) // 3 + 1
             # 往前推 need_quarters 个季度
             y, q = now.year, cur_q
-            min_quarter = None
+            min_year, min_q = y, q
             for _ in range(need_quarters - 1):
                 q -= 1
                 if q == 0:
                     q = 4
                     y -= 1
-            min_quarter = f"{y}Q{q}"
+            min_year, min_q = y, q  # 2026-10-08 + limit=1250 算出来是 2021Q3 ~ 2021Q4 附近
             # 兼容旧年度文件：年度文件 stem 是纯数字
             def _file_ok(f):
                 s = f.stem
                 if s.isdigit():  # 旧年度文件
-                    return int(s) >= y
-                return s >= min_quarter  # 季度文件按字典序比较
+                    return int(s) >= min_year
+                # 2026-10-08 fix: 用 (year, q) 元组比较, 不用字典序
+                # 字典序 '2021Q4' > '2022Q1' 是 False ('2' < '1'), 会漏掉 2022 季度
+                fy = int(s[:4]); fq = int(s[5])
+                return (fy, fq) >= (min_year, min_q)
             files = [f for f in all_files if _file_ok(f)]
             if not files:
                 files = all_files
         elif start_date:
-            min_quarter = _quarter_of(start_date)
             min_year = int(start_date[:4])
+            min_q_str = _quarter_of(start_date)
+            min_q = int(min_q_str[5])  # 'YYYYQN' → Q number
             def _file_ok(f):
                 s = f.stem
                 if s.isdigit():
                     return int(s) >= min_year
-                return s >= min_quarter
+                # 2026-10-08 fix: 同上, 用 (year, q) 元组比较
+                fy = int(s[:4]); fq = int(s[5])
+                return (fy, fq) >= (min_year, min_q)
             files = [f for f in all_files if _file_ok(f)]
             if not files:
                 files = all_files
@@ -801,6 +763,129 @@ def read_daily_basic(ts_code: str) -> dict:
 # ============================================================
 # 4. stock_basic sync + read (data/history/stock_basic/)
 # ============================================================
+
+def sync_etf_basic() -> int:
+    """拉 ETF 基本信息 (fund_basic market=E status=L)，月级缓存。
+
+    写盘: data/history/etf/etf_basic.parquet
+    月级判断: 文件 mtime > 30天才重拉 (1次 API)
+    Returns: ETF 数量 (0=已缓存跳过)
+    """
+    import pandas as pd
+
+    path = ETF_HISTORY_DIR / "etf_basic.parquet"
+    if path.exists():
+        age = time.time() - path.stat().st_mtime
+        if age < 30 * 24 * 3600:
+            print(f"  ✅ etf_basic 已是最新 (上次更新 {age/86400:.0f} 天前)")
+            return 0
+
+    from .sources.tushare import get_fund_basic
+    rows, status = get_fund_basic(
+        market="E", status="L",
+        fields="ts_code,name,management,fund_type,list_date,delist_date,benchmark,status,market",
+    )
+    if not rows:
+        print(f"  ⚠️ etf_basic 拉取失败: {status}")
+        return 0
+
+    df = pd.DataFrame(rows)
+    ETF_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path, index=False)
+    print(f"  ✅ etf_basic: {len(df)} 只 → {path}")
+    return len(df)
+
+
+def sync_etf_incremental(start_date: str = "") -> int:
+    """增量同步 ETF 日K (fund_daily trade_date 全市场, 1次/天).
+
+    写盘: data/history/etf/kline/<YYYYQN>.parquet (按季度, 跟个股同格式)
+    Args:
+        start_date: YYYYMMDD，空=自动从本地最大日期+1 开始；
+                    首次无数据则从 2 年前开始
+    Returns: 新增 bar 数量
+    """
+    import pandas as pd
+    from datetime import datetime, timedelta
+
+    from .sources.tushare import get_fund_daily
+
+    today = _today()
+    local_max = _get_etf_local_max_date()
+
+    if start_date:
+        pull_from = start_date
+    elif local_max:
+        pull_from = (datetime.strptime(local_max, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+    else:
+        pull_from = (datetime.now() - timedelta(days=365 * 2)).strftime("%Y%m%d")
+
+    if pull_from > today:
+        print(f"  ✅ ETF K线已是最新 (本地最新: {local_max})")
+        return 0
+
+    missing = _get_trading_dates(pull_from, today)
+    if not missing:
+        print(f"  ✅ ETF K线已是最新 (无缺失交易日)")
+        return 0
+
+    print(f"  📥 ETF K线需补 {len(missing)} 个交易日: {missing[0]} ~ {missing[-1]}")
+
+    all_records: list[dict] = []
+    for date in missing:
+        records, status = get_fund_daily(trade_date=date)
+        if not records:
+            print(f"    跳过 {date} (状态: {status})")
+            continue
+        all_records.extend(records)
+        print(f"    ✅ {date} fund_daily: {len(records)} 只")
+        time.sleep(0.3)
+
+    if not all_records:
+        return 0
+
+    new_df = pd.DataFrame(all_records)
+    new_df["trade_date"] = new_df["trade_date"].astype(str)
+    for col in ["open", "high", "low", "close", "pre_close", "pct_chg", "vol", "amount"]:
+        if col in new_df.columns:
+            new_df[col] = pd.to_numeric(new_df[col], errors="coerce")
+
+    # 按季度分割写盘 (跟个股同格式: YYYYQN.parquet)
+    new_df["quarter"] = new_df["trade_date"].apply(_quarter_of)
+    total = 0
+    for quarter, group in new_df.groupby("quarter"):
+        group = group.drop_duplicates(subset=["ts_code", "trade_date"], keep="last")
+        path = ETF_KLINE_DIR / f"{quarter}.parquet"
+        if path.exists():
+            old = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
+            combined = pd.concat([old, group], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["ts_code", "trade_date"], keep="last")
+        else:
+            combined = group
+        combined = combined.drop(columns=["quarter"], errors="ignore")
+        combined = combined.sort_values(["ts_code", "trade_date"]).reset_index(drop=True)
+        _conn().execute(f"COPY (SELECT * FROM combined) TO '{path}' (FORMAT PARQUET)")
+        total += len(group)
+
+    print(f"  ✅ ETF K线写盘完成: {total} 条新增 bar ({new_df['ts_code'].nunique()} 只 ETF)")
+    return total
+
+
+def _get_etf_local_max_date() -> str | None:
+    """ETF kline 季度文件中的最大 trade_date (或 None)."""
+    files = sorted(ETF_KLINE_DIR.glob("*.parquet"))
+    if not files:
+        return None
+    try:
+        # 只读最新季度文件即可 (文件名有序, 最后一个最新)
+        latest = files[-1]
+        result = _conn().execute(
+            f"SELECT MAX(trade_date) FROM read_parquet('{latest}')"
+        ).fetchone()
+        return result[0] if result and result[0] else None
+    except Exception:
+        return None
+
 
 def sync_stock_basic() -> int:
     """一次拉全市场 stock_basic，存 parquet。30天内不重拉。
@@ -1336,73 +1421,40 @@ class DataStore:
         return out
 
     @classmethod
-    def get_ths_index(cls) -> list[dict]:
-        """同花顺概念/风格/指数 完整列表 (~2517 行, 0 网络永久缓存).
-
-        字段: ts_code, name, count, exchange, list_date, type
-        """
-        import pandas as pd
-        path = THS_HISTORY_DIR / "ths_index.parquet"
-        if not path.exists():
-            return []
-        df = pd.read_parquet(path)
-        return df.to_dict("records")
-
-    @classmethod
-    def lookup_ths_code(cls, name: str) -> list[dict]:
-        """通过 name 模糊匹配 ths 概念代码。
+    def get_etf_kline(cls, code: str, limit: int = 0) -> list[dict]:
+        """ETF 日K (升序), 走 data/history/etf/kline/<ts_code>.parquet.
 
         Args:
-            name: 'CPO' / '机器人' / '高成长股' (支持子串匹配)
-        Returns:
-            匹配到的概念列表 (含 ts_code, name, type), 多个全返
-        """
-        rows = cls.get_ths_index()
-        return [r for r in rows if name in str(r.get("name", ""))]
-
-    @classmethod
-    def get_ths_kline(cls, code_or_name: str, limit: int = 0) -> list[dict]:
-        """THS 概念板块 K 线 (升序).
-
-        Args:
-            code_or_name: 'CPO' 模糊匹配 ths_index 找代码 / '886033.TI' 直接读
+            code: '515790' 或 '515790.SH'
             limit: 0=全量, N=最近 N 根
         Returns:
-            跟个股 get_kline 同形态: [{trade_date, open, high, low, close, vol, ...}, ...]
-            NaN 兜底跟 get_kline 一致.
-
-        使用前需先 sync --ths 把数据落盘. parquet 路径:
-          data/history/ths/kline/{ts_code}.parquet
+            跟 get_kline 同形态: [{trade_date, open, high, low, close, vol, ...}, ...]
+        使用前需先 sync --etf 落盘.
         """
-        ts_code = code_or_name
-        if "." not in ts_code:
-            # 模糊反查
-            matches = cls.lookup_ths_code(ts_code)
-            if not matches:
-                return []
-            # 多匹配: 优先 type=N (概念板块, 一般是想要的)
-            n_match = [m for m in matches if m.get("type") == "N"]
-            ts_code = (n_match or matches)[0]["ts_code"]
-
-        path = THS_HISTORY_DIR / "kline" / f"{ts_code}.parquet"
-        if not path.exists():
+        ts_code = code if "." in code else _to_etf_ts_code(code)
+        files = sorted(ETF_KLINE_DIR.glob("*.parquet"))
+        if not files:
             return []
-
         try:
-            df = _conn().execute(f"SELECT * FROM read_parquet('{path}') ORDER BY trade_date").df()
+            # limit → 推算需要几个季度文件 (每季约 63 交易日)
+            if limit > 0:
+                need_q = max(1, (limit // 63) + 2)
+                files = files[-need_q:]
+            glob_pat = "', '".join(str(f) for f in files)
+            sql = f"""
+                SELECT * FROM read_parquet(['{glob_pat}'])
+                WHERE ts_code = '{ts_code}'
+                ORDER BY trade_date
+            """
+            if limit:
+                sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date DESC LIMIT {limit}"
+                sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date"
+            df = _conn().execute(sql).df()
         except Exception as e:
-            print(f"  ⚠️ get_ths_kline {ts_code} 失败: {e}", file=sys.stderr)
+            print(f"  ⚠️ get_etf_kline {ts_code} 失败: {e}", file=sys.stderr)
             return []
-
         rows = df.to_dict("records")
-        if limit and len(rows) > limit:
-            rows = rows[-limit:]
-
-        # 字段对齐: pct_change → pct_chg (跟个股 daily schema 同)
         for r in rows:
-            if "pct_change" in r and "pct_chg" not in r:
-                r["pct_chg"] = r.pop("pct_change")
-            # NaN 兜底跟个股一致
             pc = r.get("pre_close")
             if pc is None or (isinstance(pc, float) and pc != pc):
                 r["pre_close"] = r.get("close") or 0
@@ -1413,6 +1465,28 @@ class DataStore:
             if pct is None or (isinstance(pct, float) and pct != pct):
                 r["pct_chg"] = 0.0
         return rows
+
+    @classmethod
+    def get_etf_basic(cls, code: str = "") -> dict | list:
+        """ETF 基本信息 (名称/跟踪指数/管理公司 等).
+
+        Args:
+            code: '515790' 或 '515790.SH' → 返回单只 dict (无则 {})
+                  '' → 返回全量 list[dict]
+        """
+        path = ETF_HISTORY_DIR / "etf_basic.parquet"
+        if not path.exists():
+            return {} if code else []
+        try:
+            df = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
+        except Exception as e:
+            print(f"  ⚠️ get_etf_basic 失败: {e}", file=sys.stderr)
+            return {} if code else []
+        if not code:
+            return df.to_dict("records")
+        ts_code = code if "." in code else _to_etf_ts_code(code)
+        rows = df[df["ts_code"] == ts_code].to_dict("records")
+        return rows[0] if rows else {}
 
     @classmethod
     def get_daily_basic(cls, code: str) -> dict:
@@ -1467,6 +1541,8 @@ class DataStore:
         # 取 60 天覆盖 fflow_factor 3/5/10/20/30 周期
         mf, _ = get_fund_flow(code, days=60)
 
+        # 2026-10-08 删: cyq_perf (胜率/中位成本, 跟 RSI/MA 同步, 没新信息)
+
         return RawContext(
             kline=kline, weekly=weekly,
             eps_table=eps, fflow={}, moneyflow=mf or [],
@@ -1506,6 +1582,8 @@ class DataStore:
         """
         from .caches.fflow_history import read_fflow_history
         return read_fflow_history(code)
+
+    # 2026-10-08 删: DataStore.get_cyq_perf_history (cyq 整体下线)
 
     @classmethod
     def list_codes(cls) -> list[str]:

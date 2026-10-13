@@ -127,10 +127,16 @@ def render_detail_section(name: str, metrics: dict) -> str:
     return "\n".join(lines)
 
 
-def render_signal_stats(all_results: dict[str, dict], data_loader) -> dict:
+def render_signal_stats(all_results: dict[str, dict], data_loader, start: str = None, end: str = None) -> dict:
     """5 策略 1 年的选股信号统计 (每天选多少只)"""
     import pandas as pd
-    df = data_loader.load_window("20250825", "20260901")
+    from datetime import datetime, timedelta
+    # 2026-10-14 改: 默认窗口动态算 (today-1y ~ today), 替硬编码
+    if end is None:
+        end = datetime.now().strftime("%Y%m%d")
+    if start is None:
+        start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
+    df = data_loader.load_window(start, end)
     if df.empty:
         return {}
     stats = {}
@@ -171,8 +177,12 @@ def render_signal_table(stats: dict) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="5 策略 1 年回测")
-    parser.add_argument("--start", default="20250825")
-    parser.add_argument("--end",   default="20260901")
+    # 2026-10-14 改: 默认窗口动态算 (today-1y, today), 替硬编码
+    from datetime import datetime, timedelta
+    _today = datetime.now().strftime("%Y%m%d")
+    _year_ago = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
+    parser.add_argument("--start", default=_year_ago, help=f"起始 YYYYMMDD (默认 {_year_ago})")
+    parser.add_argument("--end",   default=_today,    help=f"结束 YYYYMMDD (默认 {_today})")
     parser.add_argument("--top",   type=int, default=20, help="每策略选 top N 票")
     parser.add_argument("--hold",  type=int, default=20, help="持仓天数")
     parser.add_argument("--rebalance", action="store_true", help="每天调仓 (默认否, 长持)")
@@ -212,7 +222,7 @@ def main():
 
     # 3) 信号触发统计
     print("--- 信号触发统计 ---")
-    sig_stats = render_signal_stats(all_results, data)
+    sig_stats = render_signal_stats(all_results, data, start=args.start, end=args.end)
     print(render_signal_table(sig_stats))
     print()
 

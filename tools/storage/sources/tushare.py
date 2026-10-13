@@ -718,48 +718,90 @@ def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: i
 
 
 # ============================================================
-# 10.5 THS 同花顺概念板块 (2026-09-17 加)
+# 10b. ETF 场内基金 (2026-10-09 加, 走 tushare fund_basic / fund_daily / fund_nav)
+#   - 字段名跟 daily 股票 100% 重合 (OHLCV), AnalysisEngine.analyze_history 无需改
+#   - fund_basic 一次性全量, 落 data/history/etf/etf_basic.parquet
 # ============================================================
 
-def get_ths_index() -> tuple[list[dict] | None, str]:
-    """同花顺概念/风格/指数 列表 (~2517 行)。
+def get_fund_basic(market: str = "E", status: str = "L", fields: str = "ts_code,name,management,fund_type,list_date,delist_date,m_fee,c_fee,issue_amount") -> tuple[list[dict] | None, str]:
+    """公募基金列表 (Tushare.fund_basic)。
 
-    Tushare.ths_index 接口, 一次性拉全量永久缓存。
-    字段: ts_code, name, count, exchange, list_date, type
-          (type: N=概念, S=风格, I=指数)
+    2026-10-09 加: ETF 数据层入口。默认 market='E' 场内 + status='L' 上市中。
 
-    同步节奏: list_date 几乎不变, 建议每 30 天重新拉一次检查新概念。
+    积分要求: 2000 (5000+ 频次更高)。
+    单次最大: 15000 条, 全市场场内 ETF ≈ 600 只, 一次拿完。
+
+    常用 fields:
+      ts_code, name, management, custodian, fund_type, found_date, due_date,
+      list_date, delist_date, issue_date, issue_amount,
+      m_fee (管理费%), c_fee (托管费%), duration_year, p_value,
+      min_amount, exp_return, benchmark, status, invest_type, type, market
+
+    Args:
+        market: 'E' 场内 / 'O' 场外 (默认 'E')
+        status: 'L' 上市中 / 'D' 摘牌 / 'I' 发行 (默认 'L')
+        fields: 取哪些列 (默认核心 9 列, 需更多传 '' 拿全量)
     """
-    data, status = _safe_call("ths_index")
-    return data, status
+    kwargs = {"market": market, "status": status}
+    if fields:
+        kwargs["fields"] = fields
+    data, status_str = _safe_call("fund_basic", **kwargs)
+    return data, status_str
 
 
-def get_ths_daily(ts_code: str, start_date: str = "", end_date: str = "") -> tuple[list[dict] | None, str]:
-    """THS 概念板块日线 K 线 (Tushare.ths_daily)。
+def get_fund_daily(trade_date: str = "", ts_code: str = "", start_date: str = "", end_date: str = "") -> tuple[list[dict] | None, str]:
+    """ETF 日线行情 (Tushare.fund_daily)。
 
-    字段 (实测):
+    2026-10-09 加: 4 种用法, 跟 tushare 文档一致:
+      1) 全市场某天 (默认推荐, 单次 600 行, 不超 5000 限): trade_date='20261009'
+      2) 全市场最近 1 天: 不传参
+      3) 单只某天: ts_code='513330.SH', trade_date='20261009'
+      4) 单只区间: ts_code='513330.SH', start_date='20210101', end_date='20261009'
+
+    字段 (实测 10 列):
       ts_code, trade_date, open, high, low, close, pre_close,
-      avg_price, change, pct_change, vol, turnover_rate
+      change, pct_chg, vol, amount
 
     注意:
-      - 没有 amount 字段 (DataStore.get_kline 会 NaN 兜底填 0)
-      - pct_change 跟个股 daily 的 pct_chg 字段同名不同 schema, 写入时 rename
-      - 单概念 K 线 ~5y ~1250 行, parquet ~30KB
+      - 字段名跟 daily 个股 100% 重合 → AnalysisEngine.analyze_history 不需改
+      - vol 单位: 手 (跟 daily 个股一致, 不是股)
+      - amount 单位: 千元 (跟 daily 个股一致)
 
-    ts_code 示例: '886033.TI' (CPO概念) / '883440.TI' (高成长股)
+    积分: 5000+ 起步。
     """
-    if not ts_code.endswith(".TI"):
-        ts_code = f"{ts_code}.TI"
-    kwargs = {"ts_code": ts_code, "fields": "ts_code,trade_date,open,high,low,close,pre_close,avg_price,change,pct_change,vol,turnover_rate"}
+    if not ts_code and not trade_date and not start_date and not end_date:
+        # 拉最近 1 个交易日全市场
+        kwargs = {}
+    elif trade_date and not ts_code:
+        # 全市场某天 (单次 ≈600 行)
+        kwargs = {"trade_date": trade_date}
+    else:
+        kwargs = {"ts_code": ts_code} if ts_code else {}
+        if start_date:
+            kwargs["start_date"] = start_date
+        if end_date:
+            kwargs["end_date"] = end_date
+        if trade_date:
+            kwargs["trade_date"] = trade_date
+    data, status = _safe_call("fund_daily", **kwargs)
+    if not data:
+        return None, status
+    data.sort(key=lambda x: x.get("trade_date", ""))
+    return data, "OK"
+
+
+def get_fund_nav(ts_code: str, start_date: str = "", end_date: str = "") -> tuple[list[dict] | None, str]:
+    """ETF 单位净值 (Tushare.fund_nav) — 算 IOPV 折溢价用, v1 暂不消费
+
+    2026-10-09 加: v1 只把接口暴露, render_data 暂不用 (等 v2 加「折溢价 section」)
+    """
+    kwargs = {"ts_code": ts_code}
     if start_date:
         kwargs["start_date"] = start_date
     if end_date:
         kwargs["end_date"] = end_date
-    data, status = _safe_call("ths_daily", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["trade_date"])
-    return data, "OK"
+    data, status = _safe_call("fund_nav", **kwargs)
+    return data, status
 
 
 # ============================================================

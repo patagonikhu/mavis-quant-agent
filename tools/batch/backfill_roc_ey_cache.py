@@ -201,8 +201,12 @@ def _safe_get(d: dict, key: str, default=None):
 def main():
     parser = argparse.ArgumentParser(description="analysis_cache 4 列估值 backfill")
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--start", default="20250825", help="起始 YYYYMMDD (默认 1 年前 daily_basic)")
-    parser.add_argument("--end",   default="20260901", help="结束 YYYYMMDD")
+    # 2026-10-14 改: 默认窗口动态算 (today-1y, today), 替硬编码
+    from datetime import datetime, timedelta
+    _today = datetime.now().strftime("%Y%m%d")
+    _year_ago = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
+    parser.add_argument("--start", default=_year_ago, help=f"起始 YYYYMMDD (默认 {_year_ago})")
+    parser.add_argument("--end",   default=_today,    help=f"结束 YYYYMMDD (默认 {_today})")
     parser.add_argument("--codes", nargs="*", default=None, help="指定股票 (默认全科技股 1923)")
     args = parser.parse_args()
 

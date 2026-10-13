@@ -14,13 +14,14 @@ tools/btf/runner.py — 回测运行器, 串联 Strategy + Portfolio + DataLayer
     evals = [ReturnEvaluator(), RiskAdjReturnEvaluator(), TradingEvaluator()]
 
     runner = BacktestRunner(data, strat, pf, evals)
-    metrics, nav_history, trades = runner.run(start='20250825', end='20260901', top_n=20)
+    metrics, nav_history, trades = runner.run(top_n=20)  # 默认 start=today-1y, end=today
 
     print(metrics)  # 4 个 evaluator 的 13 个指标
 """
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -45,8 +46,18 @@ class BacktestRunner:
         self.portfolio = portfolio
         self.evaluators = evaluators
 
-    def run(self, start: str = "20250825", end: str = "20260901", top_n: int = 20) -> tuple[dict, list, list]:
-        """跑回测, 返 (metrics, nav_history, trades)"""
+    def run(self, start: str = None, end: str = None, top_n: int = 20) -> tuple[dict, list, list]:
+        """跑回测, 返 (metrics, nav_history, trades).
+
+        Args:
+            start: 起始 YYYYMMDD, 默认 = 今天-1y
+            end:   结束 YYYYMMDD, 默认 = 今天
+        """
+        # 2026-10-14 改: 默认窗口动态算 (start=today-1y, end=today), 避免硬编码
+        if end is None:
+            end = datetime.now().strftime("%Y%m%d")
+        if start is None:
+            start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
         t0 = time.time()
         # 1) 加载数据
         df = self.data.load_window(start, end)

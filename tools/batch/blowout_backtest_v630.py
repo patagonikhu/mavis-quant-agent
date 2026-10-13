@@ -99,13 +99,16 @@ def max_return(df: pd.DataFrame, entry_date: str, hold_days: int) -> tuple:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--min-quarter", default="2023Q4")
-    parser.add_argument("--max-quarter", default="2025Q4")
+    # 2026-10-14 改: 默认窗口动态算 (min=2 年前, max=已落盘最新季), 替硬编码
+    from datetime import datetime
+    from tools.storage.caches.fflow_history import _quarter_of, latest_disclosed_quarter
+    _max_q = latest_disclosed_quarter() or _quarter_of(datetime.now().strftime("%Y%m%d"))
+    _min_q = _quarter_of((datetime.now().replace(year=datetime.now().year - 2)).strftime("%Y%m%d"))
+    parser.add_argument("--min-quarter", default=_min_q, help=f"起始季 (默认 {_min_q}, 2 年前)")
+    parser.add_argument("--max-quarter", default=_max_q, help=f"结束季 (默认 {_max_q}, 已落盘最新季)")
     parser.add_argument("--hold-days", type=int, default=30)
     parser.add_argument("--compare-v627", action="store_true")
     parser.add_argument("--write-md", action="store_true")
-    parser.add_argument("--include-end-quarter-2026", action="store_true",
-                        help="包含 2026Q1/Q2 (未来 120 天可能不全)")
     args = parser.parse_args()
 
     # 1. 列出季
@@ -116,8 +119,6 @@ def main():
             if q < args.min_quarter or q > args.max_quarter:
                 continue
             quarters.append(q)
-    if not args.include_end_quarter_2026 and quarters and quarters[-1] in ['2026Q1', '2026Q2']:
-        quarters = [q for q in quarters if q not in ['2026Q1', '2026Q2']]
 
     print(f"=== v6.3.0 blowout 历史回测 ({len(quarters)} 季: {quarters[0]} ~ {quarters[-1]}) ===")
     print(f"持仓期 {args.hold_days} 天")

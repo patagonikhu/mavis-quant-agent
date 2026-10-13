@@ -1401,12 +1401,13 @@ def _has_signal(row: dict) -> bool:
     )
 
 
-# 因子历史走势 — 20 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
+# 因子历史走势 — 22 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | KDJ-K | ATR% | MACD状态 |"
-# 23 列 = 24 个 '|' (写法: '|---' + '|---'*(n-1) + '|'); 2026-09-15 之前误为 26 / 25 个 '|'
-FACTOR_HISTORY_SEP    = "|---|" + "---|" * 22
+# 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | KDJ-K | ATR% | MACD状态 | PE |"
+# 24 列 = 25 个 '|'
+FACTOR_HISTORY_SEP    = "|---|" + "---|" * 23
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
@@ -1476,10 +1477,11 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     # MACD 列: DIF-DEA 差值 (金叉死叉强度)
     if macd_dif_v is not None and macd_dea_v is not None:
         macd_diff = macd_dif_v - macd_dea_v
+        _mfmt = ".4f" if abs(macd_diff) < 0.1 else ".2f"
         if macd_diff > 0:
-            macd_s = f"🟢+{macd_diff:.2f}"
+            macd_s = f"🟢+{macd_diff:{_mfmt}}"
         elif macd_diff < 0:
-            macd_s = f"🔴{macd_diff:.2f}"
+            macd_s = f"🔴{macd_diff:{_mfmt}}"
         else:
             macd_s = "⚪0"
     else:
@@ -1531,8 +1533,10 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         vol_s = "—"
 
+    close_v = row['close']
+    close_fmt = f"{close_v:.3f}" if close_v is not None and float(close_v) < 10 else f"{close_v:.1f}"
     line = (
-        f"| {row['date']} | ¥{row['close']:.1f} "
+        f"| {row['date']} | ¥{close_fmt} "
         f"| {rsi6_s} | {macd_s} | {dif_str} | {dea_str} | {bar_d_s} | {vol_s} "
         f"| {slope_s} | {ma_s} "
         f"| {wy} | {se} "
@@ -1569,6 +1573,12 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     # ATR% 列: 波动率
     atr_s = f"{atr_pct_v:.1f}%" if atr_pct_v is not None else "—"
 
+    # 2026-10-12 加: 每日 PE (走 batch_load_daily_basic)
+    # stk_factor 数据晚 1 天, 但日度变化能直接看 (user 想看 PE 走势)
+    # 2026-10-12 删: PE_TTM 和 PB (用户不要, 表头减列)
+    pe_v       = row.get('pe')
+    pe_s       = f"{pe_v:.1f}"      if pe_v     is not None else "—"
+
     # MACD 状态列: DIF/DEA 关系 + 正负区
     if macd_dif_v is not None and macd_dea_v is not None:
         if macd_dif_v > macd_dea_v and macd_dif_v > 0:
@@ -1582,7 +1592,7 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         macd_state = "—"
 
-    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {kdj_s} | {atr_s} | {macd_state} |"
+    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {kdj_s} | {atr_s} | {macd_state} | {pe_s} |"
 
 
 def _section_factor_history(data: RenderData, lookback: int = 120) -> str:

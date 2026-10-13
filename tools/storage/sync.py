@@ -254,9 +254,12 @@ def action_stk_factor(force: bool = False) -> int:
         return 0
 
     # 3) force 模式才删旧 5 季 parquet
+    # 2026-10-14 改: 季度列表由 quarters_since(start_date, today) 动态算, 季度切换 0 维护
+    from .caches.fflow_history import quarters_since
+    all_quarters = quarters_since(start_date.strftime("%Y%m%d"), today.strftime("%Y%m%d"))
     if force:
         STK_FACTOR_DIR.mkdir(parents=True, exist_ok=True)
-        for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]:
+        for q in all_quarters:
             old = STK_FACTOR_DIR / f"{q}.parquet"
             if old.exists():
                 old.unlink()
@@ -266,11 +269,11 @@ def action_stk_factor(force: bool = False) -> int:
     # 4) 按 trade_date 逐个拉, 按季累积
     from .caches.fflow_history import _quarter_of as _q_of  # 复用同一函数
     from .caches.stk_factor_history import read_quarter_done_dates
-    quarter_data: dict[str, list[dict]] = {q: [] for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
+    quarter_data: dict[str, list[dict]] = {q: [] for q in all_quarters}
     # 修 bug: 先读旧 parquet metadata, 避免覆盖历史 done_dates
     # (原代码 {q: set() for q in ...} 导致每次 sync 写 metadata 只含本次增量, 下次重复拉)
     quarter_done: dict[str, set[str]] = {
-        q: read_quarter_done_dates(q) for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]
+        q: read_quarter_done_dates(q) for q in all_quarters
     }
     t0 = time.time()
     n_total = 0
@@ -494,9 +497,12 @@ def action_fflow(force: bool = False) -> int:
         return 0
 
     # 3) 删旧 5 季 fflow_history parquet (force 重拉语义)
+    # 2026-10-14 改: 季度列表由 quarters_since 动态算, 季度切换 0 维护
+    from .caches.fflow_history import quarters_since
+    all_quarters = quarters_since(start_date.strftime("%Y%m%d"), today.strftime("%Y%m%d"))
     if force:
         FFLOW_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-        for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]:
+        for q in all_quarters:
             old = FFLOW_HISTORY_DIR / f"fflow_{q}.parquet"
             if old.exists():
                 old.unlink()
@@ -505,10 +511,10 @@ def action_fflow(force: bool = False) -> int:
 
     # 4) 按 trade_date 逐个拉, 按季累积
     from .caches.fflow_history import _quarter_of, read_quarter_done_dates
-    quarter_data: dict[str, list[dict]] = {q: [] for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]}
+    quarter_data: dict[str, list[dict]] = {q: [] for q in all_quarters}
     # 修 bug: 先读旧 parquet metadata, 避免 done_dates 覆盖历史 (跟 stk_factor 同 bug)
     quarter_done: dict[str, set[str]] = {
-        q: read_quarter_done_dates(q) for q in ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"]
+        q: read_quarter_done_dates(q) for q in all_quarters
     }
     t0 = time.time()
     n_total = 0
@@ -781,8 +787,8 @@ def detect_stale_flags() -> dict[str, bool]:
             flags["financials"] = True
         else:
             latest = files[-1]
-            # 最新季文件 stem 形如 2026Q2
-            q_label = latest.stem  # "2026Q2"
+            # 最新季文件 stem 形如 YYYYQN (e.g. 2026Q2)
+            q_label = latest.stem
             year, q = q_label[:4], q_label[5:]
             # 季末
             quarter_end = {

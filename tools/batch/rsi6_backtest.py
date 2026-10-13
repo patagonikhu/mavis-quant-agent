@@ -155,6 +155,8 @@ def main():
     if args.yoy_strict:
         print(f'业绩过滤已启用: {len(yoy_map)} 只 (--yoy-strict)')
         # 业绩过滤只能用当前快照, 仅对 2024+ 启用 (避免历史业绩变化误判)
+        # 2026-10-14 注: 这条 '20240101' 是回测语料 (避免历史快照失真), 故意写死.
+        # 跟 sync / rsi6 那种"业务运行时"硬编码不同, 这里别动.
         YOY_HISTORY_START = '20240101'
         print(f'业绩过滤窗口: {YOY_HISTORY_START}~ (避免历史快照失真)\n')
     else:

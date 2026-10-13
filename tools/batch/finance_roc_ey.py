@@ -281,10 +281,9 @@ def main() -> int:
             print("❌ 财务数据空, 请先 /t-sync-data --financials")
             return 1
         latest_end = max(d["end_date"] for d in latest_map.values() if d.get("end_date"))
-        # end_date '20251231' → 季度 '2025Q4' (跟 parquet file stem 对齐)
-        y, m = latest_end[:4], latest_end[4:6]
-        quarter = {"03": "Q1", "06": "Q2", "09": "Q3", "12": "Q4"}.get(m, "Q4")
-        latest_period = f"{y}{quarter}"
+        # 2026-10-14 改: 用 _quarter_of 替硬编码 month→quarter 映射 (季度切换不维护)
+        from tools.storage.caches.fflow_history import _quarter_of
+        latest_period = _quarter_of(latest_end)  # '20251231' → '2025Q4'
         df = DataStore.load_financials_period(latest_period)
         args.period = latest_period
 

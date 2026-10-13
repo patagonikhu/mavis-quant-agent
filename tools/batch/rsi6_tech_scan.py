@@ -123,16 +123,16 @@ def _filter_codes(codes: list[str], no_junk: bool, include_loss: bool,
 
     if not include_loss:
         try:
-            with redirect_stdout(io.StringIO()):
-                df_fin = DataStore.load_financials_period("2026Q2")
-            if df_fin.empty:
-                from pathlib import Path
-                fin_dir = Path("data/history/financials")
-                files = sorted(fin_dir.glob("2026Q*.parquet"), reverse=True)
-                if files:
-                    with redirect_stdout(io.StringIO()):
-                        df_fin = DataStore.load_financials_period(files[0].stem)
-            if not df_fin.empty:
+            # 2026-10-14 改: 不再硬编码 "2026Q2" — 直接 glob 已落盘最新季
+            from pathlib import Path
+            fin_dir = Path("data/history/financials")
+            files = sorted(fin_dir.glob("20*Q*.parquet"), reverse=True)
+            if files:
+                with redirect_stdout(io.StringIO()):
+                    df_fin = DataStore.load_financials_period(files[0].stem)
+            else:
+                df_fin = None
+            if df_fin is not None and not df_fin.empty:
                 df_fin["eps"] = df_fin["eps"].fillna(0)
                 df_fin["op_income"] = df_fin["op_income"].fillna(0)
                 df_fin["ebit"] = df_fin["ebit"].fillna(0)
@@ -180,7 +180,7 @@ def _load_yoy_map() -> dict[str, dict]:
     import pandas as pd
     try:
         fin_dir = Path("data/history/financials")
-        files = sorted(fin_dir.glob("2026Q*.parquet"), reverse=True)
+        files = sorted(fin_dir.glob("20*Q*.parquet"), reverse=True)
         if not files:
             return {}
         df_cur = pd.read_parquet(files[0])

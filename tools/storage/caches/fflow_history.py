@@ -59,6 +59,59 @@ def _quarter_of(date_str: str) -> str:
     return f"{y}Q{q}"
 
 
+def quarters_since(start_date: str, end_date: str) -> list[str]:
+    """[start_date, end_date] 区间覆盖的所有季度 (按时间升序, 含首尾).
+
+    Args:
+        start_date: 'YYYYMMDD' (如 '20250701')
+        end_date:   'YYYYMMDD' (如 '20261014')
+    Returns:
+        ['2025Q3', '2025Q4', '2026Q1', '2026Q2', '2026Q3', '2026Q4']
+
+    用法: 替代 sync.py 里硬编码的 ["2025Q3", "2025Q4", "2026Q1", "2026Q2", "2026Q3"] 季度列表,
+    防止每季度首日 KeyError (季度切换时漏改字典爆错).
+
+    2026-10-14 加: 把硬编码季度列表改成动态算, 季度切换 0 维护.
+
+    实现: 把 end 量化到"季度对齐的 y/m"(对齐到该季末月 +3,做严格小于比较)
+    """
+    out = []
+    y, m = int(start_date[:4]), int(start_date[4:6])
+    # 起始季度起始月: m 已经是,无需对齐
+    end_y, end_m = int(end_date[:4]), int(end_date[4:6])
+    # 终止季度: 把 end 量化到季末月,例如 1月→3月, 5月→6月, 9月→9月
+    end_q = (end_m - 1) // 3 + 1
+    end_m_aligned = end_q * 3  # 1→3, 4→6, 7→9, 10→12
+    while (y, m) < (end_y, end_m_aligned) or (y == end_y and m <= end_m_aligned):
+        q = (m - 1) // 3 + 1
+        out.append(f"{y}Q{q}")
+        m += 3
+        if m > 12:
+            m -= 12
+            y += 1
+    return out
+
+
+def latest_disclosed_quarter(parquet_dir: str = "data/history/financials") -> str | None:
+    """已落盘财报的最新季 file stem (e.g. '2026Q2').
+
+    区别 _quarter_of(today): _quarter_of 算"今天属于哪季" (10/14 → 2026Q4),
+    latest_disclosed_quarter 算"已披露财报的最新季" (10/14 → 2026Q2, 因 Q3 10/15 才披露).
+
+    用法: 回测 / 业绩过滤 的 end 边界. 跟 _quarter_of 是两件事, 别混.
+
+    2026-10-14 加: 替 rsi6_tech_scan / backtest_blowout 硬编码 "2026Q2".
+    """
+    from pathlib import Path
+    p = Path(parquet_dir)
+    if not p.exists():
+        return None
+    files = sorted(p.glob("20*Q*.parquet"), reverse=True)
+    if not files:
+        return None
+    return files[0].stem
+
+
 def write_fflow_quarter(quarter: str, rows: list[dict], done_dates: list[str] | None = None) -> Path | None:
     """单只票 1 季度 1 文件, 落盘 (v6.2.5 改造: done 进度塞 parquet metadata)
 

@@ -33,6 +33,7 @@ class RawContext:
     eps_table:  list        # EPS 历史预测（季报，不随 as_of_date 切片）
     fflow:      dict        # 主力资金流（不切片）
     moneyflow:  list = field(default_factory=list)  # Tushare money_flow 原始列表（不切片）
+    # 2026-10-08 删: cyq (胜率/中位成本, 跟 RSI/MA 同步, 没新信息)
     current_price:  float = 0.0
     market_cap_yi:  float = 0.0
     industry: str = ""

@@ -42,6 +42,17 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     date_to_close = {k["trade_date"].replace("-","")[:8]: k["close"] for k in kline}
     weekly_dates_sorted = [b["trade_date"].replace("-","")[:8] for b in (ctx.weekly or [])]
 
+    # 2026-10-12 加: 批量读 daily_basic (含 pe/pe_ttm pb) 注入每行
+    # 1 次 SQL 拿 N 天数据, 0 网络 (走 DataStore 落盘 parquet)
+    # FinanceStrategy 只算季报, 但用户要看"每日 PE" 走势
+    from tools.storage.store import batch_load_daily_basic
+    daily_basic_map = batch_load_daily_basic(
+        ctx.code,
+        [d.replace("-", "")[:8] for d in dates],
+    )
+
+    # 2026-10-08 删: cyq_perf (胜率/中位成本, 跟 RSI/MA 同步, 没新信息)
+
     # 从 ctx 预算数组里取各日期对应值（WyckoffStrategy 已算，O(1) 查询）
     d_arrs = ctx.kline_arrs        # 日线 arrs
     w_arrs = ctx.kline_arrs_weekly # 周线 arrs
@@ -93,7 +104,21 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
             "boll_width":    boll_width[ki] if ki < len(boll_width) else None,
         }
 
-        rows.append({**_extract_row(result, date, close, ctx), **ma_devs})
+        # 2026-10-08 删: cyq_perf (胜率/中位成本) 字段
+
+        # 2026-10-12 加: 每日 PE / PE_TTM / PB (走 batch_load_daily_basic, 0 网络)
+        # 注: stk_factor 数据晚 1 天 (T+1 同步), 但用户想看日度变化
+        db_row = daily_basic_map.get(date_clean) or {}
+        pe_v = db_row.get("pe")
+        pe_ttm_v = db_row.get("pe_ttm")
+        pb_v = db_row.get("pb")
+        daily_val = {
+            "pe":       round(float(pe_v), 2)     if pe_v is not None else None,
+            "pe_ttm":   round(float(pe_ttm_v), 2) if pe_ttm_v is not None else None,
+            "pb":       round(float(pb_v), 2)     if pb_v is not None else None,
+        }
+
+        rows.append({**_extract_row(result, date, close, ctx), **ma_devs, **daily_val})
         # 提取完立即释放，避免 AnalysisResult 大对象在循环结束前全部驻留内存
         del history[date_clean]
 

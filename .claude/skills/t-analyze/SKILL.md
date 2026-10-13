@@ -15,8 +15,14 @@ allowed-tools:
 # 单只
 bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 
-# 批量 (watchlist 全部, 4 worker 并发)
+# 批量 (watchlist 全部 + ETF 白名单, 4 worker 并发)
 T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
+
+# 跳过 ETF 段
+bash tools/with_venv.sh python -m tools.batch.t_analyze_all --no-etf
+
+# 包含 blowout 票
+bash tools/with_venv.sh python -m tools.batch.t_analyze_all --include-blowout
 ```
 
 ## 关键约束

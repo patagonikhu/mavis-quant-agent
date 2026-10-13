@@ -26,6 +26,8 @@ from tools.render.report_renderer import render_report
 _arg_parser = argparse.ArgumentParser(description="t-analyze --all 批量分析")
 _arg_parser.add_argument("--include-blowout", action="store_true",
                          help="包含 watchlist.json 里 list_type=blowout 的票 (默认排除, 防止一次跑几十个详报太慢)")
+_arg_parser.add_argument("--no-etf", action="store_true",
+                         help="跳过 ETF 扫描 (默认同时跑 etf_macd_scan)")
 _args, _unknown = _arg_parser.parse_known_args()  # 兼容老调用 `python -m ... t_analyze_all --all`
 
 
@@ -215,3 +217,53 @@ if errs:
         f.write("| 代码 | 错误 |\n|---|---|\n")
         for c, e in errs:
             f.write(f"| {c} | {e} |\n")
+
+# ── ETF 段 (默认跟 --all 一起跑) ────────────────────────────
+if not _args.no_etf:
+    print(f'\n=== ETF MACD 扫描 ===', flush=True)
+    from tools.batch.etf_macd_scan import _load_etf_whitelist, _scan_one_worker, _write_md
+    etf_list = _load_etf_whitelist()
+    if not etf_list:
+        print('  ⚠️ config/etf_whitelist.json 为空, 跳过 ETF 扫描', flush=True)
+    else:
+        etf_output_dir = Path('docs/etf-macd')
+        etf_lookback = 500
+        t_etf = time.time()
+        # 单线程跑 (t_analyze_all 顶层不在 __main__ 保护内, 不能 spawn 子进程)
+        etf_results = [_scan_one_worker((e['code'], e.get('name', e['code']), etf_lookback))
+                       for e in etf_list]
+        for r in etf_results:
+            if 'error' in r:
+                print(f"  ⚠️ {r['name']} ({r['code']}): {r['error']}", flush=True)
+            else:
+                print(f"  ✅ {r['name']} ({r['ts_code']}): {len(r['rows'])} 天", flush=True)
+
+        etf_written = sum(1 for r in etf_results if 'error' not in r and _write_md(r, etf_output_dir) is not None)
+        print(f'\n  ETF 完成: {etf_written}/{len(etf_list)} ({time.time()-t_etf:.1f}s)', flush=True)
+
+        # 追加 ETF 状态到 signal-watchlist.md
+        with output_path.open('a', encoding='utf-8') as f:
+            f.write(f"\n\n## ETF 状态 ({len(etf_results)} 只)\n\n")
+            f.write("| ETF | RSI6 | DIF | BAR | BARΔ | 状态 |\n")
+            f.write("|---|---|---|---|---|---|\n")
+            for r in sorted(etf_results, key=lambda x: x.get('code', '')):
+                if 'error' in r:
+                    f.write(f"| {r['name']} ({r['code']}) | ⚠️ {r['error'][:40]} | — | — | — | — |\n")
+                    continue
+                last = r['rows'][-1]
+                rsi6 = last.get('rsi6') or 0
+                dif  = last.get('macd_dif') or 0
+                bar  = last.get('macd_bar') or 0
+                bar_d = last.get('macd_bar_delta') or 0
+                dea  = last.get('macd_dea') or 0
+                if rsi6 < 20:   rsi_tag = '🔴'
+                elif rsi6 < 30: rsi_tag = '🟠'
+                elif rsi6 > 70: rsi_tag = '⚪'
+                else:           rsi_tag = ''
+                if dif > 0 and dea <= 0:   macd_tag = '🟢金叉'
+                elif dif > 0 and dea > 0:  macd_tag = '多头'
+                elif dif < 0 and dea >= 0: macd_tag = '🔴死叉'
+                else:                       macd_tag = '空头'
+                f.write(f"| {r['name']} ({r['ts_code']}) | {rsi_tag}{rsi6:.1f} | {dif:.3f} | {bar:.3f} | {bar_d:.3f} | {macd_tag} |\n")
+
+        print(f'  ETF 汇总已追加到 {output_path}', flush=True)

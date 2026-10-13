@@ -48,8 +48,13 @@ def compute_blowout_mask(fin_q: pd.DataFrame,
 def main():
     import argparse
     p = argparse.ArgumentParser(description="blowout 历史回测")
-    p.add_argument("--start", default="2021Q2")
-    p.add_argument("--end", default="2026Q2")
+    # 2026-10-14 改: 默认窗口动态算 (start=5 年前季度, end=最新已落盘季)
+    from datetime import datetime
+    from tools.storage.caches.fflow_history import _quarter_of, latest_disclosed_quarter
+    _end_q = latest_disclosed_quarter() or _quarter_of(datetime.now().strftime("%Y%m%d"))
+    _5y_ago = _quarter_of((datetime.now().replace(year=datetime.now().year - 5)).strftime("%Y%m%d"))
+    p.add_argument("--start", default=_5y_ago, help=f"起始季度 (默认 {_5y_ago}, 5 年前)")
+    p.add_argument("--end",   default=_end_q,  help=f"结束季度 (默认 {_end_q}, 已落盘最新季)")
     p.add_argument("--hold-days", type=int, default=30)
     p.add_argument("--rev-yoy", type=float, default=15.0)
     p.add_argument("--np-yoy", type=float, default=20.0)
