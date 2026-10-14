@@ -240,6 +240,8 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "rsi6":       tech_raw.get("rsi6"),
         "rsi12":      tech_raw.get("rsi12"),          # 2026-09-17 加: 中期 RSI
         "kdj_k":      tech_raw.get("kdj_k"),
+        "kdj_d":      tech_raw.get("kdj_d"),     # 2026-10-14 加: KDJ D 值 (金叉死叉用)
+        "kdj_j":      tech_raw.get("kdj_j"),     # 2026-10-14 加: KDJ J 值 (超买超卖)
         "atr_pct":    tech_raw.get("atr_pct"),
         "vol_ratio":  tech_raw.get("vol_ratio"),
     }

@@ -1405,7 +1405,7 @@ def _has_signal(row: dict) -> bool:
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
 # 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | KDJ-K | ATR% | MACD状态 | PE |"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 24 列 = 25 个 '|'
 FACTOR_HISTORY_SEP    = "|---|" + "---|" * 23
 
@@ -1554,6 +1554,8 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
 
     rsi6_v     = row.get('rsi6')
     kdj_k_v    = row.get('kdj_k')
+    kdj_d_v    = row.get('kdj_d')
+    kdj_j_v    = row.get('kdj_j')
     atr_pct_v  = row.get('atr_pct')
     vol_r_v    = row.get('vol_ratio')
 
@@ -1567,8 +1569,28 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         rsi6_s = "—"
 
-    # KDJ-K 列: 显示 K 值 (KDJ 主指标)
-    kdj_s = f"{kdj_k_v:.0f}" if kdj_k_v is not None else "—"
+    # KDJ(K/D/J) 列: 三值合 1 列
+    if kdj_k_v is not None and kdj_d_v is not None and kdj_j_v is not None:
+        kdj_s = f"{kdj_k_v:.0f}/{kdj_d_v:.0f}/{kdj_j_v:.0f}"
+    else:
+        kdj_s = "—"
+    # KDJ 金叉/死叉 列: 4 档 (基于 K-D 关系 + K 位置)
+    # 金叉 = K 上穿 D, 死叉 = K 下穿 D
+    if kdj_k_v is not None and kdj_d_v is not None:
+        if kdj_k_v > kdj_d_v and kdj_k_v < 30:
+            kdj_cross = "🟢金叉低"
+        elif kdj_k_v > kdj_d_v and kdj_k_v > 70:
+            kdj_cross = "🟠金叉高"
+        elif kdj_k_v < kdj_d_v and kdj_k_v > 70:
+            kdj_cross = "🔴死叉高"
+        elif kdj_k_v < kdj_d_v and kdj_k_v < 30:
+            kdj_cross = "🟡死叉低"
+        elif kdj_k_v > kdj_d_v:
+            kdj_cross = "K>D"
+        else:
+            kdj_cross = "K<D"
+    else:
+        kdj_cross = "—"
 
     # ATR% 列: 波动率
     atr_s = f"{atr_pct_v:.1f}%" if atr_pct_v is not None else "—"
@@ -1592,7 +1614,7 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         macd_state = "—"
 
-    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {kdj_s} | {atr_s} | {macd_state} | {pe_s} |"
+    return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {kdj_s} | {kdj_cross} | {atr_s} | {macd_state} | {pe_s} |"
 
 
 def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
