@@ -108,8 +108,11 @@ def process_one(code: str, name: str | None = None) -> dict:
             from tools.render.report_linter import lint_report
             lint_result = lint_report(str(out))
             if lint_result.get("warnings"):
-                print(f"  ⚠️  Lint 报警 ({len(lint_result['warnings'])} 条):")
-                for warn in lint_result["warnings"][:5]:
+                # 2026-10-14 改: 不再截 [:5], 表格列数不匹配的 warning 经常在第 6+ 条
+                # (前几条都是 placeholder), 截断会让人看不到真正的列数错位 bug
+                warnings = lint_result["warnings"]
+                print(f"  ⚠️  Lint 报警 ({len(warnings)} 条):")
+                for warn in warnings:
                     print(f"    {warn}")
         except Exception as e:
             print(f"  ⚠️  Lint 失败: {e}")
