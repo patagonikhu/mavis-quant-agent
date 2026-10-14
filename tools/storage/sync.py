@@ -712,13 +712,15 @@ def detect_stale_flags() -> dict[str, bool]:
 
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
-    # --auto 检测范围: 只盯这 4 个 flag
+    # --auto 检测范围: 盯这 5 个 flag
     # eps / fflow / cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
+    # 2026-10-14 加 etf: 之前 SKILL.md 写"auto 含 etf"但实际没接, 导致 ETF 段天天需要手动 sync
     flags = {
         "kline": False,         # K线距今天 > 1 天
         "stock_basic": False,   # 距上次 > 30 天
         "financials": False,    # 缺最新季
         "stk_factor": False,    # stk_factor 距今天 > 1 天 (2026-09-22 修 v6.2.4 重构漏接 auto)
+        "etf": False,           # ETF K线距今天 > 1 天 (2026-10-14 加, SKILL.md 描述早就有但 sync.py 没接)
     }
 
     # 1. K线 (每天必跑, 距今天 > 1 天就拉)
@@ -821,6 +823,20 @@ def detect_stale_flags() -> dict[str, bool]:
     except Exception:
         flags["stk_factor"] = True  # 异常保守拉
 
+    # 5. ETF K线 (2026-10-14 加, 跟 kline 同节奏: 距今天 > 1 天就拉)
+    try:
+        from .store import _get_etf_local_max_date
+        last_etf = _get_etf_local_max_date()
+        if not last_etf:
+            flags["etf"] = True  # 没数据, 必拉
+        else:
+            last_dt = datetime.strptime(last_etf, "%Y%m%d")
+            gap = (today - last_dt).days
+            if gap >= 1:
+                flags["etf"] = True
+    except Exception:
+        flags["etf"] = True  # 异常保守拉
+
     return flags
 
 
@@ -867,6 +883,12 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
     if flags["financials"]:
         print("  [3/7] --financials")
         action_financials(_last_codes)
+    if flags["etf"]:
+        # 2026-10-14 加: ETF 段 auto 接入, 解决"每天手动 sync ETF"问题
+        print("  [4/7] --etf (auto 检测到 stale)")
+        from .store import sync_etf_basic, sync_etf_incremental
+        sync_etf_basic()
+        sync_etf_incremental()
     print_data_freshness_summary()
     return 0
 
@@ -920,6 +942,8 @@ def main():
                          help="signal_cache 缓存 (analysis_cache.db)")
     actions.add_argument("--ths", action="store_true",
                          help="[2026-09-17 加] THS 同花顺概念板块 K 线 (按 watchlist.ths_whitelist, 默认回填 3 年)")
+    actions.add_argument("--etf", action="store_true",
+                         help="[2026-10-14 加] ETF 场内基金 (fund_basic 月级 + fund_daily 日增量, 默认随 --auto 跑)")
     # 2026-09-09 删: --meta (板块/事件元数据, 引用不存在的 refresh_sectors, 死代码 + broken)
     actions.add_argument("--all-data", action="store_true",
                          help="[一键] --kline --stock-basic --financials 一起跑 (最常用)")
@@ -994,7 +1018,7 @@ def main():
     # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
     any_sync_flag = any([
         args.kline, args.stk_factor, args.stock_basic, args.financials,
-        args.eps, args.fflow, args.cache, args.all_data, args.ths,
+        args.eps, args.fflow, args.cache, args.all_data, args.ths, args.etf,
     ])
     if not any_sync_flag:
         print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")
@@ -1045,9 +1069,16 @@ def main():
         print(f"\n[7/7] --ths (THS 概念板块)")
         action_ths(years_back=3)
 
+    # 2026-10-14 加: --etf (ETF 场内基金)
+    if args.etf:
+        print(f"\n[8/7] --etf (ETF 场内基金: basic 月级 + 日 K 增量)")
+        from .store import sync_etf_basic, sync_etf_incremental
+        sync_etf_basic()
+        sync_etf_incremental()
+
     # 全部 flag 都没开 + 也不是 --status → 给个友好提示
     if not any([args.kline, args.stock_basic, args.financials,
-                args.eps, args.fflow, args.cache, args.ths]):
+                args.eps, args.fflow, args.cache, args.ths, args.etf]):
         print("\n💡 没指定任何行为, 看 --help 选 flag")
         print("   最常用: python -m tools.sync --all-data")
 
