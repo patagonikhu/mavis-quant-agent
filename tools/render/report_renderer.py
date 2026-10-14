@@ -1569,9 +1569,9 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     else:
         rsi6_s = "—"
 
-    # KDJ(K/D/J) 列: 三值合 1 列
+    # KDJ(K/D/J) 列: 三值合 1 列, 用全角竖线 ｜ 分隔 (避免 markdown 表格 '|' 分列)
     if kdj_k_v is not None and kdj_d_v is not None and kdj_j_v is not None:
-        kdj_s = f"{kdj_k_v:.0f}/{kdj_d_v:.0f}/{kdj_j_v:.0f}"
+        kdj_s = f"{kdj_k_v:.0f}｜{kdj_d_v:.0f}｜{kdj_j_v:.0f}"
     else:
         kdj_s = "—"
     # KDJ 金叉/死叉 列: 4 档 (基于 K-D 关系 + K 位置)
