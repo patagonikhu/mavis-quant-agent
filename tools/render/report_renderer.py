@@ -1406,8 +1406,9 @@ def _has_signal(row: dict) -> bool:
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
 # 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
 FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
-# 24 列 = 25 个 '|'
-FACTOR_HISTORY_SEP    = "|---|" + "---|" * 23
+# 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
+# (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
+FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
