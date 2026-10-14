@@ -56,18 +56,34 @@ def write_stk_factor_quarter(quarter: str, rows: list[dict], done_dates: list[st
         rows: [{ts_code, trade_date, ...16 字段}, ...]
         done_dates: 当季已完成的 trade_date (YYYYMMDD). None=不写 metadata
     Returns: 写入路径 (空 rows 返 None)
+
+    2026-10-14 修: 写盘时先读旧 parquet rows, 合并新 rows 再写.
+    修前: 每次 sync 把"本次增量"覆盖旧文件, 历史 done 日期的数据被丢.
+    修后: append 语义, 跟 fflow_history.write_fflow_quarter 一致.
     """
     import pandas as pd
     if not rows:
         return None
-    df = pd.DataFrame(rows)
-    # 强制 16 列 schema
-    for col in STK_FACTOR_FIELDS.split(","):
-        if col not in df.columns:
-            df[col] = None
-    df = df[STK_FACTOR_FIELDS.split(",")]
-    df = df.drop_duplicates(subset=["ts_code", "trade_date"])
     out = STK_FACTOR_DIR / f"{quarter}.parquet"
+    new_df = pd.DataFrame(rows)
+    for col in STK_FACTOR_FIELDS.split(","):
+        if col not in new_df.columns:
+            new_df[col] = None
+    new_df = new_df[STK_FACTOR_FIELDS.split(",")]
+    # 合并旧数据 (append 语义, 防覆盖丢)
+    if out.exists():
+        try:
+            old_df = pd.read_parquet(out)
+            # union columns (旧文件 schema 可能略不同)
+            for col in new_df.columns:
+                if col not in old_df.columns:
+                    old_df[col] = None
+            df = pd.concat([old_df, new_df], ignore_index=True)
+        except Exception:
+            df = new_df
+    else:
+        df = new_df
+    df = df.drop_duplicates(subset=["ts_code", "trade_date"])
     # pyarrow 写 + metadata (兼容 duckdb 读)
     table = pa.Table.from_pandas(df, preserve_index=False)
     if done_dates is not None:
