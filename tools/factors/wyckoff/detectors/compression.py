@@ -8,7 +8,8 @@ from ..helpers import _compression_direction_ok, _compression_bias_ok, _compress
 
 
 def detect_compression(c, h, l, v, o, i, lookback=5, atr_window=20, atr_quantile=0.20,
-                       vol_decline_ratio=0.60, max_bias=25.0, pct_chg=None) -> bool:
+                       vol_decline_ratio=0.60, max_bias=25.0, pct_chg=None,
+                       precomputed_ma200=None) -> bool:
     """Compression 检测 (1:1 搬运 WyckoffTradingAgent 1521 行, v5.3 分位数)"""
     n = len(c)
     if i < atr_window + lookback + 5:
@@ -21,7 +22,7 @@ def detect_compression(c, h, l, v, o, i, lookback=5, atr_window=20, atr_quantile
     if not _compression_direction_ok(c[:i], ma_window=20, lookback=lookback):
         return False
     # 2. bias_ok
-    if not _compression_bias_ok(c[:i], max_bias):
+    if not _compression_bias_ok(c[:i], max_bias, precomputed_ma200=precomputed_ma200):
         return False
     # 3. 缩量: recent 5 日均量 / 前 25 日均量
     if i < atr_window + lookback + 1:

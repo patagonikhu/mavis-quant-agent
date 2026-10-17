@@ -148,8 +148,14 @@ class WyckoffStrategy:
     name = "wyckoff"
 
     def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.wyckoff.stage_factor import WyckoffStageFactor
-        import pandas as _pd
+        """Phase1 威科夫 (跟 analyze_history 同源: 走 wyckoff_judge + arrs 预算)
+
+        2026-10-16 重构: 删 WyckoffStageFactor().compute() + _judge_full 慢路径,
+        跟 analyze_history 共享 wyckoff_judge (3800-10000x 加速, 实测 /tmp/speed_judges.py).
+        """
+        from tools.factors.wyckoff.stage_factor import wyckoff_judge
+        from tools.factors.wyckoff.detectors.sub_event_scanner import scan_sub_events as _scan
+        from tools.factors.kline_arrays import build_kline_features as _build_kline_features
 
         score_map = {
             "Accumulation": 0.6,
@@ -159,36 +165,57 @@ class WyckoffStrategy:
             "?": 0.0,
         }
 
-        def _make_df(bars):
-            return _pd.DataFrame({
-                "close":   [k["close"] for k in bars],
-                "high":    [k["high"]  for k in bars],
-                "low":     [k["low"]   for k in bars],
-                "volume":  [k.get("volume", 0) for k in bars],
-                "open":    [k.get("open", k["close"]) for k in bars],
-                "pct_chg": [k.get("pct_chg", 0) for k in bars],
-                "date":    [k.get("trade_date", "") for k in bars],
-            })
-
         sub_events_by_period = {}
         wyckoff_3period = {}
         _pre = getattr(ctx, 'cached_sub_events', {})
+
         for level, bars, label in [
             ("daily",  ctx.kline,  "daily"),
             ("weekly", ctx.weekly, "weekly"),
         ]:
-            if bars and len(bars) >= 30:
-                as_of_idx = len(bars) - 1
-                out = WyckoffStageFactor().compute(
-                    _make_df(bars), period_label=label,
-                    window=min(250, len(bars)),
-                    market_cap_yi=ctx.market_cap_yi,
-                    code=ctx.code,
-                    as_of_idx=as_of_idx,
-                    precomputed_sub_events_raw=_pre.get(level),
+            if not bars or len(bars) < 30:
+                continue
+
+            closes = [k["close"] for k in bars]
+            highs  = [k["high"]  for k in bars]
+            lows   = [k["low"]   for k in bars]
+            vols   = [k.get("volume", 0) for k in bars]
+            opens  = [k.get("open", k["close"]) for k in bars]
+            n = len(closes)
+            window = min(250, n)
+            i_last = n - 1
+
+            # 预算 arrs (O(n), 跟 analyze_history 一样)
+            arrs = _build_kline_features(closes, highs, lows, vols, window=window)
+
+            # sub_events 用 ctx 缓存或现扫 (缓存路径来自 analyze_history)
+            sub_raw = _pre.get(level)
+            if sub_raw is None:
+                sub_raw = _scan(
+                    closes, highs, lows, vols, None,
+                    o=opens, pct_chg=[k.get("pct_chg", 0) for k in bars],
+                    period_label=label, code=ctx.code, as_of_idx=i_last,
+                    dates=[k["trade_date"].replace("-", "")[:8] for k in bars],
                 )
-                sub_events_by_period[level] = out.get("sub_events", [])
-                wyckoff_3period[level] = out
+            sub_set = {e["name"] for e in sub_raw}
+
+            out = wyckoff_judge(i_last, arrs, sub_set,
+                                window=arrs['window'], period_label=label)
+            if out is None:
+                continue
+
+            # 与 compute() 对齐: sub_events 字段用 list[dict] (含 date/idx)
+            out["sub_events"] = sub_raw
+            # sub_event_count 已经被 wyckoff_judge 设过, 但 _judge_full 用 len(sub_events) 是 list 形式 — 字段保持一致
+            # trend_30 / verdict 补齐
+            c = closes[-window:]
+            out["趋势_30日_pct"] = round((c[-1] / c[-31] - 1) * 100, 1) if len(c) > 30 else None
+            out["verdict"] = f"{out['stage']} ({out['stage_name']}, {out['confidence']}%)"
+            # sub_event_count 用 list 长度
+            out["sub_event_count"] = len(sub_raw)
+
+            sub_events_by_period[level] = sub_raw
+            wyckoff_3period[level] = out
 
         # 主阶段用日线
         daily_out = wyckoff_3period.get("daily", {})

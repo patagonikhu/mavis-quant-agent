@@ -17,7 +17,8 @@ from ..helpers import (
 
 def detect_evr(c, h, l, v, o, i, vol_window=20, vol_ratio=1.8, max_drop=2.0, max_rise=2.0,
                confirm_days=1, min_turnover=0.0, allow_break_pct=0.0,
-               max_bias=25.0, min_bias=10.0, pct_chg=None, turnovers=None) -> bool:
+               max_bias=25.0, min_bias=10.0, pct_chg=None, turnovers=None,
+               precomputed_arrs=None) -> bool:
     """EVR 检测 (1:1 搬运 WyckoffTradingAgent 1303 行, v5.2 三件套完整)
     2026-07-31: 简化 _evr_confirmation_ok 永远 True (3 bug 修了, 见 helpers.py)
     2026-08-05: 加 min_bias 下限, 排除低位噪声 (低位放量不涨是吸筹, 不是出货)
@@ -28,9 +29,12 @@ def detect_evr(c, h, l, v, o, i, vol_window=20, vol_ratio=1.8, max_drop=2.0, max
         return False
     if _bias_200_exceeds_limit(c[:i], max_bias):
         return False
-    # bias_min 下限：价格必须在 MA200 上方至少 min_bias%
+    # bias_min 下限：价格必须在 MA200 上方至少 min_bias% — 优先用预算数组
     if len(c) >= 200 and min_bias > 0:
-        ma200 = sum(c[i-200:i]) / 200
+        if precomputed_arrs is not None:
+            ma200 = precomputed_arrs['ma_window'][i]
+        else:
+            ma200 = sum(c[i-200:i]) / 200
         if ma200 > 0 and (c[i-1] / ma200 - 1) * 100 < min_bias:
             return False
     # vol_ref (前 20 日均量, 不含当前)

@@ -150,14 +150,19 @@ def _creek_line(swing_high_points_list, breakout_pct: float = 0.5):
 # Section 3: bias / trading range / support (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
-def _bias_200_exceeds_limit(closes, max_bias_200: float = 25.0) -> bool:
+def _bias_200_exceeds_limit(closes, max_bias_200: float = 25.0,
+                            precomputed_ma200: float | None = None) -> bool:
     """(WyckoffTradingAgent 975 行) bias_200 过滤
 
     Returns: True = bias_200 > max_bias (超限, 应排除)
+    precomputed_ma200: 直接传入 arrs['ma_window'][i]，跳过 sum(closes[-200:])
     """
-    if len(closes) < 200:
-        return False  # 数据不够不算超限
-    ma200 = sum(closes[-200:]) / 200
+    if precomputed_ma200 is not None:
+        ma200 = precomputed_ma200
+    else:
+        if len(closes) < 200:
+            return False
+        ma200 = sum(closes[-200:]) / 200
     if ma200 <= 0:
         return False
     bias = (closes[-1] / ma200 - 1) * 100
@@ -383,9 +388,10 @@ def _compression_direction_ok(closes, ma_window: int = 20, lookback: int = 5) ->
     return ma >= ma_prev
 
 
-def _compression_bias_ok(closes, max_bias_200: float = 25.0) -> bool:
+def _compression_bias_ok(closes, max_bias_200: float = 25.0,
+                         precomputed_ma200: float | None = None) -> bool:
     """(WyckoffTradingAgent 1484 行) Compression bias 过滤"""
-    return not _bias_200_exceeds_limit(closes, max_bias_200)
+    return not _bias_200_exceeds_limit(closes, max_bias_200, precomputed_ma200=precomputed_ma200)
 
 
 def _compression_atr_ratio(closes, highs, lows, vols,

@@ -9,12 +9,13 @@ from ..helpers import _bias_200_exceeds_limit, _is_frozen_board_day, _sos_volume
 
 def detect_sos(c, h, l, v, o, i, vol_window=20, vol_ratio=3.0, vol_quantile_window=60,
                vol_quantile=0.95, breakout_window=60, breakout_tolerance=0.01,
-               pct_min=6.0, max_bias=25.0, pct_chg=None) -> bool:
+               pct_min=6.0, max_bias=25.0, pct_chg=None,
+               precomputed_ma200=None) -> bool:
     """SOS 检测 (1:1 搬运 WyckoffTradingAgent 1416 行)"""
     n = len(c)
     if i < max(vol_window, breakout_window) + 2:
         return False
-    if _bias_200_exceeds_limit(c[:i], max_bias):
+    if _bias_200_exceeds_limit(c[:i], max_bias, precomputed_ma200=precomputed_ma200):
         return False
     if _is_frozen_board_day(o[i-1], h[i-1], l[i-1], c[i-1]):
         return False

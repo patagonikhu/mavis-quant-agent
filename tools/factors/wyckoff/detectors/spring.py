@@ -8,7 +8,7 @@ from ..helpers import _is_trading_range_context, _spring_support_level, _bias_20
 
 
 def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=15.0,
-                  precomputed_atr=None) -> bool:
+                  precomputed_atr=None, precomputed_ma200=None) -> bool:
     """Spring 检测 (1:1 搬运 WyckoffTradingAgent 1093 行)"""
     n = len(c)
     if i < support_window + 2:
@@ -39,7 +39,7 @@ def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=1
         return False
     if _is_frozen_board_day(last["open"], last["high"], last["low"], last["close"]):
         return False
-    if _bias_200_exceeds_limit(c[:i], max_bias):
+    if _bias_200_exceeds_limit(c[:i], max_bias, precomputed_ma200=precomputed_ma200):
         return False
     # 允许单日盘中洗盘: prev/last 至少一日跌破
     if prev["low"] >= support_level and last["low"] >= support_level:

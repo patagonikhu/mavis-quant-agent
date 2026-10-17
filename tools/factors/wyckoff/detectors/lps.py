@@ -15,21 +15,26 @@ def detect_lps(c, h, l, v, o, i, lookback=3, ma_window=20, ma_tolerance=0.02,
                vol_dry_ratio=0.50, vol_ref_window=60, ma_rising_window=5,
                max_bias=25.0, pct_chg=None,
                precomputed_atr=None,
+               precomputed_arrs=None,
                creek_confirmation_enabled: bool = False) -> bool:
     """LPS 检测 (1:1 搬运 WyckoffTradingAgent 1138 行)
 
     Args:
         creek_confirmation_enabled: 是否需要 creek 阻力线突破确认 (默认 False, 跟原版一致)
+        precomputed_arrs: build_kline_features() 返回的预算数组 (有则跳过内部 MA 计算)
     """
     n = len(c)
     if n < max(vol_ref_window, ma_window) + lookback:
         return False
     if i < max(vol_ref_window, ma_window) + lookback:
         return False
-    # MA20
+    # MA20 — 优先用预算数组
     if i < ma_window:
         return False
-    ma_now = sum(c[i-ma_window:i]) / ma_window
+    if precomputed_arrs is not None:
+        ma_now = precomputed_arrs['ma20'][i]
+    else:
+        ma_now = sum(c[i-ma_window:i]) / ma_window
     if ma_now <= 0:
         return False
     # 最近 N 日最后一根 close >= MA20 (对齐 WyckoffTradingAgent: 只检查 last_close)
@@ -46,7 +51,10 @@ def detect_lps(c, h, l, v, o, i, lookback=3, ma_window=20, ma_tolerance=0.02,
     # 新增：price 深度低于 MA200（强下跌趋势）也拒绝 LPS
     # LPS = 累积末段最后支撑点，不该在主跌浪中出现
     if i >= 200:
-        ma200_val = sum(c[i-200:i]) / 200
+        if precomputed_arrs is not None:
+            ma200_val = precomputed_arrs['ma_window'][i]
+        else:
+            ma200_val = sum(c[i-200:i]) / 200
         if ma200_val > 0 and (c[i-1] / ma200_val - 1) * 100 < -20:
             return False  # 价格低于 MA200 超过 20%，是主跌浪，非累积末段
     # 新增：价格在近60日区间的上60%也拒绝（LPS应在区间下部，不该在高位）

@@ -9,7 +9,8 @@ from ..helpers import _bias_200_exceeds_limit, _trend_pullback_peak_idx, _trend_
 
 def detect_trend_pullback(c, h, l, v, o, i, lookback=10, ma_window=20,
                           min_pullback=5.0, max_pullback=20.0,
-                          vol_shrink_ratio=0.6, max_bias=35.0, market_cap_yi=0.0) -> bool:
+                          vol_shrink_ratio=0.6, max_bias=35.0, market_cap_yi=0.0,
+                          precomputed_ma200=None) -> bool:
     """TrendPullback 检测 (1:1 搬运 WyckoffTradingAgent 1586 行)
 
     v5.10.57 (P8.A, 2026-07-31): min_pullback/max_pullback 加显式参数 (默认 5/20 兼容老调用)
@@ -18,7 +19,7 @@ def detect_trend_pullback(c, h, l, v, o, i, lookback=10, ma_window=20,
     n = len(c)
     if i < ma_window + lookback + 5:
         return False
-    if _bias_200_exceeds_limit(c[:i], max_bias):
+    if _bias_200_exceeds_limit(c[:i], max_bias, precomputed_ma200=precomputed_ma200):
         return False
     # 找 peak (P8.A 透传 min/max_pullback, 默认 5/20 兼容老调用)
     peak_idx = _trend_pullback_peak_idx(c[:i], lookback, ma_window, min_pullback, max_pullback)
