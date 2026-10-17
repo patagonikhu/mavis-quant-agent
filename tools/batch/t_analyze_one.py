@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
+import os
 import sys
 import time
 from pathlib import Path
@@ -47,8 +49,15 @@ def load_watchlist_map() -> dict[str, dict]:
         return {}
 
 
-def process_one(code: str, name: str | None = None) -> dict:
+def process_one(code: str, name: str | None = None, output_subdir: str | None = None) -> dict:
     """单只分析 + 渲染. 复用 t_analyze_all.py 同款逻辑.
+
+    Args:
+        code: 6 位股票代码
+        name: 股票名称 (可选)
+        output_subdir: 强制指定输出子目录 (如 'wyckoff-a2m'),
+            跳过 watchlist list_type 分流, 直接 docs/{output_subdir}/analyze-{code}-{name}.md
+            默认 None = 按 watchlist list_type 分流 (持仓/自选/blowout)
 
     Returns: {ok, md_path, elapsed, lines, current_price, list_type, signals}
     """
@@ -56,13 +65,18 @@ def process_one(code: str, name: str | None = None) -> dict:
     wl_map = load_watchlist_map()
     s = wl_map.get(code, {"code": code, "name": name or "", "list_type": "自选"})
     list_type = s.get("list_type", "自选")
-    # 2026-09-18 加: 3 路分流 — 持仓/自选/blowout
-    if list_type == "持仓":
-        subdir, list_type_label = "portfolio", "持仓"
-    elif list_type == "blowout":
-        subdir, list_type_label = "blowout", "blowout"
+
+    if output_subdir:
+        # 2026-10-16 加: 强制指定子目录, 跳过 watchlist 分流 (避免污染)
+        subdir, list_type_label = output_subdir, output_subdir
     else:
-        subdir, list_type_label = "watchlist", "自选"
+        # 2026-09-18 加: 3 路分流 — 持仓/自选/blowout
+        if list_type == "持仓":
+            subdir, list_type_label = "portfolio", "持仓"
+        elif list_type == "blowout":
+            subdir, list_type_label = "blowout", "blowout"
+        else:
+            subdir, list_type_label = "watchlist", "自选"
 
     try:
         ctx = DataStore.get_ctx(code)
@@ -145,30 +159,106 @@ def process_one(code: str, name: str | None = None) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="单只股票 /t-analyze 详报 (跟 watchlist 批量 22 section 一致)",
+        description="单只 / 多只股票 /t-analyze 详报 (跟 watchlist 批量 22 section 一致)",
     )
-    parser.add_argument("--code", required=True, help="6 位股票代码 (例 300274)")
+    parser.add_argument("--code", help="6 位股票代码 (单只, 例 300274)")
+    parser.add_argument("--codes", help="多只代码, 逗号或空格分隔 (例 '600177,300274,300750')")
     parser.add_argument("--name", default=None, help="股票名称 (可选, 默认从 watchlist 读)")
+    parser.add_argument("--output-subdir", default=None,
+                        help="强制输出子目录 (如 'wyckoff-a2m'), 跳过 watchlist 分流")
+    parser.add_argument("--workers", type=int, default=0,
+                        help="多进程 worker 数 (--codes 时用; 默认 0 = 单进程; 设 N 用 mp.spawn 并发)")
     args = parser.parse_args()
 
-    print(f"=== t-analyze {args.code} ===", flush=True)
-    result = process_one(args.code, args.name)
-
-    if not result["ok"]:
-        print(f"❌ {result['err']}")
+    # 解析 codes
+    if args.code and args.codes:
+        print("❌ --code 和 --codes 互斥, 用其中一个", file=sys.stderr)
+        return 1
+    if args.code:
+        codes = [args.code.strip()]
+    elif args.codes:
+        codes = [c.strip() for c in args.codes.replace(",", " ").split() if c.strip()]
+    else:
+        print("❌ 必须 --code 或 --codes", file=sys.stderr)
         return 1
 
-    print(f"✅ REPORT: {result['md_path']}")
-    print(f"   {result['name']}  ¥{result['current_price']:.2f}  "
-          f"[{result['list_type']}]  {result['lines']} lines  {result['elapsed']:.1f}s")
-    if result["signals"]:
-        print(f"\n今日信号 ({len(result['signals'])} 个):")
-        for direction, code, name, detail in result["signals"]:
-            arrow = "⬆️买" if direction == "buy" else "⬇️卖"
-            print(f"  {arrow} | {detail}")
+    if len(codes) == 1:
+        # 单只快路径 (无 mp, 不需要 fork)
+        code = codes[0]
+        print(f"=== t-analyze {code} ===", flush=True)
+        result = process_one(code, args.name, output_subdir=args.output_subdir)
+
+        if not result["ok"]:
+            print(f"❌ {result['err']}")
+            return 1
+
+        print(f"✅ REPORT: {result['md_path']}")
+        print(f"   {result['name']}  ¥{result['current_price']:.2f}  "
+              f"[{result['list_type']}]  {result['lines']} lines  {result['elapsed']:.1f}s")
+        if result["signals"]:
+            print(f"\n今日信号 ({len(result['signals'])} 个):")
+            for direction, code, name, detail in result["signals"]:
+                arrow = "⬆️买" if direction == "buy" else "⬇️卖"
+                print(f"  {arrow} [{code}] {name}: {detail}")
+        return 0
+
+    # 多只: 按 --workers 选择走单进程串行还是 mp.spawn 并发
+    n_workers = args.workers if args.workers > 0 else 1
+    n_workers = min(n_workers, len(codes))
+    tasks = [(c, None, args.output_subdir) for c in codes]
+    print(f"=== t-analyze {len(codes)} 只 (workers={n_workers}) ===", flush=True)
+    rt0 = time.time()
+    ok_n = 0
+    if n_workers == 1:
+        # 单进程串行
+        for idx, t in enumerate(tasks, 1):
+            code, name_, sub = t
+            print(f"\n[{idx}/{len(codes)}] {code} ...", flush=True)
+            code_r, ok, path_or_err, elapsed, list_type = _process_one_mp(t)
+            if ok:
+                ok_n += 1
+                print(f"  ✅ {code_r} → {path_or_err} ({elapsed:.1f}s)")
+            else:
+                print(f"  ⚠️  {code_r}: {path_or_err}")
     else:
-        print("  无新信号")
-    return 0
+        # 多进程 spawn (跨 GIL, 不能 fork 因为 duckdb)
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            for idx, result in enumerate(pool.imap_unordered(_process_one_mp, tasks), 1):
+                code, ok, path_or_err, elapsed, list_type = result
+                mark = "✅" if ok else "⚠️ "
+                sys.stdout.write(f"\r  [{idx}/{len(codes)}] {mark} {code} ({elapsed:.1f}s)")
+                sys.stdout.flush()
+                if ok:
+                    ok_n += 1
+            print()
+    elapsed_total = time.time() - rt0
+    print(f"\n=== t-analyze 完成 {ok_n}/{len(codes)} ({ok_n/len(codes)*100:.0f}%), "
+          f"总耗时 {elapsed_total:.0f}s (workers={n_workers}) ===")
+    return 0 if ok_n == len(codes) else 2
+
+
+# 2026-10-17 加: --codes 多股票 + multiprocessing worker
+# 模块顶层定义, mp.spawn 可以 pickle
+def _process_one_mp(task: tuple[str, str | None, str | None]) -> tuple[str, bool, str, float, str]:
+    """单只详报 worker (跑在子进程)
+
+    Args:
+        task: (code, name, output_subdir) 三元组 — name/output_subdir 都可 None
+
+    Returns:
+        (code, ok, md_path_or_err, elapsed, list_type)
+    """
+    code, name, output_subdir = task
+    t0 = time.time()
+    try:
+        r = process_one(code, name, output_subdir=output_subdir)
+        elapsed = time.time() - t0
+        ok = bool(r.get("ok"))
+        path_or_err = r.get("md_path") if ok else r.get("err", "unknown")
+        return (code, ok, path_or_err, elapsed, r.get("list_type", "?"))
+    except Exception as e:
+        return (code, False, f"{type(e).__name__}: {e}", time.time() - t0, "?")
 
 
 if __name__ == "__main__":

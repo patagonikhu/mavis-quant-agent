@@ -15,7 +15,16 @@ allowed-tools:
 # 单只
 bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 
-# 批量 (watchlist 全部 + ETF 白名单, 4 worker 并发)
+# 多只 (逗号或空格分隔, 默认单进程)
+bash tools/with_venv.sh python -m tools.batch.t_analyze_one --codes "600177,300274,300750"
+
+# 多只 + 多进程并发 (mp.spawn 跨 GIL, 4 worker 实测 2.6x 加速)
+bash tools/with_venv.sh python -m tools.batch.t_analyze_one --codes "600177,300274" --workers 4
+
+# 强制输出子目录 (跳过 watchlist 分流, 如 wyckoff-a2m 命中专用)
+bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 600177 --output-subdir wyckoff-a2m
+
+# 全 watchlist 批量 (复用 t_analyze_all, 4 worker 并发)
 T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
 
 # 跳过 ETF 段
@@ -24,6 +33,15 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_all --no-etf
 # 包含 blowout 票
 bash tools/with_venv.sh python -m tools.batch.t_analyze_all --include-blowout
 ```
+
+## `--codes` 性能对比 (2026-10-17 实测, 4 只详报)
+
+| workers | 总耗时 | 加速 |
+|---|---|---|
+| 1 (单进程, 默认) | 13s | 1.00x |
+| 4 (mp.spawn) | 5s | **2.6x** |
+
+> mp.spawn 不能 fork (duckdb fork 死锁), 默认 0 worker = 单进程; 设 `os.cpu_count()` 用全部核心
 
 ## 关键约束
 
