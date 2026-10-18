@@ -650,11 +650,14 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     ma200 = fv.get("ma200", 0)
     ma_gap = abs(ma50 - ma200) / ma200 * 100 if ma200 > 0 else 0
     rows.append(f"| MA 胶着 (短期/长期均线接近) | \\|MA50-MA_long\\|/MA_long ≤ 8% | `\\|{ma50:.2f} - {ma200:.2f}\\| / {ma200:.2f} × 100 = {ma_gap:.2f}%` | {_yn(accum_d.get('ma_gap_ok', False))} |")
-    # 量能萎缩
-    vol_recent = fv.get("vol_recent", 0)
-    vol_ref = fv.get("vol_ref", 1)
-    vol_ratio_accum = vol_recent / vol_ref if vol_ref > 0 else 0
-    rows.append(f"| 量能萎缩 (近期 < 参考) | vol_recent / vol_ref < 0.75 | `{vol_recent:.0f} / {vol_ref:.0f} = {vol_ratio_accum:.3f}` | {_yn(accum_d.get('volume_dry_ok', False))} |")
+    # 量能萎缩 (近期 N 日均量 / 基线 M 日均量 < 0.75)
+    # 2026-10-19: 详报里直接显示窗口天数, 不再 "近期" / "参考" 含糊
+    vol_recent_avg   = fv.get("vol_recent_avg", 0)
+    vol_baseline_avg = fv.get("vol_baseline_avg", 1)
+    vol_recent_days  = fv.get("vol_recent_days", "?")
+    vol_baseline_days = fv.get("vol_baseline_days", "?")
+    vol_ratio_accum  = vol_recent_avg / vol_baseline_avg if vol_baseline_avg > 0 else 0
+    rows.append(f"| 量能萎缩 (近 {vol_recent_days}d < 基线 {vol_baseline_days}d) | vol_recent_avg / vol_baseline_avg < 0.75 | `{vol_recent_avg:.0f} / {vol_baseline_avg:.0f} = {vol_ratio_accum:.3f}` | {_yn(accum_d.get('volume_dry_ok', False))} |")
     rows.append(f"| **子阶段** | 累积 A: 前置满足 / 累积 B: ≥3次测试底部 / 累积 C: 不破低 | `b_test_count={accum_d.get('b_test_count', 0)} (近 60 日 abs(low-period_low)/period_low ≤ 5% 的天数), c_stage_ok={accum_d.get('c_stage_ok', '—')}` | — |")
     rows.append(f"| 综合通过 | 上面 +1 全满足 | `pass_all={accum_d.get('pass_all', '—')}` | {_yn(accum_d.get('pass_all', False))} |")
     rows.append("")

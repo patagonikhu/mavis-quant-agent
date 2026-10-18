@@ -37,7 +37,7 @@ def detect_evr(c, h, l, v, o, i, vol_window=20, vol_ratio=1.8, max_drop=2.0, max
             ma200 = sum(c[i-200:i]) / 200
         if ma200 > 0 and (c[i-1] / ma200 - 1) * 100 < min_bias:
             return False
-    # vol_ref (前 20 日均量, 不含当前)
+    # vol_baseline_avg (前 20 日均量, 不含当前) 2026-10-17 改名
     if i < vol_window + 1:
         return False
     vol_ref_avg = sum(v[i-vol_window-1:i-1]) / vol_window

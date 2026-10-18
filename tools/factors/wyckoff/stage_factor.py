@@ -137,8 +137,12 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     accum_c_ok = accum_abc_pass = False
     recent_20_low = None  # 2026-10-17: 默认 None, 防止 fallback 路径下 i<20 时 UnboundLocalError
     period_low = 0.0  # 2026-10-17: 默认 0.0, 防止 K 线 < 30 时 UnboundLocalError (2026-10-17 报 688758)
-    vol_recent = 0.0  # 2026-10-17: 默认 0.0, 防止 K 线 < 30 时 UnboundLocalError (688758 报 vol_recent)
-    vol_ref = 0.0  # 2026-10-17: 默认 0.0, 防止 K 线 < 30 时 UnboundLocalError
+    # 2026-10-19 改名 (明示窗口数):
+    #   vol_recent_avg (近 20d 均量)  / vol_baseline_avg (基线 100d 均量) = 缩量比
+    #   K 线 < 120 根 fallback 短窗: vol_recent_avg = vol10 (10d) / vol_baseline_avg = vol_ref_30_10 (20d)
+    #   详报里看到的 "近 20d/基线 100d" 是 99% 走长窗的情况, 新股短 K 线才走 fallback
+    vol_recent_avg = 0.0
+    vol_baseline_avg = 0.0
 
     # Accumulation 累积
     if i >= 30:
@@ -148,16 +152,17 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
         if ma200 > 0:
             accum_ma_gap_ok = abs(ma50 - ma200) / ma200 * 100 <= 8
 
+        # 量比双窗: 长窗 20d/100d 优先, 短窗 10d/20d fallback (K 线 < 120 根)
         if i >= 120:
-            vol_recent = arrs['vol20'][i]
-            vol_ref    = arrs['vol_ref_120_20'][i]
+            vol_recent_avg   = arrs['vol20'][i]              # 近 20d 均量
+            vol_baseline_avg = arrs['vol_ref_120_20'][i]    # 基线 100d 均量 (i-120 ~ i-20, 长度 100)
         elif i >= 40:
-            vol_recent = arrs['vol10'][i]
-            vol_ref    = arrs['vol_ref_30_10'][i]
+            vol_recent_avg   = arrs['vol10'][i]              # 近 10d 均量 (fallback 短窗)
+            vol_baseline_avg = arrs['vol_ref_30_10'][i]     # 基线 20d 均量 (fallback)
         else:
-            vol_recent = vol_ref = 0.0
+            vol_recent_avg = vol_baseline_avg = 0.0
 
-        if vol_ref > 0 and vol_recent / vol_ref < 0.75:
+        if vol_baseline_avg > 0 and vol_recent_avg / vol_baseline_avg < 0.75:
             accum_volume_ok = True
 
         # B 阶段底部测试次数 — O(60) 有界常数
@@ -170,7 +175,7 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
 
         if accum_base_low_ok and i >= 20:
             recent_20_low = arrs['rmin_l_20'][i]
-            if recent_20_low >= period_low * 0.97 and vol_ref > 0 and vol_recent / vol_ref < 0.75:
+            if recent_20_low >= period_low * 0.97 and vol_baseline_avg > 0 and vol_recent_avg / vol_baseline_avg < 0.75:
                 accum_c_ok = True
 
         if accum_base_low_ok and accum_ma_gap_ok and accum_volume_ok:
@@ -328,8 +333,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             "pos_pct": round(pos_pct, 1),
             # ── Accumulation 用 ──
             "period_low": round(period_low, 4),
-            "vol_recent": round(vol_recent, 2), "vol_ref": round(vol_ref, 2),
-            "vol_ratio_accum": round(vol_recent / vol_ref, 3) if vol_ref > 0 else None,
+            "vol_recent_avg": round(vol_recent_avg, 2), "vol_baseline_avg": round(vol_baseline_avg, 2),
+            # 量比窗口天数: 详报里直白显示 "近 20d / 基线 100d" 或 fallback "近 10d / 基线 20d"
+            "vol_recent_days": 20 if i >= 120 else (10 if i >= 40 else 0),
+            "vol_baseline_days": 100 if i >= 120 else (20 if i >= 40 else 0),
+            "vol_ratio_accum": round(vol_recent_avg / vol_baseline_avg, 3) if vol_baseline_avg > 0 else None,
             "b_test_count": accum_b_test_count_n,
             "recent_20_low": round(recent_20_low, 4) if (recent_20_low is not None and i >= 20) else None,
             # ── Distribution 用 ──

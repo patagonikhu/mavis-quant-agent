@@ -220,11 +220,18 @@ def _is_trading_range_context(zone_h, zone_l, zone_c, full_h, full_l, full_c,
     return not drift_pct > max_drift_pct
 
 
-def _spring_support_level(zone_l, zone_c) -> float:
-    """(WyckoffTradingAgent 1086 行) Spring 支撑位 (swing low 中位数, fallback 最小 close)"""
-    swing_lows = _swing_values(zone_l, kind="low", window=3)
+def _spring_support_level(zone_l, zone_c,
+                           precomputed_swing_lows: list | None = None) -> float:
+    """(WyckoffTradingAgent 1086 行) Spring 支撑位 (swing low 中位数, fallback 最小 close)
+
+    precomputed_swing_lows: 与 zone_l 等长的布尔数组（来自 arrs['swing_low_3'] 切片），
+                            有则跳过 _swing_values 重算。
+    """
+    if precomputed_swing_lows is not None:
+        swing_lows = [v for v, is_sw in zip(zone_l, precomputed_swing_lows) if is_sw]
+    else:
+        swing_lows = _swing_values(zone_l, kind="low", window=3)
     if len(swing_lows) >= 2:
-        # 取中位数
         s = sorted(swing_lows)
         return s[len(s) // 2]
     if not zone_c:
@@ -328,25 +335,28 @@ def _sos_volume_ratio(vols, vol_quantile_window: int = 60, vol_ratio: float = 3.
     """
     if len(vols) < vol_quantile_window + 1:
         return None
-    vol_ref = vols[-vol_quantile_window-1:-1]
-    if not vol_ref:
+    # 2026-10-17 改名: vol_ref (局部样本) → vol_samples (跟 stage_factor 的 vol_baseline_avg 区分)
+    vol_samples = vols[-vol_quantile_window-1:-1]
+    if not vol_samples:
         return None
-    vol_ref_avg = sum(vol_ref) / len(vol_ref)
+    vol_ref_avg = sum(vol_samples) / len(vol_samples)
     if vol_ref_avg <= 0:
         return None
     last_vol = vols[-1]
     vol_ratio_val = last_vol / vol_ref_avg
     if vol_ratio_val < vol_ratio:
         return None
-    sorted_ref = sorted(vol_ref)
-    q_idx = int(vol_quantile * len(sorted_ref))
-    quantile_volume = sorted_ref[min(q_idx, len(sorted_ref) - 1)]
+    sorted_samples = sorted(vol_samples)
+    q_idx = int(vol_quantile * len(sorted_samples))
+    quantile_volume = sorted_samples[min(q_idx, len(sorted_samples) - 1)]
     if quantile_volume > 0 and last_vol < quantile_volume:
         return None
     return vol_ratio_val
 
 
-def _sos_breakout_or_ma_cross(closes, highs, breakout_window: int = 60, breakout_tolerance: float = 0.01) -> bool:
+def _sos_breakout_or_ma_cross(closes, highs, breakout_window: int = 60, breakout_tolerance: float = 0.01,
+                               precomputed_ma50: float | None = None,
+                               precomputed_ma50_prev: float | None = None) -> bool:
     """(WyckoffTradingAgent 1399 行) SOS 突破: 60 日新高 OR MA50 交叉"""
     if len(closes) < 51 or len(highs) < breakout_window + 2:
         return False
@@ -355,8 +365,8 @@ def _sos_breakout_or_ma_cross(closes, highs, breakout_window: int = 60, breakout
     max_recent_high = max(recent_highs) if recent_highs else float('inf')
     is_breakout = close_last >= max_recent_high * (1.0 - breakout_tolerance)
     # MA50 cross
-    ma50_last = sum(closes[-50:]) / 50
-    ma50_prev = sum(closes[-51:-1]) / 50
+    ma50_last = precomputed_ma50      if precomputed_ma50      is not None else sum(closes[-50:]) / 50
+    ma50_prev = precomputed_ma50_prev if precomputed_ma50_prev is not None else sum(closes[-51:-1]) / 50
     prev_close = closes[-2]
     is_ma_crossover = (prev_close <= ma50_prev and close_last > ma50_last)
     return is_breakout or is_ma_crossover
@@ -373,18 +383,20 @@ def _compression_ohlcv(closes, highs, lows, vols) -> Optional[Tuple[list, list, 
     return (closes, highs, lows, vols)
 
 
-def _compression_direction_ok(closes, ma_window: int = 20, lookback: int = 5) -> bool:
+def _compression_direction_ok(closes, ma_window: int = 20, lookback: int = 5,
+                               precomputed_ma: float | None = None,
+                               precomputed_ma_prev: float | None = None) -> bool:
     """(WyckoffTradingAgent 1467 行) Compression 方向: 短期 MA ≥ 长期 MA
 
     原版 cfg.compression_require_direction 默认 True
     """
     if len(closes) < 25:
         return False
-    ma = sum(closes[-ma_window:]) / ma_window
+    ma      = precomputed_ma      if precomputed_ma      is not None else sum(closes[-ma_window:]) / ma_window
     ma_prev_window = closes[-(ma_window + lookback):-lookback]
     if not ma_prev_window:
         return False
-    ma_prev = sum(ma_prev_window) / len(ma_prev_window)
+    ma_prev = precomputed_ma_prev if precomputed_ma_prev is not None else sum(ma_prev_window) / len(ma_prev_window)
     return ma >= ma_prev
 
 
@@ -444,15 +456,17 @@ def _compression_atr_ratio(closes, highs, lows, vols,
 # ============================================================
 
 def _trend_pullback_peak_idx(closes, lookback: int = 10, ma_window: int = 20,
-                              min_pullback_pct: float = 5.0, max_pullback_pct: float = 20.0) -> Optional[int]:
+                              min_pullback_pct: float = 5.0, max_pullback_pct: float = 20.0,
+                              precomputed_ma: float | None = None,
+                              precomputed_ma_prev: float | None = None) -> Optional[int]:
     """(WyckoffTradingAgent 1542 行) 找 trend pullback 的 peak (相对 idx 位置)"""
     if len(closes) < ma_window + lookback + 5:
         return None
-    ma_now = sum(closes[-ma_window:]) / ma_window
+    ma_now  = precomputed_ma      if precomputed_ma      is not None else sum(closes[-ma_window:]) / ma_window
     ma_prev_window = closes[-(ma_window + lookback + 1):-(lookback + 1)]
     if not ma_prev_window or len(ma_prev_window) < 1:
         return None
-    ma_prev = sum(ma_prev_window) / len(ma_prev_window)
+    ma_prev = precomputed_ma_prev if precomputed_ma_prev is not None else sum(ma_prev_window) / len(ma_prev_window)
     if ma_now <= ma_prev:
         return None
     # 找最近 lookback+1 根内的 peak
