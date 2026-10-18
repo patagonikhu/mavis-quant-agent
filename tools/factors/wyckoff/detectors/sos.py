@@ -10,7 +10,8 @@ from ..helpers import _bias_200_exceeds_limit, _is_frozen_board_day, _sos_volume
 def detect_sos(c, h, l, v, o, i, vol_window=20, vol_ratio=3.0, vol_quantile_window=60,
                vol_quantile=0.95, breakout_window=60, breakout_tolerance=0.01,
                pct_min=6.0, max_bias=25.0, pct_chg=None,
-               precomputed_ma200=None) -> bool:
+               precomputed_ma200=None,
+               precomputed_arrs=None) -> bool:
     """SOS 检测 (1:1 搬运 WyckoffTradingAgent 1416 行)"""
     n = len(c)
     if i < max(vol_window, breakout_window) + 2:
@@ -32,6 +33,10 @@ def detect_sos(c, h, l, v, o, i, vol_window=20, vol_ratio=3.0, vol_quantile_wind
     if _sos_volume_ratio(v[:i], vol_quantile_window, vol_ratio, vol_quantile) is None:
         return False
     # 突破 (用 _sos_breakout_or_ma_cross 抽象)
-    if not _sos_breakout_or_ma_cross(c[:i], h[:i], breakout_window, breakout_tolerance):
+    ma50_now  = precomputed_arrs['ma50'][i-1] if precomputed_arrs is not None else None
+    ma50_prev = precomputed_arrs['ma50'][i-2] if precomputed_arrs is not None and i >= 2 else None
+    if not _sos_breakout_or_ma_cross(c[:i], h[:i], breakout_window, breakout_tolerance,
+                                     precomputed_ma50=ma50_now,
+                                     precomputed_ma50_prev=ma50_prev):
         return False
     return True

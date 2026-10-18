@@ -8,17 +8,16 @@ from ..helpers import _is_trading_range_context, _spring_support_level, _bias_20
 
 
 def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=15.0,
-                  precomputed_atr=None, precomputed_ma200=None) -> bool:
+                  precomputed_atr=None, precomputed_ma200=None,
+                  precomputed_arrs=None) -> bool:
     """Spring 检测 (1:1 搬运 WyckoffTradingAgent 1093 行)"""
     n = len(c)
     if i < support_window + 2:
         return False
     # 支撑位不能包含 prev (i-1)
-    support_zone = list(zip(
-        h[max(0, i - support_window - 2):i - 1] if i >= 1 else [],
-        l[max(0, i - support_window - 2):i - 1] if i >= 1 else [],
-        c[max(0, i - support_window - 2):i - 1] if i >= 1 else []
-    ))
+    sl = max(0, i - support_window - 2)
+    el = i - 1
+    support_zone = list(zip(h[sl:el], l[sl:el], c[sl:el]))
     zone_h = [x[0] for x in support_zone if x[0] is not None]
     zone_l = [x[1] for x in support_zone if x[1] is not None]
     zone_c = [x[2] for x in support_zone if x[2] is not None]
@@ -28,7 +27,9 @@ def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=1
     if not _is_trading_range_context(zone_h, zone_l, zone_c, full_h, full_l, full_c,
                                      precomputed_atr=precomputed_atr):
         return False
-    support_level = _spring_support_level(zone_l, zone_c)
+    # 支撑位 — 优先用预算 swing low 布尔数组
+    swing_low_slice = precomputed_arrs['swing_low_3'][sl:el] if precomputed_arrs is not None else None
+    support_level = _spring_support_level(zone_l, zone_c, precomputed_swing_lows=swing_low_slice)
     if support_level <= 0:
         return False
     if i < 2:

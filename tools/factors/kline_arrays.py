@@ -55,20 +55,50 @@ def rolling_max(arr, n):
 
 # ── 核心预计算 ─────────────────────────────────────────────────────────────
 
+def _swing_low_arr(lows, window: int = 3) -> list:
+    """O(n) 预算 swing low 布尔数组。
+    swing_low_arr[j] = True 当且仅当 lows[j] 是局部极小值（左右各 window 根邻居都 >= lows[j]）。
+    边界 window 根内无法判断，标 False。
+    """
+    n = len(lows)
+    result = [False] * n
+    for j in range(window, n - window):
+        v = lows[j]
+        ok = True
+        for k in range(j - window, j + window + 1):
+            if k != j and lows[k] < v:
+                ok = False
+                break
+        result[j] = ok
+    return result
+
 def _boll_arr(closes, n, k, field):
-    """O(n) Bollinger Band 数组。field: 'upper'|'lower'|'mid'|'pct'"""
+    """O(n) Bollinger Band 数组。field: 'upper'|'lower'|'mid'|'pct'
+    用滑动前缀和维护 Σx 和 Σx²，std² = Σx²/cnt - (Σx/cnt)²，数学等价原 O(n²) 实现。
+    """
     result = []
-    for i in range(len(closes)):
-        w = closes[max(0, i-n+1):i+1]
-        mid = sum(w) / len(w)
-        std = math.sqrt(sum((c - mid) ** 2 for c in w) / len(w))
+    sx = 0.0   # Σx
+    sx2 = 0.0  # Σx²
+    win = deque()
+    for c in closes:
+        sx += c
+        sx2 += c * c
+        win.append(c)
+        if len(win) > n:
+            old = win.popleft()
+            sx -= old
+            sx2 -= old * old
+        cnt = len(win)
+        mid = sx / cnt
+        variance = sx2 / cnt - mid * mid
+        std = math.sqrt(max(variance, 0.0))
         upper = mid + k * std
         lower = mid - k * std
         if field == 'upper':   result.append(round(upper, 2))
         elif field == 'lower': result.append(round(lower, 2))
         elif field == 'mid':   result.append(round(mid, 2))
         elif field == 'pct':
-            result.append(round((closes[i] - lower) / (upper - lower) * 100, 1) if upper > lower else 50.0)
+            result.append(round((c - lower) / (upper - lower) * 100, 1) if upper > lower else 50.0)
         else:  # width
             result.append(round((upper - lower) / mid * 100, 1) if mid > 0 else 0.0)
     return result
@@ -167,4 +197,8 @@ def build_kline_features(closes, highs, lows, vols, window=250, pos_lookback=60)
         # 原始数据引用
         'closes': closes, 'highs': highs, 'lows': lows, 'vols': vols,
         'n': n, 'window': window, 'pos_lookback': pos_lookback,
+
+        # Spring 支撑位预算：swing_low_3[j] = lows[j] 是 window=3 的 swing low
+        # 左右各 3 根邻居都 >= lows[j]，边界 3 根内标 False（无法判断）
+        'swing_low_3': _swing_low_arr(lows, window=3),
     }

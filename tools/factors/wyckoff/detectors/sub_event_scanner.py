@@ -182,6 +182,10 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
         for j in range(_ATR_WIN - 1, len(c)):
             atr_arr[j] = sum(trs[j - _ATR_WIN + 1:j + 1]) / _ATR_WIN
 
+    from ..helpers import _trend_pullback_vol_threshold
+    _vol_threshold = _trend_pullback_vol_threshold(c, market_cap_yi) \
+        if precomputed_arrs is not None else None
+
     events = []
     n = len(c)
     # v5.10.42: as_of_idx 限制扫到 i <= as_of_idx (None=扫整段)
@@ -193,7 +197,8 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
         c_at_i = c[i] if i < len(c) else 0
         if detect_spring(c, h, l, v, o, i, max_bias=spring_max_bias, vol_ratio=spring_vol_ratio,
                          precomputed_atr=atr_arr[i],
-                         precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None):
+                         precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None,
+                         precomputed_arrs=precomputed_arrs):
             events.append({"name": "Spring", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_lps(c, h, l, v, o, i, max_bias=lps_max_bias, pct_chg=pct_chg,
                       vol_dry_ratio=lps_vol_dry_ratio, precomputed_atr=atr_arr[i],
@@ -209,14 +214,18 @@ def scan_sub_events(c, h, l, v, rng, o=None, pct_chg=None, max_bias=25.0,
                       breakout_window=sos_breakout_win, breakout_tolerance=sos_breakout_tol,
                       pct_min=sos_pct_min,
                       max_bias=sos_max_bias, pct_chg=pct_chg,
-                      precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None):
+                      precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None,
+                      precomputed_arrs=precomputed_arrs):
             events.append({"name": "SOS", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_compression(c, h, l, v, o, i, max_bias=cmp_max_bias, pct_chg=pct_chg,
-                               precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None):
+                               precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None,
+                               precomputed_arrs=precomputed_arrs):
             events.append({"name": "Compression", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_trend_pullback(c, h, l, v, o, i, max_bias=tp_max_bias, market_cap_yi=market_cap_yi,
                                   min_pullback=tp_min_pullback, max_pullback=tp_max_pullback,
-                                  precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None):
+                                  precomputed_ma200=precomputed_arrs['ma_window'][i] if precomputed_arrs else None,
+                                  precomputed_arrs=precomputed_arrs,
+                                  precomputed_vol_threshold=_vol_threshold):
             events.append({"name": "TrendPullback", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
         if detect_markup_entry(c, h, l, v, o, i, precomputed_arrs=precomputed_arrs):
             events.append({"name": "MarkupEntry", "date": d_str, "idx": i, "price": c_at_i, "vol": v_at_i})
