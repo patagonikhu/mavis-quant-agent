@@ -59,6 +59,34 @@ def _filter_by_st(codes: list[str]) -> list[str]:
     return [c for c in codes if c not in st_codes]
 
 
+def _filter_by_pe(codes: list[str], pe_max: float) -> list[str]:
+    """1 次 SQL 按 stk_factor 最新 trade_date 过滤 PE > pe_max 的票 (高估值剔除)
+
+    2026-10-17 加: --exclude-pe 高价股前置过滤
+    - 默认 0 = 不过滤
+    - 50/80/100 分别为 适中/较严/严 三档 (跟用户 A 股估值分布对账: PE>100 占 23%)
+    - PE <= 0 或 NULL (亏损 / 数据缺) 默认放行 (跟 --with-finance 互补)
+    - 跟 stk_basic name 字段比 join 一下拿中文名 (但不必要, 过滤只用 ts_code)
+
+    Args:
+        codes: 候选 code 列表 (6 位纯数字)
+        pe_max: PE 上限 (如 100),保留 pe <= pe_max 的票
+
+    Returns:
+        过滤后 code 列表 (保留原顺序)
+    """
+    if not codes or pe_max <= 0:
+        return codes
+    in_clause = ",".join(f"'{c}.SZ', '{c}.SH', '{c}.BJ'" for c in codes)
+    df = duckdb.execute(f"""
+        SELECT ts_code FROM read_parquet('data/history/stk_factor/2026Q4.parquet')
+        WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('data/history/stk_factor/2026Q4.parquet'))
+          AND pe > {pe_max} AND pe < 500
+    """).fetchdf()
+    expensive = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
+    return [c for c in codes if c not in expensive]
+
+
 def _filter_by_quality(codes: list[str], or_yoy_min: float, gm_min: float,
                        np_yoy_min: float | None = None) -> list[str]:
     """1 次 SQL 按 financials 过滤: or_yoy > or_yoy_min AND grossprofit_margin > gm_min AND (np_yoy_min)
@@ -392,6 +420,12 @@ def main():
                     help="排除 ST/*ST 股 (退市风险, 默认 True, 2026-10-17 加)")
     ap.add_argument("--include-st", action="store_true",
                     help="包含 ST/*ST 股 (反旗, 默认已排除, 仅当显式指定时启用)")
+    ap.add_argument("--exclude-pe", type=float, default=0.0,
+                    help="前置 PE 过滤上限 (排除 pe > N 的高估值票, 0=不限):\n"
+                         "  50  = 适中 (剩 ~2400 票, 适合严价值选股)\n"
+                         "  80  = 较严 (剩 ~2960 票)\n"
+                         "  100 = 默认推荐 (剩 ~3160 票, 排除 PE>100 高估 23%)\n"
+                         "底层走 stk_factor 最新 trade_date, 跟 --with-finance (命中后 PE≤0/PE>500 剔亏损妖股) 互补")
     ap.add_argument("--workers", type=int, default=0,
                     help="详报多进程 worker 数 (step 2 用, 跨 GIL 解锁; 默认 0 = os.cpu_count(); 设 1 强制单进程)")
     ap.add_argument("--bench-report", nargs="?", const=12, type=int,
@@ -447,6 +481,15 @@ def main():
         codes = kept
         if not codes:
             print("❌ ST 过滤后无代码可跑", file=sys.stderr)
+            sys.exit(1)
+
+    # 2026-10-17 加: --exclude-pe 高估值前置过滤 (PE > N 默认 0 = 不过滤)
+    if args.exclude_pe > 0:
+        kept = _filter_by_pe(codes, args.exclude_pe)
+        print(f"  exclude-pe (PE>{args.exclude_pe:.0f} 高估值): {len(codes)} → {len(kept)} 票", flush=True)
+        codes = kept
+        if not codes:
+            print(f"❌ PE>{args.exclude_pe:.0f} 过滤后无代码可跑", file=sys.stderr)
             sys.exit(1)
 
     # 2026-10-16: --with-quality 前置过滤 (财务质量, 减少扫描票数)

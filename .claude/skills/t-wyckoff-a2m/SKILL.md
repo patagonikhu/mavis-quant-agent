@@ -33,6 +33,9 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
                                          #   elite=均>20% (~300 票)
                                          #   off=不限 (~5608 票, v11 默认)
 ... --with-finance                       # 加 PE 过滤 (剔除 PE≤0 / PE>500 亏损/异常)
+... --exclude-pe 100                     # 前置过滤 PE>100 的高估值票 (推荐默认 100, 0=不限)
+                                            # 50=适中 / 80=较严 / 100=推荐 (排除 23% 估值过高票)
+                                            # 跟 --with-finance 互补 (finance 是命中后剔, exclude-pe 是扫描前剔)
 ... --include-st                         # (反旗) 包含 ST/*ST (默认已排除, 退市风险)
 
 # 详报输出
@@ -194,7 +197,8 @@ DataStore.get_ctx(code)
 | `--report-subdir` | wyckoff-a2m | 详报子目录 (跳 watchlist 分流) |
 | `--no-clean` | False | 跳过自动清空 docs/<subdir>/ |
 | `--with-quality` | off | 财务前置过滤 (basic / strong / elite / off) |
-| `--with-finance` | False | 详报 PE 过滤 |
+| `--with-finance` | False | 详报 PE 过滤 (命中后, PE≤0 / >500) |
+| `--exclude-pe` | 0 | 前置 PE 过滤上限 (PE > N 剔, 0=不限, 推荐 100) |
 | `--exclude-st` | True | 排除 ST/*ST |
 | `--include-st` | False | (反旗) 包含 ST |
 | `--with-rsi` | False | **deprecated** (v11 不需要 RSI) |
