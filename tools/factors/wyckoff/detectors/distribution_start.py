@@ -27,7 +27,7 @@ def detect_distribution_start(c, h, l, v, o, i, ma_long_w=200, high_thr=30.0,
     # 缩量: 最近 confirm_days 均量 < 60 日均量
     if i < 60 + confirm_days:
         return False
-    ref_vol = sum(v[i-61:i-1]) / 60
+    ref_vol = sum(v[i-60:i]) / 60        # 对齐 WTA: 含当日 (tail(60))
     recent_vol = sum(v[i-confirm_days-1:i]) / confirm_days
     if ref_vol <= 0:
         return False

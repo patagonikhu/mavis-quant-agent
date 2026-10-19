@@ -73,14 +73,13 @@ def _op_from_prev_close(closes, i):
 def _is_frozen_board_day(op, hi, low, cl, *, market="cn") -> bool:
     """(WyckoffTradingAgent 1052 行) 一字板检测
 
-    op=hi=lo=cl 或 op=hi=lo (跌停一字) 算一字板
+    对齐 WTA: 振幅 ≤ 1% 且开收差 ≤ 1% (原版 < 0.1% 过严, 会漏近一字板)
     """
     if any(x is None for x in [op, hi, low, cl]):
         return False
     if op <= 0 or cl <= 0:
         return False
-    # A 股一字板: 振幅 < 0.1% + (op≈hi≈lo 或 op≈hi≈cl)
-    if abs(hi - low) / max(op, 0.01) < 0.001:
+    if (hi - low) / cl * 100 <= 1.0 and abs(op - cl) / cl * 100 <= 1.0:
         return True
     return False
 
@@ -232,7 +231,7 @@ def _spring_support_level(zone_l, zone_c,
     else:
         swing_lows = _swing_values(zone_l, kind="low", window=3)
     if len(swing_lows) >= 2:
-        s = sorted(swing_lows)
+        s = sorted(swing_lows[-5:])  # 对齐 WTA: 只取最近5个，更贴近近期价格行为
         return s[len(s) // 2]
     if not zone_c:
         return 0
@@ -296,14 +295,12 @@ def _evr_structure_ok(closes, close_last: float) -> bool:
 
 
 def _evr_confirmation_ok(closes, lows, idx: int, confirm_days: int, allow_break_pct: float) -> bool:
-    """EVR 确认日不破底 (2026-07-31 简化: 永远 True)
+    """EVR 确认日不破底
 
-    历史版本 (WyckoffTradingAgent 1287 行 1:1) 包含 3 个 bug:
-      1. _evr_candidate_indexes 永远返 [-1], confirm_days 无效
-      2. evr.py: real_idx = i - 1 覆盖循环变量 idx, idx 永远用不上
-      3. _evr_confirmation_ok 用 closes[idx+1] 未来数据, 但 closes = c[:i] 切片不含未来
-
-    实战: 60m 周期波动大, 1 根 K 线确认机制失效; 直接返 True 简化
+    WTA 检查事件日后 confirm_days 根 K 线收盘不低于事件日低点。
+    mavis index-based 框架中 closes = c[:i]，idx = i-1 是最后一根，
+    confirm 窗口 c[i:i+confirm_days] 是未来数据，无法前瞻。
+    结构稳定性已由 _evr_structure_ok (close >= 3日前close×0.98) 覆盖，此处恒 True。
     """
     return True
 
@@ -415,8 +412,8 @@ def _compression_atr_ratio(closes, highs, lows, vols,
     """
     if len(closes) < atr_window + lookback + 1:
         return None
-    # 计算 recent 5 日 atr_pct
-    recent_atr_pct_sum = 0
+    # 计算 recent lookback 日 atr_pct 序列 (对齐 WTA: 保留序列做单调性检查)
+    recent_atr_pct_arr = []
     for j in range(len(closes) - lookback, len(closes)):
         if j <= 0 or closes[j] is None or closes[j] <= 0:
             return None
@@ -425,8 +422,15 @@ def _compression_atr_ratio(closes, highs, lows, vols,
             abs(highs[j] - closes[j-1]),
             abs(lows[j] - closes[j-1])
         )
-        recent_atr_pct_sum += (tr / closes[j]) * 100.0
-    recent_atr_pct = recent_atr_pct_sum / lookback
+        recent_atr_pct_arr.append((tr / closes[j]) * 100.0)
+    if len(recent_atr_pct_arr) < lookback:
+        return None
+    recent_atr_pct = sum(recent_atr_pct_arr) / lookback
+    # 对齐 WTA: ATR 序列须单调收窄，允许至多 1 次反弹
+    violations = sum(1 for k in range(1, len(recent_atr_pct_arr))
+                     if recent_atr_pct_arr[k] > recent_atr_pct_arr[k-1])
+    if violations > 1:
+        return None
     # hist (前 atr_window 日) atr_pct
     hist_atr_pcts = []
     for j in range(len(closes) - atr_window - lookback, len(closes) - lookback):

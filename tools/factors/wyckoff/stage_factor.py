@@ -94,13 +94,12 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     # MA 金叉 / 持续上方
     ma50_prev  = arrs['ma50'][i - 1]      if i >= 1   else ma50
     ma200_prev = arrs['ma_window'][i - 1] if i >= 200 else ma200
-    # 2026-10-17 修: 之前实现是"今天金叉" (只 1 天成立), 改成"近 5 日内金叉"
-    # 原: golden_cross_recent = (ma50_prev <= ma200_prev and ma50 > ma200)
-    # 新: 滑动 5 日窗口, 只要近 5 日内任一天"昨天 ≤ 今天 >" 就 True
+    # 2026-10-19 对齐 WTA: 当前 MA50 必须仍在 MA200 上方 (guard), 窗口 5→10 天,
+    #   above_ma200_sustained 语义改为 MA50>MA200 (无容差), 与 markup_entry.py 路径统一
     golden_cross_recent = False
-    if i >= 2 and i >= 200:
-        # 从 i-4 到 i 这 5 天, 检查每对 (j-1, j) 是否金叉
-        for j in range(max(1, i - 4), i + 1):
+    if i >= 2 and i >= 200 and ma50 > ma200:   # guard: 当前仍须在上方
+        # 近 10 日内任一天发生金叉即 True
+        for j in range(max(1, i - 9), i + 1):
             if (arrs['ma50'][j - 1] <= arrs['ma_window'][j - 1]
                     and arrs['ma50'][j] > arrs['ma_window'][j]):
                 golden_cross_recent = True
@@ -109,8 +108,9 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     confirm_days = 5
     above_ma200 = p > ma200
     if i >= ma_long + confirm_days:
+        # 对齐 WTA: MA50 > MA200 (无容差), 不用 price vs ma_long×0.98
         above_ma200_sustained = all(
-            closes[j] > arrs['ma_long'][j] * 0.98
+            arrs['ma50'][j] > arrs['ma_long'][j]
             for j in range(i - confirm_days + 1, i + 1)
         )
     else:

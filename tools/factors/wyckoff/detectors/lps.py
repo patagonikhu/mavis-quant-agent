@@ -81,17 +81,18 @@ def detect_lps(c, h, l, v, o, i, lookback=3, ma_window=20, ma_tolerance=0.02,
     low_near_ma = min(recent_lows)
     if abs(low_near_ma - ma_now) / ma_now > ma_tolerance:
         return False
-    # 缩量: recent N 日 max vol / 前 60 日 max vol
+    # 缩量: recent N 日 median vol / 前 60 日 median vol (对齐 WTA: median 比 max 更鲁棒)
     if i < lookback + 1:
         return False
-    recent_max_vol = max(v[i-lookback:i])
+    recent_vols = v[i-lookback:i]
     ref_window = v[i-vol_ref_window-lookback:i-lookback]
     if not ref_window:
         return False
-    ref_max_vol = max(ref_window)
-    if ref_max_vol <= 0:
+    recent_median_vol = sorted(recent_vols)[len(recent_vols) // 2]
+    ref_median_vol = sorted(ref_window)[len(ref_window) // 2]
+    if ref_median_vol <= 0:
         return False
-    if recent_max_vol / ref_max_vol > vol_dry_ratio:
+    if recent_median_vol / ref_median_vol > vol_dry_ratio:
         return False
     # creek 确认 (v5.4 final, 跟原版 cfg.lps_creek_confirmation_enabled 默认 False)
     if creek_confirmation_enabled:
