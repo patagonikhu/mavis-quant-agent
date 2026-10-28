@@ -9,6 +9,8 @@ allowed-tools:
 > 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
 > 📐 新 Strategy: [`strategy_recipe.md`](../../strategy_recipe.md)
 
+> **单一事实源:** `tools/batch/batch_backtest.py` 模块 docstring(用法) + `--help`(参数 / 默认值)。SKILL.md 只保留"啥时候用 + 跑最小例子 + 关键约束"。
+
 ## 用法
 
 ```bash
@@ -32,7 +34,7 @@ allowed-tools:
 - **0 网络**, 走 `DataStore` + `AnalysisEngine.analyze_history()` 入口 (不绕过)
 - **5 年 backfill**: 跑前先 `python -m tools.storage.sync --cache`
 - **缓存命中**: 7 只持仓 × 1250 天 × 7 strategy ≈ 3.5 分钟 (无 cache) / 秒级 (有 cache)
-- **信号类别**: 威科夫子事件 / 缠论买卖点 / 威科夫阶段 / fflow 5 档 / OBV / 背驰
+- **信号类别**: 威科夫子事件 / 缠论买卖点 / 威科夫阶段 / fflow 5 档 / 背驰
 
 ## 输出
 

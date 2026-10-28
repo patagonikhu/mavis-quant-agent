@@ -29,7 +29,7 @@ sync       store       analysis_engine   render_data   report_renderer
 |---|---|---|---|
 | L1 Sync | `tools/storage/sync.py` | 8 flag: --kline/--stk-factor/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto | — |
 | L1 Store | `tools/storage/store.py` | DataStore I/O, 25+ 公开方法 | ❌ 网络 |
-| L2 Analysis | `tools/analysis/analysis_engine.py` | 6 strategy (chan/wyckoff/smc/obv/fflow/finance) | ❌ 网络, ❌ 直读 db |
+| L2 Analysis | `tools/analysis/analysis_engine.py` | 5 strategy (chan/wyckoff/smc/fflow/finance) | ❌ 网络, ❌ 直读 db |
 | L2 容器 | `tools/analysis/render_data.py` | RenderData dataclass | ❌ 网络 |
 | L3 Render | `tools/render/report_renderer.py` | RenderData → Markdown | ❌ 网络 |
 
@@ -41,14 +41,20 @@ sync       store       analysis_engine   render_data   report_renderer
 
 ---
 
-## 🔴 OBV 三块 (易混点)
+## 🔴 fflow 数据新鲜度 (2026-10-27)
 
-| 块 | 来源 | 用途 |
+fflow (主力资金流) 是"量价"维度唯一来源, 但 parquet 靠 sync 落盘, **落后 K 线是常态**。
+
+| 状态 | 含义 | 行为 |
 |---|---|---|
-| **经典 OBV** | `tools/factors/volume/price_fflow.py::obv_factor` | K线累计, 5 档 verdict (obv5/obv_trend) |
-| **fflow_factor** | 同文件 `fflow_factor` | Tushare money_flow 主力净流入, 5 档 verdict |
+| `OK` | 落后 ≤ 7 天 | 正常参与综合判定投票 |
+| `STALE` | 落后 > 7 天 | **不投票**, verdict 加 `⚠️数据陈旧(N天)` |
+| `NO_DATA` | 无 fflow 数据 | 不投票 |
+| `NOT_APPLICABLE_INDEX` | 指数 (无个股资金流) | 不投票, 0 网络 |
 
-**OBV 信号适用性:** ✅ 光学/封测/HBM (主力控盘度高) / ❌ 题材股/小盘股 (噪声大) / ❌ 周期股 (β 主导)。触发后必须结合 "板块 MA20 偏离" + "fflow 5日净流出" + "T 框架阶段" 综合判定, 单 OBV 趋势不直接清仓。
+**实测依据**: fflow 落后 29 天时, 38 只核心票里 14 只判"出货", 其中 13 只被同时点的量价指标判为"偏进货" —— 方向完全相反, 是陈旧数据造成的系统性看空偏差, 不是市场信号。
+
+> ⚠️ OBV 已于 2026-10-27 完全删除 (实测普遍负超额: 多头排列 -2.38%, 底背离 -1.60%, 剥掉藏其中的"离 MA120 距离"成分后胜率 48.5% < 基准 50.1%)。详见 `docs/fflow-removal-assessment.md`。
 
 ---
 
@@ -68,7 +74,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 顺序 | 内容 | 优先级 |
 |---|---|---|
 | 1️⃣ | 缠论三要素 (中枢位置 + 背驰 + 止跌) | 🥇 一等 |
-| 2️⃣ | 4 个缠论补充策略 (SMC-OB + 量价 OBV + 威科夫 + 多市场共振) | 🥇 一等 |
+| 2️⃣ | 4 个缠论补充策略 (SMC-OB + 量价 fflow + 威科夫 + 多市场共振) | 🥇 一等 |
 | 3️⃣ | 市场状态定量判断 + 方法优先级矩阵 | 🥈 二等 |
 | 4️⃣ | 大盘 + 美股背景 | 🥈 可选 |
 | 5️⃣ | PEG / DCF L (基本面对冲, 必须在 1️⃣2️⃣ 之后) | 🥉 二等 |

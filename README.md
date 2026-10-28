@@ -16,7 +16,6 @@
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 8 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-roc-ey` | 跑 ROC+EY 联合排名 + 4 季大表 (PEG/DCF L 已移除, 性能优化), Top 20 写到 docs/finance-top20.md | `/t-roc-ey` |
 | `/t-near-low` | 监控"跌 70-80% + 距 5y 低 < 3%"清单, 写 docs/oversold-watchlist.md | `/t-near-low --gap 2` |
-| `/t-bb-obv` | 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 三重确认 (每天 0-2 只) | `/t-bb-obv --window 5` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
 | `/t-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-earnings-blowout --top-np-jump 30` |
 
@@ -43,13 +42,13 @@
 /t-near-low --gap 2
 
 # 全市场 A→M 三重确认扫描
-/t-bb-obv --window 10
+/t-wyckoff-a2m
 ```
 
 ### 1.2 推荐工作流
 
 ```
-/t-bb-obv                  ← 1. 科技股扫 BOLL<15% + BBW<10% + OBV 底背离 (近 2 日, 0-2 只)
+/t-wyckoff-a2m            ← 1. 全市场 A→M 扫描 (威科夫积累期→拉升期)
               ↓
 /t-analyze {code}                ← 2. 对候选标的做完整 22 section 详报
               ↓
@@ -136,12 +135,11 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── signal_cache.py                # SQLite 缓存 (wyckoff 9 bool + chan 5 bool + hub)
 │   │   └── render_data.py                 # RenderData (9 派生字段)
 │   │
-│   ├── factors/                           # 7 strategy 算子 (chan/wyckoff/smc/obv/fflow/technical/finance)
+│   ├── factors/                           # 6 strategy 算子 (chan/wyckoff/smc/fflow/technical/finance)
 │   │   ├── kline_arrays.py                # build_kline_features() O(n) 预算层
 │   │   ├── wyckoff/stage_factor.py
 │   │   ├── chan/czsc_signals.py
 │   │   ├── smc/                           # OB/FVG/Sweep
-│   │   ├── volume/price_fflow.py          # OBV + fflow
 │   │   ├── valuation/multi.py             # PEG + DCF + Magic (合并 v6.2.5)
 │   │   └── risk/                          # 退出信号/止盈止损/监控触发
 │   │
@@ -153,14 +151,12 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │       ├── batch_backtest.py              # /t-backtest (走 signal_cache)
 │       ├── signal_cache_warmup.py         # /t-sync-cache (增量断点续跑)
 │       ├── find_near_low.py               # /t-near-low
-│       └── bb_obv_scan.py               # /t-bb-obv
 │
 └── .claude/skills/                        # 5 个 slash 命令
     ├── t-analyze/SKILL.md
     ├── t-backtest/SKILL.md
     ├── t-sync-cache/SKILL.md
     ├── t-near-low/SKILL.md
-    └── t-bb-obv/SKILL.md
 ```
 
 ---
@@ -189,13 +185,12 @@ kline + dates
   │
   ▼
 build_kline_features()                       O(n) 一次（预算层，共享）
-  → arrs {ma20, ma60, vol20, slope_60, obv, ...}
+  → arrs {ma20, ma60, vol20, slope_60, ...}
   │
   ▼
 WyckoffStrategy.analyze_history(ctx, dates)  O(n) — 1次循环: 每根bar O(1) 索引
 ChanStrategy.analyze_history(ctx, dates)     O(n) — czsc 内部已 O(n) 优化
 SmcStrategy.analyze_history(ctx, dates)      O(n) — OB/FVG/Sweep 全量扫一次
-ObvStrategy.analyze_history(ctx, dates)      O(n) — OBV 数组预建
 FflowStrategy.analyze_history(ctx, dates)     O(1) — fflow_factor 接 moneyflow_list 求和 (走 DataStore 落盘)
 PegStrategy.analyze_history(ctx, dates)       O(1) — 查表
 ResonanceStrategy.analyze_history(ctx, dates) O(n) — 1d/5d/20d 共振
@@ -213,7 +208,6 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 | +2 | `kline_arrays.precompute()` 共享预算层 | ~3.6s |
 | +3 | `WyckoffStrategy.analyze_history`: `wyckoff_judge(i, arrs)` O(1) per-bar | ~0.4s |
 | +4 | `SmcStrategy.analyze_history`: OB/FVG/Sweep 全量扫一次 | ~0.4s |
-| +5 | `ObvStrategy.analyze_history`: OBV 数组预建 O(n) | ~0.4s |
 | +6 | `analysis_result_signals.py` 内 3 处 O(n) 查找改预建 dict/bisect | ~0.4s |
 
 **总提升 ~150x**（63s → 0.4s，lookback=120 step=1）。
@@ -223,11 +217,10 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 | 文件 | 职责 |
 |------|------|
 | `tools/factors/kline_arrays.py::build_kline_features` | O(n) 预算层：MA/vol/slope/rolling min/max，返回 `arrs[key][i]` |
-| `tools/analysis/analysis_engine.py::AnalysisEngine.analyze_history` | 7 strategy 顺序调用 (chan/wyckoff/smc/obv/fflow/technical/finance), signal_action 由 LLM render 时聚合 |
+| `tools/analysis/analysis_engine.py::AnalysisEngine.analyze_history` | 5 strategy 顺序调用 (chan/wyckoff/smc/fflow/technical/finance), signal_action 由 LLM render 时聚合 |
 | `tools/analysis/analysis_engine.py::WyckoffStrategy.analyze_history` | 用 `arrs` 预算层 + pre_scan sub_events，循环内 O(1) |
 | `tools/analysis/analysis_engine.py::ChanStrategy.analyze_history` | czsc 批量，内部已 O(n) |
 | `tools/analysis/analysis_engine.py::SmcStrategy.analyze_history` | OB/FVG/Sweep 全量跑一次，per-date 按 idx 过滤 |
-| `tools/analysis/analysis_engine.py::ObvStrategy.analyze_history` | OBV 数组 + MA 数组 O(n) 预建 |
 | `tools/analysis/analysis_result_signals.py` | 外层用 `date_to_ki` dict + `bisect` 替代 O(n) 查找 |
 
 ### 4.3 并发铁律
@@ -278,7 +271,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 
 1. **数据本地化优先** — 所有 K 线/EPS 走 parquet (`DataStore` 读), 避免运行时网络调用
 2. **三层分离** — `tools/storage/sync.py` (数据) → `tools/analysis/` (引擎) → `tools/render/` (报告)
-3. **O(n) 单次遍历** — 7 strategy 共享 `ctx.chan_result / wyckoff_result / smc_result / obv_result / fflow_result / technical_result` 预算层, FinanceStrategy 不预写 ctx (历史切片独立算), 单次遍历出全历史
+3. **O(n) 单次遍历** — strategy 共享 `ctx.chan_result / wyckoff_result / smc_result / fflow_result / technical_result` 预算层, FinanceStrategy 不预写 ctx (历史切片独立算), 单次遍历出全历史
 4. **缓存优先** — `analysis_cache.db` SQLite 让回测/分析秒级返回; `/t-sync-data --cache` 增量预热
 5. **架构守门 (v6.2.2)** — 所有数据/网络操作只在 `tools/storage/` 下 (DataStore / caches / sources), 不散落
 6. **异常立即抛** — 禁止 `except Exception` 吞错; 渲染失败立即 raise 停下整批
@@ -585,11 +578,6 @@ if highs[-1] > recent_high and vol_ratio > 1.5:
 # 缩量突破 → 假信号
 if highs[-1] > recent_high and vol_ratio < 0.7:
     signal = "⚠️ 假突破（量不配合）"
-
-# OBV背离（主力出货/吸筹）
-obv = cumsum(vol × sign(close.diff()))            # Granville 1963
-if price_up and obv_down: signal = "🔴 拉高出货"
-if price_down and obv_up:  signal = "🟢 主力吸筹"
 
 # 数据：收盘[2] + 最高[3] + 最低[4] + 成交量[5]
 ```

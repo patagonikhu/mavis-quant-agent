@@ -70,7 +70,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         wi = bisect.bisect_right(weekly_dates_sorted, date_clean) - 1
 
         # MA/Boll 从预算数组 O(1) 读，不重算
-        obv_raw = (result.raw if hasattr(result, 'raw') else {}).get("obv") or {}
         ma5     = d_arrs.get('ma5',   [None] * (ki+2))
         ma20    = d_arrs.get('ma20',  [None] * (ki+2))
         ma60    = d_arrs.get('ma60',  [None] * (ki+2))
@@ -89,14 +88,16 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         ma20_v = ma20[ki] if ki < len(ma20) else None
         ma60_v = ma60[ki] if ki < len(ma60) else None
         ma5_dev  = _dev(close, ma5_v)
-        ma20_dev_v = obv_raw.get("ma20_dev") or _dev(close, ma20_v)
+        # 2026-10-27: 原先读 obv_raw.get("ma20_dev") (藏在 ObvStrategy 输出里),
+        #   OBV 删除后直接用 _dev(close, ma20_v) — 数值完全一致 (都是 round((c/ma-1)*100, 1))
+        ma20_dev_v = _dev(close, ma20_v)
         ma60_dev  = _dev(close, ma60_v)
 
         ma_devs = {
             "ma_dev_daily":  ma20_dev_v,    # v6.2.8 改: ma20 日偏离 (不是别的)
             "ma5_dev":       ma5_dev,
             "ma60_dev":      ma60_dev,
-            "ma120_dev":     obv_raw.get("ma120_dev") or _dev(close, ma120[ki] if ki < len(ma120) else None),
+            "ma120_dev":     _dev(close, ma120[ki] if ki < len(ma120) else None),
             "boll_upper":    boll_upper[ki] if ki < len(boll_upper) else None,
             "boll_lower":    boll_lower[ki] if ki < len(boll_lower) else None,
             "boll_mid":      boll_mid[ki]   if ki < len(boll_mid)   else None,
@@ -169,7 +170,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     wy_raw     = raw.get("wyckoff",         {}) or {}
     smc_raw    = raw.get("smc",             {}) or {}
     fflow_raw  = raw.get("fflow",           {}) or {}
-    obv_raw    = raw.get("obv",             {}) or {}
     val_raw    = raw.get("finance",           {}) or {}  # 2026-09-08 改: ValuationStrategy → FinanceStrategy
     tech_raw   = raw.get("technical",        {}) or {}  # v6.2.8 改: TechnicalStrategy 8 指标
     p3         = wy_raw.get("3period") or {}
@@ -222,11 +222,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "fflow_net_5d":   round(fflow_raw.get("fflow_net_5d", 0), 2),
         "fflow_trend_3d": fflow_raw.get("trend_3d", "—"),
 
-        # OBV 经典量价 (2026-08-17 拆分: 独立 strategy)
-        "obv_verdict":        obv_raw.get("verdict", "—"),  # 保留 (报告渲染用, 暂不删)
-        "obv5":                obv_raw.get("obv5", 0),
-        "obv_trend":           obv_raw.get("obv_trend", 0),
-        "obv_strategy_score": obv_raw.get("score", 0),
 
         # 估值 (FinanceStrategy 季报粒度, 共享最新季值)
         # v6.2.8 删: 历史表里不再有 ROC%/EY% 列 (跨季才变, 跟"## 财务数据" section 重复)
@@ -294,45 +289,6 @@ def _active_bsp(bsp_raw: dict, level: str, as_of: str = "") -> dict:
 # diff：相邻两行的变化
 # ============================================================
 
-
-def obv_label(row: dict) -> str:
-    """OBV 标签 (2026-08-18 统一, 2026-08-30 修: 读 obv_verdict 而非 verdict)
-
-    输入 row 字段 (来自 factor_history.compute_factor_history 输出, flat 结构):
-      - obv_verdict: 5 档 (🟢主力进货 / 🟡偏进货 / ⬜中性 / 🟠偏出货 / 🔴主力出货)
-      - obv5: 0/1 (5日价跌+OBV 涨, 实战吸筹信号)
-      - obv_trend: 0/1 (OBV > MA20, 实战吸筹信号)
-
-    输出格式: "🟡偏进货" / "—" (无信号)
-      - verdict 用 emoji (除非中性/无数据)
-      - obv5/obv_trend 任一为 1 时附 "吸筹" 标注
-
-    复用方:
-      - tools/t-analyze-all.sh: signal-watchlist.md OBV 列
-      - tools/render/report_renderer.py: analyze-*.md 因子历史走势表 OBV 列
-    """
-    # 兼容嵌套 (AnalysisResult.raw["obv"]) 和 flat (compute_factor_history 输出) 两种结构
-    obv_dict = row.get("obv") if isinstance(row.get("obv"), dict) else {}
-    verdict = (
-        row.get("obv_verdict")
-        or (obv_dict.get("verdict") if obv_dict else None)
-        or row.get("verdict")
-        or "—"
-    )
-    obv5 = row.get("obv5", obv_dict.get("obv5", 0) if obv_dict else 0) or 0
-    obv_trend = row.get("obv_trend", obv_dict.get("obv_trend", 0) if obv_dict else 0) or 0
-    # 实战信号: obv5 + obv_trend 至少 1 个触发 → 标记"吸筹"
-    if verdict in ("—", "中性", "无数据", "⬜中性"):
-        if obv5 or obv_trend:
-            return "⬆ 吸筹"
-        return "—"
-    # 5 档判定 + 实战信号标记
-    if obv5 or obv_trend:
-        return f"{verdict} ⬆"
-    return verdict
-
-
-# ============================================================
 
 def diff_rows(prev: dict, curr: dict) -> dict:
     """对比相邻两行，返回变化摘要。

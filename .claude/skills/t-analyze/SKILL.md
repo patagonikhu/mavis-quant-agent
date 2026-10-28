@@ -9,6 +9,8 @@ allowed-tools:
 > 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
 > 📐 新 Strategy: [`strategy_recipe.md`](../../strategy_recipe.md)
 
+> **单一事实源:** `tools/batch/t_analyze_one.py` + `tools/batch/t_analyze_all.py` argparse `--help`(参数 / 默认值 / 性能对比)。SKILL.md 只保留"啥时候用 + 跑最小例子 + 关键约束"。
+
 ## 用法
 
 ```bash
@@ -56,4 +58,4 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_all --include-blowout
 
 ## 相关
 
-- `/t-sync-data` (跑前必跑) / `/t-roc-ey` / `/t-bb-obv` / `/t-near-low` / `/t-earnings-blowout` / `/t-sector-ma` / `/t-backtest` / `/t-guardrail`
+- `/t-sync-data` (跑前必跑) / `/t-finance-roc-ey` / `/t-finance-earnings-blowout` / `/t-near-low` / `/t-rsi6-tech` / `/t-backtest` / `/t-guardrail` / `/t-factor-5y`

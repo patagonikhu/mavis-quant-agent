@@ -218,7 +218,7 @@ class FflowRow:
     mid: float
     big: float
     super_big: float
-    derived: bool = False  # True = OBV 派生 (Tushare 不可用时的兜底)
+    derived: bool = False  # True = 派生数据 (非直接数据源)
 
 
 @dataclass
@@ -606,19 +606,32 @@ class RenderData:
         """
         signals: list[dict] = []
 
-        # 1) 量价 (fflow + OBV, 子信号独立)
+        # 1) 量价 (fflow, 子信号独立)
+        # 2026-10-27 加: fflow 陈旧时不触发 (score 照算供追溯, 但不标 triggered)
+        #    依据: 38 只核心票实测, fflow 落后 29 天时 14 只判出货, 13 只被同时点的量价指标判偏进货
         fflow = raw.get("fflow", {})
+        fflow_status = fflow.get("status", "OK")
+        fflow_stale = fflow_status == "STALE"
+        fflow_sd = fflow.get("stale_days")
+        fflow_dd = fflow.get("data_date") or "—"
+        _ff_note = ""
+        if fflow_stale:
+            _ff_note = f" ⚠️数据陈旧({fflow_sd}天, 数据日 {fflow_dd})"
+        elif fflow_status == "NOT_APPLICABLE_INDEX":
+            _ff_note = " (指数无主力资金流)"
+        elif fflow_status == "NO_DATA":
+            _ff_note = " (无 fflow 数据)"
         signals.append({
             "category": "量价", "name": "fflow_score", "score": 8 if fflow.get("score", 0) > 0 else 3,
-            "triggered": fflow.get("score", 0) > 0,
-            "reason": f"fflow 评分 {fflow.get('score', 0)}" if fflow.get("score", 0) > 0 else "fflow 评分 ≤0",
+            "triggered": fflow.get("score", 0) > 0 and not fflow_stale,
+            "reason": (f"fflow 评分 {fflow.get('score', 0)}" if fflow.get("score", 0) > 0 else "fflow 评分 ≤0") + _ff_note,
         })
-        # 资金 (fflow 5 日分)
+        # 资金 (fflow 5 日分) — 同理, 陈旧不触发
         fflow_5d = fflow.get("fflow_net_5d", 0)
         signals.append({
             "category": "资金", "name": "fflow_5d", "score": 7 if fflow_5d > 0 else 3,
-            "triggered": fflow_5d > 0,
-            "reason": f"5 日净流入 {fflow_5d:.2f}亿" if fflow_5d > 0 else "5 日净流出",
+            "triggered": fflow_5d > 0 and not fflow_stale,
+            "reason": (f"5 日净流入 {fflow_5d:.2f}亿" if fflow_5d > 0 else "5 日净流出") + _ff_note,
         })
         # 龙头/政策/情绪: 数据未接入, 标记
         for cat in ["龙头", "政策", "情绪"]:

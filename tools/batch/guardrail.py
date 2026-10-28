@@ -1,25 +1,28 @@
-"""
-tools/batch/guardrail.py — Mavis 守门员框架 (Guardrails)
+"""tools/batch/guardrail.py — Mavis 守门员框架 (Guardrails)
 
-当前内置: network-guard (网络隔离检查)
-未来扩展: data-guard / perf-guard / naming-guard 等
-
-扫描 tools/ 下所有 .py 文件, 根据 --check 选择不同检查:
-  --check network (默认): 静态网络调用扫描
-                       跟每个 skill 的"0 网络"声明做对比
-                       4 类网络调用: import / call / subprocess / tushare
+用途: 静态扫描 tools/ 下所有 .py 文件, 4 个内置 check 找出合规违规:
+       1) network     (默认) — 网络隔离检查 (跟每个 skill "0 网络"声明做对比)
+       2) factor      — Factor class 包装违规 (通用 factor 必须纯函数 + 估值单文件)
+       3) eps-scope   --eps 不准全市场 (datacenter 限频 + WAF 风险)
+       4) parquet    — 业务层禁止直读 parquet/duckdb/sqlite (除 signal_cache)
 
 输出:
   - 每个工具的"违规清单"
   - 哪些 skill 的 SKILL.md 声明"0 网络"但实际有网络
-  - 哪些工具是"网络入口" (允许, 标黄) vs "违规" (应禁止, 标红)
+  - 哪些工具是"网络入口"(允许, 标黄) vs "违规"(应禁止, 标红)
+
+数据特性:
+  - 0 网络, 纯静态扫描 (grep/regex)
+  - 扫描根目录默认 tools/ (--path 可调)
+  - --strict 严格模式 (所有网络调用标红)
 
 用法:
   bash tools/with_venv.sh python -m tools.batch.guardrail                       # 默认网络守门员
-  bash tools/with_venv.sh python -m tools.batch.guardrail --check network       # 显式
+  bash tools/with_venv.sh python -m tools.batch.guardrail --check parquet       # 业务层直读 parquet/duckdb
+  bash tools/with_venv.sh python -m tools.batch.guardrail --check factor        # Factor class 包装违规
+  bash tools/with_venv.sh python -m tools.batch.guardrail --check eps-scope     # --eps 范围白名单
   bash tools/with_venv.sh python -m tools.batch.guardrail --skill t-analyze     # 单 skill
-  bash tools/with_venv.sh python -m tools.batch.guardrail --strict              # 严格模式
-  bash tools/with_venv.sh python -m tools.batch.guardrail --write-md            # 写 docs/guardrail-report.md
+  bash tools/with_venv.sh python -m tools.batch.guardrail --strict --write-md   # 严格 + 写 docs/guardrail-report.md
 """
 import argparse
 import re
@@ -85,15 +88,18 @@ NETWORK_ALLOWED = {
     "tools/batch/guardrail.py": "本守门员自己 (检查规则定义里有网络关键词, 正常)",
 }
 
-# 哪些 skill 是"0 网络"声明
+# 哪些 skill 是"0 网络"声明 (2026-10-20 修: 跟当前真实 skill 列表对齐)
+# 注意: 改名 / 删名的 skill 历史上叫过 t-bb-obv / t-earnings-blowout / t-roc-ey / t-sector-ma,
+#       那些已废弃, 不要在这里复活
 ZERO_NET_SKILLS = {
     "t-analyze": "0 网络, 走 DataStore",
     "t-backtest": "0 网络, 走 DataStore",
-    "t-bb-obv": "0 网络, 走 DataStore",
-    "t-earnings-blowout": "0 网络, 走 DataStore",
     "t-near-low": "0 网络, 走 DataStore",
-    "t-roc-ey": "0 网络, 走 DataStore",
-    "t-sector-ma": "0 网络, 走 DataStore",
+    "t-factor-5y": "0 网络, 走 DataStore",
+    "t-finance-roc-ey": "0 网络, 走 DataStore",
+    "t-finance-earnings-blowout": "0 网络, 走 DataStore",
+    "t-rsi6-tech": "0 网络, 走 DataStore",
+    "t-wyckoff-a2m": "0 网络, 走 DataStore",
     # t-sync-data 是唯一允许网络的
     "t-sync-data": "允许网络 (Tushare/datacenter API)",
 }
@@ -434,13 +440,11 @@ def infer_skill(file_path: str) -> str:
         "t_earnings_blowout_scan": "t-earnings-blowout",
         "earnings_blowout_scan": "t-earnings-blowout",
         "find_near_low": "t-near-low",
-        "bb_obv_scan": "t-bb-obv",
         "backtest_roc_ey": "t-backtest",
         "roc_ey_top20": "t-roc-ey",
         "sector_ma_scan": "t-sector-ma",
         "sector_breakout_scan": "t-sector-ma",
         "near_low_backtest": "t-backtest",
-        "bb_obv_backtest": "t-backtest",
         "magic_top20": "t-roc-ey",  # 老名字
         "backtest_magic": "t-backtest",
         "quality_growth_scan": "t-earnings-blowout",  # 老名字

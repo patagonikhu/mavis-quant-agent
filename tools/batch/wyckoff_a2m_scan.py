@@ -81,24 +81,43 @@ def _filter_by_pe(codes: list[str], pe_max: float) -> list[str]:
     df = duckdb.execute(f"""
         SELECT ts_code FROM read_parquet('data/history/stk_factor/2026Q4.parquet')
         WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('data/history/stk_factor/2026Q4.parquet'))
-          AND pe > {pe_max} AND pe < 500
+          AND pe > {pe_max} AND pe > 0
     """).fetchdf()
     expensive = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
     return [c for c in codes if c not in expensive]
 
 
 def _filter_by_quality(codes: list[str], or_yoy_min: float, gm_min: float,
-                       np_yoy_min: float | None = None) -> list[str]:
-    """1 次 SQL 按 financials 过滤: or_yoy > or_yoy_min AND grossprofit_margin > gm_min AND (np_yoy_min)
+                       np_yoy_min: float | None = None,
+                       roe_min: float | None = None,
+                       gm_abs_min: float | None = None) -> list[str]:
+    """1 次 SQL 按 financials 过滤:
+    or_yoy > or_yoy_min AND grossprofit_margin > gm_min AND (np_yoy_min)
+    AND (roe > roe_min) AND (grossprofit_margin > gm_abs_min)
 
     2026-10-17 改: 优先用最新季报 (2026Q2), 拿不到 fallback 2025Q4 累计
     (旧版本只用 2025Q4 累计 netprofit_yoy 滞后 1 年, 漏判 2026 已亏损的票)
 
+    2026-10-28 加 roe_min / gm_abs_min (绝对值下限, 跟 yoy 门槛互补):
+    之前的 quality 只看 yoy (同比增速), 漏掉两类票 ——
+      1. 低基数假增长: 半年净利 0.5 亿 → yoy +202%, 但 ROE 只有 2.5%
+      2. 微利高增速: ROE < 1% 的票, yoy 再高也没意义
+    实测 (22 只 A→M 命中票): roe>=5 砍掉芯联集成/创维数字/中海油服/中国中车等 9 只;
+    gm_abs>=20 砍掉中创物流(6.7%)/立中集团(10.5%)/芯联集成(12.7%)等 7 只。
+
+    ⚠️ 语义澄清 (2026-10-28): `gm_min` 作用在 `grossprofit_margin` 上, 而这个字段是
+    **毛利率水平值 (绝对 %)**, 不是毛利率同比增速。旧代码把 quality 档位门槛 (0/10/20)
+    直接传给它, 导致 "strong=10" 实际含义是 "毛利率 > 10%" (而非文档写的 "毛利率增速 > 10%")。
+    financials 表里没有毛利率 yoy 字段, 所以 yoy 维度只由 or_yoy / netprofit_yoy 承担。
+    绝对值门槛现在由 gm_abs_min 统一管, 两者都作用于同一列, 取更严者生效。
+
     Args:
         codes: 候选 code 列表 (6 位纯数字)
         or_yoy_min: 营收同比最小值 (%, 如 0 / 10 / 20)
-        gm_min: 毛利率最小值 (%, 同上)
+        gm_min: 毛利率水平下限 (%, 同上; 0 = 不限)
         np_yoy_min: 净利润同比最小值 (%, 默认 None = 不限, 设 0/10/20 启用)
+        roe_min: ROE 绝对值下限 (%, 默认 None = 不限)
+        gm_abs_min: 毛利率水平下限 (%, 默认 None = 不限; 与 gm_min 取更严者)
 
     Returns:
         过滤后 code 列表 (保留原顺序)
@@ -107,15 +126,19 @@ def _filter_by_quality(codes: list[str], or_yoy_min: float, gm_min: float,
         return []
     in_clause = ",".join(f"'{c}.SZ', '{c}.SH'" for c in codes)
     np_clause = f"AND netprofit_yoy > {np_yoy_min}" if np_yoy_min is not None else ""
+    roe_clause = f"AND roe > {roe_min}" if roe_min is not None else ""
+    # gm_min 与 gm_abs_min 都作用在 grossprofit_margin 上, 取更严的
+    gm_eff = max(gm_min, gm_abs_min) if gm_abs_min is not None else gm_min
+    gm_abs_clause = f"AND grossprofit_margin > {gm_eff}" if gm_eff > 0 else ""
     # 优先 2026Q2 (最新季报), 拿不到 fallback 2025Q4 累计
     df = duckdb.execute(f"""
         SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, source
         FROM (
-            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, '2026Q2' AS source
+            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, '2026Q2' AS source
             FROM read_parquet('data/history/financials/2026Q2.parquet')
             WHERE ts_code IN ({in_clause}) AND fetch_status = 'ok'
             UNION ALL
-            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, '2025Q4' AS source
+            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, '2025Q4' AS source
             FROM read_parquet('data/history/financials/2025Q4.parquet')
             WHERE ts_code IN ({in_clause})
               AND ts_code NOT IN (SELECT ts_code FROM read_parquet('data/history/financials/2026Q2.parquet') WHERE fetch_status = 'ok')
@@ -123,8 +146,54 @@ def _filter_by_quality(codes: list[str], or_yoy_min: float, gm_min: float,
         WHERE grossprofit_margin > {gm_min}
           AND or_yoy > {or_yoy_min}
           {np_clause}
+          {roe_clause}
+          {gm_abs_clause}
     """).fetchdf()
     return [r['ts_code'].split('.')[0] for r in df.to_dict('records')]
+
+
+def _filter_by_leverage(codes: list[str], max_nd_ratio: float) -> list[str]:
+    """1 次 SQL 按 financials 过滤杠杆: 净负债 / 总市值 > max_nd_ratio 的票剔除
+
+    2026-10-28 加: 前面的 quality 门槛 (yoy/毛利) 完全不看负债, 导致重债票能进扫描池。
+    实测 22 只命中票里, 瀚蓝环境净负债 320 亿 > 市值 224 亿 (杠杆 1.26),
+    立中集团净负债 101 亿 / 市值 125 亿 (0.74) —— 这类票 PE 再低也不能算便宜。
+
+    口径: 净负债/总市值 (不是资产负债率)。净现金票 (netdebt < 0) 的比值是负数, 一律放行。
+    财务数据缺失的票也放行 (跟其他 filter 一致, 不因缺数据误杀)。
+
+    Args:
+        codes: 候选 code 列表 (6 位纯数字)
+        max_nd_ratio: 净负债/市值 上限 (如 0.5 = 净负债不能超过市值的一半)
+
+    Returns:
+        过滤后 code 列表 (保留原顺序)
+    """
+    if not codes or max_nd_ratio <= 0:
+        return codes
+    in_clause = ",".join(f"'{c}.SZ', '{c}.SH'" for c in codes)
+    # 净负债/市值 = (netdebt/1e8) / (total_mv/1e4), total_mv 来自 stk_factor
+    df = duckdb.execute(f"""
+        WITH sf AS (
+            SELECT ts_code, total_mv FROM read_parquet('data/history/stk_factor/2026Q4.parquet')
+            WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('data/history/stk_factor/2026Q4.parquet'))
+        ),
+        fin AS (
+            SELECT ts_code, netdebt FROM read_parquet('data/history/financials/2026Q2.parquet', union_by_name=true)
+            WHERE ts_code IN ({in_clause}) AND fetch_status = 'ok'
+            UNION ALL
+            SELECT ts_code, netdebt FROM read_parquet('data/history/financials/2025Q4.parquet', union_by_name=true)
+            WHERE ts_code IN ({in_clause})
+              AND ts_code NOT IN (SELECT ts_code FROM read_parquet('data/history/financials/2026Q2.parquet', union_by_name=true)
+                                  WHERE fetch_status = 'ok')
+        )
+        SELECT fin.ts_code
+        FROM fin JOIN sf ON sf.ts_code = fin.ts_code
+        WHERE fin.netdebt IS NOT NULL AND sf.total_mv > 0
+          AND (fin.netdebt / 1e8) / (sf.total_mv / 1e4) > {max_nd_ratio}
+    """).fetchdf()
+    overleveraged = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
+    return [c for c in codes if c not in overleveraged]
 
 
 def _filter_by_rsi(codes: list[str], rsi6_max: float = 30, rsi12_max: float = 35) -> list[str]:
@@ -242,9 +311,9 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         precomputed_arrs=arrs,
     )
 
-    # ③ wyckoff_judge O(1) per i (最近 lookback+1 个)
+    # ③ wyckoff_judge O(1) per i (最近 n_tail 个)
     #    sub_events 按 i ≤ idx 过滤 (历史窗口内触发过的)
-    n_tail = max(lookback + 1, 11)  # 2026-10-17 v10: 至少 11 根 (1 当前 + 10 前), 看最近 10 根内是否转 M
+    n_tail = max(30, 11)  # 2026-10-20 v12: 至少 30 根 (1 当前 + 29 前), 看最近 30 根里 M 占比
     stages = []
     closes_tail = []
     dates_tail = []
@@ -260,24 +329,25 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         closes_tail.append(closes[i])
         dates_tail.append(dates_[i])
 
-    # ── v11 字面版 判定 (2026-10-17 改): "最近 10 根 K 线, 前 5 根 ∈ {A, ?}, 当前 M" ──
+    # ── v12 字面版 判定 (2026-10-20 改): "最近 30 根 K 线, M 占比 < 20%, 当前 M" ──
     #   1. 当前 (最后) 根 K 线 stage == 'Markup' — 必须
-    #   2. 前面 5 根 (T-1 ~ T-5) ALL ∈ {Accumulation, ?} — 必须 (A + ? 都接受, 排除 D)
-    #      "?" 表示停牌 / 数据不足 / 反弹区, 跟 A 同样视为"非上涨"状态
-    #   3. T-6 ~ T-9 是过渡期, 不卡
-    #   4. 单日涨跌幅 > 20% 跳过 (除权/复牌)
-    # 这是"刚转过来"的强信号: 从吸筹/盘整阶段确认进入 M
+    #   2. 最近 30 根 K 线里 Markup 出现次数 ≤ 5 根 (M 占比 < 20%)
+    #      目的: 排除"之前 M → 转 A → 再转 M"这种假反弹/震荡反复 (用户反馈)
+    #   3. 单日涨跌幅 > 20% 跳过 (除权/复牌)
+    # 这是"刚刚启动, 且前期没有大涨过"的强信号 (跟 v11 的 T-1..T-5 全 A 相比, 更宽容 "?" 但更严 M 占比)
     last_chg = abs(closes_tail[-1] / closes_tail[-2] - 1) if len(closes_tail) >= 2 and closes_tail[-2] > 0 else 0
     if last_chg > 0.20:
         return None
     if stages[-1] != "Markup":
         return None
-    if len(stages) < 6:
+    if len(stages) < 11:
         return None
-    # T-1..T-5 (stages[-6..-1]) 必须 ALL 是 Accumulation 或 "?" (排除 Markup 和 Distribution)
-    accum_window = stages[-6:-1]  # 5 根
-    allowed = {"Accumulation", "?"}
-    if not all(s in allowed for s in accum_window):
+    # v12 严判: 最近 30 根里 M 占比 < 20% (允许 ≤ 5 根)
+    m_window_size = min(30, len(stages))
+    recent_stages = stages[-m_window_size:]
+    m_count = sum(1 for s in recent_stages if s == "Markup")
+    m_ratio = m_count / m_window_size
+    if m_ratio >= 0.20:  # 排除"反复 M"假突破
         return None
     # 找到第一根 (从右往左) 满足 != M 的位置, 记为 trans_idx
     trans_idx = 0
@@ -297,7 +367,7 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         "curr_stage": stages[trans_idx],
         "curr_stage": stages[-1],
         "trans_stages": stages,
-        "m_ratio": 1.0,
+        "m_ratio": m_ratio,  # v12 新增: 最近 30 根里 M 占比 (返回给 md 输出)
     }
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -401,31 +471,69 @@ def main():
     ap.add_argument("--full-report", action="store_true", default=True,
                     help="命中后逐只跑 /t-analyze 22 section 详报 (默认 True, 2026-10-16 改)")
     ap.add_argument("--no-full-report", action="store_true", help="不跑详报 (只输出扫描汇总)")
-    ap.add_argument("--report-top", type=int, default=10,
-                    help="--full-report 时只详报前 N 只 (默认 10, 0=全部)")
+    ap.add_argument("--report-top", type=int, default=100,
+                    help="--full-report 时只详报前 N 只 (默认 100, 0=全部)")
     ap.add_argument("--report-subdir", default="wyckoff-a2m",
                     help="详报输出子目录 (默认 wyckoff-a2m, 跳过 watchlist 分流, 不污染自选)")
     ap.add_argument("--no-clean", action="store_true",
                     help="不清理 docs/<subdir> 已有 md (默认会清理, 避免新旧混杂)")
     ap.add_argument("--with-finance", action="store_true",
                     help="加 finance 过滤: 剔除亏损股 (PE <= 0 视为亏损), 0 网络 (走 stk_factor parquet)")
-    ap.add_argument("--with-quality", choices=["off", "basic", "strong", "elite"], default="off",
-                    help="quality 过滤 (财务质量前置, 减少扫描票数): "
-                         "off=不限 / basic=营收+毛利+净利均>0 (2.4分, ~1950票) / "
-                         "strong=三指标均>10% (1.4分, ~1100票) / "
-                         "elite=三指标均>20% (30秒, ~300票)")
+    ap.add_argument("--with-quality", choices=["off", "basic", "strong", "elite"], default="basic",
+                    help="quality 过滤 (财务质量前置, 减少扫描票数, 2026-10-19 改默认 basic):\n"
+                         "off=不限 / basic=营收yoy>0 + 净利yoy>0 (默认, 2026-10-28 5→0 放宽) / "
+                         "strong=营收yoy>10 + 净利yoy>10 + 毛利率>10 / "
+                         "elite=营收yoy>20 + 净利yoy>20 + 毛利率>20\n"
+                         "⚠️ 2026-10-28 澄清: 毛利率门槛作用在 grossprofit_margin (水平值, 绝对%%),\n"
+                         "  不是毛利率同比增速 (financials 表没有毛利率 yoy 字段)。\n"
+                         "  绝对值门槛建议用 --min-gross-margin 单独调, 别跟本档位混。\n"
+                         "  营收/净利 yoy 门槛可用 --min-growth 单独覆盖。")
     ap.add_argument("--with-rsi", action="store_true",
                     help="(2026-10-17 弃用) 加 RSI 超卖过滤 — 现在 v10 改 A→M 转变判定, 不再需要 RSI")
     ap.add_argument("--exclude-st", action="store_true", default=True,
                     help="排除 ST/*ST 股 (退市风险, 默认 True, 2026-10-17 加)")
     ap.add_argument("--include-st", action="store_true",
                     help="包含 ST/*ST 股 (反旗, 默认已排除, 仅当显式指定时启用)")
-    ap.add_argument("--exclude-pe", type=float, default=0.0,
-                    help="前置 PE 过滤上限 (排除 pe > N 的高估值票, 0=不限):\n"
-                         "  50  = 适中 (剩 ~2400 票, 适合严价值选股)\n"
-                         "  80  = 较严 (剩 ~2960 票)\n"
-                         "  100 = 默认推荐 (剩 ~3160 票, 排除 PE>100 高估 23%)\n"
-                         "底层走 stk_factor 最新 trade_date, 跟 --with-finance (命中后 PE≤0/PE>500 剔亏损妖股) 互补")
+    ap.add_argument("--exclude-pe", type=float, default=60.0,
+                    help="前置 PE 过滤上限 (排除 pe > N 的高估值票, 2026-10-28 改默认 80→40→60):\n"
+                         "  0   = 不限\n"
+                         "  30  = 严 (剩约 1025 票)\n"
+                         "  40  = 较严 (剩约 1210 票)\n"
+                         "  60  = 推荐默认 (剩约 441 票, 叠加 basic 门槛后)\n"
+                         "  80  = 较松 (剩约 1590 票, 最初默认)\n"
+                         "  100 = 很松 (剩约 1700 票)\n"
+                         "全市场 PE 中位 38.3, P75 85.4. 40 会砍掉芯联集成(176.8)/\n"
+                         "  晶华新材(91.7)/创维数字(46.7), 但也误伤 PE 46.7 的科远智慧等;\n"
+                         "  放宽到 60 后实测 10 只命中, 无一只差票\n"
+                         "底层走 stk_factor 最新 trade_date + pe > 0 双向校验, 跟 --with-finance 互补")
+    ap.add_argument("--min-growth", type=float, default=None,
+                    help="营收/净利 yoy 门槛 %%, 覆盖 --with-quality 档位门槛 (2026-10-28 加)\n"
+                         "默认 None = 用档位门槛 (basic=0 / strong=10 / elite=20)\n"
+                         "  0  = 不限 (营收/净利 yoy 只要 > 0, 当前默认)\n"
+                         "  5  = 基本持平也要增长 5%%\n"
+                         "  10 = 较严\n"
+                         "调参轨迹: 0 → 10 → 5 → 0.\n"
+                         "  10 太严 (误伤基蛋生物 营收 yoy 8.3%% 但净利 +69.4%%);\n"
+                         "  5 会砍掉零增长股 (云南白药 PE 18.5 但净利 yoy 1.9%%);\n"
+                         "  放宽回 0 后实测 10 只命中, 新增 5 只全是 PE 便宜的稳健票, 无差票")
+    ap.add_argument("--min-roe", type=float, default=5.0,
+                    help="ROE 绝对值下限 %%, 0 = 不限 (2026-10-28 加, 默认 5)\n"
+                         "跟 quality 的 yoy 门槛互补: yoy 高不代表 ROE 高 (低基数假增长)\n"
+                         "全市场 ROE 中位仅 2.29%%, P75 4.89%%, 所以 5%% 已砍掉约一半\n"
+                         "实测 22 只命中票: ROE<5 的砍掉芯联集成(2.1) 创维数字(2.5) 中海油服(4.3)\n"
+                         "  中国中车(4.6) 永创智能(4.7) 新光药业(4.8) 金鹰重工(3.6) 等 9 只")
+    ap.add_argument("--min-gross-margin", type=float, default=20.0,
+                    help="毛利率绝对值下限 %%, 0 = 不限 (2026-10-28 加, 默认 20)\n"
+                         "跟 quality 的 gm yoy 门槛互补: quality 看的是毛利率同比增速, 不是水平值\n"
+                         "全市场毛利率中位 24.28%%, P25 14.95%%\n"
+                         "实测 22 只命中票: 砍掉中创物流(6.7) 立中集团(10.5) 芯联集成(12.7)\n"
+                         "  创维数字(15.1) 晶华新材(18.1) 中海油服(18.5) 等 7 只")
+    ap.add_argument("--max-net-debt-ratio", type=float, default=0.5,
+                    help="净负债/总市值 上限, 0 = 不限 (2026-10-28 加, 默认 0.5)\n"
+                         "净现金票 (netdebt<0) 放行; 财务数据缺失也放行\n"
+                         "全市场 P90 0.48, 所以 0.5 大约砍掉 10%%\n"
+                         "实测 22 只命中票: 砍掉瀚蓝环境(净负债 320 亿 > 市值 224 亿, 比值 1.26)\n"
+                         "  和立中集团(101 亿 / 125 亿 = 0.74) —— PE 低但重债, 不算便宜")
     ap.add_argument("--workers", type=int, default=0,
                     help="详报多进程 worker 数 (step 2 用, 跨 GIL 解锁; 默认 0 = os.cpu_count(); 设 1 强制单进程)")
     ap.add_argument("--bench-report", nargs="?", const=12, type=int,
@@ -443,6 +551,10 @@ def main():
     if not codes:
         print("❌ 无代码可跑", file=sys.stderr)
         sys.exit(1)
+
+    # 2026-10-20 加: 漏斗追踪, 用于 md 头部展示过滤各步
+    funnel = []  # [(step_name, params, before_n, after_n), ...]
+    funnel.append(("原始候选 (scope={})".format(scope), "—", len(codes), len(codes)))
 
     # 2026-10-17 加: --bench-report 性能测试 (跳过扫描, 跑 N 只固定代码详报对比 workers)
     if args.bench_report:
@@ -476,8 +588,10 @@ def main():
 
     # 2026-10-17 加: 默认排除 ST/*ST 票 (退市风险)
     if args.exclude_st and not args.include_st:
+        before_n = len(codes)
         kept = _filter_by_st(codes)
-        print(f"  exclude-st (ST/*ST 退市风险): {len(codes)} → {len(kept)} 票", flush=True)
+        print(f"  exclude-st (ST/*ST 退市风险): {before_n} → {len(kept)} 票", flush=True)
+        funnel.append(("step1 exclude-st", "ST/*ST 退市风险", before_n, len(kept)))
         codes = kept
         if not codes:
             print("❌ ST 过滤后无代码可跑", file=sys.stderr)
@@ -485,33 +599,70 @@ def main():
 
     # 2026-10-17 加: --exclude-pe 高估值前置过滤 (PE > N 默认 0 = 不过滤)
     if args.exclude_pe > 0:
+        before_n = len(codes)
         kept = _filter_by_pe(codes, args.exclude_pe)
-        print(f"  exclude-pe (PE>{args.exclude_pe:.0f} 高估值): {len(codes)} → {len(kept)} 票", flush=True)
+        print(f"  exclude-pe (PE>{args.exclude_pe:.0f} 高估值): {before_n} → {len(kept)} 票", flush=True)
+        funnel.append(("step2 exclude-pe", f"PE>{args.exclude_pe:.0f}", before_n, len(kept)))
         codes = kept
         if not codes:
             print(f"❌ PE>{args.exclude_pe:.0f} 过滤后无代码可跑", file=sys.stderr)
             sys.exit(1)
 
     # 2026-10-16: --with-quality 前置过滤 (财务质量, 减少扫描票数)
+    # 2026-10-28 改: 叠加 ROE / 毛利率绝对值下限 (--min-roe / --min-gross-margin)
+    # 2026-10-28 再改: basic 档营收/净利 yoy 门槛 0 → 10 (--min-growth 可覆盖)
     if args.with_quality != "off":
+        # 档位门槛: basic=0 (2026-10-28 5→0 放宽) / strong=10 / elite=20
         quality_thr = {"basic": 0, "strong": 10, "elite": 20}[args.with_quality]
+        # --min-growth 显式指定时覆盖档位门槛 (0 = 不限)
+        if args.min_growth is not None:
+            quality_thr = args.min_growth
+        before_n = len(codes)
         kept_codes = _filter_by_quality(codes, or_yoy_min=quality_thr,
-                                         gm_min=quality_thr, np_yoy_min=quality_thr)
-        print(f"  quality={args.with_quality} (营收>{quality_thr}% + 毛利>{quality_thr}% + 净利>{quality_thr}%): "
-              f"{len(codes)} → {len(kept_codes)} 票", flush=True)
+                                         gm_min=quality_thr, np_yoy_min=quality_thr,
+                                         roe_min=args.min_roe,
+                                         gm_abs_min=args.min_gross_margin)
+        extra = []
+        if args.min_roe is not None:
+            extra.append(f"ROE>{args.min_roe:.0f}%")
+        if args.min_gross_margin is not None:
+            extra.append(f"毛利>{args.min_gross_margin:.0f}%")
+        extra_s = " + " + " + ".join(extra) if extra else ""
+        print(f"  quality={args.with_quality} (营收yoy>{quality_thr}% + 净利yoy>{quality_thr}%"
+              f"{extra_s}): {before_n} → {len(kept_codes)} 票", flush=True)
+        funnel.append((f"step3 with-quality={args.with_quality}",
+                       f"营收yoy/净利yoy>{quality_thr}%" + (f" + {' + '.join(extra)}" if extra else ""),
+                       before_n, len(kept_codes)))
         codes = kept_codes
         if not codes:
             print("❌ 过滤后无代码可跑", file=sys.stderr)
+            sys.exit(1)
+
+    # 2026-10-28 加: --max-net-debt-ratio 杠杆过滤 (净负债/市值)
+    if args.max_net_debt_ratio > 0:
+        before_n = len(codes)
+        kept = _filter_by_leverage(codes, args.max_net_debt_ratio)
+        print(f"  max-net-debt-ratio (净负债/市值>{args.max_net_debt_ratio:.2f}): "
+              f"{before_n} → {len(kept)} 票", flush=True)
+        funnel.append((f"step4 max-net-debt-ratio", f"净负债/市值<{args.max_net_debt_ratio:.2f}",
+                       before_n, len(kept)))
+        codes = kept
+        if not codes:
+            print("❌ 杠杆过滤后无代码可跑", file=sys.stderr)
             sys.exit(1)
 
     # 2026-10-16: --with-rsi 超卖过滤 (在 quality 后, 进一步缩量)
     if args.with_rsi and codes:
         rsi_kept = _filter_by_rsi(codes, rsi6_max=30, rsi12_max=35)
         print(f"  rsi filter (RSI6<30 AND RSI12<35): {len(codes)} → {len(rsi_kept)} 票", flush=True)
+        funnel.append(("step3b with-rsi", "RSI6<30 AND RSI12<35", len(codes), len(rsi_kept)))
         codes = rsi_kept
         if not codes:
             print("❌ RSI 过滤后无代码可跑", file=sys.stderr)
             sys.exit(1)
+
+    # 2026-10-20 加: 漏斗最终候选 = 参与 wyckoff_judge 的票数
+    funnel.append(("step4 wyckoff_a2m 扫描", f"lookback={args.lookback}", len(codes), len(codes)))
 
     basic = load_stock_basic()
     print(f"=== Wyckoff A→M 扫描 (scope: {scope}, lookback: {args.lookback}) ===")
@@ -582,6 +733,7 @@ def main():
             h['pe_ttm'] = pe_ttm
             filtered.append(h)
         hits = filtered
+        funnel.append(("step5 with-finance", "PE∈(0,500]", before, len(hits)))
         print(f"\n=== finance 过滤: {before} → {len(hits)} 只 (剔除 {before - len(hits)} 只亏损/异常) ===\n")
 
     # 渲染输出
@@ -596,7 +748,16 @@ def main():
     lines.append(f"> 数据日期: {last_trade_date} (lookback={args.lookback} 根 K 线)")
     lines.append(f"> 命中: {len(hits)} 只 / {len(codes)} ({len(hits)/len(codes)*100:.1f}%)")
     lines.append(f"> 扫描耗时: {elapsed:.1f}s (单进程顺序)")
-    lines.append(f"> 数据源: AnalysisEngine + compute_factor_history (跟 /t-analyze 同源, 0 网络)\n")
+    lines.append(f"> 数据源: AnalysisEngine + compute_factor_history (跟 /t-analyze 同源, 0 网络)")
+    lines.append(f"> 判定: **V12 字面版** — 当前 M + 最近 30 根 K 线 M 占比 < 20% (排除\"反复 M 假突破\")\n")
+
+    # 2026-10-20 加: 过滤漏斗表 (从 funnel 列表渲染)
+    lines.append("## 过滤漏斗\n")
+    lines.append("| 步骤 | 过滤 | 阈值 | 前 → 后 | 剩余 |")
+    lines.append("|---|---|---|---|---|")
+    for idx, (step_name, params, before_n, after_n) in enumerate(funnel):
+        lines.append(f"| {step_name} | {params or '—'} | — | {before_n} → {after_n} | {after_n} |")
+    lines.append(f"| **A→M 命中** | V12 字面版 | lookback={args.lookback} | {len(codes)} → {len(hits)} | **{len(hits)}** |\n")
 
     if hits:
         if args.with_finance:
@@ -608,7 +769,8 @@ def main():
         for r in hits:
             code = r['code']
             name, industry = basic.get(code, (code, "—"))
-            stages_str = "/".join(s[0] for s in r['trans_stages'])
+            # v12: trans_stages 现在是 30 根 (判定窗口), md 只输出最近 lookback+1 根
+            stages_str = "/".join(s[0] for s in r['trans_stages'][-(args.lookback + 1):])
             chg = (r['last_close'] / r['trans_close'] - 1) * 100
             if args.with_finance:
                 pe = r.get('pe', '')

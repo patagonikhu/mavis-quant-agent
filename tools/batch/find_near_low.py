@@ -1,11 +1,32 @@
-"""
-跌 70%+ 距 5y 低 < 3% 股票清单 (含反弹次数)
+"""find_near_low.py — 周级超跌清单: 跌 70-80% + 距 5y 低 < N% + 反弹次数 ≥ N
 
-逻辑:
-1. DataStore.list_codes() 全市场股票，从本地 parquet 聚合周线粗筛
-2. 筛出候选清单 (N 只)
-3. tushare 拉候选清单的 daily 最新价 (今天 8-20)
-4. 用 daily 最新价 重算 gap, 输出最终清单
+用途: 每周扫"跌到 5 年最低位附近"的票清单 (反弹策略, 1-3 个月).
+
+链路 (0 网络, 走 DataStore):
+  1) DataStore.load_all_kline(years=5.5) → 1 次 SQL 拉全市场 daily K 线
+  2) 直接用 daily 重算 max_drawdown / current_gap (2026-08-31 改, 抛弃 weekly 合成, 减少冗余)
+  3) 筛 5y 回撤 70-80% + 当前价距 5y 低 < N% + 反弹次数 ≥ N
+  4) 写 docs/oversold-watchlist.md (8-13 只, 按距低 % 升序)
+
+数据特性:
+  - 0 网络, 走 DataStore parquet
+  - 5.5y lookback hard-coded (DataStore.load_all_kline(years=5.5))
+  - 默认 3 维过滤: 5y 回撤 70-80% + 距 5y 低 < 3% + 反弹次数 ≥ 0
+
+输出:
+  - docs/oversold-watchlist.md (8-13 只, 按距低 % 升序)
+  - stdout: 当前价 / 5y 低 / 距低% / 最大回撤 / 反弹次数
+
+非价值投资, 反弹策略 (1-3 个月).
+
+用法:
+  bash tools/with_venv.sh python -m tools.batch.find_near_low               # 默认 70-80% 跌 + 距 5y 低 < 3%
+  bash tools/with_venv.sh python -m tools.batch.find_near_low --gap 5        # 宽松 < 5%
+  bash tools/with_venv.sh python -m tools.batch.find_near_low --gap 2        # 严格 < 2%
+  bash tools/with_venv.sh python -m tools.batch.find_near_low --drop 80 --drop-max 90  # 跌 80-90%
+  bash tools/with_venv.sh python -m tools.batch.find_near_low --lookback-years 3       # 3y lookback
+  bash tools/with_venv.sh python -m tools.batch.find_near_low --min-bounces 4           # 反弹次数 ≥ 4
+  bash tools/with_venv.sh python -m tools.batch.find_near_low --write-md      # 写 docs/oversold-watchlist.md
 """
 import argparse
 import sys
@@ -83,8 +104,8 @@ def main():
     ap = argparse.ArgumentParser(description="跌 70%+ 距 5y 低 < N% 股票清单")
     ap.add_argument("--gap", type=float, default=3.0, help="距 5y 低阈值 (daily 价, 默认 3)")
     ap.add_argument("--weekly-gap", type=float, default=10.0, help="粗筛 weekly 末根距 5y 低阈值 (默认 10)")
-    ap.add_argument("--drop", type=float, default=70.0, help="跌幅阈值 %% 下限 (默认 70)")
-    ap.add_argument("--drop-max", type=float, default=80.0, help="跌幅阈值 %% 上限 (默认 80, 排除 80%+ 异常)")
+    ap.add_argument("--drop", type=float, default=70.0, help="跌幅阈值 (最小回撤, 百分比, 默认 70)")
+    ap.add_argument("--drop-max", type=float, default=80.0, help="跌幅阈值上限 (默认 80, 排除 80+ 异常)")
     ap.add_argument("--lookback-years", type=int, default=5, help="max_dd (5y 内最深回撤) 计算窗口 (默认 5, 可选 3)")
     ap.add_argument("--min-bounces", type=int, default=0, help="最少反弹次数 (默认 0)")
     ap.add_argument("--write-md", action="store_true", help="写 docs/oversold-watchlist.md")

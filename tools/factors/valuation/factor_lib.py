@@ -4,7 +4,7 @@ tools/factors/valuation/factor_lib.py — 估值算子全集 (纯函数, 2026-09
 历史: 之前 3 个文件重复实现:
   - tools/analysis/valuation.py       (calc_roc_at_date / calc_ey_at_date / calc_magic_one_day / batch_magic_scores)
   - tools/factors/valuation/multi.py  (PegFactor / DcfFactor / SectorOverheatFactor / FiveCategoriesFactor)
-  - tools/analysis/report_section_evaluators.py (compute_peg / compute_dcf_l)
+  - (2026-10-27: tools/analysis/report_section_evaluators.py 已删, 是死代码副本)
 
 合并后: 1 个文件, 11 个纯函数, 统一风格, 无 class 包装。
 Mavis 守门员 (t-guardrail) 规则: 所有 factor 统一放 1 个文件, 纯函数风格。
@@ -490,7 +490,7 @@ def _derive_five_categories_impl(ctx) -> dict:
       1. 资金类: fflow 净流入 (5 档)
       2. 龙头类: 涨跌幅 / 量比
       3. 估值类: PEG / DCF / Magic
-      4. 止跌类: 5 日价跌 + OBV 涨
+      4. 止跌类: 5 日价跌 + 量能回升 (OBV 派生已删, 该分支未实现)
       5. 政策类: (保留, 暂未实现)
     """
     from tools.factors.factor_volume import compute_fflow_factor as fflow_factor

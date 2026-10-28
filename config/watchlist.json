@@ -1,6 +1,6 @@
 {
   "version": "v2.2",
-  "last_updated": "2026-09-23",
+  "last_updated": "2026-10-28",
   "description": "23 持仓 + 14 自选 (8 只 9 月连板妖股 + 业绩暴增股, 2026-09-23 加)",
   "stocks": [
     {
@@ -1815,6 +1815,141 @@
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2"
+      ]
+    },
+    {
+      "code": "605189",
+      "name": "富春染织",
+      "sector": "纺织",
+      "list_type": "持仓",
+      "notes": "V12 A→M 命中 2026-10-19 / t-wyckoff-a2m 严判 + 基本面优质 (A 档)"
+    },
+    {
+      "code": "002956",
+      "name": "西麦食品",
+      "sector": "食品",
+      "list_type": "持仓",
+      "notes": "V12 A→M 命中 2026-10-19 / t-wyckoff-a2m 严判 + 基本面优质 (A 档)"
+    },
+    {
+      "code": "601033",
+      "name": "永兴股份",
+      "sector": "环境保护",
+      "list_type": "持仓",
+      "notes": "V12 A→M 命中 2026-10-19 / t-wyckoff-a2m 严判 + 基本面优质 (A 档)"
+    },
+    {
+      "code": "000550",
+      "name": "江铃汽车",
+      "sector": "汽车整车",
+      "list_type": "持仓",
+      "notes": "V12 A→M 命中 2026-10-19 / t-wyckoff-a2m 严判 + 基本面优质 (A 档)"
+    },
+    {
+      "code": "601088",
+      "name": "中国神华",
+      "sector": "煤炭开采",
+      "list_type": "持仓",
+      "notes": "V12 A→M 命中 2026-10-19 / t-wyckoff-a2m 严判 + 基本面优质 (A 档)"
+    },
+    {
+      "code": "300832",
+      "name": "新产业",
+      "sector": "医疗保健",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "301101",
+      "name": "明月镜片",
+      "sector": "文教休闲",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "603387",
+      "name": "基蛋生物",
+      "sector": "医疗保健",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "688410",
+      "name": "山外山",
+      "sector": "医疗保健",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "301109",
+      "name": "军信股份",
+      "sector": "环境保护",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "000538",
+      "name": "云南白药",
+      "sector": "中成药",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "002380",
+      "name": "科远智慧",
+      "sector": "软件服务",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "603337",
+      "name": "杰克科技",
+      "sector": "纺织机械",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "001219",
+      "name": "青岛食品",
+      "sector": "食品",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
+      ]
+    },
+    {
+      "code": "300406",
+      "name": "九强生物",
+      "sector": "医疗保健",
+      "list_type": "自选",
+      "tags": [
+        "a2m",
+        "wyckoff-a2m"
       ]
     }
   ]

@@ -56,8 +56,6 @@ def fetch_features(code: str = "300274") -> pd.DataFrame:
     df = df.set_index("date").sort_index()
 
     # === 算 7 个 factor 输出, 当作 GP 的"原子特征" ===
-    # 1. OBV (TS)
-    df["obv"] = (np.sign(df["close"].diff()) * df["volume"]).cumsum()
     # 2. 5日/20日 涨幅
     df["ret_5"] = df["close"].pct_change(5)
     df["ret_20"] = df["close"].pct_change(20)
@@ -72,8 +70,6 @@ def fetch_features(code: str = "300274") -> pd.DataFrame:
     ema12 = df["close"].ewm(span=12, adjust=False).mean()
     ema26 = df["close"].ewm(span=26, adjust=False).mean()
     df["macd_hist"] = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
-    # 6. 量价 OBV 5d 变化
-    df["obv_5d_chg"] = df["obv"].diff(5) / (df["volume"].rolling(5).mean() + 1)
     # 7. 收盘价百分位排名 (0-1)
     df["close_pct_rank"] = df["close"].rolling(60).apply(lambda x: pd.Series(x).rank(pct=True).iloc[-1], raw=False)
     # 8. 5日 量价相关系数
@@ -102,9 +98,9 @@ def run_ga(code: str = "300274", generations: int = None, pop: int = None):
     df = fetch_features(code)
     print(f"📊 数据: {len(df)} 根 K 线 | {df.index[0].date()} → {df.index[-1].date()}")
 
-    # 特征列 (10 个 factor)
-    feature_cols = ["obv", "ret_5", "ret_20", "vol_5_20", "rsi", "macd_hist",
-                    "obv_5d_chg", "close_pct_rank", "vol_price_corr", "ma20_dist"]
+    # 特征列 (8 个 factor, 2026-10-27 删 obv + obv_5d_chg)
+    feature_cols = ["ret_5", "ret_20", "vol_5_20", "rsi", "macd_hist",
+                    "close_pct_rank", "vol_price_corr", "ma20_dist"]
     X = df[feature_cols].values
     y = df["target_5d"].values
 

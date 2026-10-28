@@ -1,32 +1,74 @@
 #!/usr/bin/env python3
-"""
-tools/sync_data.py — 唯一 sync 入口 (2026-09-03 改造)
+"""tools/storage/sync.py — Mavis 唯一 sync 入口 (2026-09-03 改造)
+
+用途: 同步 Tushare 数据 (K 线 / 估值因子 / 股票基础 / 财务 / EPS / 主力资金 / 概念板块 / ETF).
+      写盘唯一路径, 业务层禁止直连 db/网络.
 
 设计原则:
-  1. 唯一入口, 7 个 flag 正交控制, 互不耦合
-  2. 默认只跑 --kline (增量 K 线, 最常用)
-  3. 其他 (financials/eps/fflow/cache/stock-basic/meta) 都要显式开
-  4. 范围: --watchlist (默认) / --all / --codes 002371 300750
-  5. 5 个分析 skill (t-analyze/t-bb-obv/t-near-low/t-roc-ey/t-backtest) 全改"只读",
-     缺数据时直接报"请先 /t-sync", 不再偷偷调 sync
+  1. 唯一入口, 10 个正交 flag, 互不耦合
+  2. 默认行为 = --auto: 智能检测 stale flag, 只跑需跑的 (解决"忘记 sync"问题)
+  3. 显式传 flag = 强跑那一项 (无论 stale 不 stale)
+  4. 范围: --watchlist (watchlist 全部) / --all (全市场, 默认) / --codes 002371 300750 (指定)
+  5. --eps 范围互斥: 默认 watchlist; --eps --all 强制缩回 watchlist + warning (datacenter API 限频 + WAF)
+  6. 5 个 read-only skill (t-analyze/t-near-low/t-rsi6-tech/t-finance-roc-ey/t-finance-earnings-blowout)
+     缺数据时直接报"请先 /t-sync-data", 不再偷偷调 sync
 
-历史: 之前 sync 逻辑散落在 5+ 文件:
-  - tools/sync_watchlist_fresh.py (148 行, dump_one 有递归子进程 bug)
+正交 flag (10 个, 全部默认关):
+  --kline         增量 K 线 + daily_basic + 6 指数 (每天)
+  --stk-factor    stk_factor_pro 16 列估值因子 (5 季 1 次, 8 分钟)
+  --stock-basic   股票基础信息 (行业/名称, 30 天 1 次)
+  --financials    财务 5 季度 (fina_indicator_vip 全市场)
+  --eps           EPS 机构预期 (datacenter.consensus, 限 watchlist)
+  --fflow         主力资金流历史 (按天全市场, ~13 分钟, 按季存 parquet, 2026-10-27 起随 --auto 跑)
+  --cache         signal_cache 缓存 (analysis_cache.db, 跑回测前)
+  --ths           THS 同花顺概念板块 K 线 (按 ths_whitelist, 默认 3 年回填)
+  --etf           ETF 场内基金 (fund_basic 月级 + fund_daily 日增量, 默认随 --auto 跑)
+  --all-data      [一键] --kline --stock-basic --financials 一起跑 (最常用)
+
+范围 flag (3 选 1, 默认 --all):
+  --watchlist / --all / --codes CODE [CODE ...]
+
+行为 flag:
+  --auto          [默认行为] 自动检测 stale flag, 只跑需跑的
+  --auto-force    自动检测 + 强刷所有 stale flag
+  --status        看现状, 不拉任何数据
+  --period        财务指定季度 (例: --period 20251231, 跟 --financials 一起用)
+
+ETF (2026-10-09 加, 2026-10-14 接入 auto):
+  基金基本信息: fund_basic(market='E') 月级 (30 天缓存) → data/history/etf/etf_basic.parquet
+  K 线增量:     fund_daily(trade_date=date) 日级 (1次/天) → data/history/etf/kline/<ts_code>.parquet
+  首次 bootstrap (~2 年历史): ~517 次请求, 之后每天 1 次.
+  白名单: config/etf_whitelist.json (默认 15 只, 可自定义).
+
+fflow 新鲜度 (2026-10-27 加):
+  --fflow 从"只在手动指定时跑"改成"随 --auto 检测 stale 自动补" —
+  之前 fflow parquet 落后 K 线 29 天都没人管, 分析层仍按旧数据计票.
+  判定口径: 读 parquet metadata 的 done_dates 最大值, 落后 >= 1 天即 stale (跟 stk_factor/kline 一致).
+  ⚠️ 耗时 ~13 分钟 (5 季 trade_date x 1 API, 30/分限频), --auto 命中 fflow stale 时会跑这段.
+  分析层侧配套: tools/factors/factor_volume.py::compute_fflow_factor 返回 status
+  (OK / STALE / NO_DATA / NOT_APPLICABLE_INDEX), STALE 不参与综合判定投票.
+
+网络请求统计 (2026-09-18 加):
+  每次 sync 末尾自动输出本次实际调用的 tushare API 次数 (按 API 分组, 调用次数降序):
+    🌐 网络请求统计 (总计 8 次):
+       index_daily                  6 次
+       daily                        1 次
+       fina_indicator_vip           1 次
+  用途: 0 网络排查 + 性能监控 + sync --auto 全 fresh 时应该是 0.
+
+历史 (v6 改造前 sync 散落):
+  - tools/sync_watchlist_fresh.py (148 行, dump_one 递归子进程 bug)
   - tools/kline_store.py (sync_incremental/sync_stock_basic/sync_financials)
-  - tools.storage.sync --cache
-  - 5 个 batch 脚本里偷偷调 sync_incremental
-现在全部走这里, 旧 sync_watchlist_fresh.py 在 v6.0 删除。
+  - 5 个 batch 脚本偷偷调 sync_incremental
+  → 全部走这里, 旧 sync_watchlist_fresh.py 在 v6.0 删除.
 
 用法:
-  bash tools/with_venv.sh python -m tools.sync                       # 默认: watchlist K 线
-  bash tools/with_venv.sh python -m tools.sync --all                 # 全市场 K 线
-  bash tools/with_venv.sh python -m tools.sync --codes 002371 300750 # 指定
-  bash tools/with_venv.sh python -m tools.sync --financials          # + 5 季度财务
-  bash tools/with_venv.sh python -m tools.sync --eps                 # + EPS 机构预期
-  bash tools/with_venv.sh python -m tools.sync --fflow               # + 主力资金流
-  bash tools/with_venv.sh python -m tools.sync --cache               # + signal_cache 缓存
-  bash tools/with_venv.sh python -m tools.sync --stock-basic         # + 股票基础信息
-  bash tools/with_venv.sh python -m tools.sync --status              # 看现状, 不拉
+  bash tools/with_venv.sh python -m tools.storage.sync                          # 默认 = --auto (智能检测)
+  bash tools/with_venv.sh python -m tools.storage.sync --all-data               # 一键 K 线 + 股票基础 + 财务 (最常用)
+  bash tools/with_venv.sh python -m tools.storage.sync --codes 002371 300750    # 指定代码
+  bash tools/with_venv.sh python -m tools.storage.sync --status                 # 看现状
+  bash tools/with_venv.sh python -m tools.storage.sync --auto-force             # 自动检测 + 强刷
+  bash tools/with_venv.sh python -m tools.storage.sync --period 20251231 --financials  # 指定季度财务
 """
 import sys
 import os
@@ -712,15 +754,17 @@ def detect_stale_flags() -> dict[str, bool]:
 
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
-    # --auto 检测范围: 盯这 5 个 flag
-    # eps / fflow / cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
+    # --auto 检测范围: 盯这 6 个 flag
+    # eps / cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
     # 2026-10-14 加 etf: 之前 SKILL.md 写"auto 含 etf"但实际没接, 导致 ETF 段天天需要手动 sync
+    # 2026-10-27 加 fflow: fflow parquet 陈旧会让分析层按旧数据计票 (系统性看空偏差), 必须能自动发现
     flags = {
         "kline": False,         # K线距今天 > 1 天
         "stock_basic": False,   # 距上次 > 30 天
         "financials": False,    # 缺最新季
         "stk_factor": False,    # stk_factor 距今天 > 1 天 (2026-09-22 修 v6.2.4 重构漏接 auto)
         "etf": False,           # ETF K线距今天 > 1 天 (2026-10-14 加, SKILL.md 描述早就有但 sync.py 没接)
+        "fflow": False,         # fflow 距今天 > 1 天 (2026-10-27 加, 之前完全不在 auto 检测范围)
     }
 
     # 1. K线 (每天必跑, 距今天 > 1 天就拉)
@@ -837,6 +881,23 @@ def detect_stale_flags() -> dict[str, bool]:
     except Exception:
         flags["etf"] = True  # 异常保守拉
 
+    # 6. fflow (2026-10-27 加: 之前 fflow 不在 --auto 检测范围, 导致 parquet 陈旧没人管)
+    #    实测 fflow 落后 K线 29 天时, 分析层仍按"当前主力动向"计票 —
+    #    38 只核心票里 14 只 fflow 判出货, 13 只被同时点的量价指标判为偏进货 (系统性看空偏差).
+    #    判定口径跟 stk_factor 一致: 读 parquet metadata 的 done_dates 最大值.
+    try:
+        from .caches.fflow_history import read_all_done_dates as _ff_done
+        fdone = _ff_done()
+        if not fdone:
+            flags["fflow"] = True  # 没数据, 必拉
+        else:
+            f_last = max(fdone)
+            f_last_dt = datetime.strptime(f_last, "%Y%m%d")
+            if (today - f_last_dt).days >= 1:
+                flags["fflow"] = True
+    except Exception:
+        flags["fflow"] = True  # 异常保守拉
+
     return flags
 
 
@@ -851,7 +912,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
     if force:
         flags = {k: True for k in flags}
         if not quiet:
-            print("  ⚠️  --force, 全部 4 个 flag 强刷 (eps/fflow/cache/meta 仍需手动)")
+            print(f"  ⚠️  --force, 全部 {len(flags)} 个 flag 强刷 (eps/cache/meta 仍需手动)")
     if quiet:
         # dry-run 模式: 也要打印结果 (这是 dry 的全部意义)
         print("\n🔍 自动检测 (dry-run, 不真跑):")
@@ -889,6 +950,11 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
         from .store import sync_etf_basic, sync_etf_incremental
         sync_etf_basic()
         sync_etf_incremental()
+    if flags["fflow"]:
+        # 2026-10-27 加: fflow 陈旧会让分析层按旧数据计票, 必须能自动补
+        # ⚠️ 耗时: 5 季 trade_date x 1 API ≈ 13 分钟 (30/分限频)
+        print("  [5/7] --fflow (auto 检测到 stale, 约 13 分钟)")
+        action_fflow(force=False)
     print_data_freshness_summary()
     return 0
 

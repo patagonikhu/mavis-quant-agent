@@ -121,6 +121,8 @@ def _to_ts_code(code: str) -> str:
     """000725 → 000725.SZ / 600000 → 600000.SH / 920045 → 920045.BJ (北交所) / 000300 → 000300.SH (指数优先)
 
     2026-09-09 修: 加 .BJ 后缀映射 (北交所 920xxx 代码), 之前错误映射成 .SH 导致 K 线查不到
+    2026-10-19 修: 加 ETF 代码段 (5/15/16/18 开头) → .SH (上交所 ETF) / .SZ (深交所 ETF)
+                   510300 (沪深300ETF) → .SH / 159001 (深 ETF) → .SZ
     """
     if "." in code:
         return code
@@ -130,10 +132,13 @@ def _to_ts_code(code: str) -> str:
     # 北交所代码段: 920xxx / 430xxx (老三板转板); 老三板 8xxxxx 已退市不处理
     if c.startswith(("920", "430", "831", "832", "833", "834", "835", "836", "837", "838", "839")):
         return f"{c}.BJ"
+    # 2026-10-19 加: ETF 代码段 — 5/16/18 开头 → .SH (上交所), 15 开头 → .SZ (深交所)
+    if c.startswith(("5", "6", "9")):
+        return f"{c}.SH"
+    if c.startswith(("15", "16", "18")):
+        return f"{c}.SZ"
     if c.startswith(("0", "3")):
         return f"{c}.SZ"
-    if c.startswith(("6", "9")):
-        return f"{c}.SH"
     return f"{c}.SZ"
 
 
@@ -280,7 +285,8 @@ def _read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: i
 
         # 按 limit 推算需要哪些季度文件（每季度约 63 交易日）
         # 文件名格式：YYYYQN（新）或 YYYY（旧年度文件，迁移期间兼容）
-        if limit > 0 and not start_date:
+        # 2026-10-19: 加 (limit and limit > 0) 防 limit=None 时 TypeError
+        if limit and limit > 0 and not start_date:
             need_quarters = max(1, (limit // 63) + 2)  # 多加 2 个季度保险
             now = datetime.now()
             cur_q = (now.month - 1) // 3 + 1
@@ -339,7 +345,37 @@ def _read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: i
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date DESC LIMIT {limit}"
             sql = f"SELECT * FROM ({sql}) t ORDER BY trade_date"
         df = _conn().execute(sql).df()
-        return df.to_dict("records")
+        records = df.to_dict("records")
+        if not records:
+            # 2026-10-19: daily parquet 找不到时 fallback 到 etf/kline (ETF K线)
+            # ts_code 形如 '510300.SH' / '159001.SZ' / '513330.SH'
+            # 触发条件: 代码以 5/15 开头
+            code_prefix = ts_code.split('.')[0]
+            is_etf = code_prefix.startswith("5") or code_prefix.startswith("15") or code_prefix.startswith("16") or code_prefix.startswith("18")
+            if is_etf:
+                # 注意: get_etf_kline 内部按 limit 推算需要的季度文件, 但 ETF 历史短 (1.5 年),
+                # limit=1250 会推算出 21 个季度, 但 etf 目录只有 8 个季度文件 → 全过滤掉 → 空.
+                # 这里改成: 直接读所有 etf 季度文件 + 在 SQL 里按 limit 截断
+                try:
+                    files_all = sorted(ETF_KLINE_DIR.glob("*.parquet"))
+                    if files_all:
+                        glob_pat = "', '".join(str(f) for f in files_all)
+                        sql2 = f"""
+                            SELECT ts_code, trade_date, open, high, low, close, pre_close, vol, amount, pct_chg
+                            FROM read_parquet(['{glob_pat}'])
+                            WHERE ts_code = '{ts_code}'
+                            {"AND trade_date >= '" + start_date + "'" if start_date else ""}
+                            {"AND trade_date <= '" + end_date + "'" if end_date else ""}
+                            ORDER BY trade_date
+                        """
+                        if limit:
+                            sql2 = f"SELECT * FROM ({sql2}) t ORDER BY trade_date DESC LIMIT {limit}"
+                            sql2 = f"SELECT * FROM ({sql2}) t ORDER BY trade_date"
+                        df2 = _conn().execute(sql2).df()
+                        return df2.to_dict("records")
+                except Exception as e:
+                    print(f"  ⚠️ ETF fallback {ts_code} 失败: {e}", file=sys.stderr)
+        return records
     except Exception as e:
         print(f"  ⚠️ _read_kline {ts_code} 失败: {e}", file=sys.stderr)
         return []
@@ -1717,7 +1753,7 @@ class DataStore:
 
     @classmethod
     def load_all_daily_basic(cls) -> "pd.DataFrame":
-        """全市场 daily_basic 1 次 SQL (替代 backfill_magic_cache / bb_obv_scan 散落)
+        """全市场 daily_basic 1 次 SQL (替代 backfill_magic_cache 散落)
 
         Returns:
             DataFrame: columns = [ts_code, trade_date, total_mv, close, pe, pe_ttm, pb, ...]

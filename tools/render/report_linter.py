@@ -205,7 +205,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
         ("未完成", "占位符未完成"),
         ("⚠️ 数据状态", "显式占位符"),
         # === 2026-07-23: 缠论补充 3 个实算前的占位符 (commit 59d660c 已修) ===
-        ("见 fflow 段, Tushare.money_flow 真数据", "量价_OBV 占位符 (应实算)"),
+        ("见 fflow 段, Tushare.money_flow 真数据", "量价占位符 (应实算)"),
         ("见大盘背景段", "多市场共振 占位符 (应实算)"),
         ("N/A (Sina 60分 K线 3795 根硬上限)", "SMC-OB 占位符 (应实算)"),
         # === 2026-08-15: 实算失败的硬性残行 (factor_history bug 期间 render 留下的脏数据) ===
@@ -275,9 +275,9 @@ def lint_report(md_path: str) -> dict[str, Any]:
 
     # === 升级: fflow 数据源标注检测 ===
     if "fflow" in content.lower() or "主力" in content:
-        has_source_label = "Tushare.money_flow" in content or "Tushare 真实" in content or "OBV 派生" in content
+        has_source_label = "Tushare.money_flow" in content or "Tushare 真实" in content
         if not has_source_label:
-            warnings.append("⚠️ fflow 段无数据源标注 (Tushare.money_flow / OBV 派生)")
+            warnings.append("⚠️ fflow 段无数据源标注 (Tushare.money_flow)")
 
     # === 新增: fflow 数值合理性检测 (单位 bug 检测) ===
     # 正常单股 fflow 5 日净额 ≤ ±100 亿, 超过 500 亿必是单位错误

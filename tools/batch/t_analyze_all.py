@@ -137,7 +137,7 @@ def process_one(s):
         return ('err', code, str(e)[:200])
 
 
-# 并发跑 (跟 bb_obv_scan / refresh_all 一致, 默认 4 worker)
+# 并发跑 (跟 refresh_all 一致, 默认 4 worker)
 WORKERS = int(os.environ.get('T_ANALYZE_WORKERS', '4'))
 print(f'\n[并发] {WORKERS} workers', flush=True)
 

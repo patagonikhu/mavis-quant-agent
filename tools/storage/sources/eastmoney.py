@@ -273,6 +273,28 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
 # 3. 主力资金 (fflow)
 # ============================================================
 
+def _is_index_code(code: str) -> bool:
+    """判断是否指数 — 指数没有主力资金流 (Tushare.moneyflow 只覆盖个股)
+
+    2026-10-27 加: 指数走 moneyflow 兜底会触发 70 次全市场 API 调用且全部返空.
+    复用 tools.storage.store.INDEX_CODES (000688.SH / 399006.SZ / 930955.CSI),
+    不在此处重复维护代码列表.
+
+    兼容: 000688.SH / 000688 / 399006.SZ / 399006 等各种带后缀形态.
+    """
+    if not code:
+        return False
+    bare = str(code).split(".")[0].strip()
+    try:
+        from ..store import INDEX_CODES
+    except Exception:
+        return False
+    for idx in INDEX_CODES:
+        if str(idx).split(".")[0] == bare:
+            return True
+    return False
+
+
 def get_fund_flow(code: str, days: int = 10) -> tuple[list[dict] | None, str]:
     """主力资金 (fflow) - v6.2.5 改造: 优先读落盘 parquet, 缺数据兜底按天拉
 
@@ -281,10 +303,21 @@ def get_fund_flow(code: str, days: int = 10) -> tuple[list[dict] | None, str]:
       2. 缺数据 (新股/刚上市) → 兜底调 get_money_flow_by_date(today) + 内存筛
     老的 get_money_flow(code, limit=days) 单只 API 路径已删
 
+    ⚠️ 2026-10-27 修 (0 网络约束):
+      指数 (399006 / 930955 等) 永远不在 Tushare.moneyflow 里 (该接口只覆盖个股),
+      旧逻辑会进兜底循环 range(days+10) 逐日调 get_money_flow_by_date —
+      实测 2 只指数 = 140 次全市场 API 调用, 且全部返空 (噪声).
+      违反 /t-analyze 等分析 skill 的 0 网络约束.
+      现在: 指数直接返回 NOT_APPLICABLE_INDEX, 不联网, 不进兜底.
+
     返回值: list[dict], 字段 (兼容 fflow_factor + analysis_engine):
       trade_date / main_net(万) / main_yi(亿) / small / mid / big / super_big / net_mf_amount(万)
     """
     from ..store import DataStore
+
+    # 0. 指数不走 moneyflow (Tushare.moneyflow 只覆盖个股), 直接短路, 0 网络
+    if _is_index_code(code):
+        return None, "NOT_APPLICABLE_INDEX"
 
     # 1. 优先读落盘 parquet (5 季全市场, 已经在 v6.2.5 backfill 完)
     try:

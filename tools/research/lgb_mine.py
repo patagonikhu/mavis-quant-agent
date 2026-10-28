@@ -99,9 +99,6 @@ def build_features(code: str) -> dict:
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean().iloc[-1]
     rsi = 100 - 100 / (1 + gain / (loss + 1e-9))
 
-    # 6. OBV 5d 变化
-    obv = (np.sign(closes.diff()) * vols).cumsum()
-    obv_5d_chg = (obv.iloc[-1] - obv.iloc[-6]) / (vols.rolling(5).mean().iloc[-1] + 1)
 
     # 7. 量比
     vol_ratio = raw.get("volume_ratio", 0) or 1.0
@@ -122,7 +119,6 @@ def build_features(code: str) -> dict:
         "PB": pb,
         "MA20_偏离": ma20_dev,
         "RSI": rsi,
-        "OBV_5d": obv_5d_chg,
         "量比": vol_ratio,
         "换手率": turnover,
         "target_5d": target_5d,
@@ -141,7 +137,7 @@ def main(train_codes: list = None, predict_codes: list = None, out_path: str = N
 
     print(f"🧮 LightGBM 多因子打分骨架")
     print(f"📊 训练集: {len(train_codes)} 只 | 预测集: {len(predict_codes)} 只")
-    print(f"📋 特征: PEG/PE_TTM/PB/MA20_偏离/RSI/OBV_5d/量比/换手率 (8 维)")
+    print(f"📋 特征: PEG/PE_TTM/PB/MA20_偏离/RSI/量比/换手率 (7 维)")
 
     # === 训练数据准备 ===
     train_rows = [build_features(c) for c in train_codes]
@@ -149,7 +145,7 @@ def main(train_codes: list = None, predict_codes: list = None, out_path: str = N
     print(f"✅ 训练数据: {len(train_rows)}/{len(train_codes)} 行 (样本太小, 实战应 50+ 票)")
 
     train_df = pd.DataFrame(train_rows)
-    feature_cols = ["PEG", "PE_TTM", "PB", "MA20_偏离", "RSI", "OBV_5d", "量比", "换手率"]
+    feature_cols = ["PEG", "PE_TTM", "PB", "MA20_偏离", "RSI", "量比", "换手率"]
     X_train = train_df[feature_cols].values
     y_train = train_df["target_5d"].values
 

@@ -192,7 +192,7 @@ def _period_detail(
     }
 
     # === 量价 ===
-    # 2026-08-17 fix: 之前只抽 fflow 字段, OBV 段背离信息没进 volume_price_detail, _md_volume_price 拿不到
+    # 2026-08-17 fix: 之前只抽 fflow 字段
     volume_price_detail = {
         'verdict': vp.get('verdict', '—') if vp else '—',
         'fflow_3d': vp.get('fflow_net_3d', 0) if vp else 0,
@@ -201,8 +201,10 @@ def _period_detail(
         'fflow_60d': vp.get('fflow_net_60d', 0) if vp else 0,
         'trend_3d': vp.get('trend_3d', '—') if vp else '—',
         'trend_30d': vp.get('trend_30d', '—') if vp else '—',
-        # OBV (2026-08-29 简化: 只留 verdict, 删 60d 段背离字段)
-        'obv_verdict':      vp.get('obv_verdict', '—') if vp else '—',
+        # 2026-10-27 加: fflow 数据新鲜度 (STALE 时不参与综合判定投票)
+        'fflow_status':   vp.get('status', 'OK') if vp else 'OK',
+        'fflow_data_date': vp.get('data_date', None) if vp else None,
+        'fflow_stale_days': vp.get('stale_days', None) if vp else None,
     }
 
     # === 多市场共振 ===
@@ -283,31 +285,61 @@ def _composite_verdict(chan, wy, smc, vp, res, prices, current_price) -> dict:
 
     原设计: chan 给 1buy_trend/1buy/2buy 3 票, wy/smc/vp/res 各 1 票 (chan 3/8 隐式权重)
     改后: 5 类 (chan/wyckoff/smc/vp/res) 各 1 票等权, 决策更分散
+
+    ⚠️ 2026-10-27 修 2 个 bug (实测 38 只核心票发现):
+      1. chan 票恒为 0 — 旧代码读 chan.get('1buy_trend') / chan.get('1buy'),
+         但 _period_detail 产出的 chan_detail 只有 'stage'/'beichi'/'hub'/'buy_sell_points',
+         真正的买卖点在 buy_sell_points 嵌套里 (key 带 emoji 前缀, 如 '🟢1买' / '🔴1卖').
+         结果: 缠论票从来没投过 (605189/300699/002475 都有真实 1买, chan_buy 仍为 False).
+      2. 陈旧 fflow 参与投票 — fflow parquet 落后 K 线 29 天时, 旧代码仍按"当前主力动向"计票.
+         实测 14 只票 fflow 判出货, 其中 13 只被同时点 (K线派生, 数据新鲜) 的量价指标判为偏进货.
+         方向完全相反 = 数据陈旧造成的系统性看空偏差, 不是市场信号.
+
+    修法:
+      - chan 票改从 buy_sell_points 读 (兼容 emoji 前缀), 修好后 chan 票才真正生效
+      - vp 票按 fflow 数据状态: STALE / NO_DATA / NOT_APPLICABLE_INDEX 一律不投票
     """
-    # 底部信号计数 (5 类各 1 票)
+    # === chan 票 (2026-10-27 修: 从 buy_sell_points 读, 兼容 emoji 前缀) ===
+    bsp = chan.get('buy_sell_points') or {}
+    bsp_keys = [str(k) for k in bsp.keys() if k != 'action']
+
+    def _has(*tokens):
+        return any(any(t in k for t in tokens) for k in bsp_keys)
+
     chan_buy = (
-        chan.get('1buy_trend', '—') != '—'
+        _has('1买', '2买', '3买', '1buy_trend', '趋势1买')
+        or chan.get('1buy_trend', '—') != '—'
         or chan.get('1buy', '—') != '—'
         or chan.get('2buy', '—') != '—'
     )
+    chan_sell = (
+        _has('1卖', '2卖', '3卖', '1sell_trend', '趋势1卖')
+        or chan.get('1sell_trend', '—') != '—'
+        or chan.get('1sell', '—') != '—'
+        or chan.get('2sell', '—') != '—'
+    )
+
+    # === vp 票 (2026-10-27 修: 陈旧/无数据不投票) ===
+    vp_verdict = str(vp.get('verdict', ''))
+    vp_status = str(vp.get('status', 'OK'))
+    vp_valid = vp_status in ('OK', '') and '数据陈旧' not in vp_verdict
+    vp_buy  = 1 if (vp_valid and '进货' in vp_verdict) else 0
+    vp_sell = 1 if (vp_valid and '出货' in vp_verdict) else 0
+
+    # 底部信号计数 (5 类各 1 票)
     bottom_signals = sum([
         1 if chan_buy else 0,
         1 if wy.get('stage') == 'Accumulation' else 0,
         1 if smc.get('nearest_bull_ob') or smc.get('nearest_fvg_bull') else 0,
-        1 if '进货' in str(vp.get('verdict', '')) else 0,
+        vp_buy,
         1 if '跑赢' in str(res.get('direction', '')) or '正' in str(res.get('direction', '')) else 0,
     ])
     # 顶部信号计数 (5 类各 1 票)
-    chan_sell = (
-        chan.get('1sell_trend', '—') != '—'
-        or chan.get('1sell', '—') != '—'
-        or chan.get('2sell', '—') != '—'
-    )
     top_signals = sum([
         1 if chan_sell else 0,
         1 if wy.get('stage') == 'Distribution' else 0,
         1 if smc.get('nearest_bear_ob') or smc.get('nearest_fvg_bear') else 0,
-        1 if '出货' in str(vp.get('verdict', '')) else 0,
+        vp_sell,
         1 if '跑输' in str(res.get('direction', '')) or '负' in str(res.get('direction', '')) else 0,
     ])
 
@@ -355,7 +387,7 @@ def build_factor_matrix(
     """
     构建 因子 × 3 周期 综合矩阵 (2026-08-17 改名, 之前叫 build_5method_matrix)
 
-    "5 方法" 历史命名已过时: 实际是 7 因子 (wyckoff/smc/chan/resonance/peg/dcf/fflow/obv)
+    "5 方法" 历史命名已过时: 实际是 6 因子 (wyckoff/smc/chan/resonance/peg/dcf/fflow)
     现在统一叫 "因子矩阵", 跟 AnalysisEngine Strategy 命名对齐.
 
     Args:
@@ -397,20 +429,13 @@ def build_factor_matrix(
         res_key = {'weekly': 'resonance_weekly', 'daily': 'resonance'}[level]
         res = s5.get(res_key) or s5.get('resonance') or {}
 
-        # 量价: 2026-08-17 拆分 fflow + obv 独立 strategy, 这里合成回 vp dict 给下游用
-        # 老字段 s5.get('volume_price') 已废弃, 优先读 fflow, obv 信息合并到同 dict
+        # 量价: 2026-10-27 OBV 删除后, 量价维度只剩 fflow
+        # 老字段 s5.get('volume_price') 已废弃, 直接读 fflow
         fflow_dict = s5.get('fflow') or {}
-        obv_dict   = s5.get('obv')   or {}
-        # 2026-08-29: 删 obv_div_bot_60d / obv_div_top_60d (60d 段背离太滞后)
-        # 2026-08-17 fix: 之前 OBV 的 verdict/score 直接展开, 覆盖了 fflow 的 verdict/score (同 key 冲突)
-        # OBV 的 verdict/score 加 obv_ 前缀避免冲突, _obv 子 dict 保留完整 OBV 信息
         vp = {
             **fflow_dict,                                  # 主力净流入字段 (fflow_net_3d/5d/10d/20d/30d/60d, verdict, trend_*)
-            'obv_verdict': obv_dict.get('verdict', '—'),  # 避免覆盖 fflow.verdict
-            'obv_score':   obv_dict.get('score', 0),      # 避免覆盖 fflow.score
             # 兼容老 s5.get('volume_price') 调用方
             '_fflow': fflow_dict,
-            '_obv':   obv_dict,
         }
 
         matrix[level] = _period_detail(
@@ -506,7 +531,7 @@ def render_factor_matrix_md(matrix_result: dict) -> str:
     md.append("| **SMC (OB/FVG/Sweep)** | "
               f"{_md_smc(m['weekly']['smc'])} | "
               f"{_md_smc(m['daily']['smc'])} |")
-    md.append("| **量价 (fflow+OBV)** | "
+    md.append("| **量价 (fflow)** | "
               f"{_md_volume_price(m['weekly']['volume_price'])} | "
               f"{_md_volume_price(m['daily']['volume_price'])} |")
     md.append("| **多市场共振** | "
@@ -591,17 +616,21 @@ def _md_smc(smc: dict) -> str:
 
 
 def _md_volume_price(vp: dict) -> str:
-    """量价行 markdown (2026-08-17 拆分后: fflow 主力净流入 + OBV 段背离)
+    """量价行 markdown (2026-10-27: OBV 删除后只剩 fflow)
 
-    显示: fflow 3d/30d 主力净流入 + fflow verdict, OBV 段背离 (底/顶/无)
+    显示: fflow 3d/30d 主力净流入 + fflow verdict (+ 数据陈旧标记)
+    2026-10-27 加: fflow 数据陈旧时在行尾标 ⚠️陈旧(N天), 避免读者把旧数据当当前主力动向
     """
     v3 = vp.get('fflow_3d', 0) or 0
     v30 = vp.get('fflow_30d', 0) or 0
     verdict = vp.get('verdict', '—')[:16]  # fflow verdict
-    # OBV (2026-08-29 简化: 不再显示 60d 段背离, 只看 verdict)
-    obv_verdict = vp.get('obv_verdict', '')
-    obv_part = f" / OBV {obv_verdict}" if obv_verdict and obv_verdict != "—" else ""
-    return f"3d:{v3:+.1f}亿 / 30d:{v30:+.1f}亿 / {verdict}{obv_part}"
+    # 2026-10-27: fflow 陈旧标记 (STALE 时不参与综合判定投票, 报告里要看得见)
+    stale_part = ""
+    if vp.get('fflow_status') == 'STALE':
+        _sd = vp.get('fflow_stale_days')
+        _dd = vp.get('fflow_data_date') or ''
+        stale_part = f" / ⚠️陈旧{(_sd if _sd is not None else '?')}天({_dd})"
+    return f"3d:{v3:+.1f}亿 / 30d:{v30:+.1f}亿 / {verdict}{stale_part}"
 
 
 def _md_res(res: dict) -> str:

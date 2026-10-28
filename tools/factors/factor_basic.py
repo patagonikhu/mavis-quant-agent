@@ -290,28 +290,28 @@ def compute_alpha_001(df: pd.DataFrame) -> pd.Series:
 def compute_alpha_ga_001(df: pd.DataFrame) -> pd.Series:
     """GA 挖掘的 5d 涨跌预测因子 (gplearn, 2026-07-27)
 
-    6 个原子特征:
+    5 个原子特征:
       - close_pct_rank: 60日 价格分位 (0-1)
       - vol_5_20: 5日均量 / 20日均量
       - ma20_dist: (close - MA20) / MA20
       - rsi: 14日 RSI
       - vol_price_corr: 5日 量价相关系数
-      - obv: 累积 OBV (标准化后)
 
     公式:
       factor = (close_pct_rank - vol_5_20 + ma20_dist + rsi)
-             * (vol_5_20 + 0.711 - vol_price_corr - obv_norm)
+             * (vol_5_20 + 0.711 - vol_price_corr)
 
     性能: |IC| 0.077-0.671 (跨票), 300274 上 0.453 (强信号)
     方向: 多数票反向 (高 factor 值→5d 跌), 002371 正向 (5d 涨)
+
+    ⚠️ 2026-10-27 改 (OBV 完全删除, B 方案):
+      原公式 6 个原子含 obv_norm, 现在 5 个 — part2 的 "- obv_norm" 项已移除.
+      因子身份因此改变 (不再等价于 2026-07-27 GA 挖掘出的表达式),
+      历史 IC 数值 (0.077-0.671) 不再适用, 需重新评估.
+      移除理由: OBV 实测负超额 (详见 docs/fflow-removal-assessment.md).
     """
     closes = df['close']
     volumes = df['volume']
-
-    # X0 = obv (标准化)
-    obv_raw = (np.sign(closes.diff()) * volumes).cumsum()
-    obv_norm = (obv_raw - obv_raw.rolling(60, min_periods=20).mean()) / \
-               (obv_raw.rolling(60, min_periods=20).std() + 1e-9)
 
     # X3 = vol_5_20
     vol_5_20 = volumes.rolling(5).mean() / (volumes.rolling(20).mean() + 1e-9)
@@ -334,8 +334,8 @@ def compute_alpha_ga_001(df: pd.DataFrame) -> pd.Series:
     ma20 = closes.rolling(20).mean()
     ma20_dist = (closes - ma20) / (ma20 + 1e-9)
 
-    # 公式: (X7 - X3 + X9 + X4) * (X3 + 0.711 - X8 - X0)
+    # 公式: (X7 - X3 + X9 + X4) * (X3 + 0.711 - X8)
     part1 = close_pct_rank - vol_5_20 + ma20_dist + rsi / 100
-    part2 = vol_5_20 + 0.711 - vol_price_corr - obv_norm
+    part2 = vol_5_20 + 0.711 - vol_price_corr
     factor = part1 * part2
     return factor.rename("alpha_ga_001")

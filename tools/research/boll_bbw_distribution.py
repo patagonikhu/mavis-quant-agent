@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# 改用项目根相对路径 (跟 bb_obv_scan 一致)
+# 改用项目根相对路径
 _PROJECT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_PROJECT))
 # 确保相对路径 (data/history/...) 在 cwd 也对得上
@@ -24,7 +24,7 @@ import pandas as pd
 # 1) 拿科技股池 (申万行业 ∈ 科技股) — v6.1.1 改: 走 DataStore.load_stock_basic
 print("加载 stock_basic ...")
 df_basic = DataStore.load_stock_basic()
-# 复用 bb_obv_scan 里的行业分类 (与它一致)
+# 科技股行业分类
 TECH_INDUSTRIES = {
     "半导体", "元器件", "光学光电子", "消费电子", "电子化学品", "其他电子",
     "通信设备", "通信服务", "计算机设备", "IT 服务", "软件开发", "互联网",
@@ -62,8 +62,9 @@ def calc_one(code: str) -> dict:
             return None
         ctx = DataStore.get_ctx(code)
         # 用 AnalysisEngine Wyckoff strategy (算 boll_pct/boll_width) — 传类, 不是字符串
-        from tools.analysis.analysis_engine import WyckoffStrategy, ObvStrategy
-        engine = AnalysisEngine(strategies=[WyckoffStrategy, ObvStrategy])
+        # 2026-10-27: OBV strategy 已删除
+        from tools.analysis.analysis_engine import WyckoffStrategy
+        engine = AnalysisEngine(strategies=[WyckoffStrategy])
         # 找最后 2 个 trade_date 对应的 date
         all_dates_k = [k["trade_date"].replace("-", "")[:8] for k in ctx.kline]
         target_dates = [d for d in all_dates_k if d in last_dates]
@@ -135,4 +136,4 @@ for d in last_dates:
     sub = df[df["date"] == d]
     n = ((sub["boll_width"] < 10) & (sub["boll_pct"] < 15)).sum()
     print(f"  {d}: {n} 只")
-print("三确认 (+ OBV): 看 bb_obv_scan 结果 (0 命中)")
+print("三确认: OBV 已删除 (2026-10-27), 本脚本只统计 BOLL 维度")

@@ -1,12 +1,44 @@
 """factor_5y.py — 5 年因子历史批量跑批
 
-复用链路:
+用途: 单只 / 批量跑 5 年因子历史 (30+ 列: 价格 / 缠论 / 威科夫 / SMC / fflow / 技术指标),
+       落 1 个 md / 只, 默认 watchlist (持仓)。
+
+复用链路 (跟 /t-analyze 完全同接口, 仅 lookback 改 1250 + 输出目录换):
   DataStore.get_ctx(code) → AnalysisEngine.analyze_history → compute_factor_history
-  → RenderData.from_result → _section_factor_history (lookback=1250)
+  → RenderData.from_result → _section_factor_history(lookback=1250)
   → 落盘 docs/factor-5y/analyze-{code}-{name}-5y.md
 
-跟 /t-analyze 完全同接口, 仅 lookback 改 1250 + 输出目录换.
-0 网络, 走 DataStore parquet.
+数据特性:
+  - 0 网络, 走 DataStore parquet
+  - 5 年窗口硬编码: lookback=1250 (≈ 252 交易日 × 5 年 = 1260, 1250 是项目默认)
+  - `--step` 控制采样密度: step=1 默认(每天 1 行, 2026-10-12 改:用户要日度 PE 数据)
+                                step=5 紧凑视图(每 5 个交易日 1 行, 1250/5=250 行)
+                                step=N 推荐 >= 1 大表降采样
+  - 批量按 `--workers` 并发 (默认 4), 23 只持仓 ~20 秒
+
+复用基础:
+  - tools/analysis/analysis_result_signals.py::compute_factor_history (跟 t_analyze_one 完全一致)
+  - tools/render/report_renderer.py::_section_factor_history (跟 t-analyze --all 📈 因子历史走势表同一函数)
+  - tools/render/factor_history_only.py (单只 stdout 版, 无 md 文件)
+
+输出:
+  - docs/factor-5y/analyze-{code}-{name}-5y.md (每只 1 个 md)
+    └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样 step=N"
+    └─ 📈 因子历史走势 (30+ 列 GFM 表)
+    └─ 🗒 5 年阶段摘要 (5 年累计, MA20 偏离段)
+
+不替代 /t-analyze:
+  - /t-analyze 是 22 section 全要素详报 (近 120 日 lookback=120)
+  - /t-factor-5y 只输出因子历史表 (长周期 1-2-3-5 年节奏视角)
+  - 信号 / 买/卖/警告 不在长周期表里, 看 /t-analyze
+
+用法:
+  bash tools/with_venv.sh python -m tools.batch.factor_5y --code 600089
+  bash tools/with_venv.sh python -m tools.batch.factor_5y                       # 默认 watchlist 持仓
+  bash tools/with_venv.sh python -m tools.batch.factor_5y --watchlist-types 持仓,blowout
+  bash tools/with_venv.sh python -m tools.batch.factor_5y --all-market
+  bash tools/with_venv.sh python -m tools.batch.factor_5y --step 5              # 紧凑 250 行
+  bash tools/with_venv.sh python -m tools.batch.factor_5y --codes 600089 000792  # 多只
 """
 from __future__ import annotations
 import argparse
@@ -116,16 +148,16 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
 
 
 def main():
-    ap = argparse.ArgumentParser(description="5 年因子历史批量跑批")
+    ap = argparse.ArgumentParser(description="5 年因子历史批量跑批 (复用 /t-analyze 同链路, 仅 lookback=1250)")
     ap.add_argument("--code", help="单只代码 (例 600089 / 600089.SH)")
-    ap.add_argument("--codes", nargs="+", help="多只代码")
-    ap.add_argument("--all-market", action="store_true", help="全市场 (默认 watchlist)")
+    ap.add_argument("--codes", nargs="+", help="多只代码 (空格分隔)")
+    ap.add_argument("--all-market", action="store_true", help="全市场扫 (默认 watchlist 持仓)")
     ap.add_argument("--watchlist-types", default="持仓",
                     help="watchlist 类型过滤, 逗号分隔 (默认 持仓)")
-    ap.add_argument("--step", type=int, default=1, help="采样间隔 (默认 1, 每天 1 行, 2026-10-12 改: 用户要日度 PE)")
-    ap.add_argument("--output-dir", default="docs/factor-5y", help="md 输出目录")
-    ap.add_argument("--workers", type=int, default=4)
-    ap.add_argument("--no-summary", action="store_true")
+    ap.add_argument("--step", type=int, default=1, help="采样间隔, 每 N 个交易日采 1 行 (默认 1=每天 1 行, 推荐 step=5 看紧凑 250 行)")
+    ap.add_argument("--output-dir", default="docs/factor-5y", help="md 输出目录 (默认 docs/factor-5y)")
+    ap.add_argument("--workers", type=int, default=4, help="批量并发数 (默认 4)")
+    ap.add_argument("--no-summary", action="store_true", help="不输出 chat summary")
     args = ap.parse_args()
 
     if args.code:

@@ -46,11 +46,10 @@ class RawContext:
     wyckoff_weekly: dict = field(default_factory=dict)
     smc_result:     dict = field(default_factory=dict)
     fflow_result:   dict = field(default_factory=dict)   # 主力资金流 (Tushare.money_flow)
-    obv_result:     dict = field(default_factory=dict)   # 经典 OBV (Granville 1963, K线累计)
     technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
     resonance_result: dict = field(default_factory=dict)
     _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
-    kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写，ObvStrategy 复用
+    kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写
     kline_arrs_weekly:  dict = field(default_factory=dict)   # 周线 arrs，WyckoffStrategy 写，factor_history 读 ma_dev_weekly
 
     def slice(self, as_of_date: str) -> "RawContext":
@@ -99,7 +98,6 @@ class AnalysisResult:
       raw["chan"]      = {"score": ..., "weekly": {...}, "daily": {...}}
       raw["smc"]       = {"score": ..., "ob": [...], "smc_weekly": {...}}
       raw["fflow"]     = {"score": ..., "verdict": ..., "main_yi": ...}
-      raw["obv"]       = {"score": ..., "verdict": ..., "obv5": ..., "obv_trend": ...}
       raw["peg"]       = {"score": ..., "PEG_真实": ..., ...}
       raw["position"]  = {"close_pos_day": ..., ...}
       # Phase2 派生 (weight=0)
@@ -276,7 +274,7 @@ class WyckoffStrategy:
 
         arrs_daily  = _arrs_for(ctx.kline)
         arrs_weekly = _arrs_for(ctx.weekly) if ctx.weekly else None
-        # 写入 ctx 供 ObvStrategy 复用，避免重复计算 MA20/MA60
+        # 写入 ctx, 避免下游重复计算 MA20/MA60
         ctx.kline_arrs        = arrs_daily  or {}
         ctx.kline_arrs_weekly = arrs_weekly or {}
 
@@ -468,11 +466,11 @@ class SmcStrategy:
 class FflowStrategy:
     """fflow (主力资金流) → 分数，从 ctx.moneyflow 直接计算
 
-    2026-08-17 拆分: 跟 ObvStrategy 解耦, fflow 单独跑. 之前是 VolumePriceStrategy
-    把 fflow + OBV 混在一起算, 现在 fflow 走 Tushare.money_flow (dump 预拉), OBV 走
-    经典 Granville 1963 K线累计 (ObvStrategy), 各自独立 strategy.
+    走 Tushare.money_flow (dump 预拉), 独立 strategy.
 
-    双判定同向/矛盾信号在这里算 (ObvStrategy 已先跑过, ctx.obv_result 有结果).
+    2026-10-27 删 OBV 后: fflow 是"量价"维度的唯一来源.
+    原先的 fflow+OBV 同向/矛盾双判定已移除 (OBV 实测负超额, 详见 docs/fflow-removal-assessment.md),
+    且 fflow 数据陈旧时不参与综合判定投票 (见 compute_fflow_factor 的 status 字段).
     """
     name = "fflow"
 
@@ -493,22 +491,6 @@ class FflowStrategy:
         score   = float(ff.get("score", 0) or 0)
         signals = list(ff.get("signals", []) or [])
 
-        # === fflow + OBV 双判定 (2026-08-17 拆分后挪到 strategy 层) ===
-        # ObvStrategy 先于 FflowStrategy 跑 (PHASE1_STRATEGY_CLASSES 顺序), ctx.obv_result 已就绪
-        obv = ctx.obv_result or {}
-        obv_score = float(obv.get("score", 0) or 0)
-        fflow_dir = 1 if score > 0 else (-1 if score < 0 else 0)
-        obv_dir   = 1 if obv_score > 0 else (-1 if obv_score < 0 else 0)
-        if fflow_dir != 0 and obv_dir != 0:
-            if fflow_dir == obv_dir:
-                fflow_label = ff.get("verdict", "").replace("主力", "")
-                obv_label   = obv.get("verdict", "").replace("主力", "")
-                signals.append(f"✅ fflow+OBV 同向 ({fflow_label}+{obv_label})")
-                # 同向时给个小加权 (+0.5), 让 total_score 更敏感
-                score = score + 0.5
-            else:
-                signals.append("⚠️ fflow vs OBV 方向矛盾 (数据冲突)")
-
         summary = ff.get("verdict", "—")
         return {
             "score":   score,
@@ -523,143 +505,10 @@ class FflowStrategy:
         return {d: result for d in dates}
 
 
-class ObvStrategy:
-    """OBV (经典 Granville 1963) → 分数, 从 ctx.kline 直接计算
-
-    2026-08-17 拆分: 之前 OBV 在 price_fflow_factor 里作为并联/兜底, 现在拆成独立
-    strategy. OBV 跟 fflow 走的是不同数据源 (K线 vs Tushare.money_flow), 各自独立:
-
-    - fflow 优势: 真实主力净额 (亿元), 但需要 Tushare.money_flow dump
-    - OBV 优势: 纯 K 线累计, 无需额外数据源, 任何 dump 都能跑, 段背离多次确认
-                  适合兜底 (fflow 无数据时 OBV 仍能跑)
-
-    段背离阈值: 60 日内 4 个 15 日窗口, 底 `pct<-2% 且 OBV净增>+3%`,
-                顶 `pct>+2% 且 OBV净增<-3%`. ≥2 窗口 = 强, =1 = 单次.
-    """
-    name = "obv"
-
-    def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.factor_volume import compute_obv_factor as obv_factor
-        obv = {}
-        try:
-            kline = ctx.kline or []
-            obv = obv_factor(
-                closes=[k["close"] for k in kline],
-                vols=  [k.get("volume", 0) for k in kline],
-                dates= [k.get("trade_date", k.get("date", "")) for k in kline],
-                asof=None,
-            ) or {}
-        except Exception:
-            pass
-        ctx.obv_result = obv
-
-        score   = float(obv.get("score", 0) or 0)
-        signals = list(obv.get("signals", []) or [])
-        summary = obv.get("verdict", "—")
-        return {
-            "score":   score,
-            "signals": signals,
-            "summary": summary,
-            **obv,
-        }
-
-    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """O(n): OBV 数组预建一次，per date O(1) 查信号。复用 ctx.kline_arrs（WyckoffStrategy 已算）。"""
-        from tools.factors.kline_arrays import sliding_ma
-
-        kline = ctx.kline or []
-        if len(kline) < 2:
-            return {d.replace("-","")[:8]: {"score":0,"signals":[],"summary":"OBV 数据不足"} for d in dates}
-
-        closes = [k["close"]          for k in kline]
-        vols   = [k.get("volume", 0)  for k in kline]
-        dates_list = [k.get("trade_date","").replace("-","")[:8] for k in kline]
-        date_to_idx = {d: i for i, d in enumerate(dates_list)}
-
-        # OBV 数组：一次遍历 O(n)
-        obv = [0.0]
-        for i in range(1, len(closes)):
-            if closes[i] > closes[i-1]:   obv.append(obv[-1] + vols[i])
-            elif closes[i] < closes[i-1]: obv.append(obv[-1] - vols[i])
-            else:                          obv.append(obv[-1])
-
-        obv_ma20_arr = sliding_ma(obv, 20)
-        # 复用 WyckoffStrategy 已算的 arrs（ma20/ma60），只补 ma5/ma120
-        arrs = ctx.kline_arrs
-        ma5_arr   = arrs.get('ma5')   or sliding_ma(closes, 5)
-        ma20_arr  = arrs.get('ma20')  or sliding_ma(closes, 20)
-        ma60_arr  = arrs.get('ma60')  or sliding_ma(closes, 60)
-        ma120_arr = arrs.get('ma120') or sliding_ma(closes, 120)
-
-        dates_clean = [d.replace("-","")[:8] for d in dates]
-        results = {}
-        for date_clean in dates_clean:
-            i = date_to_idx.get(date_clean, -1)
-            if i < 1:
-                results[date_clean] = {"score": 0, "signals": [], "summary": "—", "verdict": "—",
-                                       "obv": 0, "obv5": 0, "obv_trend": 0, "source": "OBV 派生 (K线)"}
-                continue
-
-            p       = closes[i]
-            m5      = ma5_arr[i]
-            m20     = ma20_arr[i]
-            m60     = ma60_arr[i]
-            m120    = ma120_arr[i]
-            obv_now = obv[i]
-            obv_ma20 = obv_ma20_arr[i]
-            obv_trend = (obv_now - obv_ma20) / max(abs(obv_ma20), 1) if obv_ma20 else 0
-
-            pct5  = (closes[i] / closes[i-5]  - 1) * 100 if i >= 5  else 0
-            pct20 = (closes[i] / closes[i-20] - 1) * 100 if i >= 20 else 0
-            ma20_vol = sum(vols[i-19:i+1]) / 20 if i >= 20 else 0
-            vr    = vols[i] / ma20_vol if (i >= 20 and ma20_vol > 0) else 1.0
-            d120  = (p / m120 - 1) * 100 if m120 else 0
-
-            signals = []; score = 0
-            if d120 > 5:    signals.append(f"MA120偏{d120:.0f}%高位"); score -= 1
-            elif d120 < -5: signals.append(f"MA120偏{d120:.0f}%低位蓄势"); score += 1
-            if pct20 > 10 and obv_trend < -0.05:  signals.append("OBV背离:价涨OBV降→出货"); score -= 2
-            elif pct20 < -5 and obv_trend > 0.05: signals.append("OBV底背离:价跌OBV升→吸筹"); score += 2
-            if vr > 1.5 and pct5 > 2:   signals.append(f"放量上涨vol={vr:.2f}"); score += 1
-            elif vr > 1.5 and pct5 < -2: signals.append(f"放量下跌vol={vr:.2f}"); score -= 1
-            elif vr < 0.5 and pct5 > 3:  signals.append(f"缩量拉高vol={vr:.2f}出货嫌疑"); score -= 1
-            elif vr < 0.7 and pct5 < -2: signals.append("缩量回调卖压轻"); score += 1
-            if m60 and m120 and m60 > m120 and m5 and p < m5:
-                signals.append("拉高出货型"); score -= 1
-            elif m5 and m20 and m60 and m120 and p > m5 > m20 > m60 > m120:
-                signals.append("多头排列"); score += 1
-
-            # 段背离删除 (2026-08-29, 太滞后); 改用 obv5 (5日价跌+OBV涨) + obv_trend (OBV>MA20) 实战信号
-            # (在 obv5 / obv_trend 字段输出, 由 cache 消费)
-
-            if score >= 3:    verdict = "🟢主力进货"
-            elif score >= 1:  verdict = "🟡偏进货"
-            elif score == 0:  verdict = "⬜中性"
-            elif score >= -2: verdict = "🟠偏出货"
-            else:             verdict = "🔴主力出货"
-
-            ma20_dev  = round((closes[i] / m20  - 1) * 100, 1) if m20  else None
-            ma120_dev = round((closes[i] / m120 - 1) * 100, 1) if m120 else None
-
-            # OBV 实战信号: 5 日价跌+OBV 涨 (obv5), OBV>MA20 (obv_trend)
-            obv5 = 1 if (i >= 5 and closes[i] < closes[i-5] and obv[i] > obv[i-5]) else 0
-            obv_trend = 1 if (obv_ma20_arr[i] and obv[i] > obv_ma20_arr[i]) else 0
-
-            results[date_clean] = {
-                "score": score, "signals": signals, "summary": verdict, "verdict": verdict,
-                "obv": obv[i],
-                "obv5": obv5,            # 5 日价跌 + OBV 涨
-                "obv_trend": obv_trend,  # OBV > MA20
-                "ma20_dev": ma20_dev, "ma120_dev": ma120_dev,
-                "source": "OBV 派生 (K线)",
-            }
-        return results
-
-
 class TechnicalStrategy:
     """8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比) → 分数，从 ctx.kline 直接重算 (v6.2.8 新增)
 
-    跟 ObvStrategy 同样的"per-date O(1) 查信号"模式:
+    "per-date O(1) 查信号" 模式:
     - analyze: 算全套 8 指标最新值, 跟原 compute_indicators 行为一致
     - analyze_history: 全 series 预算一次, per date O(1) 查信号
 
@@ -667,7 +516,7 @@ class TechnicalStrategy:
           mid_series/upper_series/lower_series/pct_series/atr14_series/atr_pct_series/
           vol_ratio_series/vol_ma5_series), 这里把 series 对齐到 dates.
 
-    weight=0.10, 跟 obv/fflow/smc 持平.
+    weight=0.10, 跟 fflow/smc 持平.
     """
     name = "technical"
 
@@ -1189,7 +1038,17 @@ class FinanceStrategy:
 
             # 2026-09-30 改: 静态 PE 用 YTD 倍率年化 (12-31 全年 ×1, 09-30 三季度 ×4/3, 06-30 半年 ×2)
             # 修前错把 Q1/Q2/Q3 当单季 ×4, 高估净利 4 倍 → PE 偏低 4 倍
-            ytd_factor = {"03-31": 4.0, "06-30": 2.0, "09-30": 4.0/3.0, "12-31": 1.0}.get(q_str[5:10], 1.0)
+            #
+            # 2026-10-28 修 BUG: end_date 是 YYYYMMDD (无分隔符),
+            # 原来用 q_str[5:10] 取 "06-30" 永远取不到 (实际是 "630"),
+            # ytd_factor 恒等于 1.0 → 半年报 PE 少乘 2, 全部系统性偏高 1 倍.
+            # 实测 22 只 A→M 命中票 PE 全部虚高 (600323 报 18.6, 实际 9.3).
+            _md = q_str[4:8]  # YYYYMMDD → MM-DD
+            if len(_md) == 4 and _md.isdigit():
+                _mmdd = f"{_md[:2]}-{_md[2:]}"
+            else:
+                _mmdd = q_str[5:10]
+            ytd_factor = {"03-31": 4.0, "06-30": 2.0, "09-30": 4.0/3.0, "12-31": 1.0}.get(_mmdd, 1.0)
             annualized_np_yi = np_yi * ytd_factor if np_yi else 0.0
 
             quarterly.append({
@@ -1412,13 +1271,12 @@ def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
 # 4. 调度器常量
 # ============================================================
 
-# Phase1 策略类列表 (顺序重要: ChanStrategy 先跑, ObvStrategy 在 FflowStrategy 之前)
+# Phase1 策略类列表 (顺序重要: ChanStrategy 先跑)
 # 2026-09-08: 删 ValuationStrategy (合并进 FinanceStrategy)
 PHASE1_STRATEGY_CLASSES = [
     ChanStrategy,
     WyckoffStrategy,
     SmcStrategy,
-    ObvStrategy,
     FflowStrategy,
     TechnicalStrategy,  # v6.2.8 加: 8 个技术指标
     FinanceStrategy,
@@ -1435,7 +1293,7 @@ PHASE2_FUNCTIONS = [
     _derive_monitor_triggers,
 ]
 
-# 2026-09-09 删: 7 strategy 权重 (chan 0.20 / wyckoff 0.20 / smc 0.10 / obv 0.10 / fflow 0.10)
+# 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / smc 0.10 / fflow 0.10)
 # 决策全部走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再加权汇总.
 # 保留空 dict 防止旧 import KeyError.
 _STRATEGY_WEIGHTS: dict[str, float] = {}

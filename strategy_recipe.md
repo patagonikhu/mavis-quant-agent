@@ -18,11 +18,11 @@
 
 ## 1. 新 Strategy 类 (5 步)
 
-**目标:** 加 1 个新 strategy 类 (例如 `FundFlowStrategy`),复用到 `/t-analyze` + `/t-backtest` + `/t-bb-obv`。
+**目标:** 加 1 个新 strategy 类 (例如 `FundFlowStrategy`),复用到 `/t-analyze` + `/t-backtest` + `/t-wyckoff-a2m`。
 
 ### Step 1: 在 `tools/analysis/analysis_engine.py` 加 1 个类
 
-参考现有 6 个 strategy 类的写法 (例如 `ObvStrategy`),**只读 `ctx`,不拉数据**:
+参考现有 5 个 strategy 类的写法 (例如 `FflowStrategy` / `TechnicalStrategy`),**只读 `ctx`,不拉数据**:
 
 ```python
 class NewStrategy:

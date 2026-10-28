@@ -9,170 +9,100 @@ allowed-tools:
 > 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
 > 📐 **命名规范: [`handbook/naming-convention.md`](../../handbook/naming-convention.md)** (7 条硬规则, 5 项 grep 验证)
 
-## 🕐 跑节奏
+## 啥时候用
 
-- 日级别运行,K 线每日变化
-- **不天天跑** — A→M 转变在市场平静期很少触发(全市场 baseline ~0.1%), 每周 / 每次大跌后跑一次
-- 命中后用 `/t-analyze <code>` 看 22 section 详报
+- 全市场找"刚开始走主升浪"的票(威科夫 A→M 转变)
+- K 线每日变化 → **不天天跑**,每周 / 每次大跌后跑一次
+- 命中后用 `/t-analyze <code>` 看单只 22 section 详报
 
-## 用法
+## 跑
 
 ```bash
-# 最小例子 (全市场 + 默认 ST 排除 + 默认 basic quality + 详报前 10)
+# 全市场 + 默认过滤 + 默认详报 (最小例子)
 bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
-# 自定义
-... --watchlist-only                    # 只扫 watchlist (持仓+blowout+自选)
-... --watchlist-types 持仓               # --watchlist-only 时限定类型
-... --lookback 8                        # 看最近 8 根 K 线 (实际扫描只用 lookback, 判定时窗口独立)
+# 所有 flag + 默认值
+bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --help
 
-# 过滤 (v11 默认 quality=off, ST 默认排除)
-... --with-quality basic|strong|elite   # 财务前置过滤: 三指标 or_yoy / 毛利率 / 净利同比
-                                         #   basic=均>0 (~1949 票, 默认推荐)
-                                         #   strong=均>10% (~1100 票)
-                                         #   elite=均>20% (~300 票)
-                                         #   off=不限 (~5608 票, v11 默认)
-... --with-finance                       # 加 PE 过滤 (剔除 PE≤0 / PE>500 亏损/异常)
-... --exclude-pe 100                     # 前置过滤 PE>100 的高估值票 (推荐默认 100, 0=不限)
-                                            # 50=适中 / 80=较严 / 100=推荐 (排除 23% 估值过高票)
-                                            # 跟 --with-finance 互补 (finance 是命中后剔, exclude-pe 是扫描前剔)
-... --include-st                         # (反旗) 包含 ST/*ST (默认已排除, 退市风险)
+# 只看汇总, 不跑详报
+bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --no-full-report
 
-# 详报输出
-... --full-report                        # 命中后逐只跑 /t-analyze 22 section 详报 (默认 True)
-... --no-full-report                     # 只输出扫描汇总, 不跑详报
-... --report-top 0                       # 详报全部 (默认 10, 0=全部)
-... --report-subdir wyckoff-a2m-test     # 详报子目录 (用于测试, 跳 watchlist 分流)
-... --no-clean                           # 跳过 docs/<subdir>/ 自动清空 (默认清空)
-
-# 性能
-... --workers 4                          # 详报 mp.spawn worker 数 (默认 0 = 单进程, 设 1 也单进程)
-
-# 输出
-... --no-write-md                        # 不落盘扫描汇总 (默认 True = 落 docs/wyckoff-a2m.md)
-... --output docs/wyckoff-a2m.md         # 自定义汇总 md 输出路径
-... --bench-report 12                    # [测试用] 跳过扫描, 只跑 12 只详报对比 mp 加速 (docs/_bench/)
+# 只扫 watchlist
+bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 ```
 
-> **deprecated flag:**
-> - `--with-rsi` (2026-10-17 弃用,v11 判定已经够严,不再需要 RSI 过滤,代码保留兼容)
+> 默认过滤链(全开):`exclude-st` → `exclude-pe 60` → `with-quality basic` (营收/净利 yoy>0) + `ROE>5%` + `毛利率>20%` → `净负债/市值<0.5`.
+> 任何 flag 关/换门槛都用 `--help` 看当前默认 + 含义,不要凭记忆。
 
-## 典型工作流
+## 过滤链 (2026-10-28 收紧后再放宽)
 
-**场景 1: 全市场扫描 + 前 10 详报 (默认)**
+5 步前置过滤, 全部 1 次 SQL/步, 0 网络:
 
-```bash
-bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
-# 全市场 ~110s 扫 + 命中后前 10 只详报 (单进程 ~30s, mp.spawn 4 worker ~10s)
-# 落盘:
-#   docs/wyckoff-a2m.md (扫描汇总表)
-#   docs/wyckoff-a2m/analyze-<code>-<name>.md (详报, 跟 watchlist 完全隔离)
-```
+| 步 | 过滤 | 默认 | 剩余 (实测) |
+|---|---|---|---|
+| 0 | 原始候选 (全市场) | — | 5816 |
+| 1 | `exclude-st` ST/*ST | 开 | 5619 |
+| 2 | `exclude-pe` PE 上限 | **60** | 4213 |
+| 3 | `with-quality basic` (营收yoy>0 + 净利yoy>0) + `min-roe 5` + `min-gross-margin 20` | basic/5/20 | 458 |
+| 4 | `max-net-debt-ratio` 净负债/市值 | **0.5** | 441 |
+| 5 | V12 严判 A→M | lookback=5 | **10 命中** (11s) |
 
-**场景 2: 全部详报 (~111 命中)**
+**为什么这样定** (2026-10-28 用全市场分布 + 22 只命中票反推, 逐档实测):
 
-```bash
-bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --report-top 0 --workers 8
-# 全市场 ~110s 扫 + 全部 111 只详报
-# mp.spawn 8 worker 估 ~50s (含启动开销, 8 worker 启动 5-10s)
-```
+- `exclude-pe 80 → 40 → 60`: 全市场 PE 中位 38.3 / P75 85.4. 80 放进来的芯联集成(176.8)/晶华新材(91.7)/创维数字(46.7) 全是"贵 + ROE<3% + 毛利<20%"的差票; 40 又误伤 PE 46.7 的科远智慧等 → 最终 60
+- `min-roe 5`: 全市场 ROE 中位仅 **2.29%** / P75 4.89%, 所以 5% 已经砍掉一半. 专治"低基数假增长" (创维数字 yoy +202% 但 ROE 2.5%)
+- `min-gross-margin 20`: 全市场毛利率中位 24.28%. 专治薄利行业 (中创物流 6.7% / 立中集团 10.5%)
+- `max-net-debt-ratio 0.5`: 专治重债 (瀚蓝环境净负债 320 亿 > 市值 224 亿). PE 低但重债不算便宜
+- 营收/净利 yoy 门槛 **0**: 调参轨迹 0 → 10 → 5 → 0. 10 误伤基蛋生物 (营收 yoy 8.3% 但净利 +69.4%); 5 砍掉零增长但 PE 便宜的稳健票 (云南白药 PE 18.5 / 净利 yoy 1.9%); 回 0 后新增 5 只全是 PE 便宜、无差票
 
-**场景 3: 只看持仓**
+> ⚠️ **语义澄清**: `with-quality` 档位门槛作用在 `grossprofit_margin` 上, 那是**毛利率水平值 (绝对 %)**,
+> 不是毛利率同比增速 — financials 表没有毛利率 yoy 字段. yoy 维度只由 `or_yoy` / `netprofit_yoy` 承担.
+> 所以 `strong=10` 的真实含义是 "毛利率 > 10%", 不是文档旧版写的 "毛利率增速 > 10%".
+> 营收/净利 yoy 门槛可用 `--min-growth` 单独覆盖 (0=不限).
 
-```bash
-bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only --watchlist-types 持仓
-# 23 只持仓, 1-2 分钟
-```
+**效果**: 22 只 → 10 只, 10 只**全部**是"便宜 + 干净"那批 (PE 15-51 / ROE 5.3-9.6% / 毛利 30-81% / 杠杆<0.2),
+被砍的全是贵 / 重债 / 亏损. 扫描耗时 44s → 11s.
 
-**场景 4: 保留旧详报 + 重跑**
-
-```bash
-# 默认清空 docs/wyckoff-a2m/ 旧 md; --no-clean 跳过清空
-bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --no-clean
-```
+**放宽**: `--exclude-pe 0 --min-growth 0 --min-roe 0 --min-gross-margin 0 --max-net-debt-ratio 0` 回旧默认.
 
 ## 跑流程
 
-1. **step 1** — 跑威科夫当前 stage 扫描 (复用 AnalysisEngine + compute_factor_history, 0 网络)
-2. **step 2** — 命中后逐只跑 `/t-analyze <code>` 22 section 详报 (默认, 可关)
+1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `_filter_by_pe` → `_filter_by_quality` (+ROE/毛利率) → `_filter_by_leverage` → V12 严判 (`tools/batch/wyckoff_a2m_scan.py::wyckoff_judge_v12`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
+2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/`
 
-## 判定逻辑
+## V12 严判 (代码 = 单一事实源, 见 wyckoff_a2m_scan.py L263-282)
 
-**链路 (跟 `/t-analyze` 详报 100% 一致):**
+- `当前 K 线 stage == Markup` (必须)
+- 最近 30 根 K 线 `M 占比 < 20%` (排除"反复 M"假突破)
+- 单日涨跌 > 20% 跳过 (除权 / 复牌)
+
+## 数据特性 (这是必须知道的)
+
+- **0 网络**, 走 duckdb daily parquet
+- 全市场 ~11s (2026-10-28 收紧过滤后; 旧默认 ~44s), ~5816 → ST 排 → PE>40 排 → quality+ROE+毛利 排 → 杠杆排 → ~384 票
+- 单只扫描瓶颈 = `scan_sub_events` 内部 9 detector Python loop 序列 (GIL 锁死, ThreadPool 0 加速)
+- mp.spawn 详报 1.5-2.6x 加速(起步小批量 ≤8 收益最高, worker 太多被启动开销拖累)
+- ⚠️ **不能用 mp.fork** (duckdb fork 后死锁)
+- 默认清空 `docs/wyckoff-a2m/` 旧 md; `--no-clean` 跳过
+- 详报目录跟 watchlist 完全隔离,不污染自选
+- 数据日期 = parquet 最新 trade_date,不是 wall clock
+
+## 命名沿革 (关键节点)
+
+- **v8** (2026-10-16) — 删 `_judge_full` 慢路径 + 直调 `wyckoff_judge` + 全市场 1 次 SQL + 5.3 分钟单进程
+- **v9/v10** (2026-10-16/17) — 判定从"任何当前 M 命中"演进到"T-1..T-5 全 A"
+- **v11** (2026-10-17) — T-0=M + T-1..T-5 ∈ {A, ?};已弃用
+- **v12 字面版** (2026-10-20) — 当前 M + 最近 30 根 M 占比 < 20%;**当前默认**
+
+## 跑后验证
+
+```bash
+# 详报全列
+ls docs/wyckoff-a2m/analyze-*.md | wc -l
+
+# lint 单个详报 (数据完整性)
+bash tools/with_venv.sh python -m tools.render.report_linter docs/wyckoff-a2m/analyze-605189-富春染织.md all
 ```
-DataStore.get_ctx(code)
-  → AnalysisEngine(strategies=[WyckoffStrategy])
-  → engine.analyze_history(ctx, dates)            ← 预算 480 日 history
-  → compute_factor_history(ctx, step=1, lookback=120, history=history)
-  → row['wyckoff_daily'] 字段 (Accumulation / Markup / Distribution)
-```
-
-**v11 字面版 命中条件 (2026-10-17):**
-1. **T-0 (最后根) K 线 stage = 'Markup'** — 必须
-2. **T-1 ~ T-5 (前 5 根) ALL ∈ {Accumulation, ?}** — 必须 (A + ? 都接受, 排除 Markup 和 Distribution)
-   - `?` = 停牌 / 数据不足 / 反弹区, 跟 A 等价
-3. T-6 ~ T-9 不卡 (过渡期)
-4. **非除权 / 复牌日**: 单日涨跌 > 20% 视为异常, 跳过
-5. **stage_detail 不输出** — 简化版只输出 stage 主分类; 9 sub_event / 子阶段 (A/B/C, UTAD / LPS) 在 `/t-analyze` 详报里看
-
-## 性能基线 (2026-10-17 实测, 12 核 mac, v11 字面版)
-
-| scope | 任务数 | 命中 | 扫描耗时 | 详报 (单进程) | 详报 (mp.spawn 4) |
-|---|---|---|---|---|---|
-| 持仓 watchlist | 23 | (随市场) | ~2-3s | — | — |
-| 5812 全市场 (quality=off) | 5812 | (随市场) | **~115s** | — | — |
-| 5608 (exclude-st 默认) | 5608 | (随市场) | ~113s | — | — |
-| **1949 (quality=basic + ST 排)** | **1949** | **5** (v11 字面版) | **~107s** | **~15s** (5 只) | — |
-| 111 命中 + 详报 (quality=basic) | — | 111 | ~109s | ~290s | **~110s** (mp 1.5-2.6x 实测) |
-
-**单只扫描瓶颈:** `scan_sub_events` 内部 9 detector Python loop 序列, GIL 锁死, ThreadPool 0 加速.
-(cProfile 2026-10-17 实测: spring detector 占 40%, 其它 8 detector 平分 60%, 不是 c[:i] 复制).
-
-## 性能 trick: mp.spawn 跨 GIL
-
-| workers | 12 只详报 (bench) | 4 只详报 (实测) |
-|---|---|---|
-| 1 (单进程) | 32.7s | 13s |
-| 4 (mp.spawn) | — | 5s (~2.6x) |
-| 12 (mp.spawn) | 21.9s (~1.5x) | — |
-
-**结论:** mp.spawn 1.5-2.6x 加速, 起步小批量 (≤8) 收益最高, worker 太多反而被启动开销拖累.
-
-⚠️ **不能用 mp.fork** (duckdb fork 后死锁); mp.spawn 启动开销 ~3-5s per worker.
-
-## 输出
-
-```
-| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | PE | PE_TTM | 阶段序列 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **T-10** | `605189` | 富春染织 | 纺织 | 20261015 | ¥17.85 | ¥17.85 | +0.0% | — | — | A/A/A/A/A/A/A/A/A/A/M |
-```
-
-**字段:**
-- **T-N**: 转变距今 N 个交易日 (T-1=昨天, T-5=5 天前)
-- **阶段序列**: 最近 10 根 K 线 stage (A / M / D / ?)
-- **涨幅%**: 转变日至今
-- **PE** 可选 (只有 `--with-finance` 时出)
-
-## 关键约束
-
-- **0 网络**, 走 duckdb 直读 daily parquet
-- **默认全市场** (v11 极严, 1949 票里命中 ~5)
-- **复用 compute_factor_history** (跟 `/t-analyze` 100% 一致, 不自己写策略)
-- **`docs/wyckoff-a2m/`** 详报目录, 跟 watchlist 完全隔离
-- **默认清空** `docs/wyckoff-a2m/` 旧 md (按 F5 跑的语义); `--no-clean` 跳过
-- **ST 默认排除** (`--include-st` 反旗开启)
-- **数据日期**: 用 parquet 最新 trade_date, 不是当前 wall clock
-
-## 命名沿革 (2026-10-16 → 10-17)
-
-- **v1-v4** — 初版到稳定版 (复用 `AnalysisEngine.analyze_history` + `compute_factor_history`, 7 分钟全市场)
-- **v5/v6** — 直调 `WyckoffStageFactor.compute()` 25s, 但漏报 30% 数据漂移
-- **v7** — 回退 v4 路径确保数据一致
-- **v8** (2026-10-16) — 删 `_judge_full` 慢路径 + 直调 `wyckoff_judge` + 1 次 SQL 全市场 K 线 + 每只预算 arrs + scan_sub_events 全段扫 1 次缓存. **~5 分钟全市场** (历史数据), ThreadPool 0 加速.
-- **v9** (2026-10-16) — 判定放宽, 任何当前 M 都命中 (宽松模式)
-- **v10** (2026-10-17) — 收紧: T-0=M + 前 9 根有非 M
-- **v11 字面版** (2026-10-17) — 再收紧: T-0=M + T-1..T-5 ∈ {A, ?}. **当前默认**.
 
 ## 相关
 
@@ -181,36 +111,3 @@ DataStore.get_ctx(code)
 - `/t-near-low` (5y 回撤超跌)
 - `/t-factor-5y` (5 年因子历史)
 - `/t-sync-data --kline` (跑前必跑, K 线每日增量)
-
-## 参数速查
-
-| CLI | 默认 | 含义 |
-|---|---|---|
-| `--watchlist-only` | False | 只扫 watchlist |
-| `--watchlist-types` | 持仓,blowout,自选 | `--watchlist-only` 时类型过滤 |
-| `--lookback` | 5 | 阶段序列长度 (md 输出) |
-| `--workers` | 0 | 详报 mp worker 数 (0=os.cpu_count, 1=单进程) |
-| `--write-md` | True | 落盘扫描汇总 md |
-| `--output` | docs/wyckoff-a2m.md | md 输出路径 |
-| `--full-report` | True | 命中后逐只跑详报 |
-| `--report-top` | 10 | 详报数 (0=全部) |
-| `--report-subdir` | wyckoff-a2m | 详报子目录 (跳 watchlist 分流) |
-| `--no-clean` | False | 跳过自动清空 docs/<subdir>/ |
-| `--with-quality` | off | 财务前置过滤 (basic / strong / elite / off) |
-| `--with-finance` | False | 详报 PE 过滤 (命中后, PE≤0 / >500) |
-| `--exclude-pe` | 0 | 前置 PE 过滤上限 (PE > N 剔, 0=不限, 推荐 100) |
-| `--exclude-st` | True | 排除 ST/*ST |
-| `--include-st` | False | (反旗) 包含 ST |
-| `--with-rsi` | False | **deprecated** (v11 不需要 RSI) |
-| `--bench-report` | (unset) | [测试用] 跳过扫描跑 12 只详报对比 mp |
-
-## 跑后验证
-
-```bash
-# 详报全列
-ls docs/wyckoff-a2m/analyze-*.md | wc -l
-# 应 = docs/wyckoff-a2m.md 表行数 - 1
-
-# lint 单个详报 (数据完整性)
-bash tools/with_venv.sh python -m tools.render.report_linter docs/wyckoff-a2m/analyze-605189-富春染织.md all
-```

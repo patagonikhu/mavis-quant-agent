@@ -96,9 +96,6 @@ from tools.factors.factor_risk import (
     compute_exit_signals,
     compute_stop_profit_loss,
 )
-from tools.factors.factor_volume import (
-    compute_obv,  # 经典 OBV (Granville 1963)
-)
 from tools.factors.valuation.factor_lib import (
     compute_peg, compute_dcf_l, compute_roc, compute_ey,
     compute_magic_one_day, find_full_year_financials,

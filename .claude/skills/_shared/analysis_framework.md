@@ -14,7 +14,6 @@
 **辅助维度 (仅供参考, 不汇总)**:
 - 威科夫 (wyckoff) — 3 阶段: Accumulation / Markup / Distribution (阶段判定)
 - SMC (smc) — Order Block + FVG + Liquidity Sweep (周/日 双周期)
-- OBV (obv) — 经典 Granville + obv5 + obv_trend (2026-08-29 简化)
 - fflow (fflow) — Tushare.money_flow 大单+特大单净流入 5 档 (走 DataStore 落盘)
 - TechnicalStrategy (technical) — 8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比)
 - 多市场共振 (resonance) — 不参与 (v3.1 起 WAF 频发)
@@ -47,7 +46,7 @@
 
 ### 阶段 1: 拉数据 (Python 工具, 自动)
 - `tools/batch/t_analyze_all.py` (v6.2.5 起作为 watchlist 全刷入口)
-- 拉 parquet + 跑 6 个 strategy 类 (chan/wyckoff/smc/obv/fflow/finance), 写 `docs/{portfolio,watchlist}/analyze-{code}-{name}.md`
+- 拉 parquet + 跑 5 个 strategy 类 (chan/wyckoff/smc/fflow/finance), 写 `docs/{portfolio,watchlist}/analyze-{code}-{name}.md`
 - 包含: 缠论三要素 (周/日 中枢+背驰) + 缠论补充 4 方法 + 退出判定 + 3 层仓位 + 止盈止损 4 档 (走缠论, 不走 strategy 权重)
 
 ### 阶段 2: 套框架 (LLM, 必读本文件)
@@ -74,7 +73,6 @@ data/history/daily/{YYYYQN}.parquet (duckdb 读)
         ├── 缠论 (analysis['chan'].*) — **决策主入口**
         ├── 威科夫 (wyckoff_stage)
         ├── SMC (smc_ob)
-        ├── OBV (obv_factor) — obv5 + obv_trend
         ├── fflow (fflow_factor) — 走 ctx.moneyflow
         └── finance (PegFactor + DcfFactor + MagicFormula) — 合并
         │
@@ -105,7 +103,6 @@ PEG + DCF L (basic_data/peg_calc/dcf_calc) — **决策第二维**
 | t-sector-ma | ✅ 是 (板块) | 调 batch factor_matrix |
 | t-roc-ey | ❌ 否 (全市场排名) | 不引用 |
 | t-earnings-blowout | ✅ 是 (R3 反转) | 走 financials parquet |
-| t-bb-obv | ❌ 否 (BOLL+OBV 扫描) | 不引用 |
 | t-near-low | ❌ 否 (5y 低清单) | 不引用 |
 | t-backtest | ❌ 否 (5y 回测) | 不引用 |
 | t-sync-data | ❌ 否 (sync 入口) | 唯一允许网络 |

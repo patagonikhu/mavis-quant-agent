@@ -38,7 +38,6 @@ from datetime import datetime
 from typing import Optional
 
 from tools.analysis.render_data import RenderData
-from tools.analysis.analysis_result_signals import obv_label
 
 
 # ============================================================
@@ -481,7 +480,7 @@ def _section_exit_signals(data: RenderData) -> str:
         es = data.exit_signals
         return "\n".join(f"- {k}: {v}" for k, v in es.items())
     return """> **数据状态:** ⚠️ 退场信号检查未完成
-> **检查项:** PEG>3 / L/E3>8 / fflow>30亿 / OBV 强背离 / MACD 高位死叉 / v11≤-3
+> **检查项:** PEG>3 / L/E3>8 / fflow>30亿 / MACD 高位死叉 / v11≤-3
 """
 
 
@@ -1251,7 +1250,7 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
         lines_smc.append(f"近期{type_zh} {sw.get('date', '?')} ¥{_sweep_level(sw):.2f}")
     smc_focus = " / ".join(lines_smc) if lines_smc else smc.get("summary", "无明显 SMC 信号")
 
-    # ── 4. 量价 fflow (2026-08-17 拆分: 跟 OBV 独立) ──────────
+    # ── 4. 量价 fflow ──────────
     fflow = s5.get("fflow") or {}
     fflow_verdict = fflow.get("verdict", "—")
     short_w, mid_w, long_w = vp_windows
@@ -1263,14 +1262,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
         return f"{v:+.2f}亿 {t}"
 
     fflow_focus = f"{short_w}: {_fflow_val(short_w)} / {mid_w}: {_fflow_val(mid_w)} / {long_w}: {_fflow_val(long_w)}"
-
-    # ── 4b. 量价 OBV (经典 Granville 1963, 简化: 只看 verdict) ──
-    obv = s5.get("obv") or {}
-    obv_verdict = obv.get("verdict", "")
-    if obv_verdict:
-        obv_focus = f"OBV {obv_verdict}"
-    else:
-        obv_focus = "OBV 无数据"
 
     # ── 5. 多市场共振 (已移除网络数据源，显示占位)
     res_focus = "多市场共振: 已移除 (resonance_3period 网络调用删除)"
@@ -1379,10 +1370,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
 {fflow_focus}
 
   > 综合判定: {fflow_verdict}
-
-**【量价 OBV 段背离】** (2026-08-17 拆分独立, Granville 1963 + Lee-Swaminathan 2000)
-
-{obv_focus}
 
 **【多市场共振】**
 
@@ -1637,7 +1624,7 @@ def _has_signal(row: dict) -> bool:
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
 # 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | OBV | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
@@ -1775,7 +1762,6 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
         f"| {wy} | {se} "
         f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
         f"| {b3} | {chg_str} | {accum_str} "
-        f"| {obv_label(row)} |"
     )
     bpct  = row.get('boll_pct')
     bwid  = row.get('boll_width')
@@ -2096,7 +2082,7 @@ def _section_t_events(data: RenderData) -> str:
 
 
 # 2026-08-31: 删除 _section_ts_money_flow, fflow section 整体停用
-# (OBV 噪声大, CLAUDE.md 板块适用性限制, 用户要求)
+# (量价维度噪音大, 用户要求)
 
 
 
@@ -2135,7 +2121,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
     comp_table += "| 详情 | " + " | ".join(details) + " |\n"
 
     # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 5️⃣PEG → 6️⃣fflow → 7️⃣仓位)
-    # 2026-08-31: 6️⃣fflow section 已停用 (OBV 噪声大, CLAUDE.md 板块适用性限制)
+    # 2026-08-31: 6️⃣fflow section 已停用 (量价维度噪音大)
     report = f"""# {code} {name} | {today}
 
 **板块:** {sector} | **股价:** {price_str} | {_section_four_q_short(data)}

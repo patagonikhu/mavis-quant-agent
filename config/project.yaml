@@ -20,7 +20,7 @@ data:
     weekly_limit: 300
     kline_60m_count: 3795
 
-  # fflow 历史 (push2delay + OBV 派生)
+  # fflow 历史 (Tushare.moneyflow 落盘 parquet)
   fflow_days: 60
 
 # === 报告输出 ===
@@ -156,11 +156,6 @@ signals:
   ma120:
     overbought: 50     # > 50% = 高位
     oversold: -20      # < -20% = 低位蓄势
-
-  # OBV 背离
-  obv_divergence:
-    price_threshold: 5    # 20日涨幅 > 5% 才算价涨
-    obv_threshold: -0.05  # OBV 趋势 < -0.05 算背离
 
   # 5档状态 (3 项加和)
   market_state:

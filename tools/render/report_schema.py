@@ -349,7 +349,7 @@ def validate_schema() -> dict:
             last_cat = max(last_cat, cur)
 
     # 3. 关键 section 必填 (chan_supplement 已于 7-29 废弃, 用 method_matrix 替代)
-    # 2026-08-31: fflow section 已停用 (OBV 噪声大, CLAUDE.md 板块适用性限制), 不再 required
+    # 2026-08-31: fflow section 已停用 (量价维度噪音大), 不再 required
     required = {"method_matrix", "peg", "dcf"}
     missing = required - set(ids)
     if missing:

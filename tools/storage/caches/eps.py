@@ -17,6 +17,9 @@ v6.2.5 改造: 1 只票 = 1 parquet (4 期 A/E) → 117 票 = 117 文件
   EPS_DIR / EPS_FILE       → 路径常量
 """
 import json
+import os
+import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -29,6 +32,14 @@ EPS_DIR.mkdir(parents=True, exist_ok=True)
 EPS_FILE = EPS_DIR / "eps_consensus.parquet"
 
 _TTL_EPS = 30 * 24 * 3600  # 30 天 (机构预期每月更新)
+
+# 2026-10-28 加: 写锁。
+# write_eps 是 read-modify-write (读全表 → 改 1 只 → 写全表),
+# 多进程 (mp.spawn workers=8) 并发时必然互相覆盖: A 读完 → B 读完 → A 写 → B 写 (B 的版本丢了 A 的数据).
+# 叠加 to_parquet 直接写目标文件 (非原子), 另一个进程在写一半时读会拿到半个文件 →
+#   duckdb 报 "Could not deserialize thrift: don't know what type" (parquet 损坏).
+# 修法: 进程内 threading.Lock + 跨进程文件锁 (fcntl), 写临时文件后 os.replace 原子替换.
+_WRITE_LOCK = threading.Lock()
 
 
 def _watchlist_codes() -> set:
@@ -71,18 +82,44 @@ def _read_all() -> pd.DataFrame:
     """读全表 (返 DataFrame, code 列保留)"""
     if not EPS_FILE.exists():
         return pd.DataFrame(columns=EPS_COLUMNS)
-    return pd.read_parquet(EPS_FILE)
+    try:
+        return pd.read_parquet(EPS_FILE)
+    except Exception as e:
+        # 2026-10-28: parquet 损坏 (并发写导致的历史遗留) → 备份坏文件 + 当空表处理
+        # 不直接崩, 让 write_eps 能重建
+        print(f"  ⚠️ EPS parquet 读取失败 ({type(e).__name__}), 当空表处理: {e}")
+        try:
+            bad = EPS_FILE.with_suffix(f".parquet.corrupt-{int(time.time())}")
+            EPS_FILE.rename(bad)
+            print(f"     已备份坏文件: {bad}")
+        except Exception:
+            pass
+        return pd.DataFrame(columns=EPS_COLUMNS)
 
 
 def _write_all(df: pd.DataFrame) -> None:
-    """写全表 (内部用)"""
+    """写全表 (内部用) — 原子写: 先写临时文件, 再 os.replace 覆盖
+
+    2026-10-28 加: 原先 df.to_parquet(EPS_FILE) 直接写目标文件, 写到一半被
+    另一个进程读会拿到半个文件 → parquet 损坏. 改成临时文件 + os.replace (原子).
+    """
     EPS_DIR.mkdir(parents=True, exist_ok=True)
     # 强制 schema, 补缺失列
     for col in EPS_COLUMNS:
         if col not in df.columns:
             df[col] = None
     df = df[EPS_COLUMNS]
-    df.to_parquet(EPS_FILE, index=False)
+    fd, tmp_path = tempfile.mkstemp(dir=str(EPS_DIR), suffix=".tmp.parquet")
+    os.close(fd)
+    try:
+        df.to_parquet(tmp_path, index=False)
+        os.replace(tmp_path, EPS_FILE)  # 原子替换
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def get_eps(code: str, force: bool = False) -> list[dict]:
@@ -140,18 +177,37 @@ def write_eps(code: str, table: list[dict]) -> None:
     """写 1 只票的 4 期 EPS 到全表 (upsert: 删旧 + 加新)
 
     内部用, sync.py 拉完 1 只票就调一次
+
+    2026-10-28 加锁: read-modify-write 模式在多进程并发下会丢数据 + 写坏 parquet.
+    进程内用 threading.Lock, 跨进程用 fcntl.flock (同一把文件锁).
     """
     if not table:
         return
-    df_all = _read_all()
-    # 删旧 (该 code 的所有行)
-    df_all = df_all[df_all["code"] != code]
-    # 加新
-    new_df = pd.DataFrame(table)
-    new_df.insert(0, "code", code)
-    new_df["fetched_at"] = time.time()
-    df_all = pd.concat([df_all, new_df], ignore_index=True)
-    _write_all(df_all)
+    EPS_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = EPS_DIR / ".eps_consensus.lock"
+    with _WRITE_LOCK:
+        with open(lock_path, "w") as lf:
+            try:
+                import fcntl
+                fcntl.flock(lf, fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                pass  # 非 POSIX 或不支持, 退化成只有进程内锁
+            try:
+                df_all = _read_all()
+                # 删旧 (该 code 的所有行)
+                df_all = df_all[df_all["code"] != code]
+                # 加新
+                new_df = pd.DataFrame(table)
+                new_df.insert(0, "code", code)
+                new_df["fetched_at"] = time.time()
+                df_all = pd.concat([df_all, new_df], ignore_index=True)
+                _write_all(df_all)
+            finally:
+                try:
+                    import fcntl
+                    fcntl.flock(lf, fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
 
 
 def _fetch_eps_one(code: str) -> list[dict] | None:
