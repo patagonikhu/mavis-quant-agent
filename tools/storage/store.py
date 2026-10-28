@@ -519,6 +519,11 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
     if max_local >= today:
         print(f"  ✅ 已是最新 (本地最新: {max_local})")
         return 0
+    # 统计实际写入条数 (含指数), 供 sync.py 显示真实新增量
+    # 2026-10-29 修: 之前硬编码 return 0, 导致 sync 输出永远显示 "K线: 0 条新增",
+    # 实际数据是写进去了的 (计数器撒谎, 数据没错)
+    written = 0
+
     # 找缺失的交易日
     next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
     missing = _get_trading_dates(next_date, today)
@@ -536,6 +541,7 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
                 if "频率" in str(status) or "超限" in str(status) or "rate" in str(status).lower():
                     if all_records:
                         _append_records(all_records)
+                        written += len(all_records)
                     print(f"  ⚠️ API 频次超限 ({status})，已拉数据已写盘")
                     sys.exit(0)
                 print(f"    跳过 {date} (状态: {status}, 可能是节假日)")
@@ -547,6 +553,7 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
         # 所有缺失天收集完后一次性写入，避免每天读写一次文件
         if all_records:
             _append_records(all_records)
+            written += len(all_records)
 
     # 指数独立补齐（与个股是否有缺口无关，每次都检查）
     # None = 指数从未入库，从个股最早日期开始补全历史
@@ -558,6 +565,7 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
             idx_records, status = get_index_daily(idx_code, start_date=next_idx, end_date=today)
             if idx_records:
                 _append_records(idx_records)
+                written += len(idx_records)
                 print(f"    ✅ {idx_code}: {len(idx_records)} 根")
             else:
                 print(f"    ⚠️ {idx_code} 无数据 ({status})")
@@ -575,7 +583,7 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
     # 同步 financials (财务指标, Magic Formula 用, 按季切)
     sync_financials(_date_to_financial_period(today))
 
-    return 0
+    return written
 
 
 def sync_init(start_year: int = 2020) -> int:
