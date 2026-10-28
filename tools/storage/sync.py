@@ -502,7 +502,7 @@ def print_data_freshness_summary() -> None:
     """
     import duckdb
     from pathlib import Path
-    from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR, FFLOW_HISTORY_DIR
+    from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR
     from .caches.eps import EPS_DIR
 
     def _max_date(path: Path) -> str:
