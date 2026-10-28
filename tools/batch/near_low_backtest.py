@@ -254,13 +254,13 @@ def _load_all_basic() -> dict:
                 db_latest = db.sort_values("trade_date").groupby("ts_code").tail(1)
                 for _, r in db_latest.iterrows():
                     # 600000.SH -> 600000
-                code = str(r["ts_code"]).split(".")[0]
-                total_share = float(r.get("total_share", 0) or 0)  # 万股
-                close = float(r.get("close", 0) or 0)
-                # mcap(亿) = total_share(万股) * close / 10000
-                mcap = total_share * close / 10000 if total_share > 0 else 0
-                if code in result:
-                    result[code]["market_cap"] = mcap
+                    code = str(r["ts_code"]).split(".")[0]
+                    total_share = float(r.get("total_share", 0) or 0)  # 万股
+                    close = float(r.get("close", 0) or 0)
+                    # mcap(亿) = total_share(万股) * close / 10000
+                    mcap = total_share * close / 10000 if total_share > 0 else 0
+                    if code in result:
+                        result[code]["market_cap"] = mcap
         except Exception as e:
             print(f"[WARN] daily_basic 加载失败, mcap 过滤失效: {e}", flush=True)
         return result
@@ -282,9 +282,9 @@ def main():
     ap.add_argument("--days", type=int, default=30, help="最大持仓期 (默认 30)")
     ap.add_argument("--drop", type=float, default=0.70, help="5y 内最大回撤下限 (默认 0.70)")
     ap.add_argument("--drop-max", type=float, default=0.80, help="5y 内最大回撤上限 (默认 0.80)")
-    ap.add_argument("--gap", type=float, default=3.0, help="距 5y low 阈值 (默认 3.0%)")
-    ap.add_argument("--take-profit", type=float, default=15.0, help="止盈 % (默认 15)")
-    ap.add_argument("--stop-loss", type=float, default=5.0, help="止损 % (默认 5)")
+    ap.add_argument("--gap", type=float, default=3.0, help="距 5y low 阈值 (默认 3.0%%)")
+    ap.add_argument("--take-profit", type=float, default=15.0, help="止盈 %% (默认 15)")
+    ap.add_argument("--stop-loss", type=float, default=5.0, help="止损 %% (默认 5)")
     ap.add_argument("--workers", type=int, default=4, help="并发数")
     ap.add_argument("--min-mcap", type=float, default=0, help="最小市值 (亿)")
     ap.add_argument("--exclude-st", action="store_true", help="排除 ST")
