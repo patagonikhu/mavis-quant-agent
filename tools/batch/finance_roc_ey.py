@@ -282,7 +282,7 @@ def main() -> int:
             return 1
         latest_end = max(d["end_date"] for d in latest_map.values() if d.get("end_date"))
         # 2026-10-14 改: 用 _quarter_of 替硬编码 month→quarter 映射 (季度切换不维护)
-        from tools.storage.caches.fflow_history import _quarter_of
+        from tools.storage.caches.quarter_utils import _quarter_of
         latest_period = _quarter_of(latest_end)  # '20251231' → '2025Q4'
         df = DataStore.load_financials_period(latest_period)
         args.period = latest_period

@@ -409,7 +409,7 @@ def _section_fundamental(data: RenderData) -> str:
 
 def _section_signal_5cat(data: RenderData) -> str:
     if not data.signal_5cat or "error" in data.signal_5cat:
-        return "> **数据状态:** ❌ 5 类 14 子信号未计算\n> **降级:** 用 K 线 + 量价 + fflow 自动算 (部分项用中性 5/10 分)\n"
+        return "> **数据状态:** ❌ 4 类 12 子信号未计算\n> **降级:** 用 K 线 + 技术指标自动算 (部分项用中性 5/10 分)\n"
     s = data.signal_5cat
     parts = [
         # 2026-09-09 删: 总规则分 (raw_score/123) + rating (🥇/🥈/🥉/⚠️)
@@ -480,7 +480,7 @@ def _section_exit_signals(data: RenderData) -> str:
         es = data.exit_signals
         return "\n".join(f"- {k}: {v}" for k, v in es.items())
     return """> **数据状态:** ⚠️ 退场信号检查未完成
-> **检查项:** PEG>3 / L/E3>8 / fflow>30亿 / MACD 高位死叉 / v11≤-3
+> **检查项:** 缠论 1卖/2卖/3卖 / MACD 高位死叉 / v11≤-3
 """
 
 
@@ -1069,14 +1069,14 @@ def _smc_sub_events_md(sweeps, fvg_bull, fvg_bear, bull_ob, bear_ob,
     return "\n".join(rows)
 
 
-def _section_period(data: RenderData, level: str, label: str, weight: str,
-                    vp_windows: tuple) -> str:
+def _section_period(data: RenderData, level: str, label: str, weight: str) -> str:
     """
-    单周期 section：缠论详细数据 + 其余4方法在该周期视角的数据
+    单周期 section：缠论详细数据 + 其余方法在该周期视角的数据
     level: 'weekly' | 'daily' | '60min'
     label: '周线' | '日线' | '60分'
     weight: '1.0x' (2026-09-09 改: 3 周期等权, 不再区分 1.5x/1.0x/0.5x)
-    vp_windows: 量价关注的时间窗口 tuple，如 ('20d','30d','60d')
+
+    2026-10-28: 删 vp_windows 参数 (量价/fflow 维度整体删除)
     """
     s5 = data.analysis or {}
     chan = data.chan_data or {}
@@ -1250,20 +1250,7 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
         lines_smc.append(f"近期{type_zh} {sw.get('date', '?')} ¥{_sweep_level(sw):.2f}")
     smc_focus = " / ".join(lines_smc) if lines_smc else smc.get("summary", "无明显 SMC 信号")
 
-    # ── 4. 量价 fflow ──────────
-    fflow = s5.get("fflow") or {}
-    fflow_verdict = fflow.get("verdict", "—")
-    short_w, mid_w, long_w = vp_windows
-
-    def _fflow_val(w: str) -> str:
-        v = fflow.get(f"fflow_net_{w}")
-        t = fflow.get(f"trend_{w}", "")
-        if v is None: return "无数据"
-        return f"{v:+.2f}亿 {t}"
-
-    fflow_focus = f"{short_w}: {_fflow_val(short_w)} / {mid_w}: {_fflow_val(mid_w)} / {long_w}: {_fflow_val(long_w)}"
-
-    # ── 5. 多市场共振 (已移除网络数据源，显示占位)
+    # ── 4. 多市场共振 (已移除网络数据源，显示占位)
     res_focus = "多市场共振: 已移除 (resonance_3period 网络调用删除)"
 
     # 止跌信号（仅日线计算，周线显示说明）
@@ -1365,12 +1352,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str,
 
 {_smc_sub_events_md(sweeps, fvg_bull, fvg_bear, bull_ob, bear_ob, smc_total_obs, smc_total_fvgs, smc_total_sweeps)}
 
-**【量价 fflow】**
-
-{fflow_focus}
-
-  > 综合判定: {fflow_verdict}
-
 **【多市场共振】**
 
 {res_focus}
@@ -1381,14 +1362,14 @@ def _section_weekly(data: RenderData) -> str:
     """📋 周线分析 (因子)"""
     if not data.chan_data and not data.analysis:
         return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
-    return _section_period(data, "weekly", "周线", "1.0x", ("20d", "30d", "60d"))
+    return _section_period(data, "weekly", "周线", "1.0x")
 
 
 def _section_daily(data: RenderData) -> str:
     """📋 日线分析 (因子)"""
     if not data.chan_data and not data.analysis:
         return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
-    return _section_period(data, "daily", "日线", "1.0x", ("5d", "10d", "20d"))
+    return _section_period(data, "daily", "日线", "1.0x")
 
 
 def _section_factor_matrix(data: RenderData) -> str:
@@ -2081,7 +2062,8 @@ def _section_t_events(data: RenderData) -> str:
     )
 
 
-# 2026-08-31: 删除 _section_ts_money_flow, fflow section 整体停用
+# 2026-08-31: 删除 _section_ts_money_flow
+# 2026-10-28: 主力资金流 (fflow) 维度整体删除, 详见 docs/fflow-removal-assessment.md
 # (量价维度噪音大, 用户要求)
 
 
@@ -2120,8 +2102,8 @@ def render_report(data: RenderData, sector: str = "—") -> str:
     details = [comp[k][1] for k in keys]
     comp_table += "| 详情 | " + " | ".join(details) + " |\n"
 
-    # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 5️⃣PEG → 6️⃣fflow → 7️⃣仓位)
-    # 2026-08-31: 6️⃣fflow section 已停用 (量价维度噪音大)
+    # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 5️⃣PEG → 6️⃣仓位)
+    # 2026-10-28: 主力 fflow 维度整体删除, 6️⃣ 位取消
     report = f"""# {code} {name} | {today}
 
 **板块:** {sector} | **股价:** {price_str} | {_section_four_q_short(data)}

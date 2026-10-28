@@ -57,7 +57,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.storage.store import DataStore  # noqa: E402  数据访问统一走 DataStore
-from tools.storage.caches.fflow_history import _quarter_of  # noqa: E402  date -> quarter, 替硬编码拼接
+from tools.storage.caches.quarter_utils import _quarter_of  # noqa: E402  date -> quarter, 替硬编码拼接
 
 
 # ============================================================

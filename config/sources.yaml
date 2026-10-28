@@ -30,14 +30,6 @@ kline_60min:
   unit: 元
   note: 2026-07-24 改单一 Sina 源, Tushare 限流实测不可用
 
-fund_flow:
-  primary: Tushare.moneyflow
-  fallback: 无 (2026-10-27 OBV 派生已删除)
-  unit: 万元 (Tushare 真实)
-  note: 2026-07-24 实测, 字段单位 = 万元, 之前误认亿元
-  warning: "历史 push2his/push2delay fflow 全部限流 (rc=102/WAF). fflow 必须从 Tushare.moneyflow 拉"
-  stale_check: "fflow parquet 落后 K 线 > 7 天 → status=STALE, 不参与综合判定投票"
-
 eps_finance:
   primary: Tushare.fina_indicator
   fallback: Tushare.income

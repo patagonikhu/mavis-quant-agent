@@ -20,9 +20,6 @@ data:
     weekly_limit: 300
     kline_60m_count: 3795
 
-  # fflow 历史 (Tushare.moneyflow 落盘 parquet)
-  fflow_days: 60
-
 # === 报告输出 ===
 report:
   # 报告字符长度

@@ -101,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser()
     # 2026-10-14 改: 默认窗口动态算 (min=2 年前, max=已落盘最新季), 替硬编码
     from datetime import datetime
-    from tools.storage.caches.fflow_history import _quarter_of, latest_disclosed_quarter
+    from tools.storage.caches.quarter_utils import _quarter_of, latest_disclosed_quarter
     _max_q = latest_disclosed_quarter() or _quarter_of(datetime.now().strftime("%Y%m%d"))
     _min_q = _quarter_of((datetime.now().replace(year=datetime.now().year - 2)).strftime("%Y%m%d"))
     parser.add_argument("--min-quarter", default=_min_q, help=f"起始季 (默认 {_min_q}, 2 年前)")

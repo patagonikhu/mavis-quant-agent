@@ -107,7 +107,7 @@ else:
 
 # ============================================================
 # 内存缓存 (2026-07-22 性能优化)
-# tushare moneyflow 单接口 4s/次 是真实频控, daily K线 3500+ 行传输慢
+# tushare 单接口 4s/次 是真实频控, daily K线 3500+ 行传输慢
 # 单进程内同 (api_name, kwargs) 1 小时复用, 避免重复拉
 # ============================================================
 
@@ -172,7 +172,7 @@ def _ts_to_code(ts_code: str) -> str:
 def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
     """统一 tushare 调用, 永不 raise, 返回 (data_list, status)
 
-    2026-07-22 升级: 加 1 小时内存缓存, moneyflow (4s/次) 复用后 0s
+    2026-07-22 升级: 加 1 小时内存缓存, 重接口 (4s/次) 复用后 0s
     2026-07-23 升级: 加 3 次重试 (网络抖动兜底, Tushare 官方推荐)
     2026-07-28 升级: EMPTY 时 retry (数据未到/网络抖动兜底, 2s/4s 退避)
     2026-09-04 v6.2.4: 升级 5000 积分档, 白名单只剩真正限量接口
@@ -183,7 +183,7 @@ def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
 
     # v6.2.4 限量接口白名单 (5000 积分档仍不可调, 永久返空, 不 retry)
     # 2026-09-04 实测 5000 积分档用户接口:
-    #   ✅ 可调: stk_factor_pro / fina_indicator_vip / top_list / margin / moneyflow
+    #   ✅ 可调: stk_factor_pro / fina_indicator_vip / top_list / margin
     #   ❌ 限量 (需单独开通权限): forecast / forecast_vip
     #   ❌ 10000 积分档: north_flow (10k 积分起)
     _NO_RETRY_LIMITED = {
@@ -648,76 +648,6 @@ def get_dividend(code: str, limit: int = 10) -> tuple[list[dict] | None, str]:
 
 
 # ============================================================
-# 10. 个股资金流向 pro.moneyflow (真正的 fflow!)
-# ============================================================
-
-# v6.2.5 加: 按 trade_date 拉全市场 5555 只, 1 次 API 1 天
-# 跟 stk_factor_pro 平行, 用于 sync --fflow 按天落盘
-FFLOW_HISTORY_FIELDS = (
-    "ts_code,trade_date,"
-    "buy_sm_amount,sell_sm_amount,"   # 散户
-    "buy_lg_amount,sell_lg_amount,"   # 主力
-    "buy_elg_amount,sell_elg_amount," # 大主力
-    "net_mf_amount"                   # 净流入
-)
-
-
-def get_money_flow_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
-    """按交易日拉全市场 moneyflow, 1 次拿 5555 只 (5000 积分档可调)
-
-    trade_date: YYYYMMDD
-    返回 [{ts_code, trade_date, buy_sm_amount, sell_sm_amount,
-           buy_lg_amount, sell_lg_amount, buy_elg_amount, sell_elg_amount,
-           net_mf_amount}, ...]
-
-    v6.2.5: 落盘用 9 字段 (vol 4 个不存, 中单 amount 不存, 散户仅存 amount)
-    """
-    data, status = _safe_call(
-        "moneyflow",
-        trade_date=trade_date,
-        fields=FFLOW_HISTORY_FIELDS,
-    )
-    return data, status
-
-
-
-
-def get_money_flow(code: str, start_date: str = "", end_date: str = "", limit: int = 10) -> tuple[list[dict] | None, str]:
-    """⚠️ v6.2.5 弃用: 老的单只 moneyflow fetch API (不走落盘)
-
-    业务层请改用:
-      - 批量/历史: DataStore.get_fflow_history(code)  (读 data/history/fflow_history/ 落盘 parquet)
-      - 单日实时: get_money_flow_by_date(today_date) + 内存 filter ts_code
-
-    本函数保留仅供外部 eastmoney 兼容, 2026-09-05 之后将删
-    v6.2.5 新数据流: sync.action_fflow 按天全市场落盘 → DataStore.get_fflow_history 读
-    """
-    import warnings
-    warnings.warn(
-        "tushare.get_money_flow 已弃用, 请改用 DataStore.get_fflow_history() (落盘读) "
-        "或 get_money_flow_by_date(date) + 内存筛 ts_code (实时)",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    ts_code = _code_to_ts(code)
-    kwargs = {
-        "ts_code": ts_code,
-        "fields": "ts_code,trade_date,buy_sm_vol,buy_sm_amount,sell_sm_vol,sell_sm_amount,buy_md_vol,buy_md_amount,sell_md_vol,sell_md_amount,buy_lg_vol,buy_lg_amount,sell_lg_vol,sell_lg_amount,buy_elg_vol,buy_elg_amount,sell_elg_vol,sell_elg_amount,net_mf_vol,net_mf_amount",
-    }
-    if start_date:
-        kwargs["start_date"] = start_date
-    if end_date:
-        kwargs["end_date"] = end_date
-    data, status = _safe_call("moneyflow", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["trade_date"])
-    if limit and not start_date:
-        data = data[-limit:]
-    return data, "OK"
-
-
-# ============================================================
 # 10b. ETF 场内基金 (2026-10-09 加, 走 tushare fund_basic / fund_daily / fund_nav)
 #   - 字段名跟 daily 股票 100% 重合 (OHLCV), AnalysisEngine.analyze_history 无需改
 #   - fund_basic 一次性全量, 落 data/history/etf/etf_basic.parquet
@@ -880,7 +810,7 @@ def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
     """一键拉所有 tushare 段, 返回 dict 给 sync_watchlist_fresh.py 拼装
 
     段: stock_basic / daily_basic / weekly / north_flow / margin / top_list
-        / income / fina_indicator / dividend / money_flow / forecast
+        / income / fina_indicator / dividend / forecast
     (2026-07-28 砍 monthly: 5方法×3周期 = 周/日/60分, 无月线)
 
     Args:
@@ -899,7 +829,6 @@ def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
         "income": None,
         "fina_indicator": None,
         "dividend": None,
-        "money_flow": None,
         "forecast": None,
         "statuses": {},
     }
@@ -966,12 +895,7 @@ def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
     out["dividend"] = dv
     out["statuses"]["dividend"] = dv_s
 
-    # 10. 个股资金流向 (真正的 fflow)
-    mf, mf_s = get_money_flow(code, limit=60)
-    out["money_flow"] = mf
-    out["statuses"]["money_flow"] = mf_s
-
-    # 11. 业绩预告 (限量接口, 4 条/年, 用户权限未开)
+    # 10. 业绩预告 (限量接口, 4 条/年, 用户权限未开)
     fc, fc_s = get_forecast(code, recent_n=4)
     out["forecast"] = fc
     out["statuses"]["forecast"] = fc_s

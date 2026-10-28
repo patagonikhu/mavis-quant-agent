@@ -31,8 +31,9 @@ class RawContext:
     kline:      list        # 日线 K 线 [{date, open, close, high, low, vol, ...}]
     weekly:     list        # 周线 K 线（Tushare 真实周线，非合成）
     eps_table:  list        # EPS 历史预测（季报，不随 as_of_date 切片）
-    fflow:      dict        # 主力资金流（不切片）
-    moneyflow:  list = field(default_factory=list)  # Tushare money_flow 原始列表（不切片）
+    # 2026-10-28 删: fflow (主力资金流) / moneyflow (Tushare money_flow 原始列表)
+    #   实测 27 只核心票: 删掉后判定更准 (剔掉 2 只假建仓 + 1 只假减仓)
+    #   详见 docs/fflow-removal-assessment.md
     # 2026-10-08 删: cyq (胜率/中位成本, 跟 RSI/MA 同步, 没新信息)
     current_price:  float = 0.0
     market_cap_yi:  float = 0.0
@@ -45,7 +46,6 @@ class RawContext:
     wyckoff_result: dict = field(default_factory=dict)   # 日线
     wyckoff_weekly: dict = field(default_factory=dict)
     smc_result:     dict = field(default_factory=dict)
-    fflow_result:   dict = field(default_factory=dict)   # 主力资金流 (Tushare.money_flow)
     technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
     resonance_result: dict = field(default_factory=dict)
     _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
@@ -73,8 +73,6 @@ class RawContext:
         sliced = RawContext(
             kline=k, weekly=w,
             eps_table=self.eps_table,
-            fflow=self.fflow,
-            moneyflow=self.moneyflow,
             current_price=price,
             market_cap_yi=self.market_cap_yi,
             code=self.code,
@@ -97,7 +95,6 @@ class AnalysisResult:
       raw["wyckoff"]  = {"score": ..., "stage": ..., "sub_events": ..., "3period": ...}
       raw["chan"]      = {"score": ..., "weekly": {...}, "daily": {...}}
       raw["smc"]       = {"score": ..., "ob": [...], "smc_weekly": {...}}
-      raw["fflow"]     = {"score": ..., "verdict": ..., "main_yi": ...}
       raw["peg"]       = {"score": ..., "PEG_真实": ..., ...}
       raw["position"]  = {"close_pos_day": ..., ...}
       # Phase2 派生 (weight=0)
@@ -463,48 +460,6 @@ class SmcStrategy:
         return results
 
 
-class FflowStrategy:
-    """fflow (主力资金流) → 分数，从 ctx.moneyflow 直接计算
-
-    走 Tushare.money_flow (dump 预拉), 独立 strategy.
-
-    2026-10-27 删 OBV 后: fflow 是"量价"维度的唯一来源.
-    原先的 fflow+OBV 同向/矛盾双判定已移除 (OBV 实测负超额, 详见 docs/fflow-removal-assessment.md),
-    且 fflow 数据陈旧时不参与综合判定投票 (见 compute_fflow_factor 的 status 字段).
-    """
-    name = "fflow"
-
-    def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.factor_volume import compute_fflow_factor as fflow_factor
-        ff = {}
-        try:
-            ff = fflow_factor(
-                ctx.code,
-                moneyflow_list=ctx.moneyflow,
-                dates=None,    # moneyflow 自带 trade_date
-                asof=None,     # 最新 (未来可从 ctx 读 asof)
-            ) or {}
-        except Exception:
-            pass
-        ctx.fflow_result = ff
-
-        score   = float(ff.get("score", 0) or 0)
-        signals = list(ff.get("signals", []) or [])
-
-        summary = ff.get("verdict", "—")
-        return {
-            "score":   score,
-            "signals": signals,
-            "summary": summary,
-            **ff,
-        }
-
-    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """fflow 不依赖历史切片，直接对全量 ctx 跑一次，所有 date 共享同一结果。"""
-        result = self.analyze(ctx)
-        return {d: result for d in dates}
-
-
 class TechnicalStrategy:
     """8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比) → 分数，从 ctx.kline 直接重算 (v6.2.8 新增)
 
@@ -516,7 +471,7 @@ class TechnicalStrategy:
           mid_series/upper_series/lower_series/pct_series/atr14_series/atr_pct_series/
           vol_ratio_series/vol_ma5_series), 这里把 series 对齐到 dates.
 
-    weight=0.10, 跟 fflow/smc 持平.
+    weight=0.10, 跟 smc 持平.
     """
     name = "technical"
 
@@ -1152,10 +1107,10 @@ def _derive_sector_overheat(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_five_categories(ctx: RawContext, raw: dict) -> dict:
-    """5 类 14 子信号 (缠论+止跌+fflow+估值)"""
+    """5 类 14 子信号 (缠论+止跌+估值)"""
     from tools.factors.valuation.multi import FiveCategoriesFactor
     try:
-        return FiveCategoriesFactor()(df=None, fflow=ctx.fflow,
+        return FiveCategoriesFactor()(df=None,
                                       eps_table=ctx.eps_table,
                                       current_price=ctx.current_price) or {}
     except Exception:
@@ -1199,7 +1154,6 @@ def _derive_exit_signals(ctx: RawContext, raw: dict) -> dict:
     from tools.factors.factor_risk import compute_exit_signals
     try:
         out = compute_exit_signals(
-            fflow=ctx.fflow,
             eps_table=ctx.eps_table,
             current_price=ctx.current_price,
             sector_ma20_dev=-22,
@@ -1227,7 +1181,7 @@ def _derive_stop_profit_loss(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
-    """三层仓位 (日线中枢+缠论+fflow+PEG)
+    """三层仓位 (日线中枢+缠论+PEG)
 
     2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
     """
@@ -1237,7 +1191,6 @@ def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
         out = compute_three_layer_position(
             price=ctx.current_price,
             chan_d=res_d,
-            fflow=ctx.fflow,
             peg=0.76,
             chan_signals=ctx.chan_result,
         )
@@ -1247,7 +1200,7 @@ def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
-    """监控触发点 5 类 14 子 (缠论背驰+止跌+fflow+事件)
+    """监控触发点 5 类 14 子 (缠论背驰+止跌+事件)
 
     2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
     """
@@ -1257,7 +1210,6 @@ def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
         out = compute_monitor_triggers(
             price=ctx.current_price,
             chan_d=res_d,
-            fflow=ctx.fflow,
             events=[],
             code="",
             chan_signals=ctx.chan_result,
@@ -1277,7 +1229,6 @@ PHASE1_STRATEGY_CLASSES = [
     ChanStrategy,
     WyckoffStrategy,
     SmcStrategy,
-    FflowStrategy,
     TechnicalStrategy,  # v6.2.8 加: 8 个技术指标
     FinanceStrategy,
 ]
@@ -1293,7 +1244,7 @@ PHASE2_FUNCTIONS = [
     _derive_monitor_triggers,
 ]
 
-# 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / smc 0.10 / fflow 0.10)
+# 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / smc 0.10)
 # 决策全部走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再加权汇总.
 # 保留空 dict 防止旧 import KeyError.
 _STRATEGY_WEIGHTS: dict[str, float] = {}

@@ -25,11 +25,11 @@ L3 Render  →  tools/render/                     # 报告渲染
 |---|---|---|---|
 | **网络拉数据** | `tools/storage/sources/{tushare,eastmoney}.py` | `tools.storage.sync` 调 | 任何业务层 import 网络库 |
 | **数据读** (DAO) | `tools/storage/store.py` (DataStore) | 25+ 公开方法, 7+ bulk | 直读 parquet / 直连 sqlite / 调 duckdb |
-| **数据落盘** | `tools/storage/caches/{eps,fflow_history}.py` | sync 调 | 业务层自己写 parquet |
+| **数据落盘** | `tools/storage/caches/{eps,stk_factor_history}.py` | sync 调 | 业务层自己写 parquet |
 | **7 strategy 类** | `tools/analysis/analysis_engine.py` | `AnalysisEngine.analyze(ctx)` | 自己拉数据, 直读 dump |
 | **Phase2 派生** | `tools/analysis/analysis_result_signals.py` | `compute_factor_history` 等 | 复制 strategy 逻辑 |
 | **RenderData 容器** | `tools/analysis/render_data.py` | `RenderData.from_result(ctx, result)` | 拼 markdown 字符串 |
-| **通用 factor** | `tools/factors/{basic,risk,volume}.py` (纯函数) | `compute_xxx(...)` | `class XXX(Factor)` 包装 |
+| **通用 factor** | `tools/factors/{basic,risk}.py` (纯函数) | `compute_xxx(...)` | `class XXX(Factor)` 包装 |
 | **估值 factor** | `tools/factors/valuation/factor_lib.py` (单文件) | `compute_peg/dcf/roc/ey` | 散到多文件 |
 | **缠论/威科夫/SMC** | `tools/factors/{chan,wyckoff,smc}/` | 复杂框架, 允许 class | 写业务逻辑 |
 | **报告 schema** | `tools/render/report_schema.py` (单一真源) | `report_linter` 校验 | 在 8 处各定义 22 section |
@@ -73,7 +73,6 @@ df = DataStore.load_financials_period(period)        # 单季 financials
 df = DataStore.get_stk_factor_latest()               # 每只票最新一日 stk_factor
 mc = DataStore.get_market_cap_at_date('20260903')    # 某日全市场市值 dict
 df = DataStore.load_stock_basic()                    # 静态股票基础信息
-df = DataStore.load_all_fflow_history()              # 全市场主力资金流 (5 季)
 ```
 
 ### 4.2 AnalysisEngine

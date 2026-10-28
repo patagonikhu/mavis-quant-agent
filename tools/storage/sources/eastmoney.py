@@ -13,7 +13,6 @@ data_fetcher.py — 统一数据抓取层 (v4.0, 2026-07-22)
   ├──────────────┼─────────────────────────────────────────┤
   │ 实时价       │  Tushare.daily (close) + Tushare.daily_basic (pe_ttm/pb) │
   │ 历史 K 线    │  Tushare.daily                                 │
-  │ 主力资金     │  Tushare.moneyflow (5000 积分档, 24h 稳定)  │
   │ EPS / 财务   │  Tushare.fina_indicator (ROE/EPS/CAGR 自建) │
   │ 总股本/市值  │  Tushare.stock_basic.total_share + daily_basic.total_mv │
   └──────────────┴─────────────────────────────────────────┘
@@ -270,127 +269,6 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
 
 
 # ============================================================
-# 3. 主力资金 (fflow)
-# ============================================================
-
-def _is_index_code(code: str) -> bool:
-    """判断是否指数 — 指数没有主力资金流 (Tushare.moneyflow 只覆盖个股)
-
-    2026-10-27 加: 指数走 moneyflow 兜底会触发 70 次全市场 API 调用且全部返空.
-    复用 tools.storage.store.INDEX_CODES (000688.SH / 399006.SZ / 930955.CSI),
-    不在此处重复维护代码列表.
-
-    兼容: 000688.SH / 000688 / 399006.SZ / 399006 等各种带后缀形态.
-    """
-    if not code:
-        return False
-    bare = str(code).split(".")[0].strip()
-    try:
-        from ..store import INDEX_CODES
-    except Exception:
-        return False
-    for idx in INDEX_CODES:
-        if str(idx).split(".")[0] == bare:
-            return True
-    return False
-
-
-def get_fund_flow(code: str, days: int = 10) -> tuple[list[dict] | None, str]:
-    """主力资金 (fflow) - v6.2.5 改造: 优先读落盘 parquet, 缺数据兜底按天拉
-
-    数据流 (v6.2.5):
-      1. 优先 DataStore.get_fflow_history(code) 读 5 季落盘 parquet (O(1))
-      2. 缺数据 (新股/刚上市) → 兜底调 get_money_flow_by_date(today) + 内存筛
-    老的 get_money_flow(code, limit=days) 单只 API 路径已删
-
-    ⚠️ 2026-10-27 修 (0 网络约束):
-      指数 (399006 / 930955 等) 永远不在 Tushare.moneyflow 里 (该接口只覆盖个股),
-      旧逻辑会进兜底循环 range(days+10) 逐日调 get_money_flow_by_date —
-      实测 2 只指数 = 140 次全市场 API 调用, 且全部返空 (噪声).
-      违反 /t-analyze 等分析 skill 的 0 网络约束.
-      现在: 指数直接返回 NOT_APPLICABLE_INDEX, 不联网, 不进兜底.
-
-    返回值: list[dict], 字段 (兼容 fflow_factor + analysis_engine):
-      trade_date / main_net(万) / main_yi(亿) / small / mid / big / super_big / net_mf_amount(万)
-    """
-    from ..store import DataStore
-
-    # 0. 指数不走 moneyflow (Tushare.moneyflow 只覆盖个股), 直接短路, 0 网络
-    if _is_index_code(code):
-        return None, "NOT_APPLICABLE_INDEX"
-
-    # 1. 优先读落盘 parquet (5 季全市场, 已经在 v6.2.5 backfill 完)
-    try:
-        rows_parquet = DataStore.get_fflow_history(code)
-    except Exception as e:
-        logger.warning("DataStore.get_fflow_history(%s) fail: %s", code, e)
-        rows_parquet = []
-
-    if rows_parquet:
-        # 截取最近 N 天 (按 trade_date 升序 → 倒序后取 N)
-        rows_parquet.sort(key=lambda x: x.get("trade_date", ""), reverse=True)
-        rows_parquet = rows_parquet[:days]
-        rows_parquet.sort(key=lambda x: x.get("trade_date", ""))  # 还原升序
-        out = []
-        for r in rows_parquet:
-            sm_net = (float(r.get("buy_sm_amount", 0) or 0) - float(r.get("sell_sm_amount", 0) or 0))
-            md_net = (float(r.get("buy_md_amount", 0) or 0) - float(r.get("sell_md_amount", 0) or 0))
-            lg_net = (float(r.get("buy_lg_amount", 0) or 0) - float(r.get("sell_lg_amount", 0) or 0))
-            elg_net = (float(r.get("buy_elg_amount", 0) or 0) - float(r.get("sell_elg_amount", 0) or 0))
-            main_net = lg_net + elg_net
-            net_mf = float(r.get("net_mf_amount", 0) or 0)
-            out.append({
-                "trade_date": r.get("trade_date", ""),
-                "main_net": main_net,        # 万
-                "main_yi": main_net / 1e4,   # 亿 (给 fflow_factor)
-                "small": sm_net, "mid": md_net,
-                "big": lg_net, "super_big": elg_net,
-                "net_mf_amount": net_mf,     # 万
-            })
-        return out, "OK_PARQUET"
-
-    # 2. 兜底: 按天拉 (新股/缺数据场景)
-    try:
-        from .tushare import get_money_flow_by_date
-    except Exception as e:
-        return None, f"IMPORT_FAIL_{type(e).__name__}"
-
-    from datetime import datetime, timedelta
-    out = []
-    today = datetime.now()
-    for i in range(days + 10):
-        if len(out) >= days:
-            break
-        d = (today - timedelta(days=i)).strftime("%Y%m%d")
-        data, status = get_money_flow_by_date(d)
-        if not data:
-            continue
-        ts_code_prefix = code if "." in code else code
-        for r in data:
-            r_tc = r.get("ts_code", "")
-            if r_tc.split(".")[0] != ts_code_prefix.split(".")[0]:
-                continue
-            sm_net = (float(r.get("buy_sm_amount", 0) or 0) - float(r.get("sell_sm_amount", 0) or 0))
-            md_net = (float(r.get("buy_md_amount", 0) or 0) - float(r.get("sell_md_amount", 0) or 0))
-            lg_net = (float(r.get("buy_lg_amount", 0) or 0) - float(r.get("sell_lg_amount", 0) or 0))
-            elg_net = (float(r.get("buy_elg_amount", 0) or 0) - float(r.get("sell_elg_amount", 0) or 0))
-            main_net = lg_net + elg_net
-            net_mf = float(r.get("net_mf_amount", 0) or 0)
-            out.append({
-                "trade_date": r.get("trade_date", ""),
-                "main_net": main_net,
-                "main_yi": main_net / 1e4,
-                "small": sm_net, "mid": md_net,
-                "big": lg_net, "super_big": elg_net,
-                "net_mf_amount": net_mf,
-            })
-            break
-
-    if not out:
-        return None, "EMPTY"
-    return out, "OK_FALLBACK_BYDATE"
-
-
 # ============================================================
 # 4. EPS 一致预期
 # ============================================================
@@ -469,7 +347,6 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
       - stock_basic (1 次)
       - daily K 线 limit=kline_days (1 次)
       - daily_basic limit=30 (1 次, 复用给 price + shares)
-      - money_flow limit=10 (1 次, fflow)
       - fina_indicator (1 次, 给 EPS 用)
       - income (1 次, 给 EPS np_yi 用)
     v5.6 (2026-07-29): daily_basic_long 拆出 fetch_all
@@ -483,7 +360,7 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     Returns:
         {
             "code": str, "name": str, "current_price": float, "pe_ttm": float,
-            "kline": list[dict], "fflow": list[dict], "eps_table": list[dict],
+            "kline": list[dict], "eps_table": list[dict],
             "shares_yi": float, "market_cap_yi": float,
             "statuses": {...}
         }
@@ -496,10 +373,6 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
         get_daily_basic as _ts_db,
         get_weekly as _ts_weekly,
     )
-    # v6.2.5 改造: fflow 不再走 tushare.get_money_flow 单只 fetch
-    # 改走 get_fund_flow(code, days=30) → 内部优先读 DataStore 落盘 parquet (O(1))
-    # 老的 _ts_mf (无落盘单只 API) 已弃用
-
     result = {
         "code": code,
         "name": "",
@@ -507,8 +380,6 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
         "close": None,
         "pe_ttm": None,
         "kline": None,
-        "moneyflow": None,  # v5.10.17 加: Tushare.moneyflow 原始 list (给 fflow verdict 复用, 0 重拉)
-        "fflow": None,
         "eps_table": None,
         "total_share": None,
         "total_mv": None,
@@ -532,15 +403,12 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     with ThreadPoolExecutor(max_workers=4) as ex:
         fut_sb  = ex.submit(_ts_sb,   code)
         fut_day = ex.submit(_ts_daily, code, limit=kline_days)
-        # v6.2.5 改: 走 get_fund_flow (内部优先 DataStore 落盘, 0 网络)
-        fut_mf  = ex.submit(get_fund_flow, code, 30)
         fut_wk  = ex.submit(_ts_weekly, code, limit=weekly_limit)
 
         sb,  sb_s  = fut_sb.result()
         daily, d_s = fut_day.result()
-        mf,  mf_s  = fut_mf.result()
         wk,  wk_s  = fut_wk.result()
-    logger.info("[fetch_all] 4 段并发耗时 %.1fs", _t.time() - _t0)
+    logger.info("[fetch_all] 3 段并发耗时 %.1fs", _t.time() - _t0)
 
     # daily_basic 改 limit=1 (v5.10.23: 只取最新 1 行给顶层 pe_ttm/pb/total_mv 等)
     # 之前 limit=100 拉 22 年历史 5296 行 = 1253 KB/dump, 0 consumer (TrendPullback 从 market_cap_yi 顶层读)
@@ -620,26 +488,7 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     if not db and db_s == "EMPTY":
         logger.warning("daily_basic 仍 EMPTY, 跨票间隔会自动恢复 (本票不阻塞)")
 
-    # 4. money_flow (v6.2.5 改: get_fund_flow 已内部转 main_net/small/mid/big/super_big, 直接用)
-    if mf:
-        fflow_rows = []
-        for r in mf:
-            # r 字段: trade_date / main_net(万) / small / mid / big / super_big
-            fflow_rows.append({
-                "trade_date": r.get("trade_date", ""),
-                "main_net": r.get("main_net", 0),
-                "small": r.get("small", 0),
-                "mid": r.get("mid", 0),
-                "big": r.get("big", 0),
-                "super_big": r.get("super_big", 0),
-            })
-        result["fflow"] = fflow_rows
-        # v6.2.5: moneyflow 字段保留兼容性, 存已转的 fflow_rows (下游 fflow verdict 直接用)
-        result["moneyflow"] = mf
-    result["statuses"]["fflow"] = mf_s
-
-
-    # 7. weekly 周线 (2026-07-28 v5.5 加, 给 5方法×3周期 周线维度用)
+    # 4. weekly 周线 (2026-07-28 v5.5 加, 给 5方法×3周期 周线维度用)
     if wk:
         result["weekly"] = wk
         result["statuses"]["weekly"] = wk_s
@@ -705,9 +554,7 @@ def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
         "list_date": "",
         "kline": [],
         "weekly": [],
-        "moneyflow": [],
         "eps_table": [],
-        "fflow": {},
         "statuses": {},
         "fetch_time": datetime.now().isoformat(),
         "_source": "local",
@@ -1354,8 +1201,6 @@ if __name__ == "__main__":
         print(f"  {k}: [{status_emoji(v)} {v}]")
     if result["kline"]:
         print(f"K线: {len(result['kline'])} 条, 最新 close={result['kline'][-1]['close']}")
-    if result["fflow"]:
-        print(f"fflow: {len(result['fflow'])} 日, 5日净额={sum(d['main_net'] for d in result['fflow'][-5:]) / 1e4:.2f} 亿")
     if result["eps_table"]:
         print(f"EPS: {len(result['eps_table'])} 条")
         for e in result["eps_table"][:3]:

@@ -3,10 +3,10 @@ tests/integration/test_dump_analysis.py - dump + analysis 集成测试
 
 **目的**: 用户最担心 analysis 层 regression bug (2026-08-17 发现的 4 个 bug 就是这一层),
 这套测试覆盖 dump → RenderData → AnalysisEngine 的完整数据流,确保:
-  1. dump 字段不丢 (ctx.moneyflow / ctx.name / ctx.industry 等)
-  2. 6 个核心 Phase1 strategy 都跑出来 (raw dict)
-  3. fflow 主路径不显示"无数据" (有 60 条 moneyflow)
-  4. (2026-10-27: OBV strategy 已删除, 相关测试一并移除)
+  1. dump 字段不丢 (ctx.name / ctx.industry 等)
+  2. 核心 Phase1 strategy 都跑出来 (raw dict)
+  3. (2026-10-27: OBV strategy 已删除, 相关测试一并移除)
+  4. (2026-10-28: fflow 主力资金流维度整体删除, 相关测试一并移除)
   5. signals_active 替代 scene (2026-08-29 删 A/B/C/D/E 硬编码 if-else)
   6. AnalysisEngine.analyze() 单点入口能跑 (2026-08-29 修复)
 
@@ -17,10 +17,8 @@ tests/integration/test_dump_analysis.py - dump + analysis 集成测试
 - signals_active: list[str] (从 raw[*].signals 聚合, LLM 自己判)
 
 **防 regression 的关键断言**:
-- ctx.moneyflow 长度 == dump.tushare.money_flow 长度 (防 ctx 重建覆盖 bug)
 - ctx.name == dump.name (防 name 字段被默认 "" 覆盖)
-- 6 个 strategy 都在 result.raw 里
-- fflow verdict 5 档判定
+- 核心 strategy 都在 result.raw 里
 
 **运行**: pytest tests/integration/test_dump_analysis.py -v
 **跳过**: 没 dump 的票会 pytest.skip (避免污染测试结果)
@@ -90,26 +88,6 @@ class TestDataFlow:
     """dump 字段 → RenderData / RawContext 数据流不丢"""
 
     @pytest.mark.integration
-    def test_ctx_moneyflow_equals_dump_tushare_money_flow(self, analysis_data_per_code):
-        """【防 regression】ctx.moneyflow 长度 == dump.tushare.money_flow 长度
-
-        2026-08-17 bug: render_data.py:522-528 重建 ctx 漏传 moneyflow,
-        导致 FflowStrategy 拿空数据, 5 只票 fflow 全显示"无数据".
-        这个断言能立即捕捉到同类 bug.
-        """
-        for code, data in analysis_data_per_code.items():
-            dump_mf_len = len(data["dump"].get("tushare", {}).get("money_flow", []))
-            ctx_mf_len = len(data["ctx"].moneyflow)
-            assert ctx_mf_len == dump_mf_len, (
-                f"{code}: ctx.moneyflow ({ctx_mf_len}) != "
-                f"dump.tushare.money_flow ({dump_mf_len}) — "
-                f"ctx 字段被覆盖了! (render_data.py:522-528 重建 bug)"
-            )
-            # 有数据的票应该 ≥ 3 条 (fflow_factor 最低 3 条才能判)
-            if dump_mf_len > 0:
-                assert ctx_mf_len >= 3, f"{code}: moneyflow < 3, fflow_factor 没法判"
-
-    @pytest.mark.integration
     def test_ctx_name_equals_dump_name(self, analysis_data_per_code):
         """【防 regression】ctx.name == dump.name (防 name 字段被空串覆盖)
 
@@ -147,7 +125,7 @@ class TestAnalysisEngineStrategies:
         self, analysis_data_per_code, strategy_class
     ):
         """每个 Phase1 strategy 都在 result.raw 里, score 范围合理"""
-        strategy_name = strategy_class.name  # chan/wyckoff/smc/fflow/peg
+        strategy_name = strategy_class.name  # chan/wyckoff/smc/peg
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
             assert strategy_name in raw, (
@@ -156,7 +134,6 @@ class TestAnalysisEngineStrategies:
             d = raw[strategy_name] or {}
             # score 范围因 strategy 而异:
             score_ranges = {
-                "fflow":    (-2.5, 2.5),
                 "wyckoff":  (-1.5, 1.5),
                 "smc":      (-1.5, 1.5),
                 "chan":     (-1.5, 1.5),
@@ -182,66 +159,7 @@ class TestAnalysisEngineStrategies:
 
 
 # =====================================================================
-# 3. fflow 主路径: 有真实 moneyflow 数据时不能显示"无数据"
-# =====================================================================
-
-class TestFflowStrategy:
-    """fflow 主路径关键 regression 测试 (2026-08-29: 用 raw['fflow'] dict 替代 factor_scores 对象)"""
-
-    @pytest.mark.integration
-    def test_fflow_has_real_data_when_moneyflow_exists(self, analysis_data_per_code):
-        """【关键 regression】有 moneyflow 数据的票, fflow 必须有真实 verdict (不能"无数据")"""
-        for code, data in analysis_data_per_code.items():
-            dump_mf_len = len(data["dump"].get("tushare", {}).get("money_flow", []))
-            if dump_mf_len < 3:
-                pytest.skip(f"{code}: moneyflow < 3 条, 没法跑 fflow")
-            fflow = data["engine_result"].raw.get("fflow") or {}
-            assert fflow, f"{code}: fflow strategy 不在 raw"
-            # verdict 不能是"无数据"
-            summary = fflow.get("summary") or ""
-            assert summary, f"{code}: fflow.summary 空"
-            assert "无数据" not in summary, (
-                f"{code}: fflow.summary = {summary!r} — "
-                f"明明 moneyflow 有 {dump_mf_len} 条, 不应该显示'无数据'!"
-            )
-            # source 应该是 Tushare.money_flow
-            source = fflow.get("source", "")
-            assert "Tushare" in source or "dump" in source, (
-                f"{code}: fflow.source = {source!r}, 应该是 Tushare.money_flow"
-            )
-
-    @pytest.mark.integration
-    def test_fflow_verdict_in_five_tiers(self, analysis_data_per_code):
-        """fflow verdict 必须在 5 档判定里"""
-        valid_verdicts = {"🟢主力进货", "🟡偏进货", "⬜中性", "🟠偏出货", "🔴主力出货"}
-        for code, data in analysis_data_per_code.items():
-            fflow = data["engine_result"].raw.get("fflow") or {}
-            if not fflow or "无数据" in (fflow.get("summary") or ""):
-                continue
-            summary = fflow.get("summary") or ""
-            verdict_clean = summary.split("⚠️")[0].strip()  # 去掉矛盾标记
-            verdict_base = verdict_clean.split()[0] if verdict_clean else ""
-            assert any(v.startswith(verdict_base) for v in valid_verdicts), (
-                f"{code}: fflow.verdict = {summary!r}, 不在 5 档判定 {valid_verdicts}"
-            )
-
-    @pytest.mark.integration
-    def test_fflow_net_5d_reasonable(self, analysis_data_per_code):
-        """fflow_net_5d 不应该 > 100 亿 (异常值检测)"""
-        for code, data in analysis_data_per_code.items():
-            fflow = data["engine_result"].raw.get("fflow") or {}
-            net_5d = fflow.get("fflow_net_5d", 0) or 0
-            if net_5d == 0:
-                continue
-            assert -100 <= net_5d <= 100, (
-                f"{code}: fflow_net_5d = {net_5d:.2f}亿, 超出合理范围 [-100, 100]"
-            )
-
-
-# =====================================================================
-# =====================================================================
-# =====================================================================
-# 5. ctx 5 个 strategy result dict 都不空
+# 5. ctx strategy result dict 都不空
 # =====================================================================
 
 class TestCtxResults:
@@ -249,7 +167,7 @@ class TestCtxResults:
 
     @pytest.mark.integration
     @pytest.mark.parametrize("strategy_name", [
-        "fflow", "chan", "wyckoff", "smc",
+        "chan", "wyckoff", "smc",
     ])
     def test_raw_strategy_not_empty(self, analysis_data_per_code, strategy_name):
         """2026-08-29: ctx.*_result 字段已删, 改读 raw[strategy_name]"""
@@ -303,33 +221,33 @@ class TestSceneAndScore:
 
 
 # =====================================================================
-# 7. to_dict() 顶层输出: fflow 能从 analysis dict 拿到
+# 7. to_dict() 顶层输出: 已删维度不应复活
 # =====================================================================
 
 class TestAnalysisDict:
     """AnalysisResult.to_dict() 输出的 analysis dict 字段完整性"""
 
     @pytest.mark.integration
-    def test_to_dict_has_fflow_at_top_level(self, analysis_data_per_code):
-        """to_dict() 顶层必须有 fflow 字段 (render 读这里)"""
+    def test_to_dict_has_no_deleted_dimensions(self, analysis_data_per_code):
+        """已删除维度 (obv 2026-10-27 / fflow 2026-10-28) 不应出现在 to_dict 顶层"""
         for code, data in analysis_data_per_code.items():
             d = data["engine_result"].to_dict(data["ctx"])
-            assert "fflow" in d, f"{code}: to_dict() 缺 fflow 字段"
-            # 字段值是 dict, 不空
-            assert isinstance(d["fflow"], dict) and d["fflow"], f"{code}: to_dict fflow 空"
             # 2026-10-27: OBV strategy 已删除, raw 不应有 obv
             assert "obv" not in d, f"{code}: to_dict() 不应有 obv 字段"
+            # 2026-10-28: 主力资金流维度整体删除
+            assert "fflow" not in d, f"{code}: to_dict() 不应有 fflow 字段"
+            assert "moneyflow" not in d, f"{code}: to_dict() 不应有 moneyflow 字段"
 
     @pytest.mark.integration
     def test_to_dict_verdict_matches_raw(self, analysis_data_per_code):
-        """【防 regression】to_dict() fflow.verdict 必须跟 raw['fflow'].verdict 一致"""
+        """【防 regression】to_dict() chan.verdict 必须跟 raw['chan'].verdict 一致"""
         for code, data in analysis_data_per_code.items():
             d = data["engine_result"].to_dict(data["ctx"])
-            fflow_in_dict = d["fflow"]
-            fflow_in_raw = data["engine_result"].raw["fflow"]
-            assert fflow_in_dict.get("verdict") == fflow_in_raw.get("verdict"), (
-                f"{code}: to_dict.fflow.verdict ({fflow_in_dict.get('verdict')!r}) "
-                f"!= raw['fflow'].verdict ({fflow_in_raw.get('verdict')!r}) — "
+            chan_in_dict = d["chan"]
+            chan_in_raw = data["engine_result"].raw["chan"]
+            assert chan_in_dict.get("verdict") == chan_in_raw.get("verdict"), (
+                f"{code}: to_dict.chan.verdict ({chan_in_dict.get('verdict')!r}) "
+                f"!= raw['chan'].verdict ({chan_in_raw.get('verdict')!r}) — "
                 f"可能 to_dict 提升时丢了 verdict 字段"
             )
 
@@ -350,7 +268,6 @@ class TestBaselineRegression:
     - hub_low / hub_high
     - peg_真实
     - dcf_l_10
-    - main_yi_5d (fflow 5 日累计)
     - 5method (scene + total_score)
     - _elapsed
 
@@ -383,7 +300,6 @@ class TestBaselineRegression:
             "hub_low":          lambda data: data["engine_result"].raw.get("chan", {}).get("daily", {}).get("hub", {}).get("low"),
             "hub_high":         lambda data: data["engine_result"].raw.get("chan", {}).get("daily", {}).get("hub", {}).get("high"),
             "peg_真实":          lambda data: data["engine_result"].raw.get("peg", {}).get("PEG_真实"),
-            "main_yi_5d":       lambda data: data["engine_result"].raw.get("fflow", {}).get("fflow_net_5d"),
         }
         for code, data in analysis_data_per_code.items():
             if code not in baseline:

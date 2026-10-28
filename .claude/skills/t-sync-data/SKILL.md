@@ -1,6 +1,6 @@
 ---
 name: t-sync-data
-description: 唯一数据同步入口. 10 个正交 flag. **--auto 默认行为 = 智能检测 stale, 只跑需跑的 (含 ETF)**, 显式传 flag = 强跑那一项. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务/EPS/fflow"、"sync cache"、"sync 一下".
+description: 唯一数据同步入口. 7 个正交 flag. **--auto 默认行为 = 智能检测 stale, 只跑需跑的 (含 ETF)**, 显式传 flag = 强跑那一项. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务/EPS"、"sync cache"、"sync 一下".
 user-invocable: true
 allowed-tools:
   - Bash

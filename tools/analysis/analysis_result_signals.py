@@ -169,7 +169,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     bsp_raw    = raw.get("buy_sell_points", {}) or {}
     wy_raw     = raw.get("wyckoff",         {}) or {}
     smc_raw    = raw.get("smc",             {}) or {}
-    fflow_raw  = raw.get("fflow",           {}) or {}
     val_raw    = raw.get("finance",           {}) or {}  # 2026-09-08 改: ValuationStrategy → FinanceStrategy
     tech_raw   = raw.get("technical",        {}) or {}  # v6.2.8 改: TechnicalStrategy 8 指标
     p3         = wy_raw.get("3period") or {}
@@ -215,13 +214,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "smc_w_fvg_bull":    ((smc_raw.get("smc_weekly") or {}).get("nearest_fvg_bull") or {}).get("bottom"),
         "smc_w_fvg_bear":    ((smc_raw.get("smc_weekly") or {}).get("nearest_fvg_bear") or {}).get("top"),
         "smc_w_sweeps_today": _today_sweeps(smc_raw.get("smc_weekly") or {}, date),
-
-        # fflow 主力资金流 (2026-08-17 拆分: 之前 vp_verdict/vp_score 混在一起)
-        "fflow_verdict":  fflow_raw.get("verdict", "—"),
-        "fflow_score":    fflow_raw.get("score", 0),
-        "fflow_net_5d":   round(fflow_raw.get("fflow_net_5d", 0), 2),
-        "fflow_trend_3d": fflow_raw.get("trend_3d", "—"),
-
 
         # 估值 (FinanceStrategy 季报粒度, 共享最新季值)
         # v6.2.8 删: 历史表里不再有 ROC%/EY% 列 (跨季才变, 跟"## 财务数据" section 重复)

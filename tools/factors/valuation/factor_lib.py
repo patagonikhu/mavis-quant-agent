@@ -472,9 +472,9 @@ def compute_sector_overheat(kline) -> dict:
 # 5 类 14 子信号 (组合层, 调其他 5 个 factor)
 # ============================================================
 def compute_five_categories(ctx) -> dict:
-    """5 类 14 子信号 (缠论 + 止跌 + fflow + 估值)
+    """5 类 14 子信号 (缠论 + 止跌 + 估值)
 
-    输入: ctx (RawContext, 含 kline / fflow / eps_table / current_price)
+    输入: ctx (RawContext, 含 kline / eps_table / current_price)
     返回: 5 类 dict, 详见 _derive_five_categories
     """
     from tools.factors.valuation.dcf_engine import get_assumptions
@@ -487,23 +487,15 @@ def _derive_five_categories_impl(ctx) -> dict:
     """5 类 14 子信号实现 (从 analysis_engine 迁过来)
 
     类别:
-      1. 资金类: fflow 净流入 (5 档)
+      1. 资金类: (2026-10-28 删, 原 fflow 净流入)
       2. 龙头类: 涨跌幅 / 量比
       3. 估值类: PEG / DCF / Magic
       4. 止跌类: 5 日价跌 + 量能回升 (OBV 派生已删, 该分支未实现)
       5. 政策类: (保留, 暂未实现)
     """
-    from tools.factors.factor_volume import compute_fflow_factor as fflow_factor
     from tools.analysis.valuation import calc_magic_one_day  # backward compat
 
     out = {}
-
-    # 1. 资金类
-    fflow = getattr(ctx, "fflow", None) or []
-    if fflow:
-        ff = fflow_factor(fflow, window=5) or {}
-        out["fflow_5d"] = ff.get("verdict", "—")
-        out["fflow_5d_amount_yi"] = ff.get("net_amount_5d_yi", 0)
 
     # 2. 龙头类 (略, 跟 K 线走)
 

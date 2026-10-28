@@ -3,7 +3,7 @@ report_linter.py — 报告完整性校验 (v1.0, 2026-07-21)
 
 作用:
   1. 读已生成的 md 文件, 检查 22 section 是否齐全
-  2. 识别关键数据 (价格/EPS/fflow 等) 是否缺失
+  2. 识别关键数据 (价格/EPS/PEG 等) 是否缺失
   3. 输出校验报告, 追加到 md 末尾
   4. 返回 dict 给调用方, 可作为 quality gate
 
@@ -59,7 +59,6 @@ KEY_DATA_PATTERNS = {
     "价格": r"股价:\s*¥[\d.]+|当前价\s*[\|格]?\s*¥[\d.]+|¥[\d.]+\s*\|",  # 2026-07-24 改: 容忍"当前价格"和"价格"列
     "EPS 表格": r"\|\s*20\d{2}[AE]\s*\|\s*[\d.]+\s*\|",
     "MA 表格": r"\|\s*MA(5|20|60|120)\s*\|",
-    "fflow 明细": r"\d{4}-\d{2}-\d{2}\s*\|\s*[+-]?[\d.]+",
     "PEG 数值": r"PEG_真实.*(\d+|—)",  # 2026-07-24 改: 容忍 999 或 "—" (PE 缺失)
     "DCF L 数值": r"r=8%.*[\d.]+\s*亿|L\s*/\s*可达利润",
     "L/可达利润": r"L\s*/\s*可达利润\s*\|?\s*[\d.]+",
@@ -156,8 +155,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
         warnings.append("⚠️ PEG section 存在但无数值 (LLM 可能没算)")
     if not key_data["DCF L 数值"] and "DCF" in content:
         warnings.append("⚠️ DCF L section 存在但无数值")
-    if not key_data["fflow 明细"] and "fflow" in content:
-        warnings.append("⚠️ fflow section 存在但无明细")
 
     # 2026-07-24: 逻辑校验 (升级, 之前只查"存在"不查"合理")
     # 检查"价格 vs 中枢"距离, 防止"位置: 下方⚠️" 但实际是"跌穿" 的语义模糊
@@ -205,7 +202,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
         ("未完成", "占位符未完成"),
         ("⚠️ 数据状态", "显式占位符"),
         # === 2026-07-23: 缠论补充 3 个实算前的占位符 (commit 59d660c 已修) ===
-        ("见 fflow 段, Tushare.money_flow 真数据", "量价占位符 (应实算)"),
         ("见大盘背景段", "多市场共振 占位符 (应实算)"),
         ("N/A (Sina 60分 K线 3795 根硬上限)", "SMC-OB 占位符 (应实算)"),
         # === 2026-08-15: 实算失败的硬性残行 (factor_history bug 期间 render 留下的脏数据) ===
@@ -272,25 +268,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
                     f"但只有 {len(tables)} 个表格 (期望 ≥ {expected} 个: "
                     f"每子 section 至少缠论详情 + 最近走段)"
                 )
-
-    # === 升级: fflow 数据源标注检测 ===
-    if "fflow" in content.lower() or "主力" in content:
-        has_source_label = "Tushare.money_flow" in content or "Tushare 真实" in content
-        if not has_source_label:
-            warnings.append("⚠️ fflow 段无数据源标注 (Tushare.money_flow)")
-
-    # === 新增: fflow 数值合理性检测 (单位 bug 检测) ===
-    # 正常单股 fflow 5 日净额 ≤ ±100 亿, 超过 500 亿必是单位错误
-    m_fflow_total = re.search(r"5日主力净额[：:]\s*([+-]?[\d,.]+)\s*亿", content)
-    if m_fflow_total:
-        try:
-            val = abs(float(m_fflow_total.group(1).replace(",", "")))
-            if val > 500:
-                warnings.append(
-                    f"🔴 fflow 数值异常: {m_fflow_total.group(1)} 亿 (超过 500 亿, 疑似单位 bug — 应是 {val/1e4:.2f} 亿)"
-                )
-        except ValueError:
-            pass
 
     # === 新增: section 顺序检测 (基于 report_schema.REPORT_SECTIONS) ===
     try:

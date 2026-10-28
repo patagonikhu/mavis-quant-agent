@@ -75,8 +75,6 @@ def _scan_one_worker(args):
             kline=kline,
             weekly=weekly,
             eps_table=[],
-            fflow={},
-            moneyflow=[],
             current_price=kline[-1]['close'],
             market_cap_yi=0,
             industry='ETF',

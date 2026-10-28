@@ -19,7 +19,6 @@
   --stock-basic   股票基础信息 (行业/名称, 30 天 1 次)
   --financials    财务 5 季度 (fina_indicator_vip 全市场)
   --eps           EPS 机构预期 (datacenter.consensus, 限 watchlist)
-  --fflow         主力资金流历史 (按天全市场, ~13 分钟, 按季存 parquet, 2026-10-27 起随 --auto 跑)
   --cache         signal_cache 缓存 (analysis_cache.db, 跑回测前)
   --ths           THS 同花顺概念板块 K 线 (按 ths_whitelist, 默认 3 年回填)
   --etf           ETF 场内基金 (fund_basic 月级 + fund_daily 日增量, 默认随 --auto 跑)
@@ -40,13 +39,7 @@ ETF (2026-10-09 加, 2026-10-14 接入 auto):
   首次 bootstrap (~2 年历史): ~517 次请求, 之后每天 1 次.
   白名单: config/etf_whitelist.json (默认 15 只, 可自定义).
 
-fflow 新鲜度 (2026-10-27 加):
-  --fflow 从"只在手动指定时跑"改成"随 --auto 检测 stale 自动补" —
-  之前 fflow parquet 落后 K 线 29 天都没人管, 分析层仍按旧数据计票.
-  判定口径: 读 parquet metadata 的 done_dates 最大值, 落后 >= 1 天即 stale (跟 stk_factor/kline 一致).
-  ⚠️ 耗时 ~13 分钟 (5 季 trade_date x 1 API, 30/分限频), --auto 命中 fflow stale 时会跑这段.
-  分析层侧配套: tools/factors/factor_volume.py::compute_fflow_factor 返回 status
-  (OK / STALE / NO_DATA / NOT_APPLICABLE_INDEX), STALE 不参与综合判定投票.
+2026-10-28 删 --fflow (主力资金流整体删除, 详见 docs/fflow-removal-assessment.md)
 
 网络请求统计 (2026-09-18 加):
   每次 sync 末尾自动输出本次实际调用的 tushare API 次数 (按 API 分组, 调用次数降序):
@@ -246,14 +239,14 @@ def action_ths(years_back: int = 3) -> int:
 
 
 # v6.2.4 加: stk_factor_pro 替代 daily_basic, 17 列 (含 ps/dv_ratio/free_float_turnover)
-# v6.2.5 改造: done 进度塞 parquet metadata (跟 fflow 平行), 不再单独维护 .stk_factor_progress.json
+# v6.2.5 改造: done 进度塞 parquet metadata, 不再单独维护 .stk_factor_progress.json
 # STK_FACTOR_FIELDS 搬到 caches/stk_factor_history.py, 这里只保留兼容性 import alias (供 action_status 读 max date)
 
 
 def action_stk_factor(force: bool = False) -> int:
     """重拉 5 季 stk_factor_pro (17 列, 写到 data/history/stk_factor/)
 
-    行为 (v6.2.5 改造: 跟 action_fflow 一样, done 进度塞 parquet metadata, 不用 json):
+    行为 (v6.2.5 改造: done 进度塞 parquet metadata, 不用 json):
       1. 删旧 5 季 stk_factor parquet (force=True 强制, False 智能)
       2. 拉 5 季 trade_date x 1 API = ~8 分钟 (30/分限频, sleep 2.0秒)
       3. **每 10 个 trade_date 就把当季累积的 rows 写盘 + 更新 metadata** (崩了不丢数据)
@@ -297,7 +290,7 @@ def action_stk_factor(force: bool = False) -> int:
 
     # 3) force 模式才删旧 5 季 parquet
     # 2026-10-14 改: 季度列表由 quarters_since(start_date, today) 动态算, 季度切换 0 维护
-    from .caches.fflow_history import quarters_since
+    from .caches.quarter_utils import quarters_since
     all_quarters = quarters_since(start_date.strftime("%Y%m%d"), today.strftime("%Y%m%d"))
     if force:
         STK_FACTOR_DIR.mkdir(parents=True, exist_ok=True)
@@ -309,7 +302,7 @@ def action_stk_factor(force: bool = False) -> int:
         done = set()  # force 重置
 
     # 4) 按 trade_date 逐个拉, 按季累积
-    from .caches.fflow_history import _quarter_of as _q_of  # 复用同一函数
+    from .caches.quarter_utils import _quarter_of as _q_of  # 复用同一函数
     from .caches.stk_factor_history import read_quarter_done_dates
     quarter_data: dict[str, list[dict]] = {q: [] for q in all_quarters}
     # 修 bug: 先读旧 parquet metadata, 避免覆盖历史 done_dates
@@ -479,160 +472,6 @@ def action_eps(codes: list[str]) -> int:
     return ok
 
 
-# v6.2.5 加: fflow 落盘到 data/history/fflow_history/, 跟 stk_factor 平行
-# 9 字段精简版 (大单+特大单 amount + net_mf_amount, 不存 vol/中单)
-# v6.2.5 优化: done 进度塞 parquet metadata (key=b'done_dates', JSON-encoded),
-#              不再单独维护 .fflow_history_progress.json
-
-
-def action_fflow(force: bool = False) -> int:
-    """主力资金流历史 — 按天全市场拉, 按季存 parquet (v6.2.5 改造)
-
-    行为:
-      1. 跨 5 季 parquet metadata 加载 done dates (断点续跑, 不依赖外部 json)
-      2. 拉 5 季 trade_date x 1 API ≈ 13 分钟 (30/分限频, sleep 2.0秒)
-      3. **每 10 个 trade_date 就把当季累积的 rows 写盘 + 更新 metadata** (崩了不丢数据)
-      4. 4 季按 trade_date 写季度 parquet: 25Q3 25Q4 26Q1 26Q2 26Q3
-         每季文件 metadata.b'done_dates' = JSON 数组 of YYYYMMDD (本季已完成)
-
-    9 字段 (FFLOW_HISTORY_FIELDS, 不存 vol/中单):
-      ts_code, trade_date,
-      buy_sm_amount, sell_sm_amount,
-      buy_lg_amount, sell_lg_amount,
-      buy_elg_amount, sell_elg_amount,
-      net_mf_amount
-
-    v6.2.5 改造后: 单一入口 (按天全市场), 不再有 --codes 兼容路径
-    老的 --codes X --fflow 单只 API 已删 (走 DataStore.get_fflow_history 读 parquet)
-    """
-    from .sources.tushare import get_money_flow_by_date
-    from .caches.fflow_history import (
-        write_fflow_quarter,
-        read_all_done_dates,
-        FFLOW_HISTORY_FIELDS,
-        FFLOW_HISTORY_DIR,
-    )
-
-    import time
-    from datetime import datetime
-
-    # 1) 加载进度 (从 5 季 parquet metadata 合并, 0 外部文件)
-    done = read_all_done_dates()
-    print(f"  📋 续跑: 已完成 {len(done)} 个 trade_date (从 parquet metadata)")
-
-    # 2) 算要拉的 trade_date 列表 (5 季, 2025Q3 ~ 2026Q3)
-    start_date = datetime(2025, 7, 1)
-    today = datetime.now()
-    from .sources.tushare import _safe_call
-    cal_data, _ = _safe_call(
-        "trade_cal", exchange="SSE", is_open="1",
-        start_date=start_date.strftime("%Y%m%d"),
-        end_date=today.strftime("%Y%m%d"),
-        fields="cal_date",
-    )
-    all_dates = sorted([c["cal_date"] for c in (cal_data or [])])
-    pending = [d for d in all_dates if d not in done]
-    print(f"  📅 总交易日: {len(all_dates)}  已完成: {len(done)}  待拉: {len(pending)}")
-
-    if not pending and not force:
-        print(f"  ✅ 全部完成, 无需重拉")
-        return 0
-
-    # 3) 删旧 5 季 fflow_history parquet (force 重拉语义)
-    # 2026-10-14 改: 季度列表由 quarters_since 动态算, 季度切换 0 维护
-    from .caches.fflow_history import quarters_since
-    all_quarters = quarters_since(start_date.strftime("%Y%m%d"), today.strftime("%Y%m%d"))
-    if force:
-        FFLOW_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-        for q in all_quarters:
-            old = FFLOW_HISTORY_DIR / f"fflow_{q}.parquet"
-            if old.exists():
-                old.unlink()
-                print(f"  🗑️  删旧 fflow_history/{old.name}")
-        done = set()  # force 重置
-
-    # 4) 按 trade_date 逐个拉, 按季累积
-    from .caches.fflow_history import _quarter_of, read_quarter_done_dates
-    quarter_data: dict[str, list[dict]] = {q: [] for q in all_quarters}
-    # 修 bug: 先读旧 parquet metadata, 避免 done_dates 覆盖历史 (跟 stk_factor 同 bug)
-    quarter_done: dict[str, set[str]] = {
-        q: read_quarter_done_dates(q) for q in all_quarters
-    }
-    t0 = time.time()
-    n_total = 0
-    for i, d in enumerate(pending, 1):
-        data, status = get_money_flow_by_date(d)
-        # 修 bug: EMPTY 时重试 1 次 (避免 tushare 限流假阳)
-        if not data and status == "EMPTY":
-            time.sleep(5)
-            data, status = get_money_flow_by_date(d)
-        if not data:
-            print(f"  ⚠️ {d}: 拉取失败 ({status})")
-            # 计入 done 避免下次无限 retry, 但不写 parquet metadata
-            done.add(d)
-            continue
-        q = _quarter_of(d)
-        quarter_data[q].extend(data)
-        quarter_done[q].add(d)
-        done.add(d)
-        n_total += len(data)
-        # 进度: 每 10 个或最后一个, 把当季已完成的 row + done 写盘 (崩了不丢)
-        if i % 10 == 0 or i == len(pending):
-            elapsed = time.time() - t0
-            speed = i / elapsed if elapsed > 0 else 0
-            eta = (len(pending) - i) / speed if speed > 0 else 0
-            print(f"  📡 [{i}/{len(pending)}] {d}: {len(data)} 只  "
-                  f"速度 {speed:.2f}/s  ETA {eta/60:.1f} 分钟")
-            # 每 10 个就把所有非空季落盘 (append 模式: 重读旧文件 + merge)
-            for q, rows in quarter_data.items():
-                if not rows:
-                    continue
-                # 重读旧 parquet (如果存在), 合并
-                p = FFLOW_HISTORY_DIR / f"fflow_{q}.parquet"
-                if p.exists():
-                    try:
-                        old_df = duckdb.execute(
-                            f"SELECT * FROM read_parquet('{p}')"
-                        ).df()
-                        new_df = pd.DataFrame(rows)
-                        all_df = pd.concat([old_df, new_df], ignore_index=True)
-                        all_df = all_df.drop_duplicates(subset=["ts_code", "trade_date"])
-                        rows_to_write = all_df.to_dict("records")
-                    except Exception:
-                        rows_to_write = rows
-                else:
-                    rows_to_write = rows
-                # 写盘: rows + 当季 done dates
-                write_fflow_quarter(q, rows_to_write, done_dates=sorted(quarter_done[q]))
-        time.sleep(2.0)  # 30/分限频
-
-    # 5) 最终再写一次 (保险: 确保最新 done 落盘)
-    import pandas as pd
-    import duckdb
-    for q, rows in quarter_data.items():
-        if not rows:
-            continue
-        p = FFLOW_HISTORY_DIR / f"fflow_{q}.parquet"
-        if p.exists():
-            try:
-                old_df = duckdb.execute(f"SELECT * FROM read_parquet('{p}')").df()
-                new_df = pd.DataFrame(rows)
-                all_df = pd.concat([old_df, new_df], ignore_index=True)
-                all_df = all_df.drop_duplicates(subset=["ts_code", "trade_date"])
-                rows_to_write = all_df.to_dict("records")
-            except Exception:
-                rows_to_write = rows
-        else:
-            rows_to_write = rows
-        write_fflow_quarter(q, rows_to_write, done_dates=sorted(quarter_done[q]))
-        print(f"  ✅ 写 fflow_history/fflow_{q}: {len(rows_to_write)} 行, "
-              f"done={len(quarter_done[q])}, "
-              f"{len(FFLOW_HISTORY_FIELDS.split(','))} 列")
-
-    print(f"  🎉 完成: {n_total} 行 总耗时 {(time.time()-t0)/60:.1f} 分钟")
-    return n_total
-
-
 def action_cache(codes: list[str]) -> int:
     """signal_cache 缓存 (analysis_cache.db) — 分析结果缓存, 跑回测前必须先有
 
@@ -725,17 +564,6 @@ def print_data_freshness_summary() -> None:
             print(f"  EPS (机构预期)     : 空")
     except Exception as e:
         print(f"  EPS (机构预期)     : ❌ {type(e).__name__}")
-    # fflow_history 走 data/history/fflow_history/fflow_*.parquet (v6.2.5 新, 跟 stk_factor 平行)
-    try:
-        if FFLOW_HISTORY_DIR.exists() and list(FFLOW_HISTORY_DIR.glob("fflow_*.parquet")):
-            df = duckdb.execute(
-                f"SELECT MAX(trade_date) FROM read_parquet('{FFLOW_HISTORY_DIR}/fflow_*.parquet')"
-            ).fetchone()
-            print(f"  fflow (资金流)     : {df[0] if df and df[0] else '—'}")
-        else:
-            print(f"  fflow (资金流)     : 未拉过")
-    except Exception as e:
-        print(f"  fflow (资金流)     : ❌ {type(e).__name__}")
     # stock_basic 特殊: 没有 trade_date, 看 mtime
     sb_path = Path("data/history/stock_basic/stock_basic.parquet")
     print(f"  stock_basic (静态) : mtime {_file_mtime(sb_path)}")
@@ -757,14 +585,12 @@ def detect_stale_flags() -> dict[str, bool]:
     # --auto 检测范围: 盯这 6 个 flag
     # eps / cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
     # 2026-10-14 加 etf: 之前 SKILL.md 写"auto 含 etf"但实际没接, 导致 ETF 段天天需要手动 sync
-    # 2026-10-27 加 fflow: fflow parquet 陈旧会让分析层按旧数据计票 (系统性看空偏差), 必须能自动发现
     flags = {
         "kline": False,         # K线距今天 > 1 天
         "stock_basic": False,   # 距上次 > 30 天
         "financials": False,    # 缺最新季
         "stk_factor": False,    # stk_factor 距今天 > 1 天 (2026-09-22 修 v6.2.4 重构漏接 auto)
         "etf": False,           # ETF K线距今天 > 1 天 (2026-10-14 加, SKILL.md 描述早就有但 sync.py 没接)
-        "fflow": False,         # fflow 距今天 > 1 天 (2026-10-27 加, 之前完全不在 auto 检测范围)
     }
 
     # 1. K线 (每天必跑, 距今天 > 1 天就拉)
@@ -881,22 +707,6 @@ def detect_stale_flags() -> dict[str, bool]:
     except Exception:
         flags["etf"] = True  # 异常保守拉
 
-    # 6. fflow (2026-10-27 加: 之前 fflow 不在 --auto 检测范围, 导致 parquet 陈旧没人管)
-    #    实测 fflow 落后 K线 29 天时, 分析层仍按"当前主力动向"计票 —
-    #    38 只核心票里 14 只 fflow 判出货, 13 只被同时点的量价指标判为偏进货 (系统性看空偏差).
-    #    判定口径跟 stk_factor 一致: 读 parquet metadata 的 done_dates 最大值.
-    try:
-        from .caches.fflow_history import read_all_done_dates as _ff_done
-        fdone = _ff_done()
-        if not fdone:
-            flags["fflow"] = True  # 没数据, 必拉
-        else:
-            f_last = max(fdone)
-            f_last_dt = datetime.strptime(f_last, "%Y%m%d")
-            if (today - f_last_dt).days >= 1:
-                flags["fflow"] = True
-    except Exception:
-        flags["fflow"] = True  # 异常保守拉
 
     return flags
 
@@ -950,11 +760,6 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
         from .store import sync_etf_basic, sync_etf_incremental
         sync_etf_basic()
         sync_etf_incremental()
-    if flags["fflow"]:
-        # 2026-10-27 加: fflow 陈旧会让分析层按旧数据计票, 必须能自动补
-        # ⚠️ 耗时: 5 季 trade_date x 1 API ≈ 13 分钟 (30/分限频)
-        print("  [5/7] --fflow (auto 检测到 stale, 约 13 分钟)")
-        action_fflow(force=False)
     print_data_freshness_summary()
     return 0
 
@@ -1002,8 +807,6 @@ def main():
                          help="财务 5 季度 (fina_indicator_vip 全市场)")
     actions.add_argument("--eps", action="store_true",
                          help="EPS 机构预期 (datacenter.consensus)")
-    actions.add_argument("--fflow", action="store_true",
-                         help="主力资金流历史 (按天全市场, 按季存 parquet)")
     actions.add_argument("--cache", action="store_true",
                          help="signal_cache 缓存 (analysis_cache.db)")
     actions.add_argument("--ths", action="store_true",
@@ -1084,7 +887,7 @@ def main():
     # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
     any_sync_flag = any([
         args.kline, args.stk_factor, args.stock_basic, args.financials,
-        args.eps, args.fflow, args.cache, args.all_data, args.ths, args.etf,
+        args.eps, args.cache, args.all_data, args.ths, args.etf,
     ])
     if not any_sync_flag:
         print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")
@@ -1101,7 +904,7 @@ def main():
         args.stock_basic = True
         args.financials = True
 
-    # 按 7 个 flag 调用 (顺序: kline → stock_basic → financials → eps → fflow → cache → meta)
+    # 按 flag 调用 (顺序: kline → stock_basic → financials → eps → cache → meta)
     if args.kline:
         print("\n[1/7] --kline (增量 K 线)")
         action_kline(codes)
@@ -1121,11 +924,6 @@ def main():
     if args.eps:
         print("\n[4/7] --eps (机构预期)")
         action_eps(codes)
-    if args.fflow:
-        print("\n[5/7] --fflow (主力资金历史, 按天全市场拉+按季存)")
-        # v6.2.5 改: 单一入口 (按天全市场), 不再支持 --codes 单只
-        # 老的 --codes X --fflow 单只逻辑已删, 走 DataStore.get_fflow_history 读 parquet
-        action_fflow(force=False)
     if args.cache:
         print("\n[6/7] --cache (signal_cache)")
         action_cache(codes)
@@ -1144,7 +942,7 @@ def main():
 
     # 全部 flag 都没开 + 也不是 --status → 给个友好提示
     if not any([args.kline, args.stock_basic, args.financials,
-                args.eps, args.fflow, args.cache, args.ths, args.etf]):
+                args.eps, args.cache, args.ths, args.etf]):
         print("\n💡 没指定任何行为, 看 --help 选 flag")
         print("   最常用: python -m tools.sync --all-data")
 

@@ -8,8 +8,8 @@ tools/factors/__init__.py - 因子库入口 (2026-09-09 简化)
   - 全部改成纯函数, 统一在 3 个文件:
     - factor_basic.py  (基础通用: ma / returns / position / 3 层仓位 / alpha)
     - factor_risk.py   (风控: 止盈止损 / 退出信号 / 监控触发)
-    - factor_volume.py (量能: fflow)
     - valuation/factor_lib.py (估值: ROC/EY/PEG/DCF/Magic 等 11 个)
+  - 2026-10-28 删: factor_volume.py (量能: fflow) — 主力资金流维度整体删除
   - 保留框架: utils.py (K 线处理) + kline_arrays.py (滑动窗口)
   - 保留专用: chan/ smc/ wyckoff/ (各自保留 class Factor 风格)
   - 保留: tools/factors/valuation/dcf_engine.py (DCF 假设工具)

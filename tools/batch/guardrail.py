@@ -661,7 +661,7 @@ def check_parquet(args):
     # sqlite3 直连 data/ 目录 (signal_cache 业务 db 不算违规, 是 OK)
     SQLITE_PATTERN = re.compile(r"sqlite3\.connect\s*\(\s*['\"](?:data/|['\"][^'\"]*signal_cache)")
     # sqlite3 直连但 key 是 signal_cache 走白名单 (业务缓存, OK)
-    SQLITE_OK = re.compile(r"signal_cache|fflow_history|eps_consensus|analysis_cache")
+    SQLITE_OK = re.compile(r"signal_cache|eps_consensus|analysis_cache")
 
     scan_root = ROOT / args.path
     violations = []

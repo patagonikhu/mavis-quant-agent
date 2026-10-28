@@ -462,8 +462,8 @@ def _calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
     t0 = _t.time()
     try:
         from tools.storage.store import DataStore
-        # 2026-09-22 改: kline_only=True 跳过 fflow/eps 拉取
-        #   只跑 Technical, 不需要 fflow (Tushare moneyflow 兜底产生 276 次网络)
+        # 2026-09-22 改: kline_only=True 跳过 eps 拉取
+        #   只跑 Technical, 不需要额外数据源
         #   eps 也无需 (估值 4 列由 backfill_roc_ey_cache.py 单写)
         ctx = DataStore.get_ctx(code, kline_only=True)
         if not ctx.kline:

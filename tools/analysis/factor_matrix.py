@@ -142,7 +142,6 @@ def _period_detail(
     bsp: dict,                  # 买卖点 (含 0买/1买/1买⭐/2买/3买/1卖/1卖⭐/2卖/3卖/action)
     wyckoff: dict,              # 威科夫 (含 stage, stage_name, confidence)
     smc: dict,                  # SMC (含 nearest_bull_ob, nearest_bear_ob, nearest_fvg_bull, nearest_fvg_bear, recent_sweeps)
-    vp: dict,                   # 量价 (含 fflow_net_3d/5d/30d, verdict, trend_*)
     res: dict,                  # 多市场共振 (含 direction, stock_ret_5d, sector_ret_5d)
     current_price: float,
 ) -> dict:
@@ -191,22 +190,6 @@ def _period_detail(
         'nearest_fvg_bear': _format_fvg(smc.get('nearest_fvg_bear', {})) if smc else None,
     }
 
-    # === 量价 ===
-    # 2026-08-17 fix: 之前只抽 fflow 字段
-    volume_price_detail = {
-        'verdict': vp.get('verdict', '—') if vp else '—',
-        'fflow_3d': vp.get('fflow_net_3d', 0) if vp else 0,
-        'fflow_5d': vp.get('fflow_net_5d', 0) if vp else 0,
-        'fflow_30d': vp.get('fflow_net_30d', 0) if vp else 0,
-        'fflow_60d': vp.get('fflow_net_60d', 0) if vp else 0,
-        'trend_3d': vp.get('trend_3d', '—') if vp else '—',
-        'trend_30d': vp.get('trend_30d', '—') if vp else '—',
-        # 2026-10-27 加: fflow 数据新鲜度 (STALE 时不参与综合判定投票)
-        'fflow_status':   vp.get('status', 'OK') if vp else 'OK',
-        'fflow_data_date': vp.get('data_date', None) if vp else None,
-        'fflow_stale_days': vp.get('stale_days', None) if vp else None,
-    }
-
     # === 多市场共振 ===
     # v5.10.2 改: 各周期读对应 stock_ret 字段 (5d 有 stock_ret_5d, 1d/20d 用 stock_ret)
     # 之前只读 stock_ret_5d, 1d/20d 周期永远 fallback 到 0 (bug 修)
@@ -217,7 +200,7 @@ def _period_detail(
     }
 
     # === 综合判定 ===
-    composite = _composite_verdict(chan_detail, wy_detail, smc_detail, volume_price_detail, res_detail, prices, current_price)
+    composite = _composite_verdict(chan_detail, wy_detail, smc_detail, res_detail, prices, current_price)
 
     return {
         'level': level,
@@ -225,7 +208,6 @@ def _period_detail(
         'chan': chan_detail,
         'wyckoff': wy_detail,
         'smc': smc_detail,
-        'volume_price': volume_price_detail,
         'resonance': res_detail,
         'composite': composite,
     }
@@ -279,25 +261,26 @@ def _format_fvg(fvg: dict) -> Optional[dict]:
     }
 
 
-def _composite_verdict(chan, wy, smc, vp, res, prices, current_price) -> dict:
+def _composite_verdict(chan, wy, smc, res, prices, current_price) -> dict:
     """
-    综合判定: 因子等权投票 (2026-09-09 改: 删 chan 隐式 3 票优势, 5 类各 1 票)
+    综合判定: 因子等权投票 (2026-09-09 改: 删 chan 隐式 3 票优势, 4 类各 1 票)
 
     原设计: chan 给 1buy_trend/1buy/2buy 3 票, wy/smc/vp/res 各 1 票 (chan 3/8 隐式权重)
-    改后: 5 类 (chan/wyckoff/smc/vp/res) 各 1 票等权, 决策更分散
+    改后: 4 类 (chan/wyckoff/smc/res) 各 1 票等权, 决策更分散
 
-    ⚠️ 2026-10-27 修 2 个 bug (实测 38 只核心票发现):
-      1. chan 票恒为 0 — 旧代码读 chan.get('1buy_trend') / chan.get('1buy'),
-         但 _period_detail 产出的 chan_detail 只有 'stage'/'beichi'/'hub'/'buy_sell_points',
-         真正的买卖点在 buy_sell_points 嵌套里 (key 带 emoji 前缀, 如 '🟢1买' / '🔴1卖').
-         结果: 缠论票从来没投过 (605189/300699/002475 都有真实 1买, chan_buy 仍为 False).
-      2. 陈旧 fflow 参与投票 — fflow parquet 落后 K 线 29 天时, 旧代码仍按"当前主力动向"计票.
-         实测 14 只票 fflow 判出货, 其中 13 只被同时点 (K线派生, 数据新鲜) 的量价指标判为偏进货.
-         方向完全相反 = 数据陈旧造成的系统性看空偏差, 不是市场信号.
+    ⚠️ 2026-10-27 修 chan 票 bug (实测 38 只核心票发现):
+      旧代码读 chan.get('1buy_trend') / chan.get('1buy'),
+      但 _period_detail 产出的 chan_detail 只有 'stage'/'beichi'/'hub'/'buy_sell_points',
+      真正的买卖点在 buy_sell_points 嵌套里 (key 带 emoji 前缀, 如 '🟢1买' / '🔴1卖').
+      结果: 缠论票从来没投过 (605189/300699/002475 都有真实 1买, chan_buy 仍为 False).
+      修法: chan 票改从 buy_sell_points 读 (兼容 emoji 前缀), 修好后 chan 票才真正生效.
 
-    修法:
-      - chan 票改从 buy_sell_points 读 (兼容 emoji 前缀), 修好后 chan 票才真正生效
-      - vp 票按 fflow 数据状态: STALE / NO_DATA / NOT_APPLICABLE_INDEX 一律不投票
+    ⚠️ 2026-10-28 删 vp (量价) 票:
+      原 5 类投票含 fflow 票, 但 fflow parquet 落后 K 线 29 天时旧代码仍按"当前主力动向"计票.
+      实测 14 只票 fflow 判出货, 其中 13 只被同时点 (K线派生, 数据新鲜) 的量价指标判为偏进货.
+      方向完全相反 = 数据陈旧造成的系统性看空偏差, 不是市场信号.
+      27 只核心票对照实验: 删 fflow 票后 3 只判定变化, 全部是 fflow 制造的假建仓/假减仓.
+      现为 4 类票 (chan/wyckoff/smc/res), 阈值同步下调一档 (>=3 / >=2).
     """
     # === chan 票 (2026-10-27 修: 从 buy_sell_points 读, 兼容 emoji 前缀) ===
     bsp = chan.get('buy_sell_points') or {}
@@ -319,27 +302,18 @@ def _composite_verdict(chan, wy, smc, vp, res, prices, current_price) -> dict:
         or chan.get('2sell', '—') != '—'
     )
 
-    # === vp 票 (2026-10-27 修: 陈旧/无数据不投票) ===
-    vp_verdict = str(vp.get('verdict', ''))
-    vp_status = str(vp.get('status', 'OK'))
-    vp_valid = vp_status in ('OK', '') and '数据陈旧' not in vp_verdict
-    vp_buy  = 1 if (vp_valid and '进货' in vp_verdict) else 0
-    vp_sell = 1 if (vp_valid and '出货' in vp_verdict) else 0
-
-    # 底部信号计数 (5 类各 1 票)
+    # 底部信号计数 (4 类各 1 票)
     bottom_signals = sum([
         1 if chan_buy else 0,
         1 if wy.get('stage') == 'Accumulation' else 0,
         1 if smc.get('nearest_bull_ob') or smc.get('nearest_fvg_bull') else 0,
-        vp_buy,
         1 if '跑赢' in str(res.get('direction', '')) or '正' in str(res.get('direction', '')) else 0,
     ])
-    # 顶部信号计数 (5 类各 1 票)
+    # 顶部信号计数 (4 类各 1 票)
     top_signals = sum([
         1 if chan_sell else 0,
         1 if wy.get('stage') == 'Distribution' else 0,
         1 if smc.get('nearest_bear_ob') or smc.get('nearest_fvg_bear') else 0,
-        vp_sell,
         1 if '跑输' in str(res.get('direction', '')) or '负' in str(res.get('direction', '')) else 0,
     ])
 
@@ -387,7 +361,7 @@ def build_factor_matrix(
     """
     构建 因子 × 3 周期 综合矩阵 (2026-08-17 改名, 之前叫 build_5method_matrix)
 
-    "5 方法" 历史命名已过时: 实际是 6 因子 (wyckoff/smc/chan/resonance/peg/dcf/fflow)
+    "5 方法" 历史命名已过时: 实际是 4 因子 (wyckoff/smc/chan/resonance)
     现在统一叫 "因子矩阵", 跟 AnalysisEngine Strategy 命名对齐.
 
     Args:
@@ -429,15 +403,6 @@ def build_factor_matrix(
         res_key = {'weekly': 'resonance_weekly', 'daily': 'resonance'}[level]
         res = s5.get(res_key) or s5.get('resonance') or {}
 
-        # 量价: 2026-10-27 OBV 删除后, 量价维度只剩 fflow
-        # 老字段 s5.get('volume_price') 已废弃, 直接读 fflow
-        fflow_dict = s5.get('fflow') or {}
-        vp = {
-            **fflow_dict,                                  # 主力净流入字段 (fflow_net_3d/5d/10d/20d/30d/60d, verdict, trend_*)
-            # 兼容老 s5.get('volume_price') 调用方
-            '_fflow': fflow_dict,
-        }
-
         matrix[level] = _period_detail(
             level=level,
             weight=weight,
@@ -446,7 +411,6 @@ def build_factor_matrix(
             bsp=bsp_period,
             wyckoff=wyckoff,
             smc=smc,
-            vp=vp,
             res=res,
             current_price=current_price,
         )
@@ -531,9 +495,6 @@ def render_factor_matrix_md(matrix_result: dict) -> str:
     md.append("| **SMC (OB/FVG/Sweep)** | "
               f"{_md_smc(m['weekly']['smc'])} | "
               f"{_md_smc(m['daily']['smc'])} |")
-    md.append("| **量价 (fflow)** | "
-              f"{_md_volume_price(m['weekly']['volume_price'])} | "
-              f"{_md_volume_price(m['daily']['volume_price'])} |")
     md.append("| **多市场共振** | "
               f"{_md_res(m['weekly']['resonance'])} | "
               f"{_md_res(m['daily']['resonance'])} |")
@@ -613,24 +574,6 @@ def _md_smc(smc: dict) -> str:
     if smc.get('total_sweeps', 0) > 0:
         parts.append(f"扫流×{smc['total_sweeps']}")
     return ' / '.join(parts) if parts else '无'
-
-
-def _md_volume_price(vp: dict) -> str:
-    """量价行 markdown (2026-10-27: OBV 删除后只剩 fflow)
-
-    显示: fflow 3d/30d 主力净流入 + fflow verdict (+ 数据陈旧标记)
-    2026-10-27 加: fflow 数据陈旧时在行尾标 ⚠️陈旧(N天), 避免读者把旧数据当当前主力动向
-    """
-    v3 = vp.get('fflow_3d', 0) or 0
-    v30 = vp.get('fflow_30d', 0) or 0
-    verdict = vp.get('verdict', '—')[:16]  # fflow verdict
-    # 2026-10-27: fflow 陈旧标记 (STALE 时不参与综合判定投票, 报告里要看得见)
-    stale_part = ""
-    if vp.get('fflow_status') == 'STALE':
-        _sd = vp.get('fflow_stale_days')
-        _dd = vp.get('fflow_data_date') or ''
-        stale_part = f" / ⚠️陈旧{(_sd if _sd is not None else '?')}天({_dd})"
-    return f"3d:{v3:+.1f}亿 / 30d:{v30:+.1f}亿 / {verdict}{stale_part}"
 
 
 def _md_res(res: dict) -> str:

@@ -124,7 +124,6 @@ MODEL_INFERENCE = [
     ('SMC', ['Demand', 'Supply', 'BOS', 'CHoCH', 'OB']),
     ('威科夫', ['威科夫', 'A累积', 'B弹簧', 'C测试', 'D突破', 'E顶部', '阶段A', '阶段B', '阶段C', '阶段D', '阶段E']),
     ('PEG', ['PEG_', 'L_可达', 'L/可达', 'PEG<', 'PEG>']),
-    ('fflow', ['fflow_', '主力_', '主力净', '5日净', '进货', '出货']),
     ('T框架', ['T+', 'T-', 'T_']),
     ('板块', ['板块', 'sector']),
 ]
@@ -417,7 +416,7 @@ def main():
     p_st = sub.add_parser('stats', help='统计信号胜率')
     p_st.add_argument('--code', help='按 code 过滤')
     p_st.add_argument('--type', help='按 signal_type 过滤')
-    p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/SMC/威科夫/PEG/fflow/T框架/板块) 过滤')
+    p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/SMC/威科夫/PEG/T框架/板块) 过滤')
     p_st.add_argument('--window', type=int, help='只统计最近 N 天')
     p_st.set_defaults(func=cmd_stats)
 

@@ -27,9 +27,9 @@ sync       store       analysis_engine   render_data   report_renderer
 
 | 层 | 文件 | 职责 | 禁止 |
 |---|---|---|---|
-| L1 Sync | `tools/storage/sync.py` | 8 flag: --kline/--stk-factor/--stock-basic/--financials/--eps/--fflow/--cache/--meta, 默认 --auto | — |
+| L1 Sync | `tools/storage/sync.py` | 7 flag: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto | — |
 | L1 Store | `tools/storage/store.py` | DataStore I/O, 25+ 公开方法 | ❌ 网络 |
-| L2 Analysis | `tools/analysis/analysis_engine.py` | 5 strategy (chan/wyckoff/smc/fflow/finance) | ❌ 网络, ❌ 直读 db |
+| L2 Analysis | `tools/analysis/analysis_engine.py` | 4 strategy (chan/wyckoff/smc/finance) | ❌ 网络, ❌ 直读 db |
 | L2 容器 | `tools/analysis/render_data.py` | RenderData dataclass | ❌ 网络 |
 | L3 Render | `tools/render/report_renderer.py` | RenderData → Markdown | ❌ 网络 |
 
@@ -41,20 +41,16 @@ sync       store       analysis_engine   render_data   report_renderer
 
 ---
 
-## 🔴 fflow 数据新鲜度 (2026-10-27)
+## 🔴 已删除的量能维度 (2026-10-27 / 2026-10-28)
 
-fflow (主力资金流) 是"量价"维度唯一来源, 但 parquet 靠 sync 落盘, **落后 K 线是常态**。
-
-| 状态 | 含义 | 行为 |
+| 维度 | 删除时间 | 原因 |
 |---|---|---|
-| `OK` | 落后 ≤ 7 天 | 正常参与综合判定投票 |
-| `STALE` | 落后 > 7 天 | **不投票**, verdict 加 `⚠️数据陈旧(N天)` |
-| `NO_DATA` | 无 fflow 数据 | 不投票 |
-| `NOT_APPLICABLE_INDEX` | 指数 (无个股资金流) | 不投票, 0 网络 |
+| **OBV** | 2026-10-27 | 实测普遍负超额: 多头排列 -2.38%, 底背离 -1.60%, 剥掉藏其中的"离 MA120 距离"成分后胜率 48.5% < 基准 50.1% |
+| **主力资金流 (fflow)** | 2026-10-28 | parquet 落后 K 线 29 天时, 38 只核心票里 14 只判"出货", 其中 13 只被同时点的量价指标判为"偏进货" —— 方向完全相反, 是陈旧数据造成的系统性看空偏差, 不是市场信号。27 只核心票对照实验: 删 fflow 票后 3 只判定变化, 全部是 fflow 制造的假建仓/假减仓 |
 
-**实测依据**: fflow 落后 29 天时, 38 只核心票里 14 只判"出货", 其中 13 只被同时点的量价指标判为"偏进货" —— 方向完全相反, 是陈旧数据造成的系统性看空偏差, 不是市场信号。
+详见 `docs/fflow-removal-assessment.md` / `docs/obv-removal-record.md`。
 
-> ⚠️ OBV 已于 2026-10-27 完全删除 (实测普遍负超额: 多头排列 -2.38%, 底背离 -1.60%, 剥掉藏其中的"离 MA120 距离"成分后胜率 48.5% < 基准 50.1%)。详见 `docs/fflow-removal-assessment.md`。
+> 删除后综合判定为 **4 类等权投票** (chan / wyckoff / smc / 多市场共振), 建仓阈值 `bottom_signals >= 2`, 减仓阈值 `top_signals >= 2`。
 
 ---
 
@@ -74,12 +70,11 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 顺序 | 内容 | 优先级 |
 |---|---|---|
 | 1️⃣ | 缠论三要素 (中枢位置 + 背驰 + 止跌) | 🥇 一等 |
-| 2️⃣ | 4 个缠论补充策略 (SMC-OB + 量价 fflow + 威科夫 + 多市场共振) | 🥇 一等 |
+| 2️⃣ | 3 个缠论补充策略 (SMC-OB + 威科夫 + 多市场共振) | 🥇 一等 |
 | 3️⃣ | 市场状态定量判断 + 方法优先级矩阵 | 🥈 二等 |
 | 4️⃣ | 大盘 + 美股背景 | 🥈 可选 |
 | 5️⃣ | PEG / DCF L (基本面对冲, 必须在 1️⃣2️⃣ 之后) | 🥉 二等 |
-| 6️⃣ | 主力 fflow (Tushare.money_flow 真值) | 🥉 验证 |
-| 7️⃣ | 三层仓位 + 买卖点 (1买/2买/3买/1卖/2卖/3卖) | 综合 必须 |
+| 6️⃣ | 三层仓位 + 买卖点 (1买/2买/3买/1卖/2卖/3卖) | 综合 必须 |
 
 详细 22 section / 因子矩阵 / 数据源 fallback: 见 `tools/render/report_schema.py`。
 

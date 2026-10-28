@@ -157,7 +157,6 @@ def compute_price_position(df, asof_date: str = None, window: int = 20) -> dict:
 def compute_three_layer_position(
     price: float = 0,
     chan_d: dict = None,
-    fflow: dict = None,
     peg: float = 0,
     chan_signals: dict = None,
 ) -> dict:
@@ -166,19 +165,14 @@ def compute_three_layer_position(
     输入:
       - price: 当前价
       - chan_d: 日线中枢结果
-      - fflow: 主力资金
       - peg: PEG 估值
       - chan_signals: 缠论固化信号
     输出: dict (市况/三级别中枢/位置/4 层仓位/止损阶梯/目标阶梯)
+
+    2026-10-28 删 fflow 参数 (主力资金流已整体删除)
     """
     chan_d = chan_d or {}
-    fflow = fflow or {}
     chan_signals = chan_signals or {}
-
-    # 当前 fflow 数据
-    fflow_real = (fflow.get("data_columns") or {}).get("real") or []
-    fflow_today = fflow_real[0] if fflow_real else {}
-    fflow_main = fflow_today.get("main_yi", 0) if fflow_today else 0
 
     # 日线中枢
     hub = chan_d.get("hub", {}) if chan_d else {}
@@ -245,7 +239,7 @@ def compute_three_layer_position(
             "进场": "60分底背驰 + 站上 ¥" + f"{price * 1.05:.2f}",
             "止损": f"¥{price * 0.97:.2f}",
             "目标": t1,
-            "已触发": bot_60,  # 2026-09-09 删 fflow_main > 0 触发
+            "已触发": bot_60,
         },
         "中仓": {
             "仓位": "20-25%",
@@ -308,7 +302,7 @@ def compute_alpha_ga_001(df: pd.DataFrame) -> pd.Series:
       原公式 6 个原子含 obv_norm, 现在 5 个 — part2 的 "- obv_norm" 项已移除.
       因子身份因此改变 (不再等价于 2026-07-27 GA 挖掘出的表达式),
       历史 IC 数值 (0.077-0.671) 不再适用, 需重新评估.
-      移除理由: OBV 实测负超额 (详见 docs/fflow-removal-assessment.md).
+      移除理由: OBV 实测负超额 (详见 docs/obv-removal-record.md).
     """
     closes = df['close']
     volumes = df['volume']

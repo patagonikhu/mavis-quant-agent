@@ -15,10 +15,10 @@ allowed-tools:
 
 ```bash
 # 单信号
-... --signal Spring / Accumulation / fflow:强进货 / 1买 / 顶背驰
+... --signal Spring / Accumulation / 趋势1买 / 顶背驰
 
 # 组合 (AND)
-... --signal Spring --signal fflow:强进货
+... --signal Spring --signal 趋势1买
 
 # 关键参数
 ... --days 30 --threshold 10  # 持仓 30 天, 涨幅阈值 10%
@@ -34,7 +34,7 @@ allowed-tools:
 - **0 网络**, 走 `DataStore` + `AnalysisEngine.analyze_history()` 入口 (不绕过)
 - **5 年 backfill**: 跑前先 `python -m tools.storage.sync --cache`
 - **缓存命中**: 7 只持仓 × 1250 天 × 7 strategy ≈ 3.5 分钟 (无 cache) / 秒级 (有 cache)
-- **信号类别**: 威科夫子事件 / 缠论买卖点 / 威科夫阶段 / fflow 5 档 / 背驰
+- **信号类别**: 威科夫子事件 / 缠论买卖点 / 威科夫阶段 / 背驰
 
 ## 输出
 

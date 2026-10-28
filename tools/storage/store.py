@@ -56,10 +56,6 @@ STOCK_BASIC_PARQUET = STOCK_BASIC_DIR / "stock_basic.parquet"
 FIN_DIR = Path("data/history/financials")
 FIN_DIR.mkdir(parents=True, exist_ok=True)
 
-# v6.2.5 加: 主力资金历史 (按天拉全市场, 按季存 parquet, 跟 stk_factor 平行)
-FFLOW_HISTORY_DIR = Path("data/history/fflow_history")
-FFLOW_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-
 # 2026-10-09 加: ETF 场内基金 (fund_basic + fund_daily 走 tushare)
 ETF_HISTORY_DIR = Path("data/history/etf")
 ETF_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
@@ -1544,14 +1540,11 @@ class DataStore:
     def get_ctx(cls, code: str, kline_only: bool = False, limit: int = 0):
         """返回 RawContext（L1 数据层唯一入口）。
 
-        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps/fflow。
+        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps。
         limit: K线条数上限，0=使用 config 默认值（kline_days）。
-
-        v6.2.5 改: moneyflow 走 get_fund_flow (内部优先 DataStore 落盘 parquet)
-                       老的 eastmoney.fetch_all 串行拉已删
         """
         from tools.analysis.analysis_engine import RawContext
-        from .sources.eastmoney import _synthesize_weekly, get_fund_flow
+        from .sources.eastmoney import _synthesize_weekly
 
         kline  = cls.get_kline(code, limit=limit)
         weekly = _synthesize_weekly(kline)
@@ -1560,7 +1553,7 @@ class DataStore:
         if kline_only:
             return RawContext(
                 kline=kline, weekly=weekly,
-                eps_table=[], fflow={}, moneyflow=[],
+                eps_table=[],
                 current_price=close, market_cap_yi=0.0,
                 industry="", code=code, name="",
             )
@@ -1573,15 +1566,11 @@ class DataStore:
         # 修复: 之前直接 db.get("total_mv") 拿"万" 当"亿" 存, 导致 EY 算成天文数字
         total_mv_yi = (db.get("total_mv") or 0.0) / 1e4
 
-        # v6.2.5: moneyflow 走 get_fund_flow (优先读 5 季落盘 parquet, 0 网络)
-        # 取 60 天覆盖 fflow_factor 3/5/10/20/30 周期
-        mf, _ = get_fund_flow(code, days=60)
-
         # 2026-10-08 删: cyq_perf (胜率/中位成本, 跟 RSI/MA 同步, 没新信息)
 
         return RawContext(
             kline=kline, weekly=weekly,
-            eps_table=eps, fflow={}, moneyflow=mf or [],
+            eps_table=eps,
             current_price=db.get("close") or close,
             market_cap_yi=total_mv_yi,
             industry=sb.get("industry", ""),
@@ -1604,20 +1593,6 @@ class DataStore:
             空 list = 该 code 没数据 / 全部拉取失败
         """
         return read_financials(code, lookback_quarters)
-
-    @classmethod
-    def get_fflow_history(cls, code: str) -> list[dict]:
-        """单只票全季 fflow (主力资金) 历史, 按 trade_date 升序 (v6.2.5 加)
-
-        9 字段: ts_code/trade_date + 6 个 amount (sm/lg/elg 买/卖) + net_mf_amount
-        数据源: data/history/fflow_history/fflow_{YYYYQN}.parquet
-        走 caches/fflow_history.read_fflow_history (跨 5 季 parquet glob)
-
-        Returns:
-            list[dict] 按 trade_date 升序, 空 list = 没数据
-        """
-        from .caches.fflow_history import read_fflow_history
-        return read_fflow_history(code)
 
     # 2026-10-08 删: DataStore.get_cyq_perf_history (cyq 整体下线)
 
@@ -1810,29 +1785,6 @@ class DataStore:
                 return pd.DataFrame()
             return duckdb.execute(
                 f"SELECT * FROM read_parquet('{FIN_DIR}/*.parquet', union_by_name=true)"
-            ).df()
-        except Exception:
-            import pandas as pd
-            return pd.DataFrame()
-
-    @classmethod
-    def load_all_fflow_history(cls) -> "pd.DataFrame":
-        """5 季全市场 fflow (主力资金) 历史 1 次 SQL (v6.2.5 加)
-
-        Returns:
-            DataFrame: 5 季合并, 9 列 (ts_code/trade_date + 6 amount + net_mf_amount)
-            空 DataFrame = 没拉过 / --fflow 没跑
-        """
-        try:
-            import duckdb
-            import pandas as pd
-            if not FFLOW_HISTORY_DIR.exists():
-                return pd.DataFrame()
-            files = list(FFLOW_HISTORY_DIR.glob("fflow_*.parquet"))
-            if not files:
-                return pd.DataFrame()
-            return _conn().execute(
-                f"SELECT * FROM read_parquet('{FFLOW_HISTORY_DIR}/fflow_*.parquet')"
             ).df()
         except Exception:
             import pandas as pd

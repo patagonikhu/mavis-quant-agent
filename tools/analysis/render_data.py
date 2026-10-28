@@ -100,33 +100,6 @@ def _mech_exit_signals(signals_5, ma_table) -> dict:
 # 工具函数 (2026-07-25 加)
 # ============================================================
 
-# fflow 单位校验阈值: 亿元单位不可能 > 1e6 (=100 万亿)
-# 超过即单位错, 标 0 + warn (幂等修复: 不让错误数据流到下游)
-_FFLOW_UNIT_MAX = 1e6
-
-
-def _unit_safe(value, field_name: str = "fflow") -> float:
-    """
-    fflow 字段单位校验 (幂等修复: data_fetcher 之前 main_net 是万元,
-    analysis_data 错当成亿用, 偏大 1e4 倍 — 显式校验拦截)
-
-    任何 abs(val) > 1e6 视为单位错误, 返回 0 + 警告
-    """
-    try:
-        v = float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-    if abs(v) > _FFLOW_UNIT_MAX:
-        # 单位错 (常见: 万元被当亿), 幂等: 不抛错, 标 0 + warn
-        import warnings
-        warnings.warn(
-            f"{field_name} 单位异常: abs({v}) > {_FFLOW_UNIT_MAX:.0e} 亿, 标 0",
-            stacklevel=2,
-        )
-        return 0.0
-    return v
-
-
 def _dict_to_rows(value) -> list:
     """
     2026-07-25 加: 老 data 工具 存的 north_flow 格式是 dict-of-lists
@@ -211,17 +184,6 @@ class KLineBar:
 
 
 @dataclass
-class FflowRow:
-    date: str
-    main_net: float
-    small: float
-    mid: float
-    big: float
-    super_big: float
-    derived: bool = False  # True = 派生数据 (非直接数据源)
-
-
-@dataclass
 class MaRow:
     period: str
     value: float
@@ -257,9 +219,6 @@ class RenderData:
 
     ma_table: list[MaRow] = field(default_factory=list)
     ma_status: Optional[DataStatus] = None
-
-    fflow_data: list[FflowRow] = field(default_factory=list)
-    fflow_status: Optional[DataStatus] = None
 
     # ===== 技术指标 (8 个, 从 K线自动算) =====
     technical: Optional[dict] = None  # {macd, rsi, kdj, boll, atr, vol_ma, summary}
@@ -516,19 +475,6 @@ class RenderData:
             eps_status=DataStatus(name="eps", status="OK" if eps_table else "EMPTY"),
             # 季度财务 (最近 4 季) — 直接从 FinanceStrategy 结果取
             quarterly_finance=(result.raw.get("finance") or {}).get("quarterly") or [],
-            # fflow_data: 从 ctx.moneyflow 转 FflowRow
-            # v6.2.5 改: ctx.moneyflow 来自 eastmoney.get_fund_flow, 字段是 main_net(万)/main_yi(亿)/small/mid/big/super_big
-            # 之前误用 buy_lg_amount/sell_lg_amount 老字段 → MD 永远"无数据"
-            fflow_data=[FflowRow(
-                date=k.get("trade_date",""),
-                main_net=float(k.get("main_net", 0)) / 1e8,  # 万 → 亿
-                small=float(k.get("small", 0)) / 1e8,
-                mid=float(k.get("mid", 0)) / 1e8,
-                big=float(k.get("big", 0)) / 1e8,
-                super_big=float(k.get("super_big", 0)) / 1e8,
-                derived=False,
-            ) for k in (ctx.moneyflow or [])],
-            fflow_status=DataStatus(name="fflow", status="OK" if (ctx.moneyflow or []) else "EMPTY"),
             technical=technical,
             technical_status=DataStatus(name="technical",
                                         status="OK" if technical and "error" not in technical else "EMPTY"),
@@ -606,33 +552,8 @@ class RenderData:
         """
         signals: list[dict] = []
 
-        # 1) 量价 (fflow, 子信号独立)
-        # 2026-10-27 加: fflow 陈旧时不触发 (score 照算供追溯, 但不标 triggered)
-        #    依据: 38 只核心票实测, fflow 落后 29 天时 14 只判出货, 13 只被同时点的量价指标判偏进货
-        fflow = raw.get("fflow", {})
-        fflow_status = fflow.get("status", "OK")
-        fflow_stale = fflow_status == "STALE"
-        fflow_sd = fflow.get("stale_days")
-        fflow_dd = fflow.get("data_date") or "—"
-        _ff_note = ""
-        if fflow_stale:
-            _ff_note = f" ⚠️数据陈旧({fflow_sd}天, 数据日 {fflow_dd})"
-        elif fflow_status == "NOT_APPLICABLE_INDEX":
-            _ff_note = " (指数无主力资金流)"
-        elif fflow_status == "NO_DATA":
-            _ff_note = " (无 fflow 数据)"
-        signals.append({
-            "category": "量价", "name": "fflow_score", "score": 8 if fflow.get("score", 0) > 0 else 3,
-            "triggered": fflow.get("score", 0) > 0 and not fflow_stale,
-            "reason": (f"fflow 评分 {fflow.get('score', 0)}" if fflow.get("score", 0) > 0 else "fflow 评分 ≤0") + _ff_note,
-        })
-        # 资金 (fflow 5 日分) — 同理, 陈旧不触发
-        fflow_5d = fflow.get("fflow_net_5d", 0)
-        signals.append({
-            "category": "资金", "name": "fflow_5d", "score": 7 if fflow_5d > 0 else 3,
-            "triggered": fflow_5d > 0 and not fflow_stale,
-            "reason": (f"5 日净流入 {fflow_5d:.2f}亿" if fflow_5d > 0 else "5 日净流出") + _ff_note,
-        })
+        # 2026-10-28 删: 量价 + 资金 两个子信号
+        #   主力资金流维度已整体删除, 这两项无数据源
         # 龙头/政策/情绪: 数据未接入, 标记
         for cat in ["龙头", "政策", "情绪"]:
             signals.append({
@@ -705,7 +626,7 @@ class RenderData:
         s5_summary = f"{len(self.signal_5cat.get('signals', []))} 子信号" if self.signal_5cat else "—"
         line("5类信号", self.signal_5cat_status, s5_summary)
         # 2026-09-09 删: 策略 status 行 (走缠论, 不再单独展示 5 strategy 投票)
-        # 2026-08-31: fflow section 已停用 (CLAUDE.md 板块适用性限制), 不展示
+        # 2026-08-31: 资金流 section 已停用 (CLAUDE.md 板块适用性限制), 不展示
         line("EPS", self.eps_status, f"{len(self.eps_table)} 条")
 
         report["缠论"] = ("✅" if self.chan_data else "❓", "OK" if self.chan_data else "未计算")

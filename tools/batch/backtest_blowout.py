@@ -50,7 +50,7 @@ def main():
     p = argparse.ArgumentParser(description="blowout 历史回测")
     # 2026-10-14 改: 默认窗口动态算 (start=5 年前季度, end=最新已落盘季)
     from datetime import datetime
-    from tools.storage.caches.fflow_history import _quarter_of, latest_disclosed_quarter
+    from tools.storage.caches.quarter_utils import _quarter_of, latest_disclosed_quarter
     _end_q = latest_disclosed_quarter() or _quarter_of(datetime.now().strftime("%Y%m%d"))
     _5y_ago = _quarter_of((datetime.now().replace(year=datetime.now().year - 5)).strftime("%Y%m%d"))
     p.add_argument("--start", default=_5y_ago, help=f"起始季度 (默认 {_5y_ago}, 5 年前)")

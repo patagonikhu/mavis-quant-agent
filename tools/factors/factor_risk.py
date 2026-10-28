@@ -9,7 +9,7 @@ tools/factors/factor_risk.py — 风控类 factor 库 (纯函数, 2026-09-09 统
 公开 API (3 个):
   - compute_stop_profit_loss  止盈 3 层 + 止损 4 档
   - compute_exit_signals      5 类 14 子信号退出判定 (缠论+估值+主力三维)
-  - compute_monitor_triggers  监控触发点 (缠论+fflow+中枢+事件)
+  - compute_monitor_triggers  监控触发点 (缠论+中枢+事件)
 """
 from __future__ import annotations
 
@@ -74,24 +74,22 @@ def compute_stop_profit_loss(price: float = 0, chan_signals: dict = None) -> dic
 
 
 def compute_exit_signals(
-    fflow: dict = None,
     eps_table: list = None,
     current_price: float = 0,
     sector_ma20_dev: float = 0,
     chan_signals: dict = None,
 ) -> dict:
-    """退出判定 (2026-09-09 改: 纯缠论, 删 PEG/L_E3/fflow 加权汇总)
+    """退出判定 (2026-09-09 改: 纯缠论, 删 PEG/L_E3/fflow 加权汇总; 2026-10-28 删 fflow 参数)
 
     决策走 缠论 1卖/2卖/3卖/顶背/止跌反转, 退出信号纯缠论判定.
-    估值/主力净额 作为参考字段保留, 不再进绿/红信号汇总.
+    估值 作为参考字段保留, 不再进绿/红信号汇总.
 
     输出字段 (dict):
       - 60分_底背/60分_顶背/止跌信号/缠论综合: 缠论固化信号
       - 威科夫阶段: 阶段判定
-      - PEG/L_E3/tushare_fflow/板块_MA20_偏离: 参考字段 (不汇总)
+      - PEG/L_E3/板块_MA20_偏离: 参考字段 (不汇总)
       - 退出建议: 纯缠论 verdict
     """
-    fflow = fflow or {}
     eps_table = eps_table or []
     chan_signals = chan_signals or {}
 
@@ -114,9 +112,6 @@ def compute_exit_signals(
     chan_verdict = chan_signals.get("缠论综合", "—")
     wyckoff = chan_signals.get("威科夫阶段", "—")
 
-    # === 4. fflow 当日 (保留参考) ===
-    fflow_today = ((fflow.get("data_columns") or {}).get("real") or [{}])[0]
-    fflow_main = fflow_today.get("main_yi", 0) if fflow_today else 0
 
     # === 5. 2026-09-09 改: 退出判定纯缠论 ===
     # 1卖/2卖/3卖 = 卖出, 1买/2买/3买 = 持仓, 顶背 = 警惕减仓
@@ -140,7 +135,6 @@ def compute_exit_signals(
         "L_可达": 0.67 if peg < 1.0 else 1.0,  # 参考字段
         "vs_MA120": ma120_dev,                # 参考字段
         "板块_MA20_偏离": sector_ma20_dev,    # 参考字段
-        "tushare_fflow": round(fflow_main, 2),  # 参考字段
         "退出建议": verdict,
     }
 
@@ -148,7 +142,6 @@ def compute_exit_signals(
 def compute_monitor_triggers(
     price: float = 0,
     chan_d: dict = None,
-    fflow: dict = None,
     events: list = None,
     code: str = "",
     chan_signals: dict = None,
@@ -161,7 +154,6 @@ def compute_monitor_triggers(
       - 时间触发: list (events 参数, v6.2 起调用方传)
     """
     chan_d = chan_d or {}
-    fflow = fflow or {}
     events = events or []
     chan_signals = chan_signals or {}
 

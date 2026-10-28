@@ -10,15 +10,14 @@ report_schema.py — 报告格式定义 (单一真源, 不可变)
 
 CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
-  2️⃣ 4 个缠论补充策略 (SMC-OB+量价+威科夫+多市场共振) — 一等公民
+  2️⃣ 3 个缠论补充策略 (SMC-OB+威科夫+多市场共振) — 一等公民
   3️⃣ 大盘+美股背景 — 二等 (可跳过)
   5️⃣ PEG/DCF L (基本面对冲) — 二等, 必须在 1️⃣2️⃣ 之后
-  6️⃣ 主力 fflow — 验证
-  7️⃣ 三层仓位+买卖点 — 综合 (止盈/止损/退场/仓位/监控)
+  6️⃣ 三层仓位+买卖点 — 综合 (止盈/止损/退场/仓位/监控)
 
 refresh 字段说明 (2026-07-24 加入, 方案 B 核心):
   "REGEN"    — 每次 enhance 强制重新生成 (数据驱动, 不保留旧内容)
-               适用: 实时数据 (fflow/MA/技术指标), 或之前有单位 bug 的 section
+               适用: 实时数据 (MA/技术指标), 或之前有单位 bug 的 section
   "PRESERVE" — 保留原报告内容, 只在缺失时补充占位符
                适用: LLM 填充的分析 (缠论三要素/四问/T框架)
 """
@@ -278,14 +277,6 @@ REPORT_SECTIONS = [
         "required": True,
         "refresh": "REGEN",
     },
-    {
-        "id": "ts_money_flow",
-        "title": "💹 个股资金流向 (Tushare moneyflow, 真正的 fflow)",
-        "category": "📋",
-        "render": "render_ts_money_flow",
-        "required": True,
-        "refresh": "REGEN",
-    },
     # === Linter (末尾, 每次重算) ===
     {
         "id": "linter",
@@ -349,7 +340,7 @@ def validate_schema() -> dict:
             last_cat = max(last_cat, cur)
 
     # 3. 关键 section 必填 (chan_supplement 已于 7-29 废弃, 用 method_matrix 替代)
-    # 2026-08-31: fflow section 已停用 (量价维度噪音大), 不再 required
+    # 2026-08-31: fflow section 已停用; 2026-10-28: 主力资金流维度整体删除
     required = {"method_matrix", "peg", "dcf"}
     missing = required - set(ids)
     if missing:

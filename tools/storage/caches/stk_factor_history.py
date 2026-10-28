@@ -1,7 +1,7 @@
 """
 tools/storage/caches/stk_factor_history.py — stk_factor 历史本地缓存 (v6.2.5 加)
 
-跟 fflow_history 平行, 同样的 parquet metadata 模式:
+跟其他 parquet cache 平行, 同样的 parquet metadata 模式:
   stk_factor    → data/history/stk_factor/{YYYYQN}.parquet
   done 进度塞进 parquet schema.metadata, key=b'done_dates', JSON-encoded
 
@@ -27,7 +27,7 @@ import pyarrow.parquet as pq
 from ..store import STK_FACTOR_DIR
 
 # 16 列, 跟 tushare.py::get_stk_factor_by_date 返回的 fields 一致
-# (从 sync.py::STK_FACTOR_FIELDS 搬过来, 跟 fflow_history 平行)
+# (从 sync.py::STK_FACTOR_FIELDS 搬过来)
 STK_FACTOR_FIELDS = (
     "ts_code,trade_date,close,"
     "pe,pe_ttm,pb,ps,ps_ttm,"
@@ -59,7 +59,7 @@ def write_stk_factor_quarter(quarter: str, rows: list[dict], done_dates: list[st
 
     2026-10-14 修: 写盘时先读旧 parquet rows, 合并新 rows 再写.
     修前: 每次 sync 把"本次增量"覆盖旧文件, 历史 done 日期的数据被丢.
-    修后: append 语义, 跟 fflow_history.write_fflow_quarter 一致.
+    修后: append 语义, 跟其他 quarterly cache 一致.
     """
     import pandas as pd
     if not rows:
