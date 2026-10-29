@@ -29,6 +29,9 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --no-full-report
 
 # 只扫 watchlist
 bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
+
+# 刷新模式 (不清空目录, 刷新已有 + 补充新增 + 留档标注)
+bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --refresh
 ```
 
 > 默认过滤链(全开):`exclude-st` → `exclude-pe 60` → `with-quality basic` (营收/净利 yoy>0) + `ROE>5%` + `毛利率>20%` → `净负债/市值<0.5`.
@@ -76,6 +79,33 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `_filter_by_pe` → `_filter_by_quality` (+ROE/毛利率) → `_filter_by_leverage` → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
 2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/`
 
+### step 2 两种模式 (2026-10-29 加 `--refresh`)
+
+| 模式 | 行为 | 用 flag |
+|---|---|---|
+| **默认** | 先清空 `docs/wyckoff-a2m/`,再生成命中的详报 | (无) |
+| **刷新** | **不清空**, 分 3 类处理 | `--refresh` |
+
+`--refresh` 的 3 类处理:
+
+| 类 | 定义 | 处理 |
+|---|---|---|
+| **A. 刷新** | 目录里已有 **且** 本次仍命中 | 重新生成 (数据更新到最新交易日) + 文件头标 🟢「本票为本次 A→M 扫描命中」 |
+| **B. 补充** | 目录里没有 **且** 本次命中 | 新生成 + 同上标记 |
+| **C. 留档** | 目录里已有 但本次**未命中** | 也刷新数据 + 文件头标 ⚠️「本票本次 A→M 扫描未命中 (曾命中过, 现留档)」 |
+
+最终目录 = 旧文件 ∪ 本次命中, **不删任何历史票**。
+
+配套 flag:
+- `--keep-stale` — C 类不刷新数据, 只在文件头标注 (默认会刷新)
+- `--stale-only` — 只跑 C 类, 不跑本次命中
+
+> ⚠️ **为什么不用 `--no-clean` 代替 `--refresh`**:
+> `--no-clean` 是完全不碰旧文件, 那些票的行情数据会永远停在生成那天, 跟同目录其他文件不同步。
+> `--refresh` 会把 C 类的数据也刷到最新, 只是标个状态区分。
+
+> 标记块用 HTML 注释包裹 (`<!-- A2M_STATUS hit -->`), 幂等 —— 重复跑不会累积, 旧标记先删再插。
+
 ## V13 严判 (代码 = 单一事实源, 见 wyckoff_a2m_scan.py::_process_one)
 
 - `当前 K 线 stage == Markup` (必须)
@@ -90,7 +120,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 - 单只扫描瓶颈 = `scan_sub_events` 内部 9 detector Python loop 序列 (GIL 锁死, ThreadPool 0 加速)
 - mp.spawn 详报 1.5-2.6x 加速(起步小批量 ≤8 收益最高, worker 太多被启动开销拖累)
 - ⚠️ **不能用 mp.fork** (duckdb fork 后死锁)
-- 默认清空 `docs/wyckoff-a2m/` 旧 md; `--no-clean` 跳过
+- 默认清空 `docs/wyckoff-a2m/` 旧 md; `--no-clean` 跳过; `--refresh` 改成"刷新+补充+留档"
 - 详报目录跟 watchlist 完全隔离,不污染自选
 - 数据日期 = parquet 最新 trade_date,不是 wall clock
 

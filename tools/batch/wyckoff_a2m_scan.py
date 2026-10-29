@@ -395,6 +395,84 @@ def _worker(code: str, df: pd.DataFrame, lookback: int) -> dict | None:
 
 # 2026-10-17 加: multiprocessing worker for /t-analyze 详报
 # 用 forkserver 启动 (mac 比 fork 稳), GIL 跨进程解锁 4-8x 加速
+def _scan_existing_reports(sub_dir: Path) -> dict:
+    """扫 docs/<subdir>/ 已有的详报 md, 返回 {code: {"path": Path, "name": str}}
+
+    文件名格式: analyze-{code6}-{中文名}.md
+    code 从文件名第 2 段切 (兼容名字里有 '-' 的情况, 如 '双星-新材')
+
+    2026-10-29 加: 支撑 --refresh 模式 (不清空, 刷新已有 + 补充新增)
+    """
+    out: dict = {}
+    if not sub_dir.exists():
+        return out
+    for p in sorted(sub_dir.glob("analyze-*.md")):
+        stem = p.stem                     # analyze-001219-青岛食品
+        parts = stem.split("-", 2)        # ['analyze', '001219', '青岛食品']
+        if len(parts) < 3:
+            continue
+        code = parts[1]
+        if not (len(code) == 6 and code.isdigit()):
+            continue
+        out[code] = {"path": p, "name": parts[2]}
+    return out
+
+
+def _stamp_report_status(md_path: Path, status: str, hit_note: str = "") -> bool:
+    """在详报文件头插入本次 A→M 扫描状态标记 (2026-10-29 加)
+
+    status: 'hit' (本次命中) / 'stale' (曾命中, 本次未命中)
+    返回是否成功写入
+
+    做法: 在标题行 (第一行 '# ...') 后面插入一段引用块, 幂等 ——
+    已有标记时先删掉旧的再插新的, 避免重复跑越积越多
+    """
+    if not md_path or not Path(md_path).exists():
+        return False
+    p = Path(md_path)
+    try:
+        lines = p.read_text(encoding="utf-8").split("\n")
+    except Exception:
+        return False
+
+    # 1. 删掉旧的标记块 (幂等)
+    cleaned = []
+    skip_block = False
+    for ln in lines:
+        if ln.strip().startswith("<!-- A2M_STATUS"):
+            skip_block = True
+            continue
+        if skip_block:
+            if ln.strip() == "<!-- /A2M_STATUS -->":
+                skip_block = False
+            continue
+        cleaned.append(ln)
+
+    # 2. 插新的
+    if status == "hit":
+        block = [
+            "<!-- A2M_STATUS hit -->",
+            f"> 🟢 **本票为本次 A→M 扫描命中**{hit_note}",
+            "<!-- /A2M_STATUS -->",
+        ]
+    else:
+        block = [
+            "<!-- A2M_STATUS stale -->",
+            "> ⚠️ **本票本次 A→M 扫描未命中** (曾命中过, 现留档) — "
+            "可能已被 PE/质量/杠杆过滤, 或威科夫阶段已离开 Markup。数据已刷新到最新交易日。",
+            "<!-- /A2M_STATUS -->",
+        ]
+
+    # 3. 插到标题行之后 (第一行是 '# ...')
+    insert_at = 1 if cleaned and cleaned[0].startswith("#") else 0
+    out = cleaned[:insert_at] + [""] + block + cleaned[insert_at:]
+    try:
+        p.write_text("\n".join(out), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 def _report_worker(task: tuple[str, str, str]) -> tuple[str, bool, str, float]:
     """单只详报 worker (跑在子进程)
 
@@ -560,7 +638,17 @@ def _print_effective_conditions(args) -> None:
     full_report_on = args.full_report and not args.no_full_report
     print(f"    汇总 md             : {args.output if write_md_on else '❌ 不落盘 (--no-write-md)'}")
     print(f"    详报                : {'✅ 跑 (前 %d 只)' % args.report_top if full_report_on else '❌ 不跑 (--no-full-report)'}")
-    if full_report_on:
+    if args.refresh:
+        print(f"    详报模式            : 🔄 --refresh (不清空!)")
+        print(f"                         A. 刷新 = 已有 且 本次命中 → 重新生成")
+        print(f"                         B. 补充 = 没有 且 本次命中 → 新生成")
+        if args.keep_stale:
+            print(f"                         C. 留档 = 已有 但本次未命中 → 不刷新, 只标注 ⚠️")
+        else:
+            print(f"                         C. 留档 = 已有 但本次未命中 → 也刷新数据 + 标注 ⚠️")
+        if args.stale_only:
+            print(f"                         ⚠️ --stale-only: 只跑 C 类, 不跑本次命中")
+    elif full_report_on:
         print(f"    详报目录            : docs/{args.report_subdir}/"
               f" {'(保留旧文件)' if args.no_clean else '(先清空旧文件)'}")
     print(f"    详报 workers        : {args.workers if args.workers else 'os.cpu_count()'}")
@@ -589,6 +677,18 @@ def main():
                     help="详报输出子目录 (默认 wyckoff-a2m, 跳过 watchlist 分流, 不污染自选)")
     ap.add_argument("--no-clean", action="store_true",
                     help="不清理 docs/<subdir> 已有 md (默认会清理, 避免新旧混杂)")
+    ap.add_argument("--refresh", action="store_true",
+                    help="刷新模式 (2026-10-29 加): 不清空目录, 而是\n"
+                         "  A. 刷新 = 目录里已有 且 本次仍命中 → 重新生成 (数据更新到最新交易日)\n"
+                         "  B. 补充 = 目录里没有 且 本次命中   → 新生成\n"
+                         "  C. 留档 = 目录里已有 但本次未命中 → 也刷新数据, 但文件头标 '⚠️ 本次未命中'\n"
+                         "  最终目录 = 旧文件 ∪ 本次命中, 不删任何历史票\n"
+                         "  (与 --no-clean 的区别: --no-clean 是完全不碰旧文件, 数据永远停在生成那天)")
+    ap.add_argument("--keep-stale", action="store_true",
+                    help="--refresh 时, C 类 (曾命中但本次未命中) 不刷新数据, 只在文件头标注状态\n"
+                         "  默认会刷新 (数据旧比多跑几只票更坑)")
+    ap.add_argument("--stale-only", action="store_true",
+                    help="只刷新 C 类 (历史留档), 不跑本次命中票的详报 (配合 --refresh)")
     ap.add_argument("--with-finance", action="store_true",
                     help="加 finance 过滤: 剔除亏损股 (PE <= 0 视为亏损), 0 网络 (走 stk_factor parquet)")
     ap.add_argument("--with-quality", choices=["off", "basic", "strong", "elite"], default="basic",
@@ -853,6 +953,11 @@ def main():
         print(f"\n=== finance 过滤: {before} → {len(hits)} 只 (剔除 {before - len(hits)} 只亏损/异常) ===\n")
 
     # 渲染输出
+    # 2026-10-29 加: --refresh 需要 existing (目录里已有的详报) 和 hit_codes (本次命中)
+    #   这两个在下面 step 2 也会用, 提前算好避免重复扫目录
+    sub_dir = Path(f"docs/{args.report_subdir}")
+    existing = _scan_existing_reports(sub_dir) if args.refresh else {}
+    hit_codes = {r['code'] for r in hits}
     lines = []
     lines.append(f"# Wyckoff A→M 转变扫描 ({scope})\n")
     try:
@@ -901,6 +1006,19 @@ def main():
         lines.append(f"| {step_name} | {params or '—'} | — | {before_n} → {after_n} | {after_n} |")
     lines.append(f"| **A→M 命中** | V13 严判 | lookback={args.lookback} | {len(codes)} → {len(hits)} | **{len(hits)}** |\n")
 
+    # 2026-10-29 加: --refresh 模式下, 汇总 md 列出"历史留档" (曾命中但本次未命中)
+    if args.refresh and existing:
+        stale_codes = sorted(c for c in existing if c not in hit_codes)
+        if stale_codes:
+            lines.append("## 历史留档 (曾命中, 本次未命中)\n")
+            lines.append(f"> 目录里有但本次扫描没命中的票 —— 可能已被 PE/质量/杠杆过滤, 或威科夫阶段已离开 Markup.")
+            lines.append(f"> `--refresh` 下这些票的详报**会一并刷新到最新交易日**, 文件头标 ⚠️。\n")
+            lines.append("| 代码 | 名称 | 状态 |")
+            lines.append("|---|---|---|")
+            for c in stale_codes:
+                lines.append(f"| `{c}` | {existing[c]['name']} | ⚠️ 本次未命中 (留档) |")
+            lines.append("")
+
     if hits:
         if args.with_finance:
             lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | PE | PE_TTM | 阶段序列 |")
@@ -944,11 +1062,49 @@ def main():
         args.full_report = False
     if args.no_write_md:
         args.write_md = False
-    if args.full_report and hits:
+
+    # 2026-10-29 加: --refresh 模式 (不清空, 刷新已有 + 补充新增 + 留档标注)
+    #   A. 刷新 = 目录里已有 且 本次仍命中 → 重新生成
+    #   B. 补充 = 目录里没有 且 本次命中   → 新生成
+    #   C. 留档 = 目录里已有 但本次未命中 → 也刷新数据, 文件头标 "⚠️ 本次未命中"
+    if args.refresh:
+        # 构造任务表: (code, name, subdir, status, hit_note)
+        tasks: list = []
+        if not args.stale_only:
+            for r in hits:
+                code = r['code']
+                nm = basic.get(code, (code, "—"))[0]
+                # 涨幅 + 阶段序列 (字段跟 md 表格渲染保持一致)
+                try:
+                    _chg = (r['last_close'] / r['trans_close'] - 1) * 100
+                except Exception:
+                    _chg = 0.0
+                try:
+                    _sg = "/".join(s[0] for s in r['trans_stages'][-(args.lookback + 1):])
+                except Exception:
+                    _sg = ""
+                note = f" — 转变日 {r.get('trans_date', '?')}, 涨幅 {_chg:+.1f}%, 阶段 {_sg}"
+                tasks.append((code, nm, args.report_subdir, "hit", note))
+        # C 类: 曾命中, 本次未命中
+        stale_list = [c for c in existing if c not in hit_codes]
+        if not args.keep_stale:
+            for code in stale_list:
+                nm = existing[code]["name"]
+                tasks.append((code, nm, args.report_subdir, "stale", ""))
+        n_hit_tasks = len([t for t in tasks if t[3] == "hit"])
+        n_stale_tasks = len([t for t in tasks if t[3] == "stale"])
+        print(f"\n=== step 2 [--refresh]: 刷新/生成详报 (→ docs/{args.report_subdir}/) ===")
+        print(f"  A. 本次命中 (刷新+生成): {n_hit_tasks} 只")
+        print(f"  C. 历史留档 (本次未命中): {n_stale_tasks} 只"
+              + ("  [已跳过刷新, 只标注]" if args.keep_stale else "  [会刷新数据]"))
+        print(f"  目录现有: {len(existing)} 份 → 跑完预计: {len(existing) + len(hit_codes - set(existing))} 份")
+        if not tasks:
+            print("  无任务可跑")
+            return
+    elif args.full_report and hits:
         from tools.batch.t_analyze_one import process_one as t_analyze_process_one
         target_hits = hits[:args.report_top] if args.report_top > 0 else hits
         # 2026-10-17: 默认清空 docs/<subdir>/ 旧 md (按 F5 跑的语义, 避免新旧混杂)
-        sub_dir = Path(f"docs/{args.report_subdir}")
         if sub_dir.exists() and not args.no_clean:
             old_mds = list(sub_dir.glob("*.md"))
             for p in old_mds:
@@ -961,23 +1117,38 @@ def main():
                 print(f"  子目录不存在, 无需清空")
             else:
                 print(f"  --no-clean: 保留历史详报")
+        tasks = [(r['code'], basic.get(r['code'], (r['code'], "—"))[0], args.report_subdir)
+                 for r in target_hits]
+    else:
+        tasks = []
+
+    if tasks:
         # 2026-10-17 加: multiprocessing 多进程跑详报 (跨 GIL, 4-8x 加速)
         # 默认 workers = os.cpu_count(), 设 1 单进程回退
         n_workers = args.workers if args.workers > 0 else (os.cpu_count() or 4)
-        n_workers = min(n_workers, len(target_hits))  # 不超过任务数
-        tasks = [(r['code'], basic.get(r['code'], (r['code'], "—"))[0], args.report_subdir)
-                 for r in target_hits]
+        n_workers = min(n_workers, len(tasks))  # 不超过任务数
+        # --refresh 模式下 task 是 5 元组, 兼容旧的 3 元组
+        if args.refresh:
+            _tasks_wrapped = tasks
+        else:
+            _tasks_wrapped = [(t[0], t[1], t[2], "hit", "") for t in tasks]
         rt0 = time.time()
         ok_n = 0
+        stamped_hit = 0
+        stamped_stale = 0
         if n_workers == 1:
             # 单进程 (无 Pool 开销, 直接循环)
             print(f"  1 worker (单进程回退)", flush=True)
-            for idx, t in enumerate(tasks, 1):
-                code, name, sub = t
-                print(f"\n[{idx}/{len(tasks)}] {code} {name} ...", flush=True)
-                code_r, ok, path_or_err, elapsed = _report_worker(t)
+            for idx, t in enumerate(_tasks_wrapped, 1):
+                code, name, sub, st, note = t
+                print(f"\n[{idx}/{len(_tasks_wrapped)}] {code} {name} ...", flush=True)
+                code_r, ok, path_or_err, elapsed = _report_worker((code, name, sub))
                 if ok:
                     ok_n += 1
+                    if st == "hit":
+                        stamped_hit += _stamp_report_status(Path(path_or_err), "hit", note)
+                    else:
+                        stamped_stale += _stamp_report_status(Path(path_or_err), "stale")
                     print(f"  ✅ {code_r} → {path_or_err} ({elapsed:.2f}s)", flush=True)
                 else:
                     print(f"  ⚠️  {code_r} 失败: {path_or_err} ({elapsed:.2f}s)", flush=True)
@@ -989,16 +1160,28 @@ def main():
             ctx = mp.get_context("spawn")
             with ctx.Pool(processes=n_workers) as pool:
                 # imap_unordered 流式结果, 不阻塞等所有齐
-                for idx, result in enumerate(pool.imap_unordered(_report_worker, tasks), 1):
+                for idx, result in enumerate(pool.imap_unordered(_report_worker,
+                                                                [(t[0], t[1], t[2]) for t in _tasks_wrapped]), 1):
                     code, ok, path_or_err, elapsed = result
                     mark = "✅" if ok else "⚠️ "
-                    sys.stdout.write(f"\r  [{idx}/{len(tasks)}] {mark} {code} ({elapsed:.2f}s)")
+                    sys.stdout.write(f"\r  [{idx}/{len(_tasks_wrapped)}] {mark} {code} ({elapsed:.2f}s)")
                     sys.stdout.flush()
                     if ok:
                         ok_n += 1
+                        # 状态标记在主进程打 (worker 只负责生成 md)
+                        t = _tasks_wrapped[idx - 1] if idx - 1 < len(_tasks_wrapped) else None
+                        # imap_unordered 顺序不保证, 按 code 反查
+                        t = next((x for x in _tasks_wrapped if x[0] == code), None)
+                        if t:
+                            if t[3] == "hit":
+                                stamped_hit += _stamp_report_status(Path(path_or_err), "hit", t[4])
+                            else:
+                                stamped_stale += _stamp_report_status(Path(path_or_err), "stale")
             print()  # 换行
-        print(f"\n=== step 2 完成 {ok_n}/{len(target_hits)} ({ok_n/len(target_hits)*100:.0f}%), {time.time()-rt0:.0f}s "
+        print(f"\n=== step 2 完成 {ok_n}/{len(_tasks_wrapped)} ({ok_n/len(_tasks_wrapped)*100:.0f}%), {time.time()-rt0:.0f}s "
               f"(workers={n_workers}) ===")
+        if args.refresh:
+            print(f"  状态标记: 命中 {stamped_hit} 份 / 留档 {stamped_stale} 份")
 
 
 if __name__ == "__main__":
