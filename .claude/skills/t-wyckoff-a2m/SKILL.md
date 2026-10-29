@@ -34,6 +34,12 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 > 默认过滤链(全开):`exclude-st` → `exclude-pe 60` → `with-quality basic` (营收/净利 yoy>0) + `ROE>5%` + `毛利率>20%` → `净负债/市值<0.5`.
 > 任何 flag 关/换门槛都用 `--help` 看当前默认 + 含义,不要凭记忆。
 
+> 📋 **每次跑开头会自动打印「本次运行生效条件」** (2026-10-29 加):
+> scope / lookback / 5 步过滤链各自 ON-OFF + 实际门槛 / V12 严判 4 条 / 输出设置,
+> 全部直接读 `args` 打印 —— 这是**唯一可靠的条件来源**, 因为下面的表格是手写的, 会漂移。
+> 用户问"现在的条件是啥"→ 看这段打印, 不要背文档。
+> 同样一份条件也会写进 `docs/wyckoff-a2m.md` 头部的「本次生效条件」表, 便于事后追溯。
+
 ## 过滤链 (2026-10-28 收紧后再放宽)
 
 5 步前置过滤, 全部 1 次 SQL/步, 0 网络:

@@ -455,6 +455,108 @@ def load_stock_basic() -> dict:
     return {}
 
 
+def _print_effective_conditions(args) -> None:
+    """打印本次运行"实际生效"的完整条件 (2026-10-29 加)
+
+    为什么要有这个:
+      - SKILL.md 里的默认条件是手写的, 改 flag 默认值后容易忘记同步 → 文档漂移
+      - 用户问"现在的条件是啥"时, 唯一可靠答案是"代码里真实生效的值"
+      - 所以这里直接从 args 读, 逐条打印, 包含"关掉了哪些" (避免以为在跑但其实没跑)
+
+    打印内容分 3 块:
+      1. 扫描范围 (全市场 / watchlist)
+      2. 前置过滤链 (5 步, 逐步标 ON/OFF + 实际门槛)
+      3. V12 严判条件 (硬编码在 wyckoff_judge 里, 这里同步展示)
+    """
+    # --- 扫描范围 ---
+    if args.watchlist_only:
+        scope_desc = f"watchlist (类型: {args.watchlist_types})"
+    else:
+        scope_desc = "全市场"
+
+    # --- 前置过滤链 ---
+    # step1 ST
+    if args.include_st:
+        st_on, st_desc = False, "❌ OFF (--include-st 显式包含 ST/*ST)"
+    elif args.exclude_st:
+        st_on, st_desc = True, "✅ ON  排除 ST/*ST"
+    else:
+        st_on, st_desc = False, "❌ OFF (不排除 ST)"
+
+    # step2 PE
+    if args.exclude_pe > 0:
+        pe_on, pe_desc = True, f"✅ ON  PE > {args.exclude_pe:.0f} 排除"
+    else:
+        pe_on, pe_desc = False, "❌ OFF (--exclude-pe 0, 不限 PE)"
+
+    # step3 quality
+    quality_thr = {"basic": 0, "strong": 10, "elite": 20}.get(args.with_quality, 0)
+    if args.min_growth is not None:
+        quality_thr = args.min_growth
+        growth_note = "(--min-growth 覆盖档位)"
+    else:
+        growth_note = "(档位默认值)"
+    if args.with_quality != "off":
+        q_parts = [f"营收yoy>{quality_thr:g}%", f"净利yoy>{quality_thr:g}%"]
+        if args.min_roe > 0:
+            q_parts.append(f"ROE>{args.min_roe:g}%")
+        if args.min_gross_margin > 0:
+            q_parts.append(f"毛利率>{args.min_gross_margin:g}%")
+        q_on, q_desc = True, "✅ ON  " + " + ".join(q_parts)
+    else:
+        q_on, q_desc = False, "❌ OFF (--with-quality off)"
+
+    # step4 杠杆
+    if args.max_net_debt_ratio > 0:
+        lv_on, lv_desc = True, f"✅ ON  净负债/市值 < {args.max_net_debt_ratio:g}"
+    else:
+        lv_on, lv_desc = False, "❌ OFF (--max-net-debt-ratio 0, 不限杠杆)"
+
+    # step5 finance (亏损股)
+    fin_on, fin_desc = (True, "✅ ON  剔除亏损股 (PE<=0)") if args.with_finance \
+        else (False, "❌ OFF (--with-finance 未开)")
+
+    # rsi (已弃用 flag, 但仍可能开着)
+    rsi_on = bool(args.with_rsi)
+
+    print("\n" + "=" * 72)
+    print("  本次运行生效条件 (Effective Conditions)")
+    print("=" * 72)
+    print(f"\n  【扫描范围】")
+    print(f"    scope            : {scope_desc}")
+    print(f"    lookback         : 最近 {args.lookback} 根 K 线")
+    print(f"    V12 判定窗口     : 固定 30 根 (硬编码, 不可调)")
+
+    print(f"\n  【前置过滤链】(按执行顺序)")
+    print(f"    1. exclude-st        : {st_desc}")
+    print(f"    2. exclude-pe        : {pe_desc}")
+    print(f"    3. with-quality      : {q_desc}")
+    if args.with_quality != "off":
+        print(f"         └ 档位={args.with_quality}, yoy 门槛={quality_thr:g}% {growth_note}")
+        print(f"         └ ⚠️ 毛利率门槛作用在 grossprofit_margin (水平值/绝对%), 不是毛利率同比增速")
+    print(f"    4. max-net-debt-ratio: {lv_desc}")
+    print(f"    5. with-finance      : {fin_desc}")
+    print(f"    + with-rsi          : {'⚠️ 已启用 (2026-10-17 起该 flag 判定逻辑已弃用)' if rsi_on else '❌ OFF'}")
+
+    print(f"\n  【V12 严判】(硬编码, 无 flag 可调)")
+    print(f"    ① 当前 K 线 stage == Markup            (必须)")
+    print(f"    ② 最近 30 根 K 线 M 占比 < 20%         (允许 ≤5 根, 排除'反复 M'假突破)")
+    print(f"    ③ 单日涨跌幅 > 20% 跳过                 (除权/复牌)")
+    print(f"    ④ K 线长度 ≥ 11 根")
+
+    print(f"\n  【输出】")
+    # 注意: --write-md / --full-report 的 default=True, 真正的关闭开关是 --no-write-md / --no-full-report
+    write_md_on = args.write_md and not args.no_write_md
+    full_report_on = args.full_report and not args.no_full_report
+    print(f"    汇总 md             : {args.output if write_md_on else '❌ 不落盘 (--no-write-md)'}")
+    print(f"    详报                : {'✅ 跑 (前 %d 只)' % args.report_top if full_report_on else '❌ 不跑 (--no-full-report)'}")
+    if full_report_on:
+        print(f"    详报目录            : docs/{args.report_subdir}/"
+              f" {'(保留旧文件)' if args.no_clean else '(先清空旧文件)'}")
+    print(f"    详报 workers        : {args.workers if args.workers else 'os.cpu_count()'}")
+    print("=" * 72 + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Wyckoff A→M 转变扫描 (复用 AnalysisEngine+compute_factor_history)")
     ap.add_argument("--lookback", type=int, default=5, help="看最近 N 根 K 线 (默认 5)")
@@ -539,6 +641,10 @@ def main():
     ap.add_argument("--bench-report", nargs="?", const=12, type=int,
                     help="跳过扫描, 只跑 N 个固定代码详报测试不同 workers (用于测 mp 加速比)")
     args = ap.parse_args()
+
+    # 2026-10-29 加: 每次跑先把"实际生效的完整条件"打出来
+    # 目的: 避免靠记忆/文档猜条件 —— 文档会过期, 只有这里打印的是真实生效值
+    _print_effective_conditions(args)
 
     if args.watchlist_only:
         wl = load_codes_watchlist([t.strip() for t in args.watchlist_types.split(",") if t.strip()])
@@ -750,6 +856,32 @@ def main():
     lines.append(f"> 扫描耗时: {elapsed:.1f}s (单进程顺序)")
     lines.append(f"> 数据源: AnalysisEngine + compute_factor_history (跟 /t-analyze 同源, 0 网络)")
     lines.append(f"> 判定: **V12 字面版** — 当前 M + 最近 30 根 K 线 M 占比 < 20% (排除\"反复 M 假突破\")\n")
+
+    # 2026-10-29 加: 把本次生效条件写进 md 头部 (避免事后看报告猜当时用的什么门槛)
+    lines.append("## 本次生效条件\n")
+    lines.append("| 项 | 值 |")
+    lines.append("|---|---|")
+    lines.append(f"| scope | {scope} |")
+    lines.append(f"| lookback | 最近 {args.lookback} 根 K 线 |")
+    lines.append(f"| ① exclude-st | {'ON (排除 ST/*ST)' if (args.exclude_st and not args.include_st) else 'OFF'} |")
+    lines.append(f"| ② exclude-pe | {f'ON (PE>{args.exclude_pe:.0f} 排除)' if args.exclude_pe > 0 else 'OFF (不限)'} |")
+    if args.with_quality != "off":
+        _thr = {"basic": 0, "strong": 10, "elite": 20}.get(args.with_quality, 0)
+        if args.min_growth is not None:
+            _thr = args.min_growth
+        _q = f"ON (营收yoy>{_thr:g}% + 净利yoy>{_thr:g}%"
+        if args.min_roe > 0:
+            _q += f" + ROE>{args.min_roe:g}%"
+        if args.min_gross_margin > 0:
+            _q += f" + 毛利率>{args.min_gross_margin:g}%"
+        _q += ")"
+    else:
+        _q = "OFF"
+    lines.append(f"| ③ with-quality | {_q} |")
+    lines.append(f"| ④ max-net-debt-ratio | {f'ON (净负债/市值<{args.max_net_debt_ratio:g})' if args.max_net_debt_ratio > 0 else 'OFF (不限)'} |")
+    lines.append(f"| ⑤ with-finance | {'ON (剔除亏损股)' if args.with_finance else 'OFF'} |")
+    lines.append(f"| V12 严判 | 当前 M + 最近 30 根 M 占比<20% + 单日涨跌<20% + K线≥11根 |")
+    lines.append("")
 
     # 2026-10-20 加: 过滤漏斗表 (从 funnel 列表渲染)
     lines.append("## 过滤漏斗\n")
