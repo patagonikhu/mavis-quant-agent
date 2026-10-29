@@ -35,7 +35,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 > 任何 flag 关/换门槛都用 `--help` 看当前默认 + 含义,不要凭记忆。
 
 > 📋 **每次跑开头会自动打印「本次运行生效条件」** (2026-10-29 加):
-> scope / lookback / 5 步过滤链各自 ON-OFF + 实际门槛 / V12 严判 4 条 / 输出设置,
+> scope / lookback / 5 步过滤链各自 ON-OFF + 实际门槛 / V13 严判 4 条 / 输出设置,
 > 全部直接读 `args` 打印 —— 这是**唯一可靠的条件来源**, 因为下面的表格是手写的, 会漂移。
 > 用户问"现在的条件是啥"→ 看这段打印, 不要背文档。
 > 同样一份条件也会写进 `docs/wyckoff-a2m.md` 头部的「本次生效条件」表, 便于事后追溯。
@@ -51,7 +51,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 | 2 | `exclude-pe` PE 上限 | **60** | 4213 |
 | 3 | `with-quality basic` (营收yoy>0 + 净利yoy>0) + `min-roe 5` + `min-gross-margin 20` | basic/5/20 | 458 |
 | 4 | `max-net-debt-ratio` 净负债/市值 | **0.5** | 441 |
-| 5 | V12 严判 A→M | lookback=5 | **10 命中** (11s) |
+| 5 | V13 严判 A→M | lookback=5 | **7 命中** (13s) |
 
 **为什么这样定** (2026-10-28 用全市场分布 + 22 只命中票反推, 逐档实测):
 
@@ -73,14 +73,15 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 
 ## 跑流程
 
-1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `_filter_by_pe` → `_filter_by_quality` (+ROE/毛利率) → `_filter_by_leverage` → V12 严判 (`tools/batch/wyckoff_a2m_scan.py::wyckoff_judge_v12`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
+1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `_filter_by_pe` → `_filter_by_quality` (+ROE/毛利率) → `_filter_by_leverage` → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
 2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/`
 
-## V12 严判 (代码 = 单一事实源, 见 wyckoff_a2m_scan.py L263-282)
+## V13 严判 (代码 = 单一事实源, 见 wyckoff_a2m_scan.py::_process_one)
 
 - `当前 K 线 stage == Markup` (必须)
-- 最近 30 根 K 线 `M 占比 < 20%` (排除"反复 M"假突破)
+- 最近 **40** 根 K 线 `M 占比 < 10%` (允许 ≤ 3 根, 排除"反复 M"假突破)
 - 单日涨跌 > 20% 跳过 (除权 / 复牌)
+- K 线长度 ≥ 11 根
 
 ## 数据特性 (这是必须知道的)
 
@@ -98,7 +99,22 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 - **v8** (2026-10-16) — 删 `_judge_full` 慢路径 + 直调 `wyckoff_judge` + 全市场 1 次 SQL + 5.3 分钟单进程
 - **v9/v10** (2026-10-16/17) — 判定从"任何当前 M 命中"演进到"T-1..T-5 全 A"
 - **v11** (2026-10-17) — T-0=M + T-1..T-5 ∈ {A, ?};已弃用
-- **v12 字面版** (2026-10-20) — 当前 M + 最近 30 根 M 占比 < 20%;**当前默认**
+- **v12** (2026-10-20) — 当前 M + 最近 30 根 M 占比 < 20% (允许 ≤5 根)
+- **v13** (2026-10-29) — 当前 M + 最近 **40** 根 M 占比 < **10%** (允许 ≤3 根);**当前默认**
+
+**v12 → v13 变更影响** (2026-10-29 实测, 同一天同一份数据对照):
+
+| | V12 (30根/20%) | V13 (40根/10%) |
+|---|---|---|
+| 命中数 | 13 | **7** |
+| 保留 | — | 001219 / 002380 / 603337 / 300406 / 301109 / 002683 / 688097 |
+| 被砍 | — | 300832 (M/40=35%) / 301101 (10.0%) / 603387 (10.0%) / 002690 (22.5%) / 002472 (12.5%) / 601101 (32.5%) |
+| 新增 | — | 无 (单调收紧, 只砍不加) |
+
+被砍的都符合预期: 300832 新产业 40 根里 14 根是 M (35%), 601101 昊华能源 13 根 (32.5%),
+002690 美亚光电 9 根 (22.5%) —— 确实是"反复 M", 不是干净启动.
+`301101 明月镜片` / `603387 基蛋生物` 40 根占比 = 10.0% 恰好卡在阈值 (判定 `>= 0.10` 排除), 属边界被砍.
+`688097 博众精工` 阶段序列看着像反复 (A/A/M/M/A/M), 但 40 根里只 3 根 M (7.5%), 实际干净 → 保留.
 
 ## 跑后验证
 

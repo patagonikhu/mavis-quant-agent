@@ -7,12 +7,19 @@ v8 (2026-10-16) 重构 (用户反馈 7 分钟太慢):
 - v7 走 AnalysisEngine.analyze_history 算 480 日 history → 0.07s/只 → 7 分钟
 - v8 跳过 history 算, 直接算 lookback+1 个 i → ~0.005s/只 → 5812 × 30s
 
-判定逻辑 (跟 v6/v7 1:1, 没变):
-  对每只票最近 (lookback+1) 根 K 线:
+判定逻辑 (V13, 2026-10-29 改):
+  对每只票最近 40 根 K 线 (判定窗口 n_tail=40):
   - wyckoff_judge 输出 stage (Accumulation / Markup / Distribution)
-  - 任意连续两根 (i-1, i) 满足 prev='Accumulation' 且 curr='Markup' → A→M 转变命中
-  - M 之后 M 占比 ≥ 50% (过滤跳来跳去的假突破)
-  - 单日涨跌 > 20% 跳过 (除权/复牌)
+  - ① 当前 (最后) 根 stage == 'Markup'                    (必须)
+  - ② 最近 40 根里 Markup 占比 < 10% (允许 ≤ 3 根)       (排除"反复 M"假突破)
+  - ③ 单日涨跌 > 20% 跳过                                 (除权/复牌)
+  - ④ K 线长度 ≥ 11 根
+  命中后定位 trans_idx: 从右往左第一根 != M 的位置
+
+  版本沿革:
+    v11 (2026-10-17) — T-0=M + T-1..T-5 ∈ {A, ?}
+    v12 (2026-10-20) — 窗口 30 根, M 占比 < 20% (允许 ≤5 根)
+    v13 (2026-10-29) — 窗口 40 根, M 占比 < 10% (允许 ≤3 根)  ← 当前
 
 数据一致性 (跟 /t-analyze 100%):
   - 同源: 同 K 线 parquet + 同 wyckoff_judge 算法 + 同 arrs 预算
@@ -313,7 +320,8 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
 
     # ③ wyckoff_judge O(1) per i (最近 n_tail 个)
     #    sub_events 按 i ≤ idx 过滤 (历史窗口内触发过的)
-    n_tail = max(30, 11)  # 2026-10-20 v12: 至少 30 根 (1 当前 + 29 前), 看最近 30 根里 M 占比
+    # 2026-10-29 改: 30 → 40 根 (V13 严判窗口; 必须 >= 判定窗口, 否则算不出占比)
+    n_tail = max(40, 11)
     stages = []
     closes_tail = []
     dates_tail = []
@@ -329,12 +337,14 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         closes_tail.append(closes[i])
         dates_tail.append(dates_[i])
 
-    # ── v12 字面版 判定 (2026-10-20 改): "最近 30 根 K 线, M 占比 < 20%, 当前 M" ──
+    # ── V13 严判 (2026-10-29 改): "最近 40 根 K 线, M 占比 < 10%, 当前 M" ──
     #   1. 当前 (最后) 根 K 线 stage == 'Markup' — 必须
-    #   2. 最近 30 根 K 线里 Markup 出现次数 ≤ 5 根 (M 占比 < 20%)
+    #   2. 最近 40 根 K 线里 Markup 占比 < 10% (允许 ≤ 3 根)
     #      目的: 排除"之前 M → 转 A → 再转 M"这种假反弹/震荡反复 (用户反馈)
     #   3. 单日涨跌幅 > 20% 跳过 (除权/复牌)
     # 这是"刚刚启动, 且前期没有大涨过"的强信号 (跟 v11 的 T-1..T-5 全 A 相比, 更宽容 "?" 但更严 M 占比)
+    # v12 → v13 变更: 窗口 30→40 根, M 占比阈值 20%→10%
+    #   (窗口拉长 = 看更长的历史; 阈值收紧 = 只认更"干净"的启动, 允许 M 根数 5→3)
     last_chg = abs(closes_tail[-1] / closes_tail[-2] - 1) if len(closes_tail) >= 2 and closes_tail[-2] > 0 else 0
     if last_chg > 0.20:
         return None
@@ -342,12 +352,12 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         return None
     if len(stages) < 11:
         return None
-    # v12 严判: 最近 30 根里 M 占比 < 20% (允许 ≤ 5 根)
-    m_window_size = min(30, len(stages))
+    # V13 严判: 最近 40 根里 M 占比 < 10% (允许 ≤ 3 根)
+    m_window_size = min(40, len(stages))
     recent_stages = stages[-m_window_size:]
     m_count = sum(1 for s in recent_stages if s == "Markup")
     m_ratio = m_count / m_window_size
-    if m_ratio >= 0.20:  # 排除"反复 M"假突破
+    if m_ratio >= 0.10:  # 排除"反复 M"假突破
         return None
     # 找到第一根 (从右往左) 满足 != M 的位置, 记为 trans_idx
     trans_idx = 0
@@ -367,7 +377,7 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         "curr_stage": stages[trans_idx],
         "curr_stage": stages[-1],
         "trans_stages": stages,
-        "m_ratio": m_ratio,  # v12 新增: 最近 30 根里 M 占比 (返回给 md 输出)
+        "m_ratio": m_ratio,  # v12 新增: 最近 40 根里 M 占比 (返回给 md 输出)
     }
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -466,7 +476,7 @@ def _print_effective_conditions(args) -> None:
     打印内容分 3 块:
       1. 扫描范围 (全市场 / watchlist)
       2. 前置过滤链 (5 步, 逐步标 ON/OFF + 实际门槛)
-      3. V12 严判条件 (硬编码在 wyckoff_judge 里, 这里同步展示)
+      3. V13 严判条件 (硬编码在 wyckoff_judge 里, 这里同步展示)
     """
     # --- 扫描范围 ---
     if args.watchlist_only:
@@ -525,7 +535,7 @@ def _print_effective_conditions(args) -> None:
     print(f"\n  【扫描范围】")
     print(f"    scope            : {scope_desc}")
     print(f"    lookback         : 最近 {args.lookback} 根 K 线")
-    print(f"    V12 判定窗口     : 固定 30 根 (硬编码, 不可调)")
+    print(f"    V13 判定窗口     : 固定 40 根 (硬编码, 不可调)")
 
     print(f"\n  【前置过滤链】(按执行顺序)")
     print(f"    1. exclude-st        : {st_desc}")
@@ -538,9 +548,9 @@ def _print_effective_conditions(args) -> None:
     print(f"    5. with-finance      : {fin_desc}")
     print(f"    + with-rsi          : {'⚠️ 已启用 (2026-10-17 起该 flag 判定逻辑已弃用)' if rsi_on else '❌ OFF'}")
 
-    print(f"\n  【V12 严判】(硬编码, 无 flag 可调)")
+    print(f"\n  【V13 严判】(硬编码, 无 flag 可调)")
     print(f"    ① 当前 K 线 stage == Markup            (必须)")
-    print(f"    ② 最近 30 根 K 线 M 占比 < 20%         (允许 ≤5 根, 排除'反复 M'假突破)")
+    print(f"    ② 最近 40 根 K 线 M 占比 < 10%         (允许 ≤3 根, 排除'反复 M'假突破)")
     print(f"    ③ 单日涨跌幅 > 20% 跳过                 (除权/复牌)")
     print(f"    ④ K 线长度 ≥ 11 根")
 
@@ -855,7 +865,7 @@ def main():
     lines.append(f"> 命中: {len(hits)} 只 / {len(codes)} ({len(hits)/len(codes)*100:.1f}%)")
     lines.append(f"> 扫描耗时: {elapsed:.1f}s (单进程顺序)")
     lines.append(f"> 数据源: AnalysisEngine + compute_factor_history (跟 /t-analyze 同源, 0 网络)")
-    lines.append(f"> 判定: **V12 字面版** — 当前 M + 最近 30 根 K 线 M 占比 < 20% (排除\"反复 M 假突破\")\n")
+    lines.append(f"> 判定: **V13 严判** — 当前 M + 最近 40 根 K 线 M 占比 < 10% (排除\"反复 M 假突破\")\n")
 
     # 2026-10-29 加: 把本次生效条件写进 md 头部 (避免事后看报告猜当时用的什么门槛)
     lines.append("## 本次生效条件\n")
@@ -880,7 +890,7 @@ def main():
     lines.append(f"| ③ with-quality | {_q} |")
     lines.append(f"| ④ max-net-debt-ratio | {f'ON (净负债/市值<{args.max_net_debt_ratio:g})' if args.max_net_debt_ratio > 0 else 'OFF (不限)'} |")
     lines.append(f"| ⑤ with-finance | {'ON (剔除亏损股)' if args.with_finance else 'OFF'} |")
-    lines.append(f"| V12 严判 | 当前 M + 最近 30 根 M 占比<20% + 单日涨跌<20% + K线≥11根 |")
+    lines.append(f"| V13 严判 | 当前 M + 最近 40 根 M 占比<10% + 单日涨跌<20% + K线≥11根 |")
     lines.append("")
 
     # 2026-10-20 加: 过滤漏斗表 (从 funnel 列表渲染)
@@ -889,7 +899,7 @@ def main():
     lines.append("|---|---|---|---|---|")
     for idx, (step_name, params, before_n, after_n) in enumerate(funnel):
         lines.append(f"| {step_name} | {params or '—'} | — | {before_n} → {after_n} | {after_n} |")
-    lines.append(f"| **A→M 命中** | V12 字面版 | lookback={args.lookback} | {len(codes)} → {len(hits)} | **{len(hits)}** |\n")
+    lines.append(f"| **A→M 命中** | V13 严判 | lookback={args.lookback} | {len(codes)} → {len(hits)} | **{len(hits)}** |\n")
 
     if hits:
         if args.with_finance:
@@ -901,7 +911,7 @@ def main():
         for r in hits:
             code = r['code']
             name, industry = basic.get(code, (code, "—"))
-            # v12: trans_stages 现在是 30 根 (判定窗口), md 只输出最近 lookback+1 根
+            # v13: trans_stages 现在是 40 根 (判定窗口), md 只输出最近 lookback+1 根
             stages_str = "/".join(s[0] for s in r['trans_stages'][-(args.lookback + 1):])
             chg = (r['last_close'] / r['trans_close'] - 1) * 100
             if args.with_finance:
