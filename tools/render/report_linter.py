@@ -505,18 +505,19 @@ def lint_summary(results: list[dict]) -> str:
 # ============================================================
 
 def lint_finance_section(content: str) -> list[str]:
-    """财务数据 section 格式检查 — 必须 4 季数据行 + 1 Magic 行 + 1 核心指标行, 12 列对齐
+    """财务数据 section 格式检查 — 4 季数据行 + 16 列大表 (含 Magic 列 + ROC/EY 列)
 
-    期望格式 (v6.2.7):
+    期望格式 (v6.2.8+, 2026-10-30 确认):
         ## 财务数据
         > **EPS 一致预期 (Tushare):** ...
-        > **最近 4 季财务 + Magic 公式** | ...
-        | 季 / 指标 | 营收 yoy | 净利 yoy | 毛利率 | ROE | 营收 (亿) | 净利 (亿) | EBIT (亿) | 总市值 (亿) | 净负债 (亿) | EV (亿) | 投入资本 (亿) |  (12 列)
-        | --- | ... |  (12 个 ---)
-        | 20250630 | or_yoy | np_yoy | gm | roe | rev_yi | np_yi | ebit_yi | — | — | — | — |  (4 季行)
-        ... 4 季
-        | **💎 Magic** (label) | — | — | — | — | — | — | ebit | mc | nd | ev | capital |  (1 Magic 行)
-        | **核心指标** | ROC **%** | EY **%** | 行业 | — | — | — | — | — | — | — | — |  (1 核心指标行)
+        ### 最近 4 季财务 + Magic 公式 (20260630)
+        | 季 | 营收 yoy | 净利 yoy | 毛利率 | ROE | 营收 (亿) | 净利 (亿) | EBIT (亿) | ROC 资本回报率 | EY 收益率 | 总市值 (亿) | 净负债 (亿) | EV (亿) | 投入资本 (亿) | PE | 动态 PE |  (16 列)
+        | --- | ... |  (16 个 ---)
+        | 20260630 | or_yoy | np_yoy | gm | roe | rev_yi | np_yi | ebit_yi | roc | ey | mc | nd | ev | capital | pe | fwd_pe |  (4 季行)
+
+    ⚠️ 2026-10-30 改: 旧版检查找独立的 "**💎 Magic**" 行 + "**核心指标**" 行 (12 列格式),
+       但 v6.2.8 起 Magic 数据和 ROC/EY 已并进每个季度行 (16 列), 没有独立行了.
+       老检查永远找不到 → 误报. 现按新格式检查列是否存在 + ROC/EY 是否有值.
     """
     warnings = []
 
@@ -589,21 +590,26 @@ def lint_finance_section(content: str) -> list[str]:
                     f"财务数据 parquet 可能损坏或 schema 不一致"
                 )
 
-    # 7. Magic 行检查 (1 行, 含 EBIT/总市值/净负债/EV/投入资本)
-    magic_rows = re.findall(r"^\|\s*\*\*💎 Magic\*\*.*$", table_section, re.MULTILINE)
-    if len(magic_rows) != 1:
-        warnings.append(f"🔴 财务数据: Magic 行应 1 行, 实际 {len(magic_rows)} 行")
+    # 7. Magic 估值列检查 (2026-10-30 改: 格式变了, 不再找独立的 "**💎 Magic**" 行)
+    #    旧格式 (v6.2.7): 12 列表 + 独立 "**💎 Magic**" 行 + 独立 "**核心指标**" 行
+    #    新格式 (v6.2.8+): 16 列表, Magic 数据 (EBIT/市值/净负债/EV/投入资本) + ROC/EY
+    #                      全部并进每个季度行, 没有独立 Magic 行
+    #    → 老检查永远找不到那两行 → 误报 "应 1 行, 实际 0 行". 现按新格式检查.
+    #    注: EBIT/市值/净负债/EV/投入资本 这些列由上面的 check #5 (expected_cols) 负责,
+    #         这里只补 ROC/EY 两个新列 + 数值兜底.
+    roc_col = "ROC 资本回报率" in cols
+    ey_col = "EY 收益率" in cols
+    if not roc_col:
+        warnings.append("🔴 财务数据: 缺 ROC 资本回报率 列 (Magic 公式核心指标)")
+    if not ey_col:
+        warnings.append("🔴 财务数据: 缺 EY 收益率 列 (Magic 公式核心指标)")
 
-    # 8. 核心指标行检查 (1 行, ROC + EY + 行业)
-    core_rows = re.findall(r"^\|\s*\*\*核心指标\*\*.*$", table_section, re.MULTILINE)
-    if len(core_rows) != 1:
-        warnings.append(f"🔴 财务数据: 核心指标行应 1 行, 实际 {len(core_rows)} 行")
-
-    # 9. "💎 Magic" 行必须有 ROC 数值 (兜底逻辑)
-    if magic_rows and core_rows:
-        core = core_rows[0]
-        if "ROC **" not in core or "EY **" not in core:
-            warnings.append("🔴 财务数据: 核心指标行缺 ROC 或 EY 数值 (Magic 兜底逻辑没生效)")
+    # 8. ROC / EY 至少有一季有数值 (兜底: 防止整列全 "—")
+    #    新格式下 ROC/EY 是季度行的第 9/10 列, 直接扫所有非 "—" 百分比值
+    if roc_col and ey_col:
+        roc_vals = re.findall(r"\|\s*([\d.]+)%\s*\|", table_section)
+        if not roc_vals:
+            warnings.append("🔴 财务数据: ROC / EY 列全为空 (Magic 兜底逻辑没生效)")
 
     # 10. 标题唯一性 (不能有重复的 "## 财务数据")
     if content.count("## 财务数据") > 1:

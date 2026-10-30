@@ -77,25 +77,6 @@ def _mech_t_frame(raw) -> dict:
     }
 
 
-def _mech_position_layer(signals_5, ma_table) -> dict:
-    """三层仓位 (2026-09-09 改: 走纯缠论 1买/2买/3买 + 风控, 不走 5方法总分)
-
-    signals_5 仍传入, 但 total_score 字段已无意义, 决策全部走缠论.
-    真正的仓位建议见 /t-analyze 报告的 "三层仓位" section (走 factor_basic.compute_three_layer_position).
-    本函数保留仅供向后兼容, 永远返回 None (不参与决策).
-    """
-    return None
-
-
-def _mech_exit_signals(signals_5, ma_table) -> dict:
-    """机械退场信号 (2026-09-09 改: 走纯缠论, 不走 5方法总分)
-
-    真正的退出信号见 /t-analyze 报告的 "退出信号" section (走 factor_risk.compute_exit_signals).
-    本函数保留仅供向后兼容, 永远返回 None (不参与决策).
-    """
-    return None
-
-
 # ============================================================
 # 工具函数 (2026-07-25 加)
 # ============================================================
@@ -120,15 +101,6 @@ def _dict_to_rows(value) -> list:
             row[k] = v[i] if i < len(v) else None
         rows.append(row)
     return rows
-
-
-def _mech_monitor_triggers(signals_5, ma_table) -> dict:
-    """机械监控触发点 (2026-09-09 改: 走纯缠论, 不走 5方法总分)
-
-    真正的监控触发点见 /t-analyze 报告的 "监控触发点" section (走 factor_risk.compute_monitor_triggers).
-    本函数保留仅供向后兼容, 永远返回 None (不参与决策).
-    """
-    return None
 
 
 @dataclass
@@ -288,6 +260,16 @@ class RenderData:
         return (self.analysis or {}).get("three_layer_position")
 
     @property
+    def position_layer(self) -> Optional[dict]:
+        """三层仓位的别名 (renderer 读的是 data.position_layer)
+
+        2026-10-30 加: analysis dict 里的 key 是 'three_layer_position',
+        但 report_renderer._section_position_layer 读 'position_layer'.
+        之前 'position_layer' 是个 dataclass 字段 (恒 None), 现在改成 alias property.
+        """
+        return (self.analysis or {}).get("three_layer_position")
+
+    @property
     def monitor_triggers(self) -> Optional[dict]:
         return (self.analysis or {}).get("monitor_triggers")
 
@@ -353,9 +335,14 @@ class RenderData:
     supplement: Optional[dict] = None
     take_profit: Optional[dict] = None
     stop_loss: Optional[dict] = None
-    exit_signals: Optional[dict] = None
-    position_layer: Optional[dict] = None
-    monitor_triggers: Optional[dict] = None
+    # 2026-10-30 修: 删掉 exit_signals / position_layer / monitor_triggers 三个字段声明
+    #   原因: 它们在 class body 里声明在 @property 之后 (356 行 vs 279/291 行),
+    #   class body 自上而下执行 → 字段声明把 property 覆盖成 None, 导致
+    #   renderer 永远读到 None → 报告出 "3 层仓位/监控触发点/退场信号 未生成" 占位符.
+    #   实测: analysis dict 里 exit_signals / three_layer_position / monitor_triggers
+    #   都有真实数据, 只是被字段遮蔽了.
+    #   现在这三个值统一由上面对应的 @property 从 analysis dict 派生.
+    #   (position_layer 由 three_layer_position 别名提供, 见上方 property)
 
     # ===== Tushare 扩展数据 (幂等性: 存入 dump，不在 renderer 实时拉) =====
     ts_weekly: list = field(default_factory=list)       # 周线 K
@@ -483,9 +470,9 @@ class RenderData:
             ctx=ctx,
             four_questions=_mech_four_questions(raw_for_mech, signals_5),
             t_frame=_mech_t_frame(raw_for_mech),
-            position_layer=_mech_position_layer(signals_5, ma_table),
-            exit_signals=_mech_exit_signals(signals_5, ma_table),
-            monitor_triggers=_mech_monitor_triggers(signals_5, ma_table),
+            # 2026-10-30 修: 删掉 exit_signals / position_layer / monitor_triggers 三个传参
+            #   它们走 _mech_* stub (永远返回 None), 且会把上面删掉的字段重新加回来,
+            #   导致 property 再次被遮蔽. 现在统一由 property 从 analysis dict 派生.
             market_cap_yi=ctx.market_cap_yi,
             # Magic Formula: 跟 PEG/DCF 一样, 在 from_result 里直接算, 不留 N/A
             # market_cap 入参单位"万" (跟 Tushare daily_basic 一致), 内部 / 1e4 转亿

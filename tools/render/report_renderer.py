@@ -1407,9 +1407,22 @@ def _section_factor_matrix(data: RenderData) -> str:
 
 
 def _section_monitor(data: RenderData) -> str:
-    if data.monitor_triggers:
-        mt = data.monitor_triggers
-        # 兼容两种字段命名
+    """监控触发点
+
+    2026-10-30 改: 之前 renderer 读 mt.get('add'/'reduce'/'clear') 这种扁平 key,
+      但 compute_monitor_triggers 实际产出的是"触发项列表"结构:
+        {触发项名: {"条件": ..., "操作": ..., "已触发": bool}, ...}
+      → 字段名对不上, 一直显示"未设定".
+      现在直接按触发项渲染 (加仓/减仓/清仓分类), 数据里有的就显示, 没有的不编.
+    """
+    if not data.monitor_triggers:
+        return "> **数据状态:** ⚠️ 监控触发点未生成\n"
+
+    mt = data.monitor_triggers
+    lines = []
+
+    # 老格式兼容 (万一以后改成扁平结构)
+    if any(k in mt for k in ("add", "reduce", "clear", "加仓信号", "减仓信号", "清仓信号")):
         add    = mt.get('add')    or mt.get('加仓信号') or mt.get('加仓触发', '未设定')
         reduce = mt.get('reduce') or mt.get('减仓信号') or mt.get('减仓触发', '未设定')
         clear  = mt.get('clear')  or mt.get('清仓信号') or mt.get('清仓触发', '未设定')
@@ -1419,7 +1432,60 @@ def _section_monitor(data: RenderData) -> str:
 - **清仓触发:** {clear}
 - **时间触发:** {time_t}
 """
-    return "> **数据状态:** ⚠️ 监控触发点未生成，需重新 sync_watchlist_fresh\n"
+
+    # 新格式: 按触发项分类渲染
+    # 加仓类: 含 "加仓" / "建底仓" / "建仓"
+    # 减仓类: 含 "减仓" / "清仓"
+    buckets = {"加仓": [], "减仓": [], "清仓": [], "其他": []}
+    for name, spec in mt.items():
+        if not isinstance(spec, dict):
+            continue
+        op = str(spec.get("操作", ""))
+        if "加仓" in op or "建仓" in op or "底仓" in op:
+            buckets["加仓"].append((name, spec))
+        elif "清仓" in op:
+            buckets["清仓"].append((name, spec))
+        elif "减仓" in op:
+            buckets["减仓"].append((name, spec))
+        else:
+            buckets["其他"].append((name, spec))
+
+    for label in ("加仓", "减仓", "清仓"):
+        items = buckets[label]
+        if not items:
+            continue
+        lines.append(f"**{label}触发**")
+        for name, spec in items:
+            fired = "✅ 已触发" if spec.get("已触发") else "⏳ 未触发"
+            lines.append(f"- **{name}** — {fired}")
+            lines.append(f"  - 条件: {spec.get('条件', '—')}")
+            lines.append(f"  - 操作: {spec.get('操作', '—')}")
+        lines.append("")
+
+    if buckets["其他"]:
+        lines.append("**其他触发**")
+        for name, spec in buckets["其他"]:
+            fired = "✅ 已触发" if spec.get("已触发") else "⏳ 未触发"
+            lines.append(f"- **{name}** — {fired}")
+            if spec.get("条件"):
+                lines.append(f"  - 条件: {spec['条件']}")
+            if spec.get("操作"):
+                lines.append(f"  - 操作: {spec['操作']}")
+        lines.append("")
+
+    # 时间触发
+    time_t = mt.get("时间触发")
+    if time_t:
+        lines.append(f"**时间触发:** {time_t}")
+    else:
+        lines.append("**时间触发:** 无")
+
+    # 缠论综合判定
+    overall = mt.get("缠论_综合判定")
+    if overall and overall != "—":
+        lines.append(f"**缠论综合判定:** {overall}")
+
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _section_four_q_short(data: RenderData) -> str:
@@ -2131,7 +2197,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ---
 
-## 🎯 因子 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警)
+## 🎯 因子 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警, 2026-09-09 改)
 {_section_factor_matrix(data)}
 
 ---
