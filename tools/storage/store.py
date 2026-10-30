@@ -150,10 +150,6 @@ def _parquet_path(year_or_quarter) -> Path:
     return HISTORY_DIR / f"{year_or_quarter}.parquet"
 
 
-def _db_parquet_path(quarter: str) -> Path:
-    return DAILY_BASIC_DIR / f"{quarter}.parquet"
-
-
 def _today() -> str:
     return datetime.now().strftime("%Y%m%d")
 
@@ -171,28 +167,6 @@ def _get_trading_dates(start: str, end: str) -> list[str]:
             dates.append(d.strftime("%Y%m%d"))
         d += timedelta(days=1)
     return dates
-
-
-def _month_ranges(start_year: int, end_date: str) -> list[tuple[str, str]]:
-    """生成按月的 (start, end) 列表，用于首次建档批量拉取。"""
-    ranges = []
-    end = datetime.strptime(end_date, "%Y%m%d")
-    d = datetime(start_year, 1, 1)
-    while d <= end:
-        month_start = d.strftime("%Y%m%d")
-        # 当月最后一天
-        if d.month == 12:
-            month_end = datetime(d.year + 1, 1, 1) - timedelta(days=1)
-        else:
-            month_end = datetime(d.year, d.month + 1, 1) - timedelta(days=1)
-        month_end = min(month_end, end)
-        ranges.append((month_start, month_end.strftime("%Y%m%d")))
-        # 下一个月
-        if d.month == 12:
-            d = datetime(d.year + 1, 1, 1)
-        else:
-            d = datetime(d.year, d.month + 1, 1)
-    return ranges
 
 
 # ============================================================
@@ -572,10 +546,8 @@ def _do_sync_incremental(target_date: str | None = None) -> int:
             time.sleep(0.3)
 
     # 同步 daily_basic（PE/PB/市值）
-    # v6.2.4 修: sync_daily_basic 不再被 sync_incremental 调, 改由 --stk-factor 接管
-    # 之前 sync_daily_basic 写 11 列 (缺 ps/dv/float_share/turnover_rate_f)
-    # 现在 daily_basic 走 stk_factor_pro 16 列, 单独由 action_stk_factor 写
-    # sync_daily_basic(target_date)  # ⚠️ v6.2.4 弃用, 走 --stk-factor
+    # v6.2.4 起: daily_basic 走 stk_factor_pro 16 列, 由 action_stk_factor 写
+    # (2026-10-30: 旧的 sync_daily_basic 整条链已删)
 
     # 同步 stock_basic（名称/行业，30天内不重拉）
     sync_stock_basic()
@@ -647,99 +619,6 @@ def sync_init(start_year: int = 2020) -> int:
 # 3. daily_basic sync + read (data/history/daily_basic/)
 # ============================================================
 
-def _get_db_max_date() -> str | None:
-    """返回本地 daily_basic 最新 trade_date。"""
-    try:
-        import duckdb
-        files = sorted(DAILY_BASIC_DIR.glob("*.parquet"))
-        if not files:
-            return None
-        recent = [str(f) for f in files[-2:]]
-        glob_expr = "', '".join(recent)
-        result = _conn().execute(
-            f"SELECT MAX(trade_date) FROM read_parquet(['{glob_expr}'])"
-        ).fetchone()
-        return result[0] if result else None
-    except Exception:
-        return None
-
-
-def _append_daily_basic(records: list[dict]):
-    """把 records 按季度写入 daily_basic parquet。"""
-    if not records:
-        return
-    import duckdb
-    import pandas as pd
-    df = pd.DataFrame(records)
-    df["trade_date"] = df["trade_date"].astype(str)
-    df["quarter"] = df["trade_date"].apply(_quarter_of)
-    for quarter, qdf in df.groupby("quarter"):
-        qdf = qdf.drop(columns=["quarter"])
-        path = _db_parquet_path(quarter)
-        if path.exists():
-            old = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
-            qdf = pd.concat([old, qdf]).drop_duplicates(
-                subset=["ts_code", "trade_date"], keep="last"
-            ).sort_values(["trade_date", "ts_code"])
-        else:
-            qdf = qdf.sort_values(["trade_date", "ts_code"])
-        _conn().execute(f"COPY (SELECT * FROM qdf) TO '{path}' (FORMAT PARQUET)")
-
-
-def _prune_daily_basic_old(keep_days: int = 365):
-    """删除超过 keep_days 天的季度文件（默认保留近1年）。"""
-    import duckdb
-    cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y%m%d")
-    cutoff_q = _quarter_of(cutoff)
-    for f in sorted(DAILY_BASIC_DIR.glob("*.parquet")):
-        if f.stem < cutoff_q:
-            f.unlink()
-            print(f"  🗑️  删除过期: {f.name}")
-
-
-def sync_daily_basic(target_date: str | None = None) -> int:
-    """增量同步 daily_basic：只拉缺失的交易日，保留近1年数据。
-
-    Returns: 新增的 bar 数量
-    """
-    from .sources.tushare import get_daily_basic_by_date
-
-    today = target_date or _today()
-    max_local = _get_db_max_date()
-
-    # 首次同步：拉近1年
-    if max_local is None:
-        start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
-        print(f"  🏗️  daily_basic 首次建档，从 {start} 开始...")
-        max_local = (datetime.strptime(start, "%Y%m%d") - timedelta(days=1)).strftime("%Y%m%d")
-
-    if max_local >= today:
-        print(f"  ✅ daily_basic 已是最新 (本地最新: {max_local})")
-        _prune_daily_basic_old()
-        return 0
-
-    next_date = (datetime.strptime(max_local, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
-    missing = _get_trading_dates(next_date, today)
-    missing = [d for d in missing if not has_data_for_date(d)]  # 跳过 K 线也没有的日期
-
-    if not missing:
-        print(f"  ✅ daily_basic 已是最新 (本地最新: {max_local})")
-        return 0
-
-    print(f"  📥 daily_basic 同步 {len(missing)} 天...")
-    total = 0
-    for date in missing:
-        records, status = get_daily_basic_by_date(date)
-        if records:
-            _append_daily_basic(records)
-            total += len(records)
-            print(f"    💾 {date}: {len(records)} 条")
-        time.sleep(0.2)  # Tushare 频控
-
-    _prune_daily_basic_old()
-    return total
-
-
 def batch_load_daily_basic(code: str, dates: list[str]) -> dict[str, dict]:
     """批量读 daily_basic, 1 次 SQL 拿 N 天数据, 按 trade_date 索引
 
@@ -773,9 +652,6 @@ def batch_load_daily_basic(code: str, dates: list[str]) -> dict[str, dict]:
         return {row["trade_date"]: row.to_dict() for _, row in df.iterrows()}
     except Exception:
         return {}
-
-
-
 
 
 def read_daily_basic(ts_code: str) -> dict:
@@ -1052,12 +928,6 @@ def _fin_period_to_quarter(period: str) -> str:
 
 def _fin_path(period: str) -> Path:
     return FIN_DIR / f"{_fin_period_to_quarter(period)}.parquet"
-
-
-def _fin_now() -> str:
-    """ISO 时间戳, 给 fetched_at 用"""
-    from datetime import datetime
-    return datetime.now().isoformat(timespec="seconds")
 
 
 def _fin_load_existing(period: str) -> dict[str, dict]:

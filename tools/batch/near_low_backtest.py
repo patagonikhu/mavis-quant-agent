@@ -24,26 +24,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-DB = ROOT / "data" / "analysis_cache.db"
-
 # 模块顶层 import
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from tools.storage.store import DataStore
-
-
-def sliding_mean(arr, n):
-    if not arr or n <= 0:
-        return [None] * len(arr)
-    out = [None] * len(arr)
-    s = 0.0
-    for i, v in enumerate(arr):
-        s += v
-        if i >= n:
-            s -= arr[i - n]
-        if i >= n - 1:
-            out[i] = s / n
-    return out
 
 
 def find_max_drawdown(closes, dates):

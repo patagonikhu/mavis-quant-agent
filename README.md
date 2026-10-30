@@ -190,8 +190,8 @@ build_kline_features()                       O(n) 一次（预算层，共享）
 WyckoffStrategy.analyze_history(ctx, dates)  O(n) — 1次循环: 每根bar O(1) 索引
 ChanStrategy.analyze_history(ctx, dates)     O(n) — czsc 内部已 O(n) 优化
 SmcStrategy.analyze_history(ctx, dates)      O(n) — OB/FVG/Sweep 全量扫一次
-PegStrategy.analyze_history(ctx, dates)       O(1) — 查表
-ResonanceStrategy.analyze_history(ctx, dates) O(n) — 1d/5d/20d 共振
+TechnicalStrategy.analyze_history(ctx, dates) O(n) — 8 个技术指标时序
+FinanceStrategy.analyze_history(ctx, dates)   O(n) — 季报粒度: Magic/PEG/DCF
   │
   ▼
 AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonance_count 硬编码 if-else

@@ -89,7 +89,6 @@ result = AnalysisEngine().analyze(ctx)                # 7 strategy + 派生
 ```python
 from tools.factors.factor_basic import (
     compute_three_layer_position,
-    compute_alpha_001,
 )
 from tools.factors.factor_risk import (
     compute_exit_signals,

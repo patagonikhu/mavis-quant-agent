@@ -81,28 +81,6 @@ def _mech_t_frame(raw) -> dict:
 # 工具函数 (2026-07-25 加)
 # ============================================================
 
-def _dict_to_rows(value) -> list:
-    """
-    2026-07-25 加: 老 data 工具 存的 north_flow 格式是 dict-of-lists
-    (e.g. {trade_date: [...], hgt: [...], ...}), 但 report_renderer 期望
-    list[dict] (每条记录一个 dict). 自动转, 幂等.
-    """
-    if isinstance(value, list):
-        return value
-    if not isinstance(value, dict) or not value:
-        return []
-    keys = list(value.keys())
-    n = max((len(v) for v in value.values() if hasattr(v, '__len__')), default=0)
-    rows = []
-    for i in range(n):
-        row = {}
-        for k in keys:
-            v = value[k]
-            row[k] = v[i] if i < len(v) else None
-        rows.append(row)
-    return rows
-
-
 @dataclass
 class DataStatus:
     """单个数据源的获取状态"""

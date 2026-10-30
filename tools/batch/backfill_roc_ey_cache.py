@@ -186,14 +186,6 @@ def _calc_4cols_for_code(
     return out
 
 
-def _safe_get(d: dict, key: str, default=None):
-    """dict.get 加 None 检查"""
-    v = d.get(key)
-    if v is None or (isinstance(v, float) and pd.isna(v)):
-        return default
-    return v
-
-
 # ============================================================
 # Main
 # ============================================================

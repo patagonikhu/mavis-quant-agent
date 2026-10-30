@@ -427,19 +427,6 @@ def _add_to_watchlist(top_n: list[dict], period: str):
 # 摘要 helpers (从 magic_top20_summary 搬过来)
 # ============================================================
 
-def get_eps_for_summary(code: str) -> list[dict]:
-    """EPS 摘要 (走 DataStore.get_eps)
-
-    之前: 读 EPS_DIR/{code}.parquet (_read_parquet 已在 v6.2.5 删除)
-    现在: 走 DataStore 唯一入口
-    """
-    try:
-        from tools.storage.store import DataStore
-        return DataStore.get_eps(code) or []
-    except Exception:
-        return []
-
-
 def parse_top20_md(md_path: Path) -> list[dict]:
     """从 magic-top20.md 解析 Top N 排名表"""
     text = md_path.read_text(encoding="utf-8")
@@ -499,20 +486,6 @@ def render_summary_md(items: list[dict]) -> str:
     md += f"\n📅 **生成:** {today}  |  "
     md += f"🔧 **脚本:** `tools/batch/finance_roc_ey.py`\n"
     return md
-
-
-def _fmt_dcf_l(dcf: dict) -> str:
-    if "error" in dcf:
-        return f"❌ {dcf['error'][:18]}"
-    L = dcf.get("L_r10")
-    return f"{L:.0f}亿" if isinstance(L, (int, float)) else "—"
-
-
-def _fmt_dcf_l_e3(dcf: dict) -> str:
-    if "error" in dcf:
-        return "—"
-    e3 = dcf.get("L_E3_r10")
-    return f"{e3:.1f}x" if isinstance(e3, (int, float)) else "—"
 
 
 if __name__ == "__main__":

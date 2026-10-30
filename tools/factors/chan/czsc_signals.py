@@ -123,22 +123,6 @@ _CS_META_KEYS = frozenset({"id", "dt", "symbol", "high", "low", "open", "close",
                             "vol", "amount", "freq", "cache"})
 
 
-def precompute_signals(klines: List[Dict], code: str = "TEMP") -> list:
-    """预计算全量信号序列，供 factor_history 复用（避免逐节点重算）。
-
-    返回 generate_czsc_signals 的原始 list，调用方用 extract_points_from_sigs 按日期提取。
-    """
-    if not CZSC_AVAILABLE or len(klines) < 60:
-        return []
-    from .czsc_wrapper import klines_to_raw_bars
-    bars = klines_to_raw_bars(klines, code)
-    try:
-        cfg = get_signals_config(list(SIGNAL_TEMPLATES.values()))
-        return generate_czsc_signals(bars, cfg, sdt='20200101', df=False) or []
-    except Exception:
-        return []
-
-
 def build_incremental_signals(klines: List[Dict], code: str = "TEMP",
                               warmup_to: int = -1,
                               weekly_bars=None):

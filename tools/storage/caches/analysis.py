@@ -326,12 +326,6 @@ def write_batch(code: str, kline: list[dict], results: dict[str, dict]):
 def get_cached_codes() -> set[str]:
     """返所有已 cache 的 code"""
     return {r["code"] for r in _query("SELECT DISTINCT code FROM analysis_cache")}
-def get_latest_cache_date() -> str | None:
-    """返 cache 中最新日期"""
-    rows = _query("SELECT MAX(date_str) AS d FROM analysis_cache")
-    return rows[0]["d"] if rows and rows[0]["d"] else None
-
-
 def get_existing_valuation_pairs() -> set[tuple[str, str]]:
     """返 (code, date) 已有 valuation 的对 (roc/ey/peg/dcf_l 任一非空)"""
     rows = _query(
@@ -390,19 +384,6 @@ def check_stale_batch(code: str, dates: list[str],
         stored_hash = stored.get(d)
         result[d] = (stored_hash is None) or (stored_hash != _kline_hash(kl))
     return result
-
-
-def check_stale(code: str, date_str: str, kline: list[dict]) -> bool:
-    """单条检查（慢，仅用于调试）"""
-    conn = _conn()
-    try:
-        r = conn.execute(
-            "SELECT kline_hash FROM analysis_cache WHERE code=? AND date_str=?",
-            (code, date_str)
-        ).fetchone()
-    finally:
-        conn.close()
-    return not r or r[0] != _kline_hash(kline)
 
 
 def get_stats() -> dict:

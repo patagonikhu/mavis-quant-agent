@@ -150,28 +150,6 @@ def _shift_quarters(df: pd.DataFrame, cols: list[str], lookback_quarters: int = 
     return df
 
 
-def is_strictly_increasing(arr) -> bool:
-    """数组严格递增判断 (每步 prev < curr, 一步不满足即返 false)
-
-    用法: 给定本季→上季→上 2 季→上 3 季的数组, 必须每步严格递增才算单调
-    例 is_strictly_increasing([136.3, 132.8, 30.4, 12.8]) → True
-       is_strictly_increasing([192.1, 182.5, 30.4, 12.8]) → False  (本季 < 上季)
-
-    NaN / None 视为数据缺失, 直接返 False (避免 NaN > x 总是 False 的陷阱)
-    """
-    if arr is None or len(arr) < 2:
-        return False
-    # 类型安全: 数字 (int/float) 才能比, 字符串/None/NaN 一律 False
-    for v in arr:
-        if v is None:
-            return False
-        if isinstance(v, float) and v != v:  # NaN 检查
-            return False
-        if not isinstance(v, (int, float)):
-            return False
-    return all(arr[i] < arr[i + 1] for i in range(len(arr) - 1))
-
-
 # ============================================================
 # 命中判断 — 策略模式 (2026-09-23 重构)
 # ============================================================

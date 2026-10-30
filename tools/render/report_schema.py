@@ -59,7 +59,7 @@ REPORT_SECTIONS = [
         "refresh": "REGEN",
         "_deprecated": True,  # 标记废弃, renderer 不输出
         # 2026-10-30: 之前 _deprecated 只是"声明"没人消费, 导致 linter 仍把它算进必填
-        #   → 下面 get_section_titles / get_required_section_ids 现在会过滤掉
+        #   → 下面 get_section_titles 现在会过滤掉
     },
     # 2026-07-25: 5 方法 × 3 周期 矩阵 (独立 section, 整合原 5 合 1 顶部预警)
     # 注: chan_signals / chan_supplement 已于 7-29 合并入 factor_history + method_matrix, 废弃删除
@@ -340,24 +340,6 @@ def get_section_titles() -> list:
       linter 却从不为它们报警 (missing 只统计不 warn) → 完整度虚低, 问题被掩盖.
     """
     return [s["title"] for s in REPORT_SECTIONS if not s.get("_deprecated")]
-
-
-def get_required_section_ids() -> list:
-    """返回必填 section ID (过滤废弃)"""
-    return [s["id"] for s in REPORT_SECTIONS
-            if s.get("required", True) and not s.get("_deprecated")]
-
-
-def get_regen_titles() -> list[str]:
-    """返回 refresh=REGEN 的 section 标题列表 (enhance 时强制重新生成, 过滤废弃)"""
-    return [s["title"] for s in REPORT_SECTIONS
-            if s.get("refresh") == "REGEN" and not s.get("_deprecated")]
-
-
-def get_preserve_titles() -> list[str]:
-    """返回 refresh=PRESERVE 的 section 标题列表 (enhance 时保留原内容, 过滤废弃)"""
-    return [s["title"] for s in REPORT_SECTIONS
-            if s.get("refresh") == "PRESERVE" and not s.get("_deprecated")]
 
 
 def get_ordered_titles() -> list[str]:

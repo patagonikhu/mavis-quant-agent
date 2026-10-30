@@ -164,11 +164,6 @@ def _code_to_ts(code: str) -> str:
     return f"{code}.SZ"
 
 
-def _ts_to_code(ts_code: str) -> str:
-    """300274.SZ → 300274"""
-    return ts_code.split(".")[0] if ts_code else ""
-
-
 def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
     """统一 tushare 调用, 永不 raise, 返回 (data_list, status)
 
@@ -362,23 +357,6 @@ def get_stk_factor_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
     return data, status
 
 
-def get_daily_range(start_date: str, end_date: str) -> tuple[list[dict] | None, str]:
-    """按日期范围拉全市场日K线（不限 ts_code），用于首次建档。
-
-    一次调用返回该区间内全市场所有股票所有日期的数据。
-    start_date/end_date: YYYYMMDD
-    """
-    data, status = _safe_call(
-        "daily",
-        start_date=start_date,
-        end_date=end_date,
-        fields="ts_code,trade_date,open,high,low,close,pre_close,vol,amount,pct_chg",
-    )
-    if data:
-        data.sort(key=lambda x: (x["trade_date"], x["ts_code"]))
-    return data, status
-
-
 # ============================================================
 # 3. daily_basic — PE/PB/市值 (替代 push2 f164)
 # ============================================================
@@ -419,23 +397,6 @@ def get_weekly(code: str, start_date: str = "", end_date: str = "", limit: int =
     if end_date:
         kwargs["end_date"] = end_date
     data, status = _safe_call("weekly", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["trade_date"])
-    if limit and not start_date:
-        data = data[-limit:]
-    return data, "OK"
-
-
-def get_monthly(code: str, start_date: str = "", end_date: str = "", limit: int = 24) -> tuple[list[dict] | None, str]:
-    """月 K 线 — 跨更大周期"""
-    ts_code = _code_to_ts(code)
-    kwargs = {"ts_code": ts_code, "fields": "ts_code,trade_date,open,high,low,close,vol,amount,pct_chg"}
-    if start_date:
-        kwargs["start_date"] = start_date
-    if end_date:
-        kwargs["end_date"] = end_date
-    data, status = _safe_call("monthly", **kwargs)
     if not data:
         return None, status
     data.sort(key=lambda x: x["trade_date"])
@@ -718,20 +679,6 @@ def get_fund_daily(trade_date: str = "", ts_code: str = "", start_date: str = ""
         return None, status
     data.sort(key=lambda x: x.get("trade_date", ""))
     return data, "OK"
-
-
-def get_fund_nav(ts_code: str, start_date: str = "", end_date: str = "") -> tuple[list[dict] | None, str]:
-    """ETF 单位净值 (Tushare.fund_nav) — 算 IOPV 折溢价用, v1 暂不消费
-
-    2026-10-09 加: v1 只把接口暴露, render_data 暂不用 (等 v2 加「折溢价 section」)
-    """
-    kwargs = {"ts_code": ts_code}
-    if start_date:
-        kwargs["start_date"] = start_date
-    if end_date:
-        kwargs["end_date"] = end_date
-    data, status = _safe_call("fund_nav", **kwargs)
-    return data, status
 
 
 # ============================================================

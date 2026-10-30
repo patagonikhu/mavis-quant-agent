@@ -34,23 +34,6 @@ from tools.factors.wyckoff.helpers import _find_range
 from tools.factors.wyckoff.detectors import scan_sub_events
 
 
-def _mean(seq):
-    """sum/len — 34x faster than statistics.mean for small lists."""
-    return sum(seq) / len(seq)
-
-
-def _sliding_ma(arr, n):
-    """O(n) sliding-window MA of length n (warm-up uses actual count)."""
-    result = []
-    s = 0.0
-    for i, v in enumerate(arr):
-        s += v
-        if i >= n:
-            s -= arr[i - n]
-        result.append(s / min(i + 1, n))
-    return result
-
-
 def wyckoff_judge(i, arrs, sub_events, window, period_label,
                   ma_short=20, ma_long=60, pos_lookback=60):
     """威科夫阶段判定 — O(1) per call，使用 kline_arrays.build_kline_features() 返回的预算数组。

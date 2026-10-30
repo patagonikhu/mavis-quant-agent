@@ -18,20 +18,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def _label_for(sig_name: str, sig_val: str, label_map: dict) -> str:
-    """czsc sig_name + sig_val → 中文标签 (复用 czsc_signals.py 逻辑)"""
-    entry = label_map.get(sig_name)
-    if entry is None:
-        # 从 sig_val 推方向
-        if any(t in sig_val for t in ("看多", "看涨", "底背", "买入", "趋势跟随")):
-            return "🟢"
-        if any(t in sig_val for t in ("看空", "看跌", "顶背", "卖出")):
-            return "🔴"
-        return ""
-    label, _dir = entry
-    return label
-
-
 def main():
     parser = argparse.ArgumentParser(description="czsc 17 信号历史触发 (单只验证用)")
     parser.add_argument("--code", required=True, help="股票代码")

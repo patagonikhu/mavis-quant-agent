@@ -24,34 +24,6 @@ from typing import Dict, List, Optional, Tuple
 # 123 买卖点判定 (从 buy_sell_points 数据)
 # ============================================================
 
-def _bsp_to_action(bsp: dict) -> str:
-    """买卖点 → 操作建议 (从 buy_sell_points 提取)"""
-    if not bsp:
-        return '—'
-    # 优先级: 1买⭐ > 1买 > 2买 > 3买 > 0买 (底部)
-    #          1卖⭐ > 1卖 > 2卖 > 3卖 (顶部)
-    action = bsp.get('action', '—')
-    if '1买⭐' in str(action) or '趋势1买' in str(action):
-        return '⭐⭐⭐⭐⭐ 趋势1买建仓 (2中枢+分型, 最强)'
-    if '1买' in str(action):
-        return '⭐⭐⭐⭐ 1买建仓 (底背驰+分型)'
-    if '2买' in str(action):
-        return '⭐⭐⭐ 2买加仓 (中枢下沿)'
-    if '0买' in str(action):
-        return '⭐⭐ 0买试仓 (超跌反弹)'
-    if '1卖⭐' in str(action) or '趋势1卖' in str(action):
-        return '🔴🔴🔴🔴🔴 趋势1卖清仓 (2中枢+分型, 最强)'
-    if '1卖' in str(action):
-        return '🔴🔴🔴🔴 1卖减仓 (顶背驰+分型)'
-    if '2卖' in str(action):
-        return '🔴🔴🔴 2卖减仓 (中枢上沿)'
-    if '3买' in str(action):
-        return '⭐⭐ 3买突破加仓 (中枢上沿)'
-    if '3卖' in str(action):
-        return '🔴🔴 3卖减仓 (中枢下沿)'
-    return str(action) if action else '—'
-
-
 # ============================================================
 # 价格计算: 1买价 / 1卖价 / 中枢上下沿
 # ============================================================
@@ -427,40 +399,6 @@ def build_factor_matrix(
 # ============================================================
 # 便捷函数: 给 watchlist / sector 用
 # ============================================================
-
-def get_buy_recommendation(matrix_result: dict) -> Optional[dict]:
-    """
-    从 因子矩阵提取"建议买入价"
-    优先级: 日线 composite.buy_target > 周线 > 60分
-    """
-    for level in ['daily', 'weekly']:
-        comp = matrix_result['matrix'][level].get('composite', {})
-        if comp.get('direction') == 'long' and comp.get('buy_target'):
-            return {
-                'price': comp['buy_target'],
-                'level': level,
-                'action': comp['action'],
-                'bottom_signals': comp.get('bottom_signals', 0),
-            }
-    return None
-
-
-def get_sell_recommendation(matrix_result: dict) -> Optional[dict]:
-    """
-    从 因子矩阵提取"建议卖出价"
-    优先级: 日线 composite.sell_target > 周线
-    """
-    for level in ['daily', 'weekly']:
-        comp = matrix_result['matrix'][level].get('composite', {})
-        if comp.get('direction') == 'short' and comp.get('sell_target'):
-            return {
-                'price': comp['sell_target'],
-                'level': level,
-                'action': comp['action'],
-                'top_signals': comp.get('top_signals', 0),
-            }
-    return None
-
 
 # ============================================================
 # Markdown 渲染 (给 _section_factor_matrix 调用)

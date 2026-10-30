@@ -486,7 +486,7 @@ class TechnicalStrategy:
         # 把完整 series 挂到 result (供 render_data 复用, 避免 render 端再算)
         ctx.technical_result = result
 
-        # 提取关键信号 (单点, 跟原 _section_technical 显示口径一致)
+        # 提取关键信号 (单点, 跟因子历史表显示口径一致)
         signals = []
         if "macd" in result and "verdict" in result["macd"]:
             signals.append(result["macd"]["verdict"])
@@ -835,47 +835,6 @@ class ChanStrategy:
             results[bar_dt] = {**node, "score": 0.0, "signals": [], "summary": "缠论历史"}
 
         return results
-
-
-class PegStrategy:
-    """PEG 估值 → 分数 (DEPRECATED: 合并进 ValuationStrategy, 2026-09-02 保留兼容)"""
-    name = "peg"
-
-    def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.valuation.multi import PegFactor
-        peg_factor = PegFactor()
-        peg = peg_factor(df=None, eps_table=ctx.eps_table,
-                         current_price=ctx.current_price) or {}
-        peg_real = peg.get("PEG_真实")
-        signals = []
-        score = 0.0
-        summary = "—"
-        if peg_real is not None and isinstance(peg_real, (int, float)):
-            if peg_real < 0.5:
-                score = 1.0
-            elif peg_real < 1.0:
-                score = 0.5
-            elif peg_real < 2.0:
-                score = 0.0
-            else:
-                score = -1.0
-            signals.append(f"PEG 真实 {peg_real}")
-            summary = f"PEG {peg_real}"
-        else:
-            signals.append("PEG 数据不足")
-            summary = "PEG 数据不足"
-
-        return {
-            "score":   score,
-            "signals": signals,
-            "summary": summary,
-            **peg,
-        }
-
-    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """PEG 不依赖历史切片，对全量 ctx 跑一次，所有 date 共享同一结果。"""
-        result = self.analyze(ctx)
-        return {d: result for d in dates}
 
 
 class FinanceStrategy:

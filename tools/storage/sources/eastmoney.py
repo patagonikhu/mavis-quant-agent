@@ -18,7 +18,7 @@ data_fetcher.py — 统一数据抓取层 (v4.0, 2026-07-22)
   └──────────────┴─────────────────────────────────────────┘
 
 历史 curl helper (_get_with_retry / _get_session / _secid / _secucode 等)
-保留但已无调用, 后续清理。
+2026-10-30 已删 (0 调用, 且 push2 属 WAF 拒接域)。
 
 使用方式:
   from tools.storage.sources.eastmoney import get_realtime_price
@@ -34,12 +34,6 @@ import logging
 import subprocess
 import time
 from typing import Any, Optional
-
-# requests 仍 import (老的 fetcher 可能用), 但 _get_with_retry 已改用 curl
-try:
-    import requests
-except ImportError:
-    requests = None
 
 logger = logging.getLogger(__name__)
 
@@ -60,168 +54,9 @@ except FileNotFoundError:
 # 基础配置
 # ============================================================
 
-DEFAULT_TIMEOUT = 5
-DEFAULT_RETRIES = 2
-RETRY_BACKOFF = 2
-
-# 🚨 关键: 数据 API 一律直连, 不加 proxies (CLAUDE.md 2026-07-21 修正)
-NO_PROXY = {"http": None, "https": None}
-
-_session: Optional[requests.Session] = None
-
-
-def _get_session() -> requests.Session:
-    global _session
-    if _session is None:
-        _session = requests.Session()
-        _session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "*/*",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-        })
-        _session.trust_env = False  # 不读取系统 http_proxy 环境变量
-    return _session
-
-
-def _get_with_retry(url: str, params: dict | None = None, headers: dict | None = None,
-                    timeout: int = DEFAULT_TIMEOUT, retries: int = DEFAULT_RETRIES,
-                    parser: str = "json") -> tuple[Any, str]:
-    """
-    单 URL 重试 + 解析, 返回 (data, status)
-    parser: "json" | "text"
-
-    2026-07-21: 改用 curl subprocess 替代 requests
-    - 解决 SAP 网络下 SSL/握手问题
-    - 不加 --proxy (CLAUDE.md 规则: 数据 API 一律直连)
-    """
-    # 把 params 拼到 URL (curl 不会自动拼)
-    if params:
-        from urllib.parse import urlencode
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}{urlencode(params)}"
-
-    cmd = [
-        "curl", "-sL",
-        "--max-time", str(timeout),
-        # 不让 curl 自己 retry (push2 EMPTY 不是网络抖动, WAF 拒接不可恢复)
-        # 我们自己控制重试逻辑, EMPTY 时立即 break
-        "-A", "Mozilla/5.0",
-        url,
-    ]
-
-    last_status = "ALL_FAILED"
-    for attempt in range(retries):
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=False,  # 拿 bytes, 自己处理编码 (qtimg 是 GBK)
-                timeout=timeout + 3,
-            )
-
-            if result.returncode != 0:
-                stderr = (result.stderr or "").lower()
-                if "ssl" in stderr or "certificate" in stderr:
-                    last_status = "SSL_ERROR"
-                elif "could not connect" in stderr or "refused" in stderr:
-                    last_status = "NET_REFUSED"
-                elif "timed out" in stderr or "timeout" in stderr:
-                    last_status = "TIMEOUT"
-                else:
-                    last_status = f"CURL_ERR_{result.returncode}"
-                logger.warning("curl 失败 (attempt %d): %s", attempt + 1, stderr[:150])
-                if attempt < retries - 1:
-                    time.sleep(RETRY_BACKOFF ** attempt)
-                continue
-
-            raw = result.stdout or b""
-            if not raw.strip():
-                last_status = "EMPTY"
-                # 2026-07-21: Empty reply 几乎都是 WAF 拒接 (push2 系),
-                # 不可恢复, 立即跳出 (不再 retry, 留给 fallback 链)
-                logger.warning("curl Empty reply (attempt %d, WAF?), 不再重试", attempt + 1)
-                break
-
-            # 2026-07-21: 解码兼容 GBK (qtimg) / UTF-8 (push2/ifzq/datacenter)
-            for enc in ("utf-8", "gbk", "gb2312", "latin-1"):
-                try:
-                    text = raw.decode(enc)
-                    break
-                except UnicodeDecodeError:
-                    continue
-            else:
-                last_status = "DECODE_FAIL"
-                continue
-
-            if parser == "json":
-                try:
-                    parsed = json.loads(text)
-                    if not parsed:
-                        last_status = "EMPTY"
-                        continue
-                    return parsed, "OK"
-                except (json.JSONDecodeError, ValueError):
-                    last_status = "PARSE_FAIL"
-                    break
-            else:  # text
-                return text, "OK"
-
-        except subprocess.TimeoutExpired:
-            last_status = "TIMEOUT"
-        except FileNotFoundError:
-            return None, "CURL_NOT_FOUND"
-        except Exception as e:
-            last_status = f"EXCEPTION_{type(e).__name__}"
-
-        if attempt < retries - 1:
-            time.sleep(RETRY_BACKOFF ** attempt)
-
-    return None, last_status
-
-
 # ============================================================
 # secid / secucode 工具
 # ============================================================
-
-def _is_sh(code: str) -> bool:
-    return code.startswith(("60", "688", "90", "51", "56"))
-
-
-def _secid(code: str) -> str:
-    return f"1.{code}" if _is_sh(code) else f"0.{code}"
-
-
-def _secucode(code: str) -> str:
-    return f"{code}.SH" if _is_sh(code) else f"{code}.SZ"
-
-
-def _normalize_name(name: str) -> str:
-    """归一化股票名 — 修 qtimg 返回全角字符 (京东方Ａ → 京东方A)
-
-    qtimg 腾讯接口对部分股票名用全角字母 (A 股/A 类), 直接拿会:
-      1. 文件名冲突: docs/analyze-000725-京东方Ａ.md vs 000725-京东方A.md
-      2. 报告里显示不一致
-
-    修法: 全角字母/数字 → 半角 (A-Z 0-9)
-    """
-    if not name:
-        return name
-    out = []
-    for ch in name:
-        code = ord(ch)
-        # 全角字母 (A-Z): U+FF21 - U+FF3A
-        if 0xFF21 <= code <= 0xFF3A:
-            out.append(chr(code - 0xFF21 + 0x41))
-        # 全角字母 (a-z): U+FF41 - U+FF5A
-        elif 0xFF41 <= code <= 0xFF5A:
-            out.append(chr(code - 0xFF41 + 0x61))
-        # 全角数字 (0-9): U+FF10 - U+FF19
-        elif 0xFF10 <= code <= 0xFF19:
-            out.append(chr(code - 0xFF10 + 0x30))
-        else:
-            out.append(ch)
-    return "".join(out)
-
 
 # ============================================================
 # 2. 历史 K 线
@@ -268,7 +103,6 @@ def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[
     return result, "OK"
 
 
-# ============================================================
 # ============================================================
 # 4. EPS 一致预期
 # ============================================================
@@ -522,108 +356,6 @@ def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
     # 9. price status (复用 daily_basic)
     result["statuses"]["price"] = "OK" if result.get("close") else "EMPTY"
 
-    return result
-
-
-def fetch_from_local(code: str, kline_days: int = 1250) -> dict:
-    """从本地历史库 + 缓存组装 raw dict，0 网络调用。
-
-    依赖:
-      - data/history/daily/*.parquet  (由 history_sync 维护)
-      - data/cache/daily_basic.json   (由 static_cache 维护)
-      - data/cache/stock_basic.json   (由 static_cache 维护)
-      - data/history/eps/{code}.parquet   (v6.2.4, 由 static_cache 维护)
-
-    返回格式与 fetch_all 一致，供 老 data 工具 无缝替换。
-    """
-    from datetime import datetime
-
-    result = {
-        "code": code,
-        "name": "",
-        "sector": "",
-        "close": None,
-        "pe_ttm": None,
-        "pb": None,
-        "total_mv": None,
-        "circ_mv": None,
-        "total_share": None,
-        "turnover_rate": None,
-        "volume_ratio": None,
-        "industry": "",
-        "list_date": "",
-        "kline": [],
-        "weekly": [],
-        "eps_table": [],
-        "statuses": {},
-        "fetch_time": datetime.now().isoformat(),
-        "_source": "local",
-    }
-
-    from ..store import DataStore
-    from ..caches.eps import get_daily_basic, get_stock_basic, get_eps
-
-    ts_code = code + ".SZ" if code.startswith(("0", "3")) else code + ".SH"
-
-    # 1. K线（从 parquet 读，升序）
-    bars_raw = DataStore.get_kline(code, limit=kline_days)
-    if bars_raw:
-        kline = []
-        for r in bars_raw:
-            try:
-                kline.append({
-                    "trade_date": str(r.get("trade_date", "")),
-                    "open":    float(r.get("open",    0) or 0),
-                    "close":   float(r.get("close",   0) or 0),
-                    "high":    float(r.get("high",    0) or 0),
-                    "low":     float(r.get("low",     0) or 0),
-                    "volume":  float(r.get("vol",     r.get("volume", 0)) or 0),
-                    "amount":  float(r.get("amount",  0) or 0),
-                    "pct_chg": float(r.get("pct_chg", 0) or 0),
-                })
-            except (TypeError, ValueError):
-                continue
-        result["kline"] = kline
-        result["close"] = kline[-1]["close"] if kline else None
-        result["statuses"]["kline"] = "OK"
-    else:
-        result["statuses"]["kline"] = "EMPTY"
-
-    # 2. 周线（从日线合成，5根日线→1根周线）
-    if result["kline"]:
-        result["weekly"] = _synthesize_weekly(result["kline"])
-        result["statuses"]["weekly"] = "OK" if result["weekly"] else "EMPTY"
-
-    # 3. stock_basic（缓存）
-    sb = get_stock_basic(code)
-    if sb:
-        result["name"]       = sb.get("name", "")
-        result["industry"]   = sb.get("industry", "")
-        result["list_date"]  = sb.get("list_date", "")
-        result["total_share"]= sb.get("total_share", 0)
-        result["statuses"]["stock_basic"] = "OK"
-    else:
-        result["statuses"]["stock_basic"] = "EMPTY"
-
-    # 4. daily_basic（缓存）
-    db = get_daily_basic(code)
-    if db:
-        result["pe_ttm"]        = db.get("pe_ttm")
-        result["pb"]            = db.get("pb")
-        result["total_mv"]      = db.get("total_mv")
-        result["circ_mv"]       = db.get("circ_mv")
-        result["turnover_rate"] = db.get("turnover_rate")
-        result["volume_ratio"]  = db.get("volume_ratio")
-        result["statuses"]["daily_basic"] = "OK"
-    else:
-        result["statuses"]["daily_basic"] = "EMPTY"
-
-    # 5. EPS（缓存）
-    eps = get_eps(code)
-    result["eps_table"] = eps or []
-    result["statuses"]["eps"] = "OK" if eps else "EMPTY"
-
-    result["statuses"]["price"] = "OK" if result.get("close") else "EMPTY"
     return result
 
 
@@ -913,17 +645,6 @@ def compute_indicators(kline: list[dict]) -> dict:
 # ============================================================
 # 指标计算子函数 (Wilder 标准)
 # ============================================================
-
-def _ema(data: list[float], period: int) -> float:
-    """指数移动平均 (最后一个值)"""
-    if len(data) < period:
-        return sum(data) / len(data) if data else 0
-    k = 2 / (period + 1)
-    ema = sum(data[:period]) / period  # 初始 SMA
-    for price in data[period:]:
-        ema = price * k + ema * (1 - k)
-    return ema
-
 
 def _ema_series(data: list[float], period: int) -> list[float]:
     """EMA 序列"""

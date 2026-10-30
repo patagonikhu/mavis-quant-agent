@@ -109,62 +109,6 @@ def calc_returns(code: str, start_date: str, days: int) -> dict | None:
 
 
 # ============================================================
-# 排名 (含过滤)
-# ============================================================
-def rank_at_date_filtered(rebalance_date: str, fin_df: pd.DataFrame,
-                          min_mcap: float, max_roc: float, min_ebit: float) -> list[dict]:
-    market_caps = load_market_cap_at(rebalance_date)
-    if not market_caps:
-        return []
-
-    rows = []
-    for code, group in fin_df.groupby("ts_code"):
-        code6 = code.split(".")[0]
-        mc_wan = market_caps.get(code6)
-        if not mc_wan or mc_wan <= 0:
-            continue
-        fins = sorted(group.to_dict("records"), key=lambda r: r.get("end_date", ""))
-        if not fins:
-            continue
-        result = compute_magic_one_day(fins, rebalance_date, mc_wan)
-        if result.get("roc") is None or result.get("ey") is None:
-            continue
-
-        mc_yi = mc_wan / 1e4
-        ebit_yi = (result.get("ebit_yi") or 0)
-        roc = result["roc"]
-        ey = result["ey"]
-
-        if min_mcap > 0 and mc_yi < min_mcap:
-            continue
-        if max_roc < 9999 and roc > max_roc:
-            continue
-        if min_ebit > 0 and ebit_yi < min_ebit:
-            continue
-
-        rows.append({
-            "code": code6,
-            "industry": fins[-1].get("industry", ""),
-            "roc": roc,
-            "ey": ey,
-            "market_cap_yi": mc_yi,
-            "ebit_yi": ebit_yi,
-        })
-
-    rows = [r for r in rows if r["industry"] not in EXCLUDED_INDUSTRIES]
-    if not rows:
-        return []
-
-    for rank, r in enumerate(sorted(rows, key=lambda x: x["roc"], reverse=True), 1):
-        r["roc_rank"] = rank
-    for rank, r in enumerate(sorted(rows, key=lambda x: x["ey"], reverse=True), 1):
-        r["ey_rank"] = rank
-    for r in rows:
-        r["combined_rank"] = (r["roc_rank"] + r["ey_rank"]) / 2
-    return sorted(rows, key=lambda x: x["combined_rank"])[:TOP_N]
-
-
-# ============================================================
 # 跑一组阈值 (v6.2.4 性能版: 1 次算全市场 ROC/EY, 存预计算字典)
 # ============================================================
 

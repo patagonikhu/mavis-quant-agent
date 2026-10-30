@@ -172,103 +172,6 @@ def _section_ma(data: RenderData) -> str:
     return "\n".join(rows) + f"\n\n**MA 排列:** {arrange}"
 
 
-def _section_technical(data: RenderData) -> str:
-    """8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比) — Wilder 标准公式"""
-    if not data.technical or "error" in data.technical:
-        return "> **数据状态:** ❌ 技术指标未计算 (K线不足或 compute_indicators 失败)\n"
-
-    t = data.technical
-    parts = []
-
-    # 1. MACD
-    if "macd" in t:
-        m = t["macd"]
-        parts.append(f"**MACD (12,26,9):**\n- DIF={m['DIF']:.4f}, DEA={m['DEA']:.4f}, BAR={m['BAR']:.4f}\n- {m['verdict']}")
-
-    # 2. RSI
-    if "rsi" in t:
-        r = t["rsi"]
-        parts.append(f"**RSI (6,12,24):**\n- RSI6={r['rsi6']:.1f}, RSI12={r['rsi12']:.1f}, RSI24={r['rsi24']:.1f}\n- {r['verdict']}")
-
-    # 3. KDJ
-    if "kdj" in t:
-        k = t["kdj"]
-        parts.append(f"**KDJ (9,3,3):**\n- K={k['K']:.1f}, D={k['D']:.1f}, J={k['J']:.1f}\n- {k['verdict']}")
-
-    # 4. BOLL
-    if "boll" in t and "error" not in t["boll"]:
-        b = t["boll"]
-        parts.append(f"**BOLL (20,2):**\n- 中轨=¥{b['mid']:.2f}, 上轨=¥{b['upper']:.2f}, 下轨=¥{b['lower']:.2f}\n- 带宽={b['width']:.2f}%\n- {b['verdict']}")
-
-    # 5. ATR
-    if "atr" in t and "error" not in t["atr"]:
-        a = t["atr"]
-        parts.append(f"**ATR (14):**\n- ATR14=¥{a['atr14']:.2f} ({a['atr_pct']:.2f}%)\n- {a['verdict']}")
-
-    # 6. 量比
-    if "vol_ma" in t and "error" not in t["vol_ma"]:
-        v = t["vol_ma"]
-        parts.append(f"**量比 (vol_ratio):**\n- 今日={v['vol_today']:.0f}, MA5={v['vol_ma5']:.0f}, ratio={v['vol_ratio']:.2f}\n- {v['verdict']}")
-
-    # 7. 综合
-    if "summary" in t:
-        parts.append(f"\n**综合判定:** {t['summary']}")
-
-    return "\n\n".join(parts) + "\n"
-
-
-def _section_chan_full(data: RenderData) -> str:
-    """缠论完整 4 级别 — 从 dump JSON 的 chan 字段生成 (2026-07-24 修复: 之前只放占位)"""
-    if data.chan_data and "full_table" in data.chan_data:
-        return data.chan_data["full_table"]
-
-    # 2026-07-24: 从 chan_data 字段生成完整缠论表
-    if data.chan_data:
-        weekly = data.chan_data.get("weekly", {})
-        daily = data.chan_data.get("daily", {})
-
-        def _hub_str(hub):
-            if not hub or not hub.get("valid"):
-                return "—"
-            lo, hi = hub.get("low", 0), hub.get("high", 0)
-            return f"¥{lo:.2f}~¥{hi:.2f} ({hub.get('pos', '—')})"
-
-        def _seg_count(level):
-            segs = level.get("segs", [])
-            return len(segs) if segs else 0
-
-        def _segs_table(level):
-            segs = level.get("segs", [])
-            if not segs:
-                return ""
-            lines = ["| 起价 | 止价 | 笔数 | 方向 | 起日 | 止日 |",
-                     "|---|---|---|---|---|---|"]
-            for s in segs[-8:]:  # 最近 8 段
-                lines.append(f"| ¥{s.get('sp', 0):.2f} | ¥{s.get('ep', 0):.2f} | {s.get('nb', 0)} | {s.get('dir', '—')} | {s.get('sdt', '—')} | {s.get('edt', '—')} |")
-            return "\n".join(lines)
-
-        out = [
-            "| 级别 | 中枢 | 段数 | seg_idx |",
-            "|---|---|---|---|",
-            f"| 周 | {_hub_str(weekly.get('hub', {}))} | {_seg_count(weekly)} | {weekly.get('hub', {}).get('seg_idx', '—') or '—'} |",
-            f"| 日 | {_hub_str(daily.get('hub', {}))} | {_seg_count(daily)} | {daily.get('hub', {}).get('seg_idx', '—') or '—'} |",
-            "",
-            "**中枢构成 (日线最近 8 段):**",
-            _segs_table(daily) or "_无段数据_",
-        ]
-        return "\n".join(out)
-
-    return """> **数据状态:** ⚠️ 缠论 4 级别表未传入
-> **说明:** 完整缠论数据由 `/t-trigger` 计算, 见 `docs/analyze-{code}.md` 后续 section
-> **占位:** 周/日 中枢列表 + 段列表 — 由 t-trigger 注入
-
-| 级别 | 中枢数 | 段数 |
-|---|---|---|
-| 周 | — | — |
-| 日 | — | — |
-"""
-
-
 def _section_four_questions(data: RenderData) -> str:
     if data.four_questions:
         fq = data.four_questions
@@ -391,22 +294,6 @@ def _section_dcf(data: RenderData) -> str:
 """
 
 
-def _section_magic_formula_unused(data: RenderData) -> str:
-    """2026-09-02 废弃: Magic 合并到 _section_eps, 这个函数保留只是占位避免引用错误。
-    实际主模板不再调用, 报告渲染从 _section_eps 拿 data.valuation_data。
-    """
-    return ""
-
-
-def _section_fundamental(data: RenderData) -> str:
-    """基本面 (4 维) — 2026-09-09 整个 section 删掉
-    4 维 (估值/盈利/成长/安全) 走 PEG/ROC/EY/行业 4 维, 已被 ValuationStrategy (PEG + DCF + Magic ROC/EY v6.2.5) 取代.
-    决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 估值双指标 (PEG/DCF L).
-    函数保留为空 stub, 防止外部 import 引用报错.
-    """
-    return ""
-
-
 def _section_signal_5cat(data: RenderData) -> str:
     if not data.signal_5cat or "error" in data.signal_5cat:
         return "> **数据状态:** ❌ 4 类 12 子信号未计算\n> **降级:** 用 K 线 + 技术指标自动算 (部分项用中性 5/10 分)\n"
@@ -427,13 +314,6 @@ def _section_signal_5cat(data: RenderData) -> str:
     if s.get("missing"):
         parts.append(f"\n**数据缺失类:** {', '.join(s['missing'])}")
     return "\n".join(parts) + "\n"
-
-
-def _section_strategy(data: RenderData) -> str:
-    """4 套交易策略 — 2026-09-09 整个 section 删掉 (走 缠论, 走 TechnicalStrategy 8 个技术指标)
-    函数保留为空 stub, 防止外部 import 引用报错.
-    """
-    return ""
 
 
 def _section_xgboost(data: RenderData) -> str:
@@ -510,14 +390,6 @@ def _fmt_date(d: str) -> str:
     """20260428 → 2026-04-28，带时间的取日期部分"""
     d = str(d).split(" ")[0].replace("-", "")
     return f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) >= 8 else d
-
-
-def _parse_pct(v) -> float:
-    """把 '-7%' / '-7' / -7 统一转成 float"""
-    try:
-        return float(str(v).replace('%', '').strip())
-    except Exception:
-        return 0.0
 
 
 def _chan_level_detail(chan_data: dict, level: str) -> dict:
@@ -916,17 +788,6 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
 # ============================================================
 # SMC section 辅助函数 (跟威科夫 4 段式风格一致, 2026-07-25)
 # ============================================================
-
-# SMC 释义 (跟 OpenMobius 命名 + 中文)
-SMC_GLOSSARY = {
-    "buy_side_sweep": ("buy-side 扫流", "扫 swing high 上方空头止损, 主力吸筹"),
-    "sell_side_sweep": ("sell-side 扫流", "扫 swing low 下方多头止损, 主力派发"),
-    "fvg_bull": ("看涨 FVG", "3 根 K 线 + 中间阳线, 价格真空在下方"),
-    "fvg_bear": ("看跌 FVG", "3 根 K 线 + 中间阴线, 价格真空在上方"),
-    "ob_bull": ("看涨 OB", "阴线 + 1.5×ATR 强势上涨, 主力成本区"),
-    "ob_bear": ("看跌 OB", "阳线 + 1.5×ATR 强势下跌, 主力出货区"),
-}
-
 
 def _smc_criteria_md(bull_ob, bear_ob, fvg_bull, fvg_bear, sweeps, smc_score) -> str:
     """
@@ -1564,109 +1425,6 @@ def _bsp_str(pts: dict) -> str:
     return result
 
 
-def _smc_str(row: dict) -> str:
-    """SMC 字符串: OB支¥X / OB压¥X / FVG支¥X / FVG压¥X / 🟢🔴扫¥X
-    2026-07-31 提到模块级
-    """
-    parts = []
-    bull = row.get("smc_bull_ob")
-    bear = row.get("smc_bear_ob")
-    fvg_b = row.get("smc_fvg_bull")
-    fvg_r = row.get("smc_fvg_bear")
-    sweeps = row.get("smc_sweeps_today") or []
-    if bull:  parts.append(f"OB支¥{bull:.0f}")
-    if bear:  parts.append(f"OB压¥{bear:.0f}")
-    if fvg_b: parts.append(f"FVG支¥{fvg_b:.0f}")
-    if fvg_r: parts.append(f"FVG压¥{fvg_r:.0f}")
-    for s in sweeps:
-        icon = "🟢" if "buy" in s.get("type","") else "🔴"
-        parts.append(f"{icon}扫¥{s.get('swept_level',0):.0f}")
-    # 2026-08-01: 硬 assert — markdown 表格里 | 是 cell 分隔符
-    for p in parts:
-        assert "|" not in p, f"_smc_str parts 禁 '|', got: {p!r} in {parts!r}"
-    return " ".join(parts) if parts else "—"
-
-
-def _ob_str(row: dict, prefix: str = "") -> str:
-    """OB 日/周: 支¥X/支¥X"""
-    def fmt(bull, bear):
-        parts = []
-        if bull: parts.append(f"支¥{bull:.0f}")
-        if bear: parts.append(f"压¥{bear:.0f}")
-        return " ".join(parts) if parts else "—"
-    d = fmt(row.get("smc_bull_ob"),   row.get("smc_bear_ob"))
-    w = fmt(row.get("smc_w_bull_ob"), row.get("smc_w_bear_ob"))
-    return f"{d} / {w}"
-
-
-def _fvg_str(row: dict) -> str:
-    """FVG 日/周: 支¥X/支¥X"""
-    def fmt(bull, bear):
-        parts = []
-        if bull: parts.append(f"支¥{bull:.0f}")
-        if bear: parts.append(f"压¥{bear:.0f}")
-        return " ".join(parts) if parts else "—"
-    d = fmt(row.get("smc_fvg_bull"),  row.get("smc_fvg_bear"))
-    w = fmt(row.get("smc_w_fvg_bull"), row.get("smc_w_fvg_bear"))
-    return f"{d} / {w}"
-
-
-def _sweep_str(row: dict) -> str:
-    """Sweep 日/周: 🟢扫¥X/🔴扫¥X"""
-    def fmt(sweeps):
-        if not sweeps: return "—"
-        parts = []
-        for s in sweeps:
-            icon = "🟢" if "buy" in s.get("type","") else "🔴"
-            parts.append(f"{icon}扫¥{s.get('swept_level',0):.0f}")
-        return " ".join(parts)
-    d = fmt(row.get("smc_sweeps_today") or [])
-    w = fmt(row.get("smc_w_sweeps_today") or [])
-    if d == "—" and w == "—": return "—"
-    return f"{d} / {w}"
-
-
-def _ma_str(row: dict) -> str:
-    """MA 두 주기 편차: "+4.0% / -8.8%"
-    2026-07-31 提到模块级
-    """
-    d = row.get('ma_dev_daily')
-    w = row.get('ma_dev_weekly')
-    d_s = f"{d:+.1f}%" if d is not None else "—"
-    w_s = f"{w:+.1f}%" if w is not None else "—"
-    return f"{d_s} / {w_s}"
-
-
-def _pos_str(row: dict) -> str:
-    """价格位置: d0.78/p0.92/u2.1/U3.5
-    d=close_pos_day (日内位置), p=close_pos_20 (20日位置),
-    u=upper_shadow_pct (今日上影%), U=upper_shadow_5d_avg (5日上影均值%)
-    """
-    d = row.get('close_pos_day')
-    p = row.get('close_pos_20')
-    u = row.get('upper_shadow_pct')
-    U = row.get('upper_shadow_5d_avg')
-    if all(v is None for v in (d, p, u, U)):
-        return "—"
-    d_s = f"{d:.2f}" if d is not None else "—"
-    p_s = f"{p:.2f}" if p is not None else "—"
-    u_s = f"{u:.1f}" if u is not None else "—"
-    U_s = f"{U:.1f}" if U is not None else "—"
-    return f"d{d_s}/p{p_s}/u{u_s}/U{U_s}"
-
-
-def _has_signal(row: dict) -> bool:
-    """行是否有信号 (用于 _section_factor_history 过滤 '无变化也无信号' 的行)
-    2026-07-31 提到模块级
-    """
-    se_d  = row.get("sub_event_daily", "—")
-    return (
-        bool(row.get("bsp_daily")) or bool(row.get("bsp_weekly")) or
-        se_d != "—" or
-        bool(row.get("smc_sweeps_today"))
-    )
-
-
 # 因子历史走势 — 22 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
@@ -1938,109 +1696,6 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
 
     return "\n".join(lines) + "\n"
 
-def _section_chan_three_elements(data: RenderData) -> str:
-    """🧠 缠论三要素 (中枢+背驰+止跌)"""
-    if not data.chan_data:
-        return "> **数据状态:** ⚠️ 缠论数据未生成\n"
-    chan = data.chan_data
-    daily = chan.get("daily", {})
-    hub = daily.get("hub", {})
-    hub_low = hub.get("low", 0)
-    hub_high = hub.get("high", 0)
-    raw_pos = hub.get("pos", "—")  # v6.2.8 改: 直接用 ChanStrategy 算的 pos 字段, 不再二次复核
-    current_price = data.current_price or 0
-
-    # v6.2.8 改: 删 calc_pos 二次复核 (~25 行 if/else), ChanStrategy 已经在 _hub_result 里算过 pos
-    # raw_pos 4 档: "上方✅" / "内部⬜" / "下方⚠️" / "跌穿🔴" / "—"
-    if raw_pos == "上方✅":
-        action = "⚠️ 高位, 关注是否回落中枢 (追高风险大)"
-    elif raw_pos == "内部⬜":
-        action = "🟡 中枢震荡, 关注突破或跌破方向"
-    elif raw_pos == "下方⚠️":
-        action = "🟢 关注止跌信号 (缩量+长下影), 触发后底仓建"
-    elif raw_pos == "跌穿🔴":
-        action = "🔴 严重跌穿, 等止跌 (缩量+底背驰) 才考虑建仓, 严禁猜底"
-    elif hub_low > 0:
-        action = "⏳ 等待中枢形成后判断方向"
-    else:
-        action = "⏳ 中枢数据不足"
-    extra = f"(ChanStrategy 算的 pos: {raw_pos})" if raw_pos and raw_pos != "—" else "周线段数不足，中枢尚未形成"
-
-    return f"""**当前价格:** ¥{current_price:.2f}
-**中枢区间:** {'¥{:.2f}~¥{:.2f}'.format(hub_low, hub_high) if hub_low else '未形成中枢'} (位置: {raw_pos or '—'} — {extra})
-
-| 要素 | 状态 | 说明 |
-|---|---|---|
-| **中枢位置** | {raw_pos or '—'} | {extra} |
-
-**操作建议:** {action}
-"""
-
-
-def _section_chan_signals(data: RenderData) -> str:
-    """📊 缠论信号汇总 (中枢+买卖点)"""
-    if not data.chan_data:
-        return "> **数据状态:** ⚠️ 缠论信号未生成\n"
-    chan = data.chan_data
-    buy_points, sell_points = [], []
-    for level in ["weekly", "daily"]:
-        segs = (chan.get(level) or {}).get("segs", []) or []
-        if segs:
-            last = segs[-1]
-            if last.get("dir") == "↓" and last.get("nb", 0) >= 3:
-                buy_points.append(f"{level} 末段 ↓ nb={last['nb']}")
-            elif last.get("dir") == "↑" and last.get("nb", 0) >= 5:
-                sell_points.append(f"{level} 末段 ↑ nb={last['nb']}")
-
-    def _hub_str(lv: str) -> str:
-        h = (chan.get(lv) or {}).get("hub", {})
-        return f"¥{h.get('low',0):.2f}~¥{h.get('high',0):.2f}" if h.get('valid') else '未形成'
-
-    def _last_dir(lv: str) -> str:
-        segs = (chan.get(lv) or {}).get("segs", []) or []
-        return segs[-1].get("dir", "无段") if segs else "无段"
-
-    def _signal_str(level: str, direction: str) -> str:
-        found = any(level in p for p in buy_points)
-        if found: return f"📉 关注买入"
-        found = any(level in p for p in sell_points)
-        if found: return f"📈 关注卖出"
-        return "持续观察"
-
-    return f"""**2 级别中枢/段汇总 (周/日):**
-
-| 级别 | 中枢 | 段数 | 末段方向 | 潜在信号 |
-|---|---|---|---|---|
-| 周 | {_hub_str('weekly')} | {len((chan.get('weekly') or {}).get('segs', []) or [])} | {_last_dir('weekly')} | {_signal_str('weekly', _last_dir('weekly'))} |
-| 日 | {_hub_str('daily')} | {len((chan.get('daily') or {}).get('segs', []) or [])} | {_last_dir('daily')} | {_signal_str('daily', _last_dir('daily'))} |
-
-**买点:** {'无' if not buy_points else ', '.join(buy_points)} | **卖点:** {'无' if not sell_points else ', '.join(sell_points)}
-"""
-
-
-def _section_buy_sell_points(data: RenderData) -> str:
-    """🟢 三买三卖操作点 (来自 buy_sell_points)"""
-    bsp = data.buy_sell_points
-    if not bsp:
-        return "> **数据状态:** ⚠️ 买卖点数据未生成，需重新 sync_watchlist_fresh\n"
-
-    lines = ["| 周期 | 0买(逆势) | 1买 | 2买 | 3买 | 1卖 | 2卖 | 3卖 | 操作 |",
-             "|---|---|---|---|---|---|---|---|---|"]
-    for lv, label in [("weekly","周线"), ("daily","日线")]:
-        lv_data = bsp.get(lv, {})
-        if not lv_data:
-            continue
-        def _v(key):
-            v = lv_data.get(key, "无")
-            return v if v and v != "—" else "无"
-        action = lv_data.get("action", "观察")
-        lines.append(
-            f"| {label} | {_v('🟢0买')} | {_v('🟢1买')} | {_v('🟢2买')} | {_v('🟢3买')} "
-            f"| {_v('🔴1卖')} | {_v('🔴2卖')} | {_v('🔴3卖')} | {action} |"
-        )
-    return "\n".join(lines) + "\n"
-
-
 def _section_market_context(data: RenderData) -> str:
     """🌍 大盘 + 美股背景 (2026-09-03 v6.1.1 改: 读本地 parquet, 不直连 tushare)
 
@@ -2131,7 +1786,6 @@ def _section_t_events(data: RenderData) -> str:
 # 2026-08-31: 删除 _section_ts_money_flow
 # 2026-10-28: 主力资金流 (fflow) 维度整体删除, 详见 docs/fflow-removal-assessment.md
 # (量价维度噪音大, 用户要求)
-
 
 
 # ============================================================

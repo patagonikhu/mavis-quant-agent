@@ -15,8 +15,6 @@ Mavis 守门员 (t-guardrail) 规则: 所有 factor 统一放 1 个文件, 纯�
   - compute_roc(financials, as_of_date, min_capital_yi)  # ROC 资本回报率
   - compute_ey(financials, as_of_date, market_cap_wan)   # EY 盈利收益率
   - compute_magic_one_day(...)                    # ROC+EY 合并
-  - compute_sector_overheat(kline)                # 板块过热预警
-  - compute_five_categories(...)                  # 5 类 14 子信号
   - batch_magic_scores(codes, with_market_cap)   # 全市场批量排名入口
   - find_full_year_financials(financials, as_of_date)  # 找全年财报
 
@@ -446,85 +444,9 @@ def compute_dcf_l(eps_table: list[dict], market_cap_yi: Optional[float] = None) 
 # ============================================================
 # 板块过热预警 (1周/1月/3月涨幅)
 # ============================================================
-def compute_sector_overheat(kline) -> dict:
-    """板块过热预警 (K 线代理, 1周/1月/3月涨幅)
-
-    输入: K 线 list-of-dict (有 close 字段, 至少 64 天)
-    返回: {1周涨幅, 1月涨幅, 3月涨幅, source, _warning}
-    """
-    if not kline or len(kline) < 64:
-        return {}
-    closes = [k["close"] for k in kline if "close" in k]
-    if len(closes) < 64:
-        return {}
-    pct_1w = (closes[-1] / closes[-6]  - 1) * 100
-    pct_1m = (closes[-1] / closes[-22] - 1) * 100
-    pct_3m = (closes[-1] / closes[-64] - 1) * 100
-    return {
-        "1周涨幅": f"{pct_1w:+.1f}%",
-        "1月涨幅": f"{pct_1m:+.1f}%",
-        "3月涨幅": f"{pct_3m:+.1f}%",
-        "source": "K线代理 (1周/1月/3月涨幅)",
-    }
-
-
 # ============================================================
 # 5 类 14 子信号 (组合层, 调其他 5 个 factor)
 # ============================================================
-def compute_five_categories(ctx) -> dict:
-    """5 类 14 子信号 (缠论 + 止跌 + 估值)
-
-    输入: ctx (RawContext, 含 kline / eps_table / current_price)
-    返回: 5 类 dict, 详见 _derive_five_categories
-    """
-    from tools.factors.valuation.dcf_engine import get_assumptions
-    # 注: 5 类信号实际逻辑在 analysis_engine.py:1209 _derive_five_categories 里
-    # 这里只是给 FinanceStrategy 调用的入口, 真实计算在那边
-    return _derive_five_categories_impl(ctx)
-
-
-def _derive_five_categories_impl(ctx) -> dict:
-    """5 类 14 子信号实现 (从 analysis_engine 迁过来)
-
-    类别:
-      1. 资金类: (2026-10-28 删, 原 fflow 净流入)
-      2. 龙头类: 涨跌幅 / 量比
-      3. 估值类: PEG / DCF / Magic
-      4. 止跌类: 5 日价跌 + 量能回升 (OBV 派生已删, 该分支未实现)
-      5. 政策类: (保留, 暂未实现)
-    """
-    from tools.analysis.valuation import calc_magic_one_day  # backward compat
-
-    out = {}
-
-    # 2. 龙头类 (略, 跟 K 线走)
-
-    # 3. 估值类
-    eps_table = getattr(ctx, "eps_table", None) or []
-    current_price = getattr(ctx, "current_price", 0)
-    market_cap_yi = getattr(ctx, "market_cap_yi", 0)
-
-    if eps_table and current_price:
-        peg_out = compute_peg(eps_table, current_price) or {}
-        out["PEG_真实"] = peg_out.get("peg")
-        out["peg_verdict"] = peg_out.get("verdict")
-    if eps_table and market_cap_yi:
-        dcf_out = compute_dcf_l(eps_table, market_cap_yi) or {}
-        out["L_r10"] = dcf_out.get("L_r10")
-        out["dcf_verdict"] = dcf_out.get("verdict")
-
-    # 4. Magic (ROC + EY)
-    financials = getattr(ctx, "financials", None) or []
-    if financials and market_cap_yi:
-        market_cap_wan = market_cap_yi * 1e4
-        magic = compute_magic_one_day(financials, str(financials[-1].get("end_date", "")),
-                                       market_cap_wan) or {}
-        out["roc"] = magic.get("roc")
-        out["ey"] = magic.get("ey")
-
-    return out
-
-
 # ============================================================
 # 模块级缓存 (2026-09-09 性能优化, N+1 修复)
 # ============================================================

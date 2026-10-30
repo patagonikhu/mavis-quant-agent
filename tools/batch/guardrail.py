@@ -199,17 +199,6 @@ def scan_path(path: Path) -> dict:
     return results
 
 
-def classify_severity(file_path: str, skill_name: str) -> str:
-    """根据文件路径和 skill, 判定严重性"""
-    if file_path in NETWORK_ALLOWED:
-        return "allowed"  # 允许
-    if skill_name == "t-sync-data":
-        return "allowed"  # sync 允许网络
-    if skill_name and skill_name in ZERO_NET_SKILLS:
-        return "violation"  # 0 网络 skill 内有网络调用 = 违规
-    return "warn"  # 其他工具 (sync 之外) 有网络
-
-
 def main():
     parser = argparse.ArgumentParser(description="Mavis 守门员 — 扫描工具里的合规问题")
     parser.add_argument("--check", choices=["network", "factor", "eps-scope", "parquet"], default="network",

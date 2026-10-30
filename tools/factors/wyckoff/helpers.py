@@ -36,39 +36,9 @@ def _find_range(closes, highs, lows, vols, lookback=30):
     return min(recent_lows), max(recent_highs)
 
 
-def _candle_type(op, hi, lo, cl):
-    """K 线类型: '阳' / '阴' / '十字' (内部工具)"""
-    if cl > op:
-        return "阳"
-    if cl < op:
-        return "阴"
-    return "十字"
-
-
-def _sub_events_with_glossary(events: list) -> list:
-    """9 sub_event 加中文注释 (报告用)"""
-    glossary = {
-        'Spring': '终极震仓 (跌穿支撑后收回)',
-        'LPS': '最后支撑点 (缩量回踩 MA20)',
-        'EVR': '努力无结果 (低位放量滞涨)',
-        'SOS': '强势信号 (放量突破 + 单日≥6%)',
-        'Compression': '压缩蓄势 (ATR 收窄 + 缩量)',
-        'TrendPullback': '趋势回踩 (上升趋势缩量回调企稳)',
-        'MarkupEntry': '主升浪起点 (MA50/200 金叉 + 持续)',
-        'DistributionStart': '派发起点 (bias_200>30% + 缩量)',
-        'UTAD': '派发后上探 (高位假突破)',
-    }
-    return [{"event": e, "含义": glossary.get(e, e)} for e in events]
-
-
 # ============================================================
 # Section 2: K 线 / 形态基础 helper (跟 WyckoffTradingAgent 1:1)
 # ============================================================
-
-def _op_from_prev_close(closes, i):
-    """(WyckoffTradingAgent 内联) 上一根 K 的 close 作为 op (兼容老 dump)"""
-    return closes[i-1] if i > 0 else closes[0]
-
 
 def _is_frozen_board_day(op, hi, low, cl, *, market="cn") -> bool:
     """(WyckoffTradingAgent 1052 行) 一字板检测
@@ -242,33 +212,6 @@ def _spring_support_level(zone_l, zone_c,
 # Section 4: EVR 三件套 + abstract series (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
-class _EvrSeries(NamedTuple):
-    """(WyckoffTradingAgent 1244 行) EVR 字段集合 (1:1 NamedTuple)"""
-    close: list
-    low: list
-    volume: list
-    pct_chg: list
-
-
-def _evr_series(closes, lows, vols, pct_chgs) -> Optional[_EvrSeries]:
-    """(WyckoffTradingAgent 1263 行) 构造 EVR 字段 (1:1 NamedTuple)"""
-    if len(closes) < 2 or len(lows) < 2 or len(vols) < 2:
-        return None
-    return _EvrSeries(close=closes, low=lows, volume=vols, pct_chg=pct_chgs or [0.0] * len(closes))
-
-
-def _evr_ref_volume_avg(vols, vol_window: int) -> Optional[float]:
-    """(WyckoffTradingAgent 1263 行) EVR 参考均量 (前 vol_window 日, 不含当前)"""
-    if len(vols) < vol_window + 1:
-        return None
-    return sum(vols[-vol_window-1:-1]) / vol_window
-
-
-def _evr_candidate_indexes(confirm_days: int) -> list:
-    """EVR 候选索引 (2026-07-31 简化: 不返 [-1], 永远返空, 由 evr.py 自行处理 real_idx)"""
-    return []
-
-
 def _evr_turnover_ok(turnovers, idx: int, min_turnover: float) -> bool:
     """(WyckoffTradingAgent 1273 行) EVR 流动性检查
 
@@ -305,25 +248,9 @@ def _evr_confirmation_ok(closes, lows, idx: int, confirm_days: int, allow_break_
     return True
 
 
-
 # ============================================================
 # Section 5: SOS 三件套 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
-
-class _SosSeries(NamedTuple):
-    """(WyckoffTradingAgent 1365 行) SOS 字段集合 (1:1 NamedTuple)"""
-    close: list
-    volume: list
-    pct_chg: list
-    high: list
-
-
-def _sos_series(closes, vols, pct_chgs, highs) -> Optional[_SosSeries]:
-    """(WyckoffTradingAgent 1367 行) 构造 SOS 字段"""
-    if not closes or not vols or not highs:
-        return None
-    return _SosSeries(close=closes, volume=vols, pct_chg=pct_chgs or [0.0] * len(closes), high=highs)
-
 
 def _sos_volume_ratio(vols, vol_quantile_window: int = 60, vol_ratio: float = 3.0, vol_quantile: float = 0.95) -> Optional[float]:
     """(WyckoffTradingAgent 1379 行) SOS 量比 (含 quantile 阈值)
@@ -372,13 +299,6 @@ def _sos_breakout_or_ma_cross(closes, highs, breakout_window: int = 60, breakout
 # ============================================================
 # Section 6: Compression 四件套 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
-
-def _compression_ohlcv(closes, highs, lows, vols) -> Optional[Tuple[list, list, list, list]]:
-    """(WyckoffTradingAgent 1456 行) 字段清洗 (我们直接返)"""
-    if not closes or not highs or not lows:
-        return None
-    return (closes, highs, lows, vols)
-
 
 def _compression_direction_ok(closes, ma_window: int = 20, lookback: int = 5,
                                precomputed_ma: float | None = None,
