@@ -386,6 +386,35 @@ def main():
         annual = sum(rs) / len(rs) * (250 / args.days)
         print(f"  {y:<6}{len(rs):>6}{wr:>7.1f}%{sum(rs)/len(rs):>+9.2f}%{annual:>+9.1f}%")
 
+    # === 2026-10-30 加: 信号聚集度诊断 ===
+    # 背景: 逐笔统计的 94% 胜率看着偏高. 核心怀疑: 同一波行情里几十只票同时触发,
+    #       逐笔统计把这波行情重复计了很多次 → 样本不独立 → 高估期望.
+    #       (明细里能看到 20220425/26 连续一大串同日期)
+    # 所以加 2 个视角:
+    #   A. 按"交易日"去重: 同一天只保留 1 笔 (等权于"这天整个市场超跌反弹一次")
+    #   B. 按"交易日"看平均: 每天所有触发的平均收益 (每天等权, 不按笔数加权)
+    by_date: dict = {}
+    for h in all_hits:
+        by_date.setdefault(h["date"], []).append(h["ret_pct"])
+    day_dates = sorted(by_date.keys())
+    day_rets = [sum(v) / len(v) for v in by_date.values()]   # 每日等权平均
+    n_days = len(day_rets)
+    day_win_rate = sum(1 for r in day_rets if r > 0) / n_days * 100 if n_days else 0.0
+    day_avg = sum(day_rets) / n_days if n_days else 0.0
+
+    # 聚集度: 平均每笔涉及几个不同交易日 / 平均每天几笔
+    avg_per_day = n / n_days if n_days else 0.0
+    print(f"\n【信号聚集度诊断】(检验逐笔统计是否被同波行情重复计入)")
+    print(f"  总笔数 {n} 笔, 分布在 {n_days} 个不同交易日")
+    print(f"  平均每天触发 {avg_per_day:.1f} 只票 (最大单日 {max((len(v) for v in by_date.values()), default=0)} 只)")
+    print(f"  → 笔数是'交易日数'的 {avg_per_day:.1f} 倍, 说明样本高度聚集, 逐笔统计不独立")
+    print(f"")
+    print(f"  {'视角':<28}{'样本数':>8}{'胜率':>9}{'均收':>10}")
+    print(f"  {'逐笔 (含聚集)':<26}{n:>8}{win_rate:>8.1f}%{avg_ret:>+9.2f}%")
+    print(f"  {'按交易日等权 (每天 1 笔)':<26}{n_days:>8}{day_win_rate:>8.1f}%{day_avg:>+9.2f}%")
+    print(f"  → 两种口径胜率差 {abs(win_rate - day_win_rate):.1f} pct, "
+          f"均收差 {abs(avg_ret - day_avg):.2f} pct —— 差得多说明聚集影响大")
+
     # 明细
     print(f"\n【明细】(按日期排序, 前 20 条)")
     all_hits.sort(key=lambda x: x["date"])
