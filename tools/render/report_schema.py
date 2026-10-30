@@ -58,6 +58,8 @@ REPORT_SECTIONS = [
         "required": False,  # 2026-09-18 砍: 跟 📈 因子历史走势重复 (含当日 MACD/RSI/KDJ/ATR)
         "refresh": "REGEN",
         "_deprecated": True,  # 标记废弃, renderer 不输出
+        # 2026-10-30: 之前 _deprecated 只是"声明"没人消费, 导致 linter 仍把它算进必填
+        #   → 下面 get_section_titles / get_required_section_ids 现在会过滤掉
     },
     # 2026-07-25: 5 方法 × 3 周期 矩阵 (独立 section, 整合原 5 合 1 顶部预警)
     # 注: chan_signals / chan_supplement 已于 7-29 合并入 factor_history + method_matrix, 废弃删除
@@ -212,6 +214,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_pe_pb",
         "required": True,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "ts_weekly_monthly",
@@ -220,6 +226,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_weekly_monthly",
         "required": True,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "ts_north_flow",
@@ -228,6 +238,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_north_flow",
         "required": True,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "ts_margin",
@@ -236,6 +250,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_margin",
         "required": True,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "ts_top_list",
@@ -244,6 +262,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_top_list",
         "required": False,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "ts_finance",
@@ -252,6 +274,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_finance",
         "required": True,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "ts_dividend",
@@ -260,6 +286,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_dividend",
         "required": True,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "ts_forecast",
@@ -268,6 +298,10 @@ REPORT_SECTIONS = [
         "render": "render_ts_forecast",
         "required": True,
         "refresh": "REGEN",
+        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
+        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
+        "_deprecated": True,
     },
     {
         "id": "t_events",
@@ -290,28 +324,40 @@ REPORT_SECTIONS = [
 
 
 def get_section_ids() -> list:
-    """返回所有 section ID (用于 linter 校验)"""
-    return [s["id"] for s in REPORT_SECTIONS]
+    """返回所有 section ID (用于 linter 校验)
+
+    2026-10-30: 过滤 _deprecated=True 的 section
+      (这些 section 的 render 函数从未实现, 数据源本地也没有, 永远出不来)
+    """
+    return [s["id"] for s in REPORT_SECTIONS if not s.get("_deprecated")]
 
 
 def get_section_titles() -> list:
-    """返回所有 section 标题 (用于 linter 校验)"""
-    return [s["title"] for s in REPORT_SECTIONS]
+    """返回所有 section 标题 (用于 linter 校验)
+
+    2026-10-30: 过滤 _deprecated=True 的 section
+      之前 tech_indicators + 8 个 ts_* 被算进必填清单, 但 renderer 从不输出,
+      linter 却从不为它们报警 (missing 只统计不 warn) → 完整度虚低, 问题被掩盖.
+    """
+    return [s["title"] for s in REPORT_SECTIONS if not s.get("_deprecated")]
 
 
 def get_required_section_ids() -> list:
-    """返回必填 section ID"""
-    return [s["id"] for s in REPORT_SECTIONS if s.get("required", True)]
+    """返回必填 section ID (过滤废弃)"""
+    return [s["id"] for s in REPORT_SECTIONS
+            if s.get("required", True) and not s.get("_deprecated")]
 
 
 def get_regen_titles() -> list[str]:
-    """返回 refresh=REGEN 的 section 标题列表 (enhance 时强制重新生成)"""
-    return [s["title"] for s in REPORT_SECTIONS if s.get("refresh") == "REGEN"]
+    """返回 refresh=REGEN 的 section 标题列表 (enhance 时强制重新生成, 过滤废弃)"""
+    return [s["title"] for s in REPORT_SECTIONS
+            if s.get("refresh") == "REGEN" and not s.get("_deprecated")]
 
 
 def get_preserve_titles() -> list[str]:
-    """返回 refresh=PRESERVE 的 section 标题列表 (enhance 时保留原内容)"""
-    return [s["title"] for s in REPORT_SECTIONS if s.get("refresh") == "PRESERVE"]
+    """返回 refresh=PRESERVE 的 section 标题列表 (enhance 时保留原内容, 过滤废弃)"""
+    return [s["title"] for s in REPORT_SECTIONS
+            if s.get("refresh") == "PRESERVE" and not s.get("_deprecated")]
 
 
 def get_ordered_titles() -> list[str]:

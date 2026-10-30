@@ -145,6 +145,12 @@ def lint_report(md_path: str) -> dict[str, Any]:
 
     # 3. 警告 (升级: 加占位符检测 + 段列表/中枢列表检测, 防止"数据丢"漏检)
     warnings = []
+
+    # 3.0 section 缺失报警 (2026-10-30 加)
+    #   之前 missing 只统计进 completeness, 从不 warn → 9 个从未落地的 section
+    #   一直缺着也没人知道 (完整度虚低到 67% 也没人报警).
+    if missing:
+        warnings.append(f"🔴 缺 {len(missing)} 个 section: {', '.join(missing)}")
     if not key_data["价格"]:
         warnings.append("⚠️ 未找到价格 (实时价可能没拉到)")
     if not key_data["EPS 表格"]:
