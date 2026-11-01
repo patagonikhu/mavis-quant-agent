@@ -730,6 +730,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
             mark = "🟡 会跑" if v else "✅ 跳过"
             print(f"  {mark}  --{k}")
         print_data_freshness_summary()
+        _print_api_call_stats()
         return 0
     print("\n🔍 自动检测结果:")
     for k, v in flags.items():
@@ -738,6 +739,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
     if not any(flags.values()):
         print("\n✨ 全 fresh, 不用 sync")
         print_data_freshness_summary()
+        _print_api_call_stats()
         return 0
     # 真跑 (复用 main() 的 flag 逻辑)
     print("\n🚀 跑 stale 的 flag:")
@@ -761,6 +763,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
         sync_etf_basic()
         sync_etf_incremental()
     print_data_freshness_summary()
+    _print_api_call_stats()
     return 0
 
 
@@ -891,9 +894,8 @@ def main():
     ])
     if not any_sync_flag:
         print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")
-        rc = action_auto(force=False, quiet=False)
-        _print_api_call_stats()
-        return rc
+        # action_auto 内部已打网络统计 (2026-11-02 修: 原来这里又打一次, 第二次恒为 0)
+        return action_auto(force=False, quiet=False)
 
     print(f"=== Mavis sync_data (scope: {scope_label}) ===")
     start = time.time()
