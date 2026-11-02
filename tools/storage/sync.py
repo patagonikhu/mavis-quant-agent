@@ -10,7 +10,7 @@
   3. 显式传 flag = 强跑那一项 (无论 stale 不 stale)
   4. 范围: --watchlist (watchlist 全部) / --all (全市场, 默认) / --codes 002371 300750 (指定)
   5. --eps 范围互斥: 默认 watchlist; --eps --all 强制缩回 watchlist + warning (datacenter API 限频 + WAF)
-  6. 5 个 read-only skill (t-analyze/t-near-low/t-rsi6-tech/t-finance-roc-ey/t-finance-earnings-blowout)
+  6. 4 个 read-only skill (t-analyze/t-rsi6-tech/t-finance-roc-ey/t-finance-earnings-blowout)
      缺数据时直接报"请先 /t-sync-data", 不再偷偷调 sync
 
 正交 flag (10 个, 全部默认关):

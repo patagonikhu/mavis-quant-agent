@@ -24,14 +24,11 @@ ENV/
 .env
 .env.local
 
-# Data: 整体 ignore (派生数据: parquet/jsonl/cache/oversold 等)
+# Data: 整体 ignore (派生数据: parquet/jsonl/cache 等)
 data/
 
 # 但保留手工维护的 fetcher log (跨机器共享 fetch 进度)
 !data/fetch_log.jsonl
-
-# 超跌股 watchlist (auto-generated, 跟 git 备份)
-!data/watchlist_oversold.json
 
 # 信号存档 (signal_tracker.py 维护, 应入库以便回测胜率)
 !data/signals/

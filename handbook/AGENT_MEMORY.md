@@ -10,7 +10,7 @@
 - **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic,eps}/`
 - **同步**: `tools/storage/sync.py` (7 flag: kline/stk-factor/stock-basic/financials/eps/cache/meta, 默认 --auto)
 - **分析引擎**: `tools/analysis/analysis_engine.py` 4 个 strategy 类 (chan/wyckoff/smc/finance)
-- **9 个活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-rsi6-tech, t-near-low, t-backtest, t-finance-roc-ey, t-finance-earnings-blowout, t-concept-macd, t-guardrail}/` (2026-09-24 核)
+- **活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-rsi6-tech, t-backtest, t-finance-roc-ey, t-finance-earnings-blowout, t-concept-macd, t-guardrail}/` (2026-11-02 删 t-near-low)
 - **批量分析**: `tools/batch/t_analyze_all.py` (4 worker 并发)
 - **单只分析**: `tools/batch/t_analyze_one.py --code <code>` (新加, 829 行详报)
 

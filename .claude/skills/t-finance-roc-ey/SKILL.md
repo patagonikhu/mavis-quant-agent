@@ -58,6 +58,5 @@ ls docs/roc-ey-top20-summary.md && head -100 docs/roc-ey-top20-summary.md
 
 - **`/t-finance-earnings-blowout`** (配套: R3 启动期反转, 也是季报驱动)
 - `/t-analyze <code>` (Top 20 深挖)
-- `/t-near-low` (5y 回撤超跌)
 - `/t-rsi6-tech` (RSI 超卖, 日级)
 - `/t-sync-data --financials` (跑前必跑)

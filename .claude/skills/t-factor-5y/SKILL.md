@@ -53,5 +53,4 @@ head -50 docs/factor-5y/analyze-600089-特变电工-5y.md
 ## 相关
 
 - `/t-analyze <code>` (单只 18 section 详报, 120 日)
-- `/t-near-low` (5 年回撤 + 距 5y 低,基于 factor_5y 输出)
 - `/t-sync-data --kline` (跑前必跑,落盘 K 线到 1250 天)

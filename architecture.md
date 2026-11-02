@@ -12,7 +12,7 @@ L1 Sync    →  tools/storage/sync.py             # 唯一网络入口
 L1 Store   →  tools/storage/store.py (DataStore) # 唯一数据读接口
 L2 Analysis → tools/analysis/ + tools/factors/  # 0 网络, 0 直读 parquet
 L3 Render  →  tools/render/                     # 报告渲染
-+ batch    →  tools/batch/<skill>.py            # 7 个 skill 入口 + 守门员
++ batch    →  tools/batch/<skill>.py            # 9 个 skill 入口 + 守门员
 ```
 
 **任何业务代码** 都走这条链。**0 绕开**。
