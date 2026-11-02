@@ -570,6 +570,23 @@ def print_data_freshness_summary() -> None:
     return 0
 
 
+def _financials_ok_count(parquet_file) -> int:
+    """数某个季文件里 fetch_status='ok' 的行数 (0 = 全 skip, 该重拉)
+
+    2026-11-02 加: 季报披露截止日前跑过一次, VIP 返空 → 全标 skip。
+    之后报告陆续发布, 但 skip 被当成"永久无数据" → 永远不重拉。
+    这个 helper 让 stale 检测能识别这种"文件在但没数据"的状态。
+    """
+    try:
+        import duckdb
+        return duckdb.execute(
+            f"SELECT count(*) FROM read_parquet('{parquet_file}') "
+            f"WHERE fetch_status = 'ok'"
+        ).fetchone()[0]
+    except Exception:
+        return -1  # 读不了 → 不判定 (保守: 不标 stale)
+
+
 def detect_stale_flags() -> dict[str, bool]:
     """自动检测哪些 flag 该跑 (2026-09-03 改造, 解决"用户忘记跑 sync"问题)
 
@@ -663,14 +680,28 @@ def detect_stale_flags() -> dict[str, bool]:
             q_label = latest.stem
             year, q = q_label[:4], q_label[5:]
             # 季末
+            # 2026-11-02 修 (真 bug): 原来 q = q_label[5:] = "3", 但字典 key 是 "Q3"
+            #   → KeyError → 被外层 except 吞掉 → financials stale 检测从来没生效过
             quarter_end = {
-                "Q1": "0331", "Q2": "0630", "Q3": "0930", "Q4": "1231",
-            }[q]
+                "1": "0331", "2": "0630", "3": "0930", "4": "1231",
+            }.get(q)
+            if quarter_end is None:
+                raise ValueError(f"无法解析季度标签: {q_label}")
             end_dt = datetime.strptime(f"{year}{quarter_end}", "%Y%m%d")
             if (today - end_dt).days > 100:  # 100 天没新季
                 flags["financials"] = True
-    except Exception:
-        pass
+            # 2026-11-02 修: 最新季文件存在但 0 行 ok (全 skip) → 也是 stale
+            #   背景: 季报披露截止日前跑过一次, VIP 返空 → 全标 skip。
+            #         之后报告陆续发布, 但 skip 被当成"永久无数据", 永远不重拉。
+            #   判定: 最新季 ok 行数 == 0 → 标 stale (让 action_financials 重拉)
+            elif _financials_ok_count(latest) == 0:
+                flags["financials"] = True
+    except Exception as e:
+        # 2026-11-02 修: 原来 except Exception: pass 把 KeyError 静默吞了,
+        #   导致 financials 的 stale 检测从来没生效 (Q3 全 skip 也检测不到).
+        #   现在: 出错时**保守标 stale** (宁多拉不错过) + 打警告, 不再静默.
+        print(f"  ⚠️ financials stale 检测异常 ({type(e).__name__}: {e}) → 保守标 stale")
+        flags["financials"] = True
 
     # 4. stk_factor (每天必跑, 距今天 > 1 天就拉, 2026-09-22 修 v6.2.4 重构漏接 auto)
     #    读 STK_FACTOR_DIR/{YYYYQN}.parquet metadata.done_dates 合并集

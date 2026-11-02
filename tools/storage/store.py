@@ -930,6 +930,40 @@ def _fin_path(period: str) -> Path:
     return FIN_DIR / f"{_fin_period_to_quarter(period)}.parquet"
 
 
+def _past_disclosure_deadline(period: str, buffer_days: int = 15) -> bool:
+    """该季度的披露截止日是否已过 (+buffer 天缓冲)
+
+    季报截止日 (ann_date 最晚):
+        Q1 = 4/30, Q2 = 8/31, Q3 = 10/31, Q4 = 次年 4/30
+
+    在截止日之前, VIP 可能返空 (报告还没披露齐) → skip 不是"永久无数据",
+    只是"暂时没数据", 要重试。过了截止日 (+buffer) 才算定稿。
+
+    Args:
+        period:    'YYYYMMDD' 格式 (如 '20260930')
+        buffer_days: 截止日后再等几天 (修订版可能更晚, 默认 15 天)
+
+    Returns:
+        True = 截止日已过 (skip 可当永久); False = 还在窗口内 (skip 要重试)
+    """
+    from datetime import date, datetime, timedelta
+    try:
+        d = datetime.strptime(period, "%Y%m%d").date()
+    except (ValueError, AttributeError):
+        return True  # period 解析不了 → 保守当已过 (不重拉)
+
+    year, mmdd = d.year, d.strftime("%m%d")
+    deadline = {
+        "0331": date(year, 4, 30),
+        "0630": date(year, 8, 31),
+        "0930": date(year, 10, 31),
+        "1231": date(year + 1, 4, 30),
+    }.get(mmdd)
+    if deadline is None:
+        return True
+    return date.today() > deadline + timedelta(days=buffer_days)
+
+
 def _fin_load_existing(period: str) -> dict[str, dict]:
     """读现有 parquet, 返 {code: row_dict}, 包含 status='ok' 和失败的 (sync 用)
 
@@ -1021,8 +1055,14 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
     # Phase 1: 算 to_pull / to_check (DB-only, 不调 API)
     #   to_pull : 本地没有 or 之前失败 → 必须从 API 拿
     #   to_check: 本地已有 ok → 拿到 API 数据后对比 ann_date, 有更新才覆盖
-    #   skip    : fetch_status='skip' (VIP 确认没有该票) → 永久不拉
+    #   skip    : fetch_status='skip' → **仅在披露截止日后**才当"永久无数据"
+    #
+    # 2026-11-02 修 (真 bug): 原来 skip 一律永久跳过, 但季报是**陆续披露**的。
+    #   10/23 跑 2026Q3 时报告还没出齐 → VIP 返空 → 5580 只全标 skip。
+    #   之后报告陆续发布 (截止 10/31), 但 skip 被当永久 → 永远不重拉 → 该季 0 数据。
+    #   现在: 披露截止日之前 (含之前 15 天缓冲), skip 视为"待拉", 重新尝试。
     existing = _fin_load_existing(period)
+    _skip_is_final = _past_disclosure_deadline(period)
     if force:
         to_pull = list(codes)
         to_check: list[str] = []
@@ -1034,7 +1074,9 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
             if row is None:
                 to_pull.append(c)
             elif row.get("fetch_status") == "skip":
-                continue  # VIP 确认无数据 → 永久跳过
+                if _skip_is_final:
+                    continue  # 截止日已过 → VIP 确认无数据 → 永久跳过
+                to_pull.append(c)  # 还在披露窗口内 → 再试一次 (报告陆续发布)
             elif row.get("fetch_status") == "ok":
                 to_check.append(c)  # 已有数据 → 对比 ann_date 增量更新
             else:
@@ -1043,7 +1085,8 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
     n_skip_skip = sum(1 for c in codes if existing.get(c, {}).get("fetch_status") == "skip")
     need_api = len(to_pull) + len(to_check)
     if n_skip_skip:
-        print(f"  ⏭ financials {period}: {n_skip_skip} skip(无数据), {len(to_pull)} 待补, {len(to_check)} 对比更新")
+        _tag = "skip(已过截止日,永久)" if _skip_is_final else "skip(披露窗口内,重试)"
+        print(f"  ⏭ financials {period}: {n_skip_skip} {_tag}, {len(to_pull)} 待补, {len(to_check)} 对比更新")
     if not need_api:
         return len(existing)   # 全部 skip, 0 次 API
 
