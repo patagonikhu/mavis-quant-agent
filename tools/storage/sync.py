@@ -268,6 +268,12 @@ def action_stk_factor(force: bool = False) -> int:
 
     # 1) 加载进度 (从 5 季 parquet metadata 合并, 0 外部文件)
     done = read_all_done_dates()
+    # 2026-11-02 加: 每个 trade_date 实际有多少只代码在本地 (修 "按日期记 done 导致代码永久缺失")
+    try:
+        from .caches.stk_factor_history import read_code_count_by_date
+        code_counts = read_code_count_by_date()
+    except Exception:
+        code_counts = {}
     print(f"  📋 续跑: 已完成 {len(done)} 个 trade_date (从 parquet metadata)")
 
     # 2) 算要拉的 trade_date 列表 (5 季, 2025Q3 ~ 2026Q3)
@@ -282,6 +288,24 @@ def action_stk_factor(force: bool = False) -> int:
     )
     all_dates = sorted([c["cal_date"] for c in (cal_data or [])])
     pending = [d for d in all_dates if d not in done]
+
+    # 2026-11-02 加: 覆盖度体检 —— 找出 "标了 done 但代码数明显偏少" 的日期
+    # 场景: Tushare 某天只先发沪市 (实测 20261102 全市场只返 2504 行: 沪1904/深246/北354),
+    #       旧逻辑 done.add(date) 把整日标完成 → 深市代码永远补不上, 市值/PE 长期用旧价。
+    # 判定: 用已拉日期的代码数中位数作基准, 明显低于基准 (低于 70%) 的日期标记为 "半拉", 重新拉。
+    partial_dates: set[str] = set()
+    if code_counts:
+        counts = sorted(code_counts.values())
+        median = counts[len(counts) // 2] if counts else 0
+        if median:
+            for d, n in code_counts.items():
+                if d in done and n < median * 0.7:
+                    partial_dates.add(d)
+            if partial_dates:
+                pending = [d for d in all_dates if d not in done or d in partial_dates]
+                print(f"  ⚠️ 检出 {len(partial_dates)} 个「半拉」日期 (代码数 < 中位数 70%), 重新拉: "
+                      f"{sorted(partial_dates)[:5]}{'...' if len(partial_dates) > 5 else ''}")
+
     print(f"  📅 总交易日: {len(all_dates)}  已完成: {len(done)}  待拉: {len(pending)}")
 
     if not pending and not force:
@@ -312,6 +336,8 @@ def action_stk_factor(force: bool = False) -> int:
     }
     t0 = time.time()
     n_total = 0
+    # 2026-11-02 加: 覆盖度基准 (本次拉到的最大代码数), 用来判断某天是不是只拉到一部分
+    max_codes_seen = max(code_counts.values()) if code_counts else 0
     for i, d in enumerate(pending, 1):
         data, status = get_stk_factor_by_date(d)
         # 修 bug: EMPTY 可能因 tushare 限流假阳, 重试 1 次 (睡 5s)
@@ -320,14 +346,20 @@ def action_stk_factor(force: bool = False) -> int:
             data, status = get_stk_factor_by_date(d)
         if not data:
             print(f"  ⚠️ {d}: 拉取失败 ({status})")
-            # 计入 done 避免下次无限 retry, 但不写 parquet metadata (空数据污染)
-            done.add(d)
+            # 2026-11-02 改: **不再** done.add(d)
+            # 原逻辑把拉取失败的日期标成 done → 永久不再重试, 该日所有代码都缺失。
+            # 现在不写 done, 下次 sync 会重试。
             continue
         q = _q_of(d)
         quarter_data[q].extend(data)
+        n_total += len(data)
+        # 2026-11-02 加: 只有覆盖度达标 (>= 基准 70%) 才算这天完成, 否则留着下次补
+        # 场景: Tushare 某天只先发沪市, 深市后发 —— 这时不能标 done, 否则深市永远缺失
+        if max_codes_seen and len(data) < max_codes_seen * 0.7:
+            print(f"  ⚠️ {d}: 只拉到 {len(data)} 只 (基准 {max_codes_seen}), 判定为半拉, 不标 done (下次补)")
+            continue
         quarter_done[q].add(d)
         done.add(d)
-        n_total += len(data)
         # 进度: 每 10 个或最后一个, 把所有非空季落盘 (崩了不丢)
         if i % 10 == 0 or i == len(pending):
             elapsed = time.time() - t0

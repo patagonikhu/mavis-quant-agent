@@ -120,3 +120,32 @@ def read_all_done_dates() -> set[str]:
         except Exception:
             continue
     return out
+
+
+def read_code_count_by_date() -> dict[str, int]:
+    """统计每个 trade_date 在本地 parquet 里实际有多少只代码。
+
+    2026-11-02 加: 修 '按 trade_date 记 done 导致代码永久缺失' 的 bug。
+
+    背景: Tushare 某天可能只先发沪市 (实测 20261102 全市场只返 2504 行:
+    沪1904/深246/北354)。旧逻辑 `done.add(trade_date)` 只看日期,
+    一旦这天的沪市拉到了就把整个日期标成 done —— 深市代码**永远补不上**。
+
+    本函数给出每个日期的实际代码覆盖数, 让 sync.py 判断
+    "这天是不是只拉了一半"。
+    """
+    import duckdb
+    if not STK_FACTOR_DIR.exists() or not list(STK_FACTOR_DIR.glob("*.parquet")):
+        return {}
+    try:
+        rows = duckdb.execute(
+            f"""
+            SELECT trade_date, COUNT(DISTINCT ts_code) AS n
+            FROM read_parquet('{STK_FACTOR_DIR}/*.parquet')
+            GROUP BY trade_date
+            """
+        ).fetchall()
+    except Exception:
+        return {}
+    return {str(d): int(n) for d, n in rows}
+
