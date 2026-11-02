@@ -54,6 +54,12 @@ L3 Render  →  tools/render/                     # 报告渲染
 | 2. 业务层走 DataStore | `parquet` | `python -m tools.batch.guardrail --check parquet` |
 | 3. factor 纯函数 | `factor` | `python -m tools.batch.guardrail --check factor` |
 | 4. 22 section schema | `report_linter` | 走 `report_renderer` 自动跑 |
+| 5. 用户数据不可删 | `safe-fs` | `python -m tools.batch.guardrail --check safe-fs` |
+
+> **第 5 条 (2026-11-02 加)**: 批量脚本不许直接 `unlink`/`rmtree` `config/` `docs/` 下的文件, 不许直接覆盖写 `config/*.json`。
+> 删 → `tools.storage.safe_fs.safe_delete` (移 `~/.Trash`, 可恢复, 永不 unlink)
+> 写 → `tools.storage.safe_fs.atomic_write_json` (原子写 + 写前备份)
+> `config/watchlist.json` 等 5 个在 `safe_fs.PROTECTED_PATHS`, `safe_delete` 直接拒绝。
 
 ---
 

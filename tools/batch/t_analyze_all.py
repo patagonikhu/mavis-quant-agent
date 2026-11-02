@@ -45,18 +45,52 @@ today = datetime.date.today().isoformat()
 output_path = Path('docs/signal-watchlist.md')
 
 # === 2026-09-15 加: 清理 watchlist 之外的孤儿 md (残留旧详报, 让用户以为"没刷新") ===
-# 保留本次 watchlist 中所有 (code, name) 的目标文件, 其余全部删除
+# 2026-11-02 修 (两个真 bug):
+#   ① 旧代码 stocks 已排除 blowout, 但清理循环却遍历 docs/blowout/ → 默认跑就把 blowout 全删了
+#      修: 按子目录分别构造期望文件名 (blowout 子目录用全 watchlist)
+#   ② 旧代码文件名用 watchlist 原始 name, 但 t_analyze_one 写入时会用 stock_basic 回退名
+#      (name 为空/未知时) → 自己刚生成的报告下一轮就被当孤儿删掉
+#      修: 用跟 t_analyze_one 一样的 name_for_file 解析
+#   ③ 删除改用 safe_delete (移到 ~/.Trash, 不可恢复的 unlink 是事故根源)
 import re
-expected_files = {f'analyze-{s["code"]}-{s["name"]}.md' for s in stocks}
+from tools.storage.safe_fs import safe_delete
+
+
+def _name_for_file(s: dict) -> str:
+    """跟 t_analyze_one.process_one 保持一致的文件名解析 (防自删)"""
+    code6 = s['code'].split(".")[0] if "." in s['code'] else s['code']
+    nm = s.get("name") or ""
+    if not nm or nm in ("未知", "C", code6):
+        try:
+            sb = DataStore.get_stock_basic(code6)
+            cand = sb.get("name", "")
+            if cand and cand != "未知" and cand != code6:
+                nm = cand
+        except Exception:
+            pass
+        if not nm or nm == "未知":
+            nm = code6
+    return f'analyze-{code6}-{nm}.md'
+
+
+# 按子目录分组构造期望文件名 (2026-11-02 修 bug ①)
+_all_wl = DataStore.load_watchlist()['stocks']
+_expected_by_sub = {'portfolio': set(), 'watchlist': set(), 'blowout': set()}
+for _s in _all_wl:
+    _lt = _s.get('list_type', '自选')
+    _sub = 'portfolio' if _lt == '持仓' else ('blowout' if _lt == 'blowout' else 'watchlist')
+    _expected_by_sub[_sub].add(_name_for_file(_s))
+
 for sub in ('portfolio', 'watchlist', 'blowout'):
     d = Path(f'docs/{sub}')
     if not d.exists():
         continue
+    expected_files = _expected_by_sub[sub]
     removed = 0
     for f in d.glob('analyze-*.md'):
         if f.name not in expected_files:
-            f.unlink()
-            removed += 1
+            if safe_delete(f, reason=f"t_analyze_all 孤儿 md 清理 ({sub})"):
+                removed += 1
     if removed:
         print(f'  🧹 docs/{sub}: 清理 {removed} 个孤儿 md (不在 watchlist.json)', flush=True)
 

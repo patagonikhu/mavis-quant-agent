@@ -1,10 +1,11 @@
 """tools/batch/guardrail.py — Mavis 守门员框架 (Guardrails)
 
-用途: 静态扫描 tools/ 下所有 .py 文件, 4 个内置 check 找出合规违规:
+用途: 静态扫描 tools/ 下所有 .py 文件, 5 个内置 check 找出合规违规:
        1) network     (默认) — 网络隔离检查 (跟每个 skill "0 网络"声明做对比)
        2) factor      — Factor class 包装违规 (通用 factor 必须纯函数 + 估值单文件)
        3) eps-scope   --eps 不准全市场 (datacenter 限频 + WAF 风险)
        4) parquet    — 业务层禁止直读 parquet/duckdb/sqlite (除 signal_cache)
+       5) safe-fs    — 禁止直接删用户数据 (unlink/rmtree) + 覆盖写配置 (AST 检测)
 
 输出:
   - 每个工具的"违规清单"
@@ -21,10 +22,12 @@
   bash tools/with_venv.sh python -m tools.batch.guardrail --check parquet       # 业务层直读 parquet/duckdb
   bash tools/with_venv.sh python -m tools.batch.guardrail --check factor        # Factor class 包装违规
   bash tools/with_venv.sh python -m tools.batch.guardrail --check eps-scope     # --eps 范围白名单
+  bash tools/with_venv.sh python -m tools.batch.guardrail --check safe-fs       # 删用户数据/覆盖写配置
   bash tools/with_venv.sh python -m tools.batch.guardrail --skill t-analyze     # 单 skill
   bash tools/with_venv.sh python -m tools.batch.guardrail --strict --write-md   # 严格 + 写 docs/guardrail-report.md
 """
 import argparse
+import ast
 import re
 import sys
 from pathlib import Path
@@ -201,8 +204,8 @@ def scan_path(path: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Mavis 守门员 — 扫描工具里的合规问题")
-    parser.add_argument("--check", choices=["network", "factor", "eps-scope", "parquet"], default="network",
-                        help="检查类型 (默认 network; factor 检查 Factor class 包装违规; eps-scope 检查 --eps 不准全市场; parquet 检查业务层直读 parquet/duckdb/sqlite)")
+    parser.add_argument("--check", choices=["network", "factor", "eps-scope", "parquet", "safe-fs"], default="network",
+                        help="检查类型 (默认 network; factor 检查 Factor class 包装违规; eps-scope 检查 --eps 不准全市场; parquet 检查业务层直读 parquet/duckdb/sqlite; safe-fs 检查直接删用户数据/覆盖写配置)")
     parser.add_argument("--skill", help="只检查指定 skill (例: t-analyze)")
     parser.add_argument("--strict", action="store_true", help="严格模式 (所有网络调用标红)")
     parser.add_argument("--write-md", action="store_true", help="写 docs/guardrail-report.md")
@@ -217,8 +220,221 @@ def main():
         check_eps_scope(args)
     elif args.check == "parquet":
         check_parquet(args)
+    elif args.check == "safe-fs":
+        check_safe_fs(args)
     else:
         parser.error(f"未实现的检查: {args.check}")
+
+
+SAFE_FS_ALLOWED = {
+    "tools/storage/safe_fs.py",
+    "tools/batch/guardrail.py",
+}
+SAFE_FS_ALLOWED_DIRS = ("tools/storage/",)
+
+
+def scan_source_safe_fs(rel, content, sensitive_re=None):
+    """AST 检测单个文件里的危险文件操作 (纯函数, 可单测)
+
+    返回 (violations, info) 两个 list, 元素都是 (rel, lineno, msg)。
+
+    为什么不纯 AST 匹配:
+      - AST 天然跳过 docstring (它们是 Constant 节点, 不是 Call) → 不会把
+        文档里写的 `os.remove(...)` 示例误判成真代码
+      - 跨行调用 `os.remove(\n  p\n)` 行级 regex 漏掉, AST 抓得到
+      - 变量间接引用 `p = "docs/x.md"` → `os.remove(p)` 需要单独建表关联
+
+    sensitive_re: 匹配敏感路径的 regex, 默认 config/|watchlist|whitelist|docs/
+    """
+    import re
+
+    if sensitive_re is None:
+        sensitive_re = re.compile(r"config/|watchlist|whitelist|docs/")
+
+    if rel in SAFE_FS_ALLOWED:
+        return [], []
+    if any(rel.startswith(d) for d in SAFE_FS_ALLOWED_DIRS):
+        return [], []
+
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return [], []
+
+    # 变量追踪 — 把 "x = 'docs/xxx'" 的赋值跟 "os.remove(x)" 关联起来
+    #   (AST Call 节点里看不到变量指向的字符串, 需要单独建表)
+    var_sensitive = {}
+    var_alias = {}  # 变量 -> 它指向的另一个变量 (q = p), 用于二次间接引用
+    for vnode in ast.walk(tree):
+        if isinstance(vnode, ast.Assign):
+            # 赋值右边的字符串常量
+            val_str = ""
+            for sub in ast.walk(vnode.value):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    val_str = sub.value
+            # 赋值右边是另一个变量 → 别名 (q = p)
+            rhs_names = [
+                sub.id for sub in ast.walk(vnode.value)
+                if isinstance(sub, ast.Name)
+            ]
+            for tgt in vnode.targets:
+                if not isinstance(tgt, ast.Name):
+                    continue
+                if val_str and sensitive_re.search(val_str):
+                    var_sensitive[tgt.id] = val_str
+                elif rhs_names:
+                    var_alias[tgt.id] = rhs_names[0]
+        elif isinstance(vnode, ast.AnnAssign) and vnode.value is not None:
+            val_str = ""
+            for sub in ast.walk(vnode.value):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    val_str = sub.value
+            if val_str and sensitive_re.search(val_str) and isinstance(vnode.target, ast.Name):
+                var_sensitive[vnode.target.id] = val_str
+
+    # 别名解析: q = p, p = "docs/x.md" → q 也算敏感 (最多解 5 层防环)
+    for _ in range(5):
+        changed = False
+        for alias, target in list(var_alias.items()):
+            if alias in var_sensitive:
+                continue
+            if target in var_sensitive:
+                var_sensitive[alias] = var_sensitive[target]
+                changed = True
+        if not changed:
+            break
+
+    violations = []
+    info = []
+    src_lines = content.splitlines()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+
+        # 定位被调用的名字: f(...) / os.remove(...) / shutil.rmtree(...)
+        fname = ""
+        if isinstance(node.func, ast.Name):
+            fname = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            fname = node.func.attr
+
+        # 该调用里出现的所有字符串常量 (路径可能不在同一行)
+        str_args = []
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                str_args.append(sub.value)
+        # 变量名里可能带路径 (如 WATCHLIST_PATH) → 也看属性/名字
+        ident_args = []
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Name):
+                ident_args.append(sub.id)
+            elif isinstance(sub, ast.Attribute):
+                ident_args.append(sub.attr)
+
+        blob = " ".join(str_args + ident_args)
+        # 变量指向敏感路径 → 也算命中 (如 p = "docs/x.md"; os.remove(p))
+        if not sensitive_re.search(blob):
+            extra = " ".join(var_sensitive[i] for i in ident_args if i in var_sensitive)
+            if not extra:
+                continue
+            blob += " " + extra
+        if not sensitive_re.search(blob):
+            continue
+
+        line_no = getattr(node, "lineno", 0)
+        src_line = src_lines[line_no - 1].strip() if line_no else ""
+
+        if fname in ("unlink", "remove", "rmtree"):
+            violations.append((rel, line_no, f"❌ {fname}() 直接删敏感文件: {src_line[:80]}"))
+        elif fname == "write_text":
+            info.append((rel, line_no, f"⚠️ write_text() 覆盖写敏感文件 (建议 atomic_write_json): {src_line[:80]}"))
+        elif fname == "open":
+            # open() 只有在写模式 ("w"/"a"/"x"/"+") 才是覆盖写; 只读 "r" 不算
+            mode = ""
+            for a in node.args[1:2]:
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    mode = a.value
+            for kw in node.keywords:
+                if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                    mode = kw.value.value
+            if any(m in mode for m in ("w", "a", "x", "+")):
+                info.append((rel, line_no, f"⚠️ open({mode!r}) 覆盖写敏感文件 (建议 atomic_write_json): {src_line[:80]}"))
+
+    return violations, info
+
+
+def check_safe_fs(args):
+    """安全文件操作守门员 (2026-11-02 加)
+
+    铁律: 批量脚本 **不许直接删用户数据 / 直接覆盖写用户配置**。
+    背景: A→M 脚本曾用 `p.unlink()` 清空 docs/ 下 11 份历史详报,
+    而 docs/ 被 .gitignore 排除 → 删了不可恢复 (事故).
+
+    违规模式 (业务层, 白名单外):
+      1. .unlink() / os.remove() / shutil.rmtree()  指向 docs/ 或 config/ 下的文件
+      2. open(path, "w") / write_text() 直接覆盖 config/ 下的 JSON (持仓配置)
+
+    正确做法:
+      - 删除 → tools.storage.safe_fs.safe_delete (移到 ~/.Trash, 永不 unlink)
+      - 写配置 → tools.storage.safe_fs.atomic_write_json (原子写 + 写前备份)
+      - 或走 DataStore.save_watchlist (已原子写)
+
+    例外 (白名单):
+      - tools/storage/safe_fs.py      # 本身就是安全层
+      - tools/batch/guardrail.py      # 自身
+      - tools/storage/                 # 数据层, parquet/sqlite 写入是正常的
+    """
+    import re
+
+    print("🛡️  守门员: safe-fs-guard (禁止直接删用户数据 / 覆盖写配置)")
+    print(f"   扫描范围: {args.path}/")
+    print()
+
+    SENSITIVE = re.compile(r"config/|watchlist|whitelist|docs/")
+
+    violations = []
+    info = []
+
+    for py_file in (ROOT / args.path).rglob("*.py"):
+        if "__pycache__" in str(py_file) or "/tests/" in str(py_file):
+            continue
+        rel = str(py_file.relative_to(ROOT))
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        v, i = scan_source_safe_fs(rel, content, SENSITIVE)
+        violations.extend(v)
+        info.extend(i)
+
+    print("📊 检查结果:")
+    print(f"   ❌ 违规 (直接删用户数据): {len(violations)}")
+    print(f"   ⚠️ 警告 (覆盖写配置):     {len(info)}")
+    print()
+    if violations:
+        print("❌ 违规清单:")
+        for file_path, lineno, msg in violations:
+            print(f"   {file_path}:{lineno}")
+            print(f"     {msg}")
+        print()
+        print("   修法: 用 tools.storage.safe_fs.safe_delete (移回收站, 可恢复)")
+        print()
+    if info:
+        print("⚠️ 警告清单:")
+        for file_path, lineno, msg in info:
+            print(f"   {file_path}:{lineno}")
+            print(f"     {msg}")
+        print()
+        print("   修法: 用 tools.storage.safe_fs.atomic_write_json (原子写 + 备份)")
+        print()
+
+    if not violations and not info:
+        print("✅ 没有违规 — 所有用户数据的删除/写入都走 safe_fs 安全层")
+        print()
+
+    if violations:
+        sys.exit(1)
 
 
 def check_factor(args):
