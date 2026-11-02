@@ -30,8 +30,8 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --no-full-report
 # 只扫 watchlist
 bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 
-# 刷新模式 (不清空目录, 刷新已有 + 补充新增 + 留档标注)
-bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --refresh
+# 默认就是刷新模式 (不清空目录, 刷新已有 + 补充新增 + 留档标注)
+bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ```
 
 > 默认过滤链(全开):`exclude-st` → `exclude-pe 60` → `with-quality basic` (营收/净利 yoy>0) + `ROE>5%` + `毛利率>20%` → `净负债/市值<0.5`.
@@ -79,14 +79,18 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --refresh
 1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `_filter_by_pe` → `_filter_by_quality` (+ROE/毛利率) → `_filter_by_leverage` → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
 2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/`
 
-### step 2 两种模式 (2026-10-29 加 `--refresh`)
+### step 2 两种模式 (2026-10-29 加 `--refresh`, **2026-11-02 起 `--refresh` 是默认**)
 
 | 模式 | 行为 | 用 flag |
 |---|---|---|
-| **默认** | 先清空 `docs/wyckoff-a2m/`,再生成命中的详报 | (无) |
-| **刷新** | **不清空**, 分 3 类处理 | `--refresh` |
+| **刷新 (默认)** | **不清空**, 分 3 类处理 | (无, 默认开) |
+| **清空** | 先清空 `docs/wyckoff-a2m/`,再生成命中的详报 | `--clean` |
 
-`--refresh` 的 3 类处理:
+> ⚠️ **2026-11-02 变更**: 清空从默认改成 opt-in (`--clean`)。
+> 原因: 旧逻辑用 `p.unlink()` **直接删除**, 不进回收站, 而 `docs/` 被 `.gitignore` 排除 → **删了就没了, 恢复不了**。
+> 历史命中票是复盘素材, 默认必须保留。**除非你明确要清空, 否则永远别加 `--clean`。**
+
+`--refresh` 的 3 类处理 (默认行为):
 
 | 类 | 定义 | 处理 |
 |---|---|---|
@@ -99,6 +103,8 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --refresh
 配套 flag:
 - `--keep-stale` — C 类不刷新数据, 只在文件头标注 (默认会刷新)
 - `--stale-only` — 只跑 C 类, 不跑本次命中
+- `--no-clean` — 完全不碰旧文件 (数据永远停在生成那天)
+- `--clean` — ⚠️ 显式清空目录 (不可恢复, 慎用)
 
 > ⚠️ **为什么不用 `--no-clean` 代替 `--refresh`**:
 > `--no-clean` 是完全不碰旧文件, 那些票的行情数据会永远停在生成那天, 跟同目录其他文件不同步。
@@ -120,7 +126,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --refresh
 - 单只扫描瓶颈 = `scan_sub_events` 内部 9 detector Python loop 序列 (GIL 锁死, ThreadPool 0 加速)
 - mp.spawn 详报 1.5-2.6x 加速(起步小批量 ≤8 收益最高, worker 太多被启动开销拖累)
 - ⚠️ **不能用 mp.fork** (duckdb fork 后死锁)
-- 默认清空 `docs/wyckoff-a2m/` 旧 md; `--no-clean` 跳过; `--refresh` 改成"刷新+补充+留档"
+- 2026-11-02 起默认**不清空** `docs/wyckoff-a2m/` (--refresh 默认开); `--clean` 才清空 (不可恢复)
 - 详报目录跟 watchlist 完全隔离,不污染自选
 - 数据日期 = parquet 最新 trade_date,不是 wall clock
 

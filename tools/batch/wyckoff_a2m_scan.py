@@ -35,6 +35,7 @@ import time
 import duckdb
 import multiprocessing as mp
 import os
+import shutil
 import pandas as pd
 from pathlib import Path
 
@@ -639,7 +640,7 @@ def _print_effective_conditions(args) -> None:
     print(f"    汇总 md             : {args.output if write_md_on else '❌ 不落盘 (--no-write-md)'}")
     print(f"    详报                : {'✅ 跑 (前 %d 只)' % args.report_top if full_report_on else '❌ 不跑 (--no-full-report)'}")
     if args.refresh:
-        print(f"    详报模式            : 🔄 --refresh (不清空!)")
+        print(f"    详报模式            : 🔄 --refresh (默认, 不清空!)")
         print(f"                         A. 刷新 = 已有 且 本次命中 → 重新生成")
         print(f"                         B. 补充 = 没有 且 本次命中 → 新生成")
         if args.keep_stale:
@@ -676,14 +677,18 @@ def main():
     ap.add_argument("--report-subdir", default="wyckoff-a2m",
                     help="详报输出子目录 (默认 wyckoff-a2m, 跳过 watchlist 分流, 不污染自选)")
     ap.add_argument("--no-clean", action="store_true",
-                    help="不清理 docs/<subdir> 已有 md (默认会清理, 避免新旧混杂)")
-    ap.add_argument("--refresh", action="store_true",
-                    help="刷新模式 (2026-10-29 加): 不清空目录, 而是\n"
+                    help="不清理 docs/<subdir> 已有 md (等价于 --refresh 的 A+B 类, 但 C 类完全不碰)")
+    ap.add_argument("--clean", action="store_true",
+                    help="显式清空 docs/<subdir> 旧 md (2026-11-02 加: 清空从默认改成 opt-in,\n"
+                         "因为默认 unlink() 不可恢复, 且历史命中票是复盘素材)")
+    ap.add_argument("--refresh", action="store_true", default=True,
+                    help="刷新模式 (2026-10-29 加, 2026-11-02 改默认开): 不清空目录, 而是\n"
                          "  A. 刷新 = 目录里已有 且 本次仍命中 → 重新生成 (数据更新到最新交易日)\n"
                          "  B. 补充 = 目录里没有 且 本次命中   → 新生成\n"
                          "  C. 留档 = 目录里已有 但本次未命中 → 也刷新数据, 但文件头标 '⚠️ 本次未命中'\n"
                          "  最终目录 = 旧文件 ∪ 本次命中, 不删任何历史票\n"
-                         "  (与 --no-clean 的区别: --no-clean 是完全不碰旧文件, 数据永远停在生成那天)")
+                         "  (与 --no-clean 的区别: --no-clean 是完全不碰旧文件, 数据永远停在生成那天)\n"
+                         "  2026-11-02 起这是默认行为 (清空改成 --clean opt-in)")
     ap.add_argument("--keep-stale", action="store_true",
                     help="--refresh 时, C 类 (曾命中但本次未命中) 不刷新数据, 只在文件头标注状态\n"
                          "  默认会刷新 (数据旧比多跑几只票更坑)")
@@ -1104,19 +1109,29 @@ def main():
     elif args.full_report and hits:
         from tools.batch.t_analyze_one import process_one as t_analyze_process_one
         target_hits = hits[:args.report_top] if args.report_top > 0 else hits
-        # 2026-10-17: 默认清空 docs/<subdir>/ 旧 md (按 F5 跑的语义, 避免新旧混杂)
-        if sub_dir.exists() and not args.no_clean:
+        # 2026-11-02: 清空改成 --clean opt-in (默认 --refresh 不清空)
+        #   原因: 旧逻辑用 p.unlink() 直接删, 不进回收站, 且 docs/ 不入 git → 删了就没了.
+        #   历史命中票是复盘素材, 默认必须保留.
+        if sub_dir.exists() and args.clean and not args.no_clean:
             old_mds = list(sub_dir.glob("*.md"))
+            # 2026-11-02: 改成移到回收站, 不是 unlink() — 万一清错还能捞回来
+            trash = Path.home() / ".Trash" / f"mavis-a2m-{args.report_subdir}-{int(time.time())}"
+            trash.mkdir(parents=True, exist_ok=True)
             for p in old_mds:
-                p.unlink()
+                try:
+                    shutil.move(str(p), str(trash / p.name))
+                except Exception:
+                    p.unlink()
             print(f"\n=== step 2: 跑 /t-analyze 详报 ({len(target_hits)} 只 → docs/{args.report_subdir}/) ===")
-            print(f"  清空旧 md: {len(old_mds)} 份 (用 --no-clean 可跳过)")
+            print(f"  ⚠️ 清空旧 md: {len(old_mds)} 份 (--clean 显式指定, 已移到 {trash})")
         else:
             print(f"\n=== step 2: 跑 /t-analyze 详报 ({len(target_hits)} 只 → docs/{args.report_subdir}/) ===")
-            if not args.no_clean:
+            if args.clean:
                 print(f"  子目录不存在, 无需清空")
-            else:
+            elif args.no_clean:
                 print(f"  --no-clean: 保留历史详报")
+            else:
+                print(f"  保留历史详报 (默认不清理, 加 --clean 才清空)")
         tasks = [(r['code'], basic.get(r['code'], (r['code'], "—"))[0], args.report_subdir)
                  for r in target_hits]
     else:
