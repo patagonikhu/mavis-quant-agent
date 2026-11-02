@@ -69,21 +69,9 @@
       "list_type": "持仓"
     },
     {
-      "code": "002304",
-      "name": "洋河股份",
-      "sector": "白酒",
-      "list_type": "持仓"
-    },
-    {
       "code": "002237",
       "name": "恒邦股份",
       "sector": "黄金冶炼",
-      "list_type": "持仓"
-    },
-    {
-      "code": "000792",
-      "name": "盐湖股份",
-      "sector": "盐湖提锂",
       "list_type": "持仓"
     },
     {
@@ -285,12 +273,6 @@
       "code": "300620",
       "name": "光库科技",
       "sector": "通信设备",
-      "list_type": "持仓"
-    },
-    {
-      "code": "000988",
-      "name": "华工科技",
-      "sector": "专用机械",
       "list_type": "持仓"
     },
     {
@@ -1843,13 +1825,6 @@
       "code": "601033",
       "name": "永兴股份",
       "sector": "环境保护",
-      "list_type": "持仓",
-      "notes": "V12 A→M 命中 2026-10-19 / t-wyckoff-a2m 严判 + 基本面优质 (A 档)"
-    },
-    {
-      "code": "000550",
-      "name": "江铃汽车",
-      "sector": "汽车整车",
       "list_type": "持仓",
       "notes": "V12 A→M 命中 2026-10-19 / t-wyckoff-a2m 严判 + 基本面优质 (A 档)"
     },
