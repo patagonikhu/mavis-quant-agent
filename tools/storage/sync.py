@@ -738,6 +738,9 @@ def detect_stale_flags() -> dict[str, bool]:
     # 4. stk_factor (每天必跑, 距今天 > 1 天就拉, 2026-09-22 修 v6.2.4 重构漏接 auto)
     #    读 STK_FACTOR_DIR/{YYYYQN}.parquet metadata.done_dates 合并集
     #    注意: 周末/节假日 done_dates 不补, 用 (today - last).days >= 1 判断 (跟 kline 一致)
+    # 2026-11-02 加: 光看日期不够 —— 某天 Tushare 只先发沪市时, 那天的 done_dates 里
+    #    仍有这个日期, 但深市代码永远缺失 (实测 20261102 全市场只返 2504 行)。
+    #    所以额外查「最新日期的代码覆盖数」, 明显偏少 → 标 stale, 让 sync 重试补齐。
     try:
         if not STK_FACTOR_DIR.exists() or not list(STK_FACTOR_DIR.glob("*.parquet")):
             flags["stk_factor"] = True  # 没数据, 必拉
@@ -753,6 +756,21 @@ def detect_stale_flags() -> dict[str, bool]:
                 gap = (today - last_dt).days
                 if gap >= 1:
                     flags["stk_factor"] = True
+                else:
+                    # 日期是最新的, 但可能只拉到一部分 → 查覆盖数
+                    try:
+                        from .caches.stk_factor_history import read_code_count_by_date
+                        cc = read_code_count_by_date()
+                        if cc:
+                            counts = sorted(cc.values())
+                            median = counts[len(counts) // 2]
+                            n_last = cc.get(last, 0)
+                            if median and n_last < median * 0.7:
+                                flags["stk_factor"] = True
+                                print(f"  ⚠️ stk_factor 最新日期 {last} 只有 {n_last} 只 "
+                                      f"(基准 {median}), 判定半拉 → 需重拉补齐")
+                    except Exception:
+                        pass
     except Exception:
         flags["stk_factor"] = True  # 异常保守拉
 
