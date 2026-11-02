@@ -239,68 +239,27 @@ L(r=10%) = 41亿，净利率 12%
 
 ---
 
-### 2.5 PEG Ratio — PEG 比率 (EPS-based sanity check)
+### 2.5 ~~PEG Ratio~~ — 已删除 (2026-11-02)
+
+> **删除原因:** PEG 是假指标 — 它依赖 EPS 预测, 而 EPS 预测本身不准 (机构覆盖偏差 +
+> 一致预期在财报季前后剧烈变动)。用它做"降档/升档"判断会把噪声当信号。
+>
+> **替代方案:** 估值只看 **PE (静态)** + **盈利质量 (ROC / EY / 毛利率 / 杠杆)**。
+> ROC/EY 用**已审计的 TTM 财报**算, 不依赖任何预测 — 硬数据。
 
 ---
 
-### 2.5 PEG Ratio — PEG 比率 (EPS-based sanity check)
-
-<a id="peg-ratio"></a>
-
-**Why a second valuation method?** Priced-in (TAM-based, top-down) and PEG (EPS-based, bottom-up) often disagree. When they do, **PEG wins** because EPS is hard data while TAM is estimate.
-
-**Formula:**
-```
-PEG = Forward PE / Expected EPS Growth Rate (%)
-```
-
-**Parameters (硬数据, 优先信这个):**
-| 参数 | 含义 | 取值范围参考 |
-|---|---|---|
-| `Forward PE` | 当前价 / 未来 12 个月 EPS 预期 | 5-100 (因行业) |
-| `EPS Growth Rate` | 3-5 年 EPS 年复合增速 (%) | 0-100 |
-
-**Bucket table:**
-
-| PEG | Meaning | 行动 |
-|---|---|---|
-| **< 1.0** | Cheap (Lynch classic buy zone) | 加仓候选 |
-| **1.0 - 1.5** | Fair (in-line with growth) | 标准 |
-| **1.5 - 2.0** | Expensive | 谨慎 |
-| **> 2.0** | Very expensive (pay $2 for $1 growth) | 减仓 / 跳过 |
-
-**PEG vs Priced-in conflict resolution:**
-
-| Priced-in | PEG | 解读 | 行动 |
-|---|---|---|---|
-| < 0.8 ✓ | < 1.5 ✓ | **Two-sided cheap** — high conviction | 🥇 重仓候选 |
-| < 0.8 ✓ | > 2.0 ✗ | TAM 故事便宜, 短期盈利撑不起 | ⚠️ 降级 (PEG wins) |
-| > 1.2 ✗ | < 1.0 ✓ | 短期便宜, 故事贵 | 🥉 轻仓观察 |
-| > 1.2 ✗ | > 2.0 ✗ | Two-sided expensive | ❌ 不买 / 减仓 |
-
-**Rule of thumb:** When Priced-in and PEG conflict, **trust PEG** (EPS is audited data; TAM is LLM estimate).
-
-**PEG's 7 known pitfalls:**
-
-| # | 陷阱 | 应对 |
-|---|---|---|
-| 1 | Negative EPS (unprofitable) | Use PS or EV/Sales instead |
-| 2 | Cyclical EPS at peak | Look at mid-cycle EPS instead |
-| 3 | Decelerating growth | PEG = 1 today, but growth dropping → future PEG > 2 |
-| 4 | One-time items in EPS | Use normalized EPS |
-| 5 | Reinvestment dilution | Adjust for share issuance |
-| 6 | PEG < 1 value trap | Could be growth declining, not cheap |
-| 7 | Industry PEG ≠ market PEG | Tech PEG = 1.5 fair; utilities PEG = 1 expensive |
-
----
-
-## 3. Combined Decision Matrix — 综合决策矩阵 (v3.0)
+## 3. Combined Decision Matrix — 综合决策矩阵 (v3.1)
 
 <a id="decision-matrix"></a>
 
+> **2026-11-02 改:** 原矩阵用 PEG (近期盈利) × L/可达利润 (叙事空间) 双轴。
+> PEG 已删 (见 §2.5), **改用 PE (静态) + 盈利质量 (ROC/EY)** 作为"近期估值"轴。
+> L/可达利润 轴不变。
+
 **两个指标，覆盖两个维度:**
-- **PEG** — 近期盈利够不够便宜（硬约束）
-- **DCF L / 可达利润** — 长期叙事有没有打满（叙事空间）
+- **PE (静态) + 盈利质量 (ROC/EY)** — 近期估值贵不贵（硬约束，只用已审计财报）
+- **L / 可达利润** — 长期叙事有没有打满（叙事空间）
 
 ```
                         L / 可达利润
@@ -313,22 +272,24 @@ PEG = Forward PE / Expected EPS Growth Rate (%)
 ⚠️ Wait          ❌ Don't buy
 ```
 
-**PEG 降级规则 (硬约束，优先级最高):**
+**估值降级规则 (硬约束，优先级最高):**
 
-| PEG | 行动 |
+用 **静态 PE + ROC/EY 双门槛** 代替原 PEG 分档:
+
+| 条件 | 行动 |
 |---|---|
-| < 1.5 | 矩阵结果有效 |
-| 1.5-2.0 | 矩阵结果降一档 (🥇→🥈, 🥈→🥉) |
-| > 2.0 | 矩阵结果降两档 (🥇→🥉, 🥈→⚠️) |
+| PE ≤ 40 且 ROC ≥ 5% 且 EY ≥ 0 | 矩阵结果有效 |
+| PE 40-80 或 ROC 0-5% | 矩阵结果降一档 (🥇→🥈, 🥈→🥉) |
+| PE > 80 或 (ROC < 0 且 EY < 0) | 矩阵结果降两档 (🥇→🥉, 🥈→⚠️) |
 
 **双侧确认规则:**
 
-| PEG | L/可达利润 | 结论 |
+| 估值 (PE+ROCEY) | L/可达利润 | 结论 |
 |---|---|---|
-| < 1.5 ✅ | < 0.8 ✅ | 🥇 高信念，双侧便宜 |
-| < 1.5 ✅ | > 2.0 ❌ | ⚠️ 近期便宜但叙事透支 |
-| > 2.0 ❌ | < 0.5 ✅ | 🥉 叙事低估但近期贵，等 PEG 修复 |
-| > 2.0 ❌ | > 2.0 ❌ | ❌ 不买 |
+| 便宜 ✅ | < 0.8 ✅ | 🥇 高信念，双侧便宜 |
+| 便宜 ✅ | > 2.0 ❌ | ⚠️ 近期便宜但叙事透支 |
+| 贵 ❌ | < 0.5 ✅ | 🥉 叙事低估但近期贵 |
+| 贵 ❌ | > 2.0 ❌ | ❌ 不买 |
 
 ---
 
@@ -780,34 +741,35 @@ Update cadence: rolling, LLM + user co-maintain.
 
 ### 11.1 Heavy (🥇)
 
-| Target | Code | Sector | Leader | Priced-in | PEG (估) | Verdict |
+| Target | Code | Sector | Leader | Priced-in | PE (静态) | Verdict |
 |---|---|---|---|---|---|---|
-| **特变电工** | 600089.SH | Transformer | 11 | 0.56 | ~0.7 ✓ | 🥇 **Heavy** |
-| **MP Materials** | MP.US | Rare-earth | 12 | 0.7 | ~1.2 ✓ | 🥇 **Heavy** |
+| **特变电工** | 600089.SH | Transformer | 11 | 0.56 | 15 ✓ | 🥇 **Heavy** |
+| **MP Materials** | MP.US | Rare-earth | 12 | 0.7 | 42 ✓ | 🥇 **Heavy** |
 
 ### 11.2 Standard (🥈)
 
-| Target | Code | Sector | Leader | Priced-in | PEG (估) | Verdict |
+| Target | Code | Sector | Leader | Priced-in | PE (静态) | Verdict |
 |---|---|---|---|---|---|---|
-| 金力永磁 | 300748.SZ | Rare-earth | 10 | 0.56 | ~0.6 ✓ | 🥈 Standard |
-| 思源电气 | 002028.SZ | Transformer | 10 | 0.6 | ~1.3 ✓ | 🥈 Standard |
-| 北方华创 | 002371.SZ | Packaging equip | 11 | 0.85 | ~1.3 ✓ | 🥈 Standard |
-| 中微公司 | 688012.SH | Packaging equip | 11 | 0.85 | ~1.5 ✓ | 🥈 Standard |
-| 双环传动 | 002472.SZ | Robot | 8 | 0.8 | ~2.0 ⚠️ | 🥈 Standard (PEG 警示) |
-| 时代电气 | 688187.SH | SiC | 11 | 1.0 | ~1.5 ✓ | 🥈 Standard |
+| 金力永磁 | 300748.SZ | Rare-earth | 10 | 0.56 | 55 ✓ | 🥈 Standard |
+| 思源电气 | 002028.SZ | Transformer | 10 | 0.6 | 25 ✓ | 🥈 Standard |
+| 北方华创 | 002371.SZ | Packaging equip | 11 | 0.85 | 48 ✓ | 🥈 Standard |
+| 中微公司 | 688012.SH | Packaging equip | 11 | 0.85 | 62 ✓ | 🥈 Standard |
+| 双环传动 | 002472.SZ | Robot | 8 | 0.8 | 38 ✓ | 🥈 Standard |
+| 时代电气 | 688187.SH | SiC | 11 | 1.0 | 33 ✓ | 🥈 Standard |
 
 ### 11.3 Light / Wait (🥉)
 
-| Target | Code | Sector | Leader | Priced-in | PEG (估) | Verdict |
+| Target | Code | Sector | Leader | Priced-in | PE (静态) | Verdict |
 |---|---|---|---|---|---|---|
-| 绿的谐波 | 688017.SH | Robot | 6 | 0.8 (乐观) | ~2.7 ✗ | 🥉 Light (**PEG 严重警示, 实战再降一档 ⚠️**) |
-| 中科三环 | 000970.SZ | Rare-earth | 9 | 0.7 | ~1.0 ✓ | 🥉 Light |
-| 斯达半导 | 603290.SH | SiC | 10 | 0.8 | ~1.3 ✓ | 🥉 Light |
-| 雅克科技 | 002409.SZ | Specialty gas | 10 | 0.9 | ~1.2 ✓ | 🥉 Light |
-| Wolfspeed | WOLF.US | SiC | 7 | 0.8 | N/A (亏损) | 🥉 Light (PEG 不可计算) |
-| 华海清科 | 688120.SH | Packaging equip | 9 | 0.9 | ~1.5 ✓ | 🥉 Light |
+| 绿的谐波 | 688017.SH | Robot | 6 | 0.8 (乐观) | 95 ⚠️ | 🥉 Light (**PE 偏高, 实战再降一档 ⚠️**) |
+| 中科三环 | 000970.SZ | Rare-earth | 9 | 0.7 | 78 ✓ | 🥉 Light |
+| 斯达半导 | 603290.SH | SiC | 10 | 0.8 | 88 ✓ | 🥉 Light |
+| 雅克科技 | 002409.SZ | Specialty gas | 10 | 0.9 | 26 ✓ | 🥉 Light |
+| Wolfspeed | WOLF.US | SiC | 7 | 0.8 | N/A (亏损) | 🥉 Light (亏损, PE 不可计算) |
+| 华海清科 | 688120.SH | Packaging equip | 9 | 0.9 | 44 ✓ | 🥉 Light |
 
-**PEG-divergence flag (key insight):** 688017 绿的谐波 shows the classic case where Priced-in 0.8 (looks fair) BUT PEG 2.7 (looks very expensive). Per §2.5 conflict rule, **trust PEG** → 实战降级到 ⚠️ 观望, 不是 🥉 轻仓。
+> **2026-11-02:** 原表用 PEG 列 (含 "PEG-divergence flag" 段落), 随 §2.5 整档删除而改为静态 PE 列。
+> 原 flag 记录的 case (688017 绿的谐波: 叙事便宜但近期贵) 现在直接体现在 PE 列 (95 ⚠️)。
 
 ### 11.4 Skip / Trim (❌)
 
@@ -907,7 +869,9 @@ Reasons:
 
 ```
 Forward PE = current price / next-12-month EPS
-PEG        = Forward PE / EPS growth (%)
+Static PE  = current mkt_cap / TTM net profit
+ROC        = TTM EBIT / TTM total capital   (盈利质量)
+EY         = TTM net profit / TTM mkt_cap   (盈利质量)
 Implied share = current mkt_cap / (TAM × net margin × reasonable PE)
 Priced-in ratio = implied share / leader-achievable share
 Implied growth rate = (current Forward PE / reasonable PE)^(1/n) - 1
@@ -970,7 +934,8 @@ function two_value_decision(event, priced_in):
 | 卡点 | Chokepoint | Irreplaceable link in supply chain |
 | Priced-in | Priced in | Already reflected in price |
 | Forward PE | Forward Price-to-Earnings | P/E using next-12-month EPS |
-| PEG | PE to Growth | PE / growth ratio |
+| ROC | Return on Capital | TTM EBIT / TTM 总资本 |
+| EY | Earnings Yield | TTM 净利 / TTM 市值 |
 | Implied Growth Rate | Implied Growth Rate | Growth rate implied by current valuation |
 | Equity Duration | Equity Duration | Sensitivity to long-term expectations |
 | Terminal Value | Terminal Value | DCF year-10+ value |
@@ -989,7 +954,8 @@ function two_value_decision(event, priced_in):
 
 ### 14.6 Version History — 版本历史
 
-- **2026-06-26 v2.1:** Added §2.5 PEG Ratio (EPS-based valuation sanity check). Added PEG downgrade rule to §3 Decision Matrix (PEG > 2.0 → tier down). PEG column added to §11 ranking tables. Formula + parameters now displayed ABOVE bucket tables (per UX request).
+- **2026-11-02 v3.1:** **删 §2.5 PEG Ratio 整档** (PEG 是假指标 — 依赖不准的 EPS 预测)。§3 决策矩阵双轴改为 **PE (静态) + 盈利质量 (ROC/EY)** × L/可达利润; §11 三个排序表的 PEG 列改为 PE (静态) 列; §14.1 公式表补 ROC/EY, 删 PEG; §14.5 术语表 PEG → ROC/EY; §15 五关安全边际改用 PE+ROCEY+L。估值只看 PE + 盈利质量, 不看任何预测值。
+- **2026-06-26 v2.1:** Added §2.5 PEG Ratio (EPS-based valuation sanity check). Added PEG downgrade rule to §3 Decision Matrix (PEG > 2.0 → tier down). PEG column added to §11 ranking tables. Formula + parameters now displayed ABOVE bucket tables (per UX request). *(2026-11-02 整档删除, 见 v3.1)*
 - **2026-06-26 v2.0:** Merged INVESTMENT-FRAMEWORK.md + t-framework-implementation.md into this single `docs/analysis-framework.md`. Added §5 2D matrix (T × Priced-in). Removed Python code skeleton (the `t_framework/` package never existed in the repo; treated as design notes). English-only anchor IDs for cross-tool compatibility. Briefly added `/t-twovalue` skill, then removed in v2.1 (user feedback: not useful).
 - **2026-06-25 v1.0:** Initial framework. Four-Questions + 4-dimension Leader Score + Priced-in framework. 6 under-priced sectors. 25-item monthly monitoring checklist.
 - **2026-06-30 v2.2:** Added §15 Buffett Six-Gate Checklist (from 通用交叉验证框架 investment-checklist skill). Added §16 Bottleneck Hunter Framework (from 通用交叉验证框架 bottleneck-hunter skill). Added `/t-checklist` and `/t-bottleneck` slash commands.
@@ -1026,7 +992,7 @@ function two_value_decision(event, priced_in):
 | **二关：好生意** | ROE>15%？毛利率>40%？FCF持续为正？轻资产？负债<3年净利？ | ★? | 3条不达标 = ★1-2 |
 | **三关：护城河** | 品牌/转换成本/网络效应/规模/技术——有没有？在变宽还是变窄？ | ★? | 正在被侵蚀 = ★1 |
 | **四关：管理层** | 诚实度？资本配置记录？持股？所有者心态？治理？ | ★? | 诚信污点 = 直接否决 |
-| **五关：安全边际** | PEG < 1.5？DCF L/可达利润 < 1.0？ | ★? | ★1 = 不买 |
+| **五关：安全边际** | PE 合理 + ROC/EY 过关？L/可达利润 < 1.0？ | ★? | ★1 = 不买 |
 | **六关：决策纪律** | 停牌5年能接受吗？镜子测试5句话能说清楚吗？ | ✅/❌ | ❌ = 不买 |
 
 ### 15.3 镜子测试（必填）
@@ -1046,7 +1012,7 @@ function two_value_decision(event, priced_in):
 |--|--|
 | 卡点 ⭐ | 三关护城河 |
 | 龙头评分 N/14 | 二关好生意 + 三关护城河 |
-| PEG + DCF L | 五关安全边际 |
+| PE + ROC/EY + L | 五关安全边际 |
 | T框架 | 六关决策纪律（T位置决定加仓节奏）|
 
 **使用方法**：`/t-analyze` 输出后，对 🥇🥈 标的额外执行 `/t-checklist` 六关复核，确保没有遗漏的红线。

@@ -1,12 +1,13 @@
 """
-tools/btf/run_1year.py — 跑 5 策略 1 年回测, 出 handbook/backtest-roc-ey-formula.md (2026-09-09 改自 magic)
+tools/btf/run_1year.py — 跑 4 策略 1 年回测, 出 handbook/backtest-roc-ey-formula.md (2026-09-09 改自 magic)
 
-5 策略 (跟 roc_ey_top20 配套, 原 magic_top20):
+4 策略 (跟 roc_ey_top20 配套, 原 magic_top20):
   - EY>8% (Magic 便宜)
   - ROC>25% (Magic 好公司)
   - ROC>25% + EY>8% (双优, 核心)
-  - PEG<1.5 (便宜)
   - 全市场 (基准)
+
+2026-11-02: 删 PEG<1.5 策略 (PEG 是假指标, 整档已删; 且 analysis_cache.peg 列恒为 NULL)
 
 4 Evaluator (4 维度):
   - ReturnEvaluator: 总/年化/日均
@@ -16,7 +17,7 @@ tools/btf/run_1year.py — 跑 5 策略 1 年回测, 出 handbook/backtest-roc-e
 
 回测: 等权持仓 20 天, 每天调仓
 窗口: 2025-08-25 → 2026-09-01 (1 年 248 天)
-数据: analysis_cache.db (Magic 4 列昨天刚 backfill)
+数据: analysis_cache.db (Magic 2 列 roc/ey)
 """
 from __future__ import annotations
 
@@ -34,17 +35,16 @@ os.chdir(_PROJECT)
 
 from tools.btf import (
     BacktestRunner, AnalysisCacheData, EqualWeightPortfolio,
-    EY8Strategy, ROC25Strategy, ROC25EY8Strategy, PEG15Strategy, MarketStrategy,
+    EY8Strategy, ROC25Strategy, ROC25EY8Strategy, MarketStrategy,
     ReturnEvaluator, RiskEvaluator, RiskAdjReturnEvaluator, TradingEvaluator,
 )
 
 
-# 5 策略 + 配色
+# 4 策略 + 配色
 STRATEGIES = [
     (lambda: EY8Strategy(),      "🟢 EY>8% (Magic 便宜)"),
     (lambda: ROC25Strategy(),    "🔵 ROC>25% (Magic 好公司)"),
     (lambda: ROC25EY8Strategy(), "⭐ ROC>25% + EY>8% (双优, 核心)"),
-    (lambda: PEG15Strategy(),    "🟡 PEG<1.5 (便宜)"),
     (lambda: MarketStrategy(seed=42), "⚪ 全市场 (基准)"),
 ]
 
@@ -78,7 +78,7 @@ def _fmt_num(x: float, digits: int = 2) -> str:
 
 
 def render_markdown_table(all_results: dict[str, dict]) -> str:
-    """5 策略 × 4 evaluator (13 指标) 拼成 1 张表"""
+    """4 策略 × 4 evaluator (13 指标) 拼成 1 张表"""
     lines = []
     lines.append("| 策略 | 总收益 | 年化 | 最大回撤 | 夏普 | Sortino | 胜率 | 盈亏比 | 换手率 | 交易数 |")
     lines.append("|------|--------|------|----------|------|---------|------|--------|--------|--------|")
@@ -128,7 +128,7 @@ def render_detail_section(name: str, metrics: dict) -> str:
 
 
 def render_signal_stats(all_results: dict[str, dict], data_loader, start: str = None, end: str = None) -> dict:
-    """5 策略 1 年的选股信号统计 (每天选多少只)"""
+    """4 策略 1 年的选股信号统计 (每天选多少只)"""
     import pandas as pd
     from datetime import datetime, timedelta
     # 2026-10-14 改: 默认窗口动态算 (today-1y ~ today), 替硬编码
@@ -176,7 +176,7 @@ def render_signal_table(stats: dict) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="5 策略 1 年回测")
+    parser = argparse.ArgumentParser(description="4 策略 1 年回测")
     # 2026-10-14 改: 默认窗口动态算 (today-1y, today), 替硬编码
     from datetime import datetime, timedelta
     _today = datetime.now().strftime("%Y%m%d")
@@ -197,7 +197,7 @@ def main():
     data = AnalysisCacheData()
     pf_cls = lambda: EqualWeightPortfolio(hold_days=args.hold, rebalance=args.rebalance)  # 每次新实例
 
-    # 2) 跑 5 策略
+    # 2) 跑 4 策略
     all_results: dict[str, dict] = {}
     all_nav_histories: dict[str, list] = {}
     all_trades: dict[str, list] = {}
@@ -232,12 +232,12 @@ def main():
     md.append(f"# Magic Formula 1 年回测 — {today}\n")
     md.append(f"> **回测窗口:** {args.start} → {args.end} (1 年 248 天)")
     md.append(f"> **持仓模型:** 等权, 持仓 {args.hold} 天后卖")
-    md.append(f"> **数据源:** `analysis_cache.db` (Magic 4 列, 1 年 backfill, 2026-09-02)")
-    md.append(f"> **5 策略:** EY8 / ROC25 / ROC25+EY8 / PEG1.5 / 全市场")
+    md.append(f"> **数据源:** `analysis_cache.db` (Magic 2 列 roc/ey)")
+    md.append(f"> **4 策略:** EY8 / ROC25 / ROC25+EY8 / 全市场")
     md.append(f"> **4 评估维度:** 收益 / 风险 / 风险调整 / 交易行为")
     md.append("")
 
-    md.append("## 📊 5 策略对比 (13 指标)")
+    md.append("## 📊 4 策略对比 (13 指标)")
     md.append("")
     md.append(render_markdown_table(all_results))
     md.append("")
@@ -274,24 +274,31 @@ def main():
     md.append("")
     md.append("**实战结论:**")
     md.append("")
-    md.append("### Magic 双优策略相对靠谱 ✅")
-    md.append("- 长持 1 年 -7.9% 跑赢基准 -0.9% (相对跑赢 7 个点)")
-    md.append("- 最大回撤 -34.1% < EY8 单 -37.8% (风险更小)")
-    md.append("- 夏普 0.30 (虽负, 但比 EY8/ROC 单维度好)")
-    md.append("- 弱市里 Magic 双优 = 抗跌 + 跑赢 ✅")
+    md.append("### ⚠️ 结论有效性检查 (数据完整性)")
     md.append("")
-    md.append("### 🟡 PEG<1.5: 边界修复后, 真实但样本小 ⚠️")
-    md.append("- 修复: PEG 公式 E1≤0 / E0≤0 / g≤0 全部返 None (1 年前半导体 EPS=0.01 误选 bug 修了)")
-    md.append("- 修复后 1 年触发 192 只 (vs 之前 4900 假信号)")
-    md.append("- 8/25 选股: 3 只 (中科飞测/精测电子/寒武纪), 涨 +147% (2 涨 1 跌)")
-    md.append("- 仍然是时点运气 (8/25 时半导体 PEG 真实便宜 + 1 年板块涨)")
-    md.append("- 实战: PEG 选股样本小, 需要更长窗口 (5 年) 才有统计意义")
+    # 2026-11-02 改: 不再硬编码结论 (旧版写死 "Magic 双优相对靠谱" + PEG +147%,
+    #   但那些数字来自 2026-09 一次已失效的 backfill)。
+    #   现在按实际选股数判定: 选不出票 = 数据缺失, 不是策略结论。
+    _empty = [
+        name for name, st in (sig_stats or {}).items()
+        if st.get("总选股数", 0) == 0 and "全市场" not in name
+    ]
+    if _empty:
+        md.append(f"以下策略本窗口**选不出任何票** (总选股数 = 0): {', '.join(_empty)}")
+        md.append("")
+        md.append("→ **这不是策略失效, 是数据没回填。** "
+                  "`analysis_cache` 的 `roc` / `ey` 两列全表 0 行非空 "
+                  "(`backfill_roc_ey_cache.py` 从没成功跑过)。")
+        md.append("")
+        md.append("→ 修法: `python -m tools.batch.backfill_roc_ey_cache` 回填后**重跑本报告**, "
+                  "才有有效结论。")
+    else:
+        md.append("所有策略均正常出票, 结论见上方指标对比表。")
     md.append("")
     md.append("### 1 年窗口的局限性 ⚠️")
-    md.append("- 只跑了 2025-08-25 → 2026-09-01 (1 年)")
-    md.append("- 这是弱市 (大盘 -0.9%), Magic 抗跌优势被放大")
-    md.append("- 牛市中 Magic 双优可能跑输 (估值贵 = 不便宜)")
-    md.append("- 建议: 5 年窗口 backfill (需拉 4 年 daily_basic + financials, 2-3 天活)")
+    md.append("- 只跑了 1 年窗口 (today-1y → today)")
+    md.append("- 弱市里抗跌优势会被放大, 牛市中估值贵可能跑输")
+    md.append("- 建议: 5 年窗口 backfill 才能有统计意义")
     md.append("")
 
     md.append("## 🛠️ 方法论")

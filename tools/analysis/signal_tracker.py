@@ -107,7 +107,6 @@ MODEL_INFERENCE = [
     ('缠论', ['中枢', '背驰', '止跌', '1买', '2买', '3买', '1卖', '2卖', '3卖', '60分底', '60分顶', '日线底', '日线顶']),
     ('SMC', ['Demand', 'Supply', 'BOS', 'CHoCH', 'OB']),
     ('威科夫', ['威科夫', 'A累积', 'B弹簧', 'C测试', 'D突破', 'E顶部', '阶段A', '阶段B', '阶段C', '阶段D', '阶段E']),
-    ('PEG', ['PEG_', 'L_可达', 'L/可达', 'PEG<', 'PEG>']),
     ('T框架', ['T+', 'T-', 'T_']),
     ('板块', ['板块', 'sector']),
 ]
@@ -245,7 +244,7 @@ def cmd_record(args):
             'code': input("code: ").strip(),
             'name': input("name: ").strip(),
             'date': input("date (YYYY-MM-DD, 默认今天): ").strip() or datetime.now().strftime('%Y-%m-%d'),
-            'signal_type': input("signal_type (T+1/PEG_buy/底背驰/...): ").strip(),
+            'signal_type': input("signal_type (T+1/底背驰/...): ").strip(),
             'source': input("source: ").strip(),
             'trigger_price': float(input("trigger_price: ")),
             'target_price': float(input("target_price: ")),
@@ -400,7 +399,7 @@ def main():
     p_st = sub.add_parser('stats', help='统计信号胜率')
     p_st.add_argument('--code', help='按 code 过滤')
     p_st.add_argument('--type', help='按 signal_type 过滤')
-    p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/SMC/威科夫/PEG/T框架/板块) 过滤')
+    p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/SMC/威科夫/T框架/板块) 过滤')
     p_st.add_argument('--window', type=int, help='只统计最近 N 天')
     p_st.set_defaults(func=cmd_stats)
 

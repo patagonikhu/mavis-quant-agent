@@ -1,5 +1,5 @@
 """
-backfill_roc_ey_cache.py — 给 analysis_cache.db 4 列估值 (roc / ey / peg / dcf_l) backfill 1 年
+backfill_roc_ey_cache.py — 给 analysis_cache.db 2 列估值 (roc / ey) backfill 1 年
 2026-09-09 改自 backfill_magic_cache.py
 
 数据源 (全本地, 0 网络):
@@ -9,7 +9,8 @@ backfill_roc_ey_cache.py — 给 analysis_cache.db 4 列估值 (roc / ey / peg /
 
 窗口: 1 年 (2025-08-25 → 2026-09-01, 248 天)
 股票池: 1923 科技股 (跟 magic_top20 一致)
-写表:   analysis_cache (38 列, 4 列新增)
+写表:   analysis_cache (38 列, 2 列新增)
+          2026-11-02: 删 peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
 """
 from __future__ import annotations
 
@@ -114,6 +115,8 @@ def _load_eps_window(codes: list[str]) -> dict[str, list[dict]]:
     """读本地 EPS cache (走 datacenter 已拉的, 没就 None)
 
     Returns: {code: eps_table (list[dict])}
+
+    ⚠️ 2026-11-02: 已无调用方 (EPS 预期只喂 PEG/DCF, 整档删除), 保留待后续需要再接。
     """
     out: dict[str, list[dict]] = {}
     from tools.storage.caches.eps import _read_parquet
@@ -133,16 +136,17 @@ def _load_eps_window(codes: list[str]) -> dict[str, list[dict]]:
 # 单只票 1 年估值
 # ============================================================
 
-def _calc_4cols_for_code(
+def _calc_2cols_for_code(
     code: str,
     dates: list[str],
     db_window: dict[str, float],     # {date: {total_mv, pe_ttm, close}} (单只票, 1 个 code)
     fin_data: list[dict],          # 跨多季 financials
-    eps_table: list[dict],         # EPS 预期
 ) -> dict[str, tuple]:
-    """单只票, 算 dates 范围内每天的 (roc, ey, peg, dcf_l) 4 元组
+    """单只票, 算 dates 范围内每天的 (roc, ey) 2 元组
 
-    Returns: {date: (roc, ey, peg, dcf_l)}  缺数据 = None
+    Returns: {date: (roc, ey)}  缺数据 = None
+
+    2026-11-02: 删 eps_table 参数 (EPS 预期只喂 PEG/DCF, 已整档删除)
     """
     out: dict[str, tuple] = {}
     for d in dates:
@@ -166,7 +170,7 @@ def _calc_4cols_for_code(
 
         # 2026-11-02 删: 3) PEG 计算 + 4) DCF L/E3 计算 (PEG 是假指标, 整档已删)
         #   → 现在只算 roc / ey 2 列
-        out[d] = (roc, ey, None, None)
+        out[d] = (roc, ey)
     return out
 
 
@@ -175,7 +179,7 @@ def _calc_4cols_for_code(
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="analysis_cache 4 列估值 backfill")
+    parser = argparse.ArgumentParser(description="analysis_cache 2 列估值 backfill")
     parser.add_argument("--workers", type=int, default=4)
     # 2026-10-14 改: 默认窗口动态算 (today-1y, today), 替硬编码
     from datetime import datetime, timedelta
@@ -219,16 +223,12 @@ def main():
     fin_window = _load_financials_window(codes)
     print(f"   耗时 {(time.time()-t0):.1f}s, 覆盖 {len(fin_window)} 票")
 
-    # 5) 预读 EPS (本地 cache, 没就空)
-    print(f"🔄 读 EPS cache (本地 json)...")
-    eps_window = _load_eps_window(codes)
-    n_eps = sum(1 for v in eps_window.values() if v)
-    print(f"   覆盖 {n_eps}/{len(codes)} 票 (没 EPS 是常见, 机构不覆盖小盘)")
+    # 5) 2026-11-02 删: 预读 EPS (只喂 PEG/DCF, 已整档删除)
 
     # 6) 检查 db 已有的 (code, date_str) 对, 跳过 (2026-09-03 v6.2.1 改: 走 caches/analysis 接口)
     from tools.storage.caches.analysis import get_existing_valuation_pairs
     existing_pairs = get_existing_valuation_pairs()
-    print(f"📂 db 已有 4 列非空: {len(existing_pairs):,} 对 (跳过重算)")
+    print(f"📂 db 已有 2 列非空: {len(existing_pairs):,} 对 (跳过重算)")
 
     # 7) 算所有 (code, date) 对
     todo = []
@@ -244,7 +244,7 @@ def main():
         return 0
 
     # 8) 并发算
-    print(f"⚙️  {args.workers} worker 并发算 4 列...")
+    print(f"⚙️  {args.workers} worker 并发算 2 列...")
     t_start = time.time()
     done = 0
     write_batch: list[tuple] = []
@@ -255,8 +255,7 @@ def main():
         # 拿单只票单天的 daily_basic (db_window 已经是 {code: {date: {total_mv,...}}})
         db_d = (db_window.get(code) or {}).get(d) or {}
         fin = fin_window.get(code, [])
-        eps = eps_window.get(code, [])
-        return (code, d, _calc_4cols_for_code(code, [d], {d: db_d}, fin, eps).get(d))
+        return (code, d, _calc_2cols_for_code(code, [d], {d: db_d}, fin).get(d))
 
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(process_one, item): item for item in todo}
@@ -264,8 +263,8 @@ def main():
             code, d, vals = fut.result()
             if vals is None:
                 continue
-            roc, ey, peg, dcf_l = vals
-            write_batch.append((code, d, roc, ey, peg, dcf_l))
+            roc, ey = vals
+            write_batch.append((code, d, roc, ey))
             done += 1
             if done % 5000 == 0:
                 _flush(con, write_batch)
@@ -288,17 +287,17 @@ def main():
     # 2026-09-03 v6.2.1 改: 走 caches/analysis.get_valuation_coverage()
     from tools.storage.caches.analysis import get_valuation_coverage
     cov = get_valuation_coverage()
-    print(f"📊 覆盖率: roc={cov['roc']:,} ey={cov['ey']:,} peg={cov['peg']:,} dcf_l={cov['dcf_l']:,}")
+    print(f"📊 覆盖率: roc={cov['roc']:,} ey={cov['ey']:,}")
     return 0
 
 
 def _flush(con, batch: list[tuple]):
-    """批量 UPDATE 4 列到 analysis_cache"""
+    """批量 UPDATE 2 列到 analysis_cache (2026-11-02: 删 peg / dcf_l)"""
     con.executemany("""
         UPDATE analysis_cache
-        SET roc = ?, ey = ?, peg = ?, dcf_l = ?
+        SET roc = ?, ey = ?
         WHERE code = ? AND date_str = ?
-    """, [(roc, ey, peg, dcf_l, code, d) for (code, d, roc, ey, peg, dcf_l) in batch])
+    """, [(roc, ey, code, d) for (code, d, roc, ey) in batch])
     con.commit()
 
 

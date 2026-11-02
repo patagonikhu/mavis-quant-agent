@@ -1,7 +1,7 @@
 """
 lgb_ranker.py - LightGBM 多因子打分骨架 (Day 11, 2026-07-27)
 
-目的: 用 8 个基础特征 + 17 只 baseline 票训练 LightGBM, 给全 57 只票打分排序
+目的: 用 6 个基础特征 + 17 只 baseline 票训练 LightGBM, 给全 57 只票打分排序
 
 输入: parquet via DataStore (用 baseline 17 只训练, 全 watchlist 预测)
 输出: docs/lgb_ranking_{date}.md (排序表 + Top10 + 验证指标)
@@ -40,8 +40,11 @@ if platform.system() == "Darwin" and "DYLD_LIBRARY_PATH" not in os.environ:
 
 # === 项目级配置加载 (2026-07-27 集中管理, 无默认值) ===
 def _load_lgb_config() -> dict:
-    """从 config/project.yaml 加载 lightgbm 段, 没有就报错"""
-    config_path = Path(__file__).parent.parent / "config" / "project.yaml"
+    """从 config/project.yaml 加载 lightgbm 段, 没有就报错
+
+    2026-11-02 修: 路径少了一层 .parent (原来解析到 tools/config/, 实际在仓库根 config/)
+    """
+    config_path = Path(__file__).parent.parent.parent / "config" / "project.yaml"
     if not config_path.exists():
         raise FileNotFoundError(
             f"❌ 找不到 {config_path}\n"
@@ -66,9 +69,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = PROJECT_ROOT / "docs"
 
 
-# === 1. 基础特征工程 (8 维) ===
+# === 1. 基础特征工程 (7 维) ===
 def build_features(code: str) -> dict:
-    """拉 8 个特征, 拼成一行 (2026-09-03 v6.2.1 改: 走 DataStore.get_ctx, 不直连 eastmoney)"""
+    """拉 7 个特征, 拼成一行
+
+    2026-11-02 修 (3 个 bug):
+      - 删 PEG 特征 (PEG 是假指标, 整档已删)
+      - ctx.valuation_data 不存在 → 改走 ctx.eps_table + ctx.market_cap_yi
+      - raw 变量未定义 → 改走 ctx.name / K 线自身算量比换手率
+
+    数据源全部走 DataStore.get_ctx (不直连 eastmoney)
+    """
     from tools.storage.store import DataStore
     ctx = DataStore.get_ctx(code)
     kline = ctx.kline
@@ -78,33 +89,40 @@ def build_features(code: str) -> dict:
     closes = pd.Series([k["close"] for k in kline])
     vols = pd.Series([k.get("vol", k.get("volume", 0)) for k in kline])
 
-    # 1. PEG (从 DataStore valuation_data 取)
-    val = ctx.valuation_data or {}
-    peg_raw = val.get("PEG_真实")
-    peg = peg_raw if isinstance(peg_raw, (int, float)) and peg_raw > 0 else 2.0
+    # 1. PE_TTM (用 eps_table 最新一期的 eps + 现价算)
+    #    eps_table 样例: {'year': '2025A', 'eps': 6.493, ...}
+    eps_list = [r.get("eps") for r in (ctx.eps_table or []) if r.get("eps")]
+    price = closes.iloc[-1]
+    pe_ttm = (price / eps_list[-1]) if (eps_list and eps_list[-1]) else 0.0
 
-    # 2. PE_TTM
-    pe_ttm = val.get("pe_ttm", 0) or 0
+    # 2. PB (用 market_cap_yi + eps_table 的 net_profit_yi + roe 反推净资产)
+    #    净资产 = 净利 / ROE;  PB = 市值 / 净资产
+    pb = 0.0
+    if ctx.eps_table:
+        latest_fin = ctx.eps_table[-1]
+        np_yi = latest_fin.get("net_profit_yi") or 0
+        roe = latest_fin.get("roe") or 0
+        if np_yi and roe:
+            equity_yi = np_yi / (roe / 100.0)
+            if equity_yi > 0 and ctx.market_cap_yi:
+                pb = ctx.market_cap_yi / equity_yi
 
-    # 3. PB
-    pb = val.get("pb", 0) or 0
-
-    # 4. MA20 偏离
+    # 3. MA20 偏离
     ma20 = closes.rolling(20).mean().iloc[-1]
     ma20_dev = (closes.iloc[-1] / ma20 - 1) * 100
 
-    # 5. RSI 14
+    # 4. RSI 14
     delta = closes.diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean().iloc[-1]
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean().iloc[-1]
     rsi = 100 - 100 / (1 + gain / (loss + 1e-9))
 
+    # 5. 量比 (当日量 / MA5 量)
+    vol_ma5 = vols.rolling(5).mean().iloc[-1]
+    vol_ratio = (vols.iloc[-1] / vol_ma5) if vol_ma5 else 1.0
 
-    # 7. 量比
-    vol_ratio = raw.get("volume_ratio", 0) or 1.0
-
-    # 8. 换手率
-    turnover = raw.get("turnover_rate", 0) or 0
+    # 6. 换手率 (当日量 / 总股本; 总股本没存 → 用量比近似, 保持 0 表示缺失)
+    turnover = 0.0
 
     # Target: 未来 5d 涨跌幅
     if len(closes) < 6:
@@ -113,8 +131,7 @@ def build_features(code: str) -> dict:
 
     return {
         "code": code,
-        "name": raw.get("name", ""),
-        "PEG": peg,
+        "name": ctx.name or "",
         "PE_TTM": pe_ttm,
         "PB": pb,
         "MA20_偏离": ma20_dev,
@@ -137,7 +154,7 @@ def main(train_codes: list = None, predict_codes: list = None, out_path: str = N
 
     print(f"🧮 LightGBM 多因子打分骨架")
     print(f"📊 训练集: {len(train_codes)} 只 | 预测集: {len(predict_codes)} 只")
-    print(f"📋 特征: PEG/PE_TTM/PB/MA20_偏离/RSI/量比/换手率 (7 维)")
+    print(f"📋 特征: PE_TTM/PB/MA20_偏离/RSI/量比/换手率 (6 维)")
 
     # === 训练数据准备 ===
     train_rows = [build_features(c) for c in train_codes]
@@ -145,7 +162,7 @@ def main(train_codes: list = None, predict_codes: list = None, out_path: str = N
     print(f"✅ 训练数据: {len(train_rows)}/{len(train_codes)} 行 (样本太小, 实战应 50+ 票)")
 
     train_df = pd.DataFrame(train_rows)
-    feature_cols = ["PEG", "PE_TTM", "PB", "MA20_偏离", "RSI", "量比", "换手率"]
+    feature_cols = ["PE_TTM", "PB", "MA20_偏离", "RSI", "量比", "换手率"]
     X_train = train_df[feature_cols].values
     y_train = train_df["target_5d"].values
 
@@ -207,7 +224,7 @@ def main(train_codes: list = None, predict_codes: list = None, out_path: str = N
         f.write(f"""# LightGBM 多因子打分排序 — {datetime.now().strftime('%Y-%m-%d')}
 
 **模型**: LightGBM regression (5d 涨幅预测)
-**训练**: {len(train_rows)} 只 baseline 票 | 8 维特征 | 100 轮迭代
+**训练**: {len(train_rows)} 只 baseline 票 | 6 维特征 | 100 轮迭代
 **耗时**: {elapsed:.1f}s
 **训练集指标**: Pearson IC={train_pearson:.3f}, MAE={train_mae:.2f}%
 
@@ -224,14 +241,14 @@ def main(train_codes: list = None, predict_codes: list = None, out_path: str = N
         f.write(f"""
 ## 🏆 全 Watchlist 排序 (Top 20)
 
-| 排名 | 代码 | 名称 | LGB 分数 (5d 预期%) | PEG | PE_TTM | RSI | 板块 |
+| 排名 | 代码 | 名称 | LGB 分数 (5d 预期%) | PE_TTM | PB | RSI | 板块 |
 |------|------|------|------|------|------|------|------|
 """)
         # 加载 watchlist 板块信息
         wl_dict = {w["code"]: w.get("sector", "—") for w in watchlist}
         for _, row in predict_df.head(20).iterrows():
             f.write(f"| {row['排名']} | {row['code']} | {row['name']} | "
-                    f"{row['lgb_score']:+.2f}% | {row['PEG']:.2f} | "
+                    f"{row['lgb_score']:+.2f}% | {row['PE_TTM']:.2f} | "
                     f"{row['PE_TTM']:.0f} | {row['RSI']:.0f} | "
                     f"{wl_dict.get(row['code'], '—')} |\n")
 
@@ -267,7 +284,7 @@ num_boost_round = 100
 ## 🚀 扩展方向
 
 - **样本扩展**: 训练 17 → 50+ 票, IC 提升
-- **特征扩展**: 接 alpha_ga_001 (GA 挖的) + 8 维手工特征 = 9 维
+- **特征扩展**: 接 alpha_ga_001 (GA 挖的) + 6 维手工特征 = 7 维
 - **目标扩展**: 5d → 10d / 20d 多任务
 - **模型扩展**: 加 XGBoost / CatBoost 对比
 - **集成**: LightGBM + GA 因子 + 5方法综合矩阵 = 终极打分

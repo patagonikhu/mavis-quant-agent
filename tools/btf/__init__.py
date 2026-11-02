@@ -1,9 +1,9 @@
 """
 tools/btf/__init__.py — BackTest Framework 统一入口
 
-4 抽象类 + 5 Strategy + 4 Evaluator + 1 Portfolio + Runner:
+4 抽象类 + 4 Strategy + 4 Evaluator + 1 Portfolio + Runner:
   - DataLayer: AnalysisCacheData (analysis_cache.db 读)
-  - Strategy: EY8 / ROC25 / ROC25EY8 / PEG15 / Market
+  - Strategy: EY8 / ROC25 / ROC25EY8 / Market
   - Portfolio: EqualWeightPortfolio (等权)
   - Evaluator: Return / Risk / RiskAdjReturn / Trading (4 维)
   - BacktestRunner: 串联 4 抽象
@@ -13,7 +13,7 @@ tools/btf/__init__.py — BackTest Framework 统一入口
 用法示例:
     from tools.btf import (
         BacktestRunner, AnalysisCacheData,
-        EY8Strategy, ROC25Strategy, ROC25EY8Strategy, PEG15Strategy, MarketStrategy,
+        EY8Strategy, ROC25Strategy, ROC25EY8Strategy, MarketStrategy,
         EqualWeightPortfolio,
         ReturnEvaluator, RiskEvaluator, RiskAdjReturnEvaluator, TradingEvaluator,
     )
@@ -22,7 +22,7 @@ tools/btf/__init__.py — BackTest Framework 统一入口
     pf   = EqualWeightPortfolio(hold_days=20)
     evals = [ReturnEvaluator(), RiskEvaluator(), RiskAdjReturnEvaluator(), TradingEvaluator()]
 
-    for StratCls in [EY8Strategy, ROC25Strategy, ROC25EY8Strategy, PEG15Strategy, MarketStrategy]:
+    for StratCls in [EY8Strategy, ROC25Strategy, ROC25EY8Strategy, MarketStrategy]:
         runner = BacktestRunner(data, StratCls(), pf, evals)
         # 默认窗口 = today-1y ~ today (2026-10-14 改: 替硬编码)
         metrics, _, _ = runner.run(top_n=20)
@@ -34,7 +34,7 @@ from tools.btf.framework import (
     # DataLayer
     DataLayer, AnalysisCacheData,
     # Strategy
-    Strategy, EY8Strategy, ROC25Strategy, ROC25EY8Strategy, PEG15Strategy, MarketStrategy,
+    Strategy, EY8Strategy, ROC25Strategy, ROC25EY8Strategy, MarketStrategy,
     # Portfolio
     Portfolio, EqualWeightPortfolio,
     # Evaluator
@@ -45,7 +45,7 @@ from tools.btf.runner import BacktestRunner
 __all__ = [
     "Trade", "NavPoint",
     "DataLayer", "AnalysisCacheData",
-    "Strategy", "EY8Strategy", "ROC25Strategy", "ROC25EY8Strategy", "PEG15Strategy", "MarketStrategy",
+    "Strategy", "EY8Strategy", "ROC25Strategy", "ROC25EY8Strategy", "MarketStrategy",
     "Portfolio", "EqualWeightPortfolio",
     "Evaluator", "ReturnEvaluator", "RiskEvaluator", "RiskAdjReturnEvaluator", "TradingEvaluator",
     "BacktestRunner",

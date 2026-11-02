@@ -3,7 +3,7 @@ report_linter.py — 报告完整性校验 (v1.0, 2026-07-21)
 
 作用:
   1. 读已生成的 md 文件, 检查 22 section 是否齐全
-  2. 识别关键数据 (价格/EPS/PEG 等) 是否缺失
+  2. 识别关键数据 (价格/EPS/ROC/EY 等) 是否缺失
   3. 输出校验报告, 追加到 md 末尾
   4. 返回 dict 给调用方, 可作为 quality gate
 

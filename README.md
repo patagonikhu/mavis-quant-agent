@@ -242,7 +242,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
       "name": "特变电工",
       "sector": "电力变压器",
       "list_type": "持仓",
-      "notes": "PEG ~0.7, 龙头11分, 变压器物理瓶颈最硬, AI数据中心用电唯一解"
+      "notes": "PE 15, 龙头11分, 变压器物理瓶颈最硬, AI数据中心用电唯一解"
     }
   ]
 }

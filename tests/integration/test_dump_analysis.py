@@ -125,7 +125,7 @@ class TestAnalysisEngineStrategies:
         self, analysis_data_per_code, strategy_class
     ):
         """每个 Phase1 strategy 都在 result.raw 里, score 范围合理"""
-        strategy_name = strategy_class.name  # chan/wyckoff/smc/peg
+        strategy_name = strategy_class.name  # chan/wyckoff/smc
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
             assert strategy_name in raw, (
@@ -137,7 +137,6 @@ class TestAnalysisEngineStrategies:
                 "wyckoff":  (-1.5, 1.5),
                 "smc":      (-1.5, 1.5),
                 "chan":     (-1.5, 1.5),
-                "peg":      (-1.5, 1.5),
             }
             lo, hi = score_ranges.get(strategy_name, (-1.5, 1.5))
             score = d.get("score", 0) or 0

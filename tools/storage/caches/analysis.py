@@ -7,7 +7,8 @@ Schema (2026-10-19 v3 改: 加 13 列威科夫字段, 回测威科夫 A→M 胜�
     MA 斜率 (1: ma20_slope 5日斜率%)
     动量 (4: rsi6/macd_dif/macd_dea/macd_bar_delta)
     量能 (1: vol_ratio 当日量/MA5)
-    估值 (4 ALTER, 2026-09-02 加): roc / ey / peg / dcf_l
+    估值 (2 ALTER, 2026-09-02 加): roc / ey
+          2026-11-02 删 peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
     威科夫 (13 ALTER, 2026-10-19 加, A→M 胜率回测用):
       wy_stage (Accumulation/Markup/Distribution/?)
       wy_score (1.0/0.6/-0.6/0.0)
@@ -113,10 +114,9 @@ def _init():
         for col, typedef in [
                              # 2026-09-22 删: boll_bwidth/chan_bot_div/chan_top_div (随 26 列一并删)
                              # 2026-09-02 加: 估值 4 列 (Magic Formula 回测用)
+                             # 2026-11-02 删: peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
                              ("roc", "REAL"),       # Greenblatt ROC % (TTM)
                              ("ey", "REAL"),        # Greenblatt EY % (TTM)
-                             ("peg", "REAL"),       # Forward PE / CAGR
-                             ("dcf_l", "REAL"),     # DCF r=10% 隐含 L/E3
                              # 2026-09-22 加: 技术指标 9 列 (RSI6/MACD/量比/MA20 斜率, backfill/rsi6_tech 用)
                              ("ma20_slope", "REAL"),    # MA20 5日斜率 %
                              ("rsi6",          "REAL"), # 6日 Wilder RSI
@@ -327,17 +327,20 @@ def get_cached_codes() -> set[str]:
     """返所有已 cache 的 code"""
     return {r["code"] for r in _query("SELECT DISTINCT code FROM analysis_cache")}
 def get_existing_valuation_pairs() -> set[tuple[str, str]]:
-    """返 (code, date) 已有 valuation 的对 (roc/ey/peg/dcf_l 任一非空)"""
+    """返 (code, date) 已有 valuation 的对 (roc/ey 任一非空)
+
+    2026-11-02: 删 peg / dcf_l (PEG/DCF 整档已删)
+    """
     rows = _query(
         "SELECT code, date_str FROM analysis_cache "
-        "WHERE roc IS NOT NULL OR ey IS NOT NULL OR peg IS NOT NULL OR dcf_l IS NOT NULL"
+        "WHERE roc IS NOT NULL OR ey IS NOT NULL"
     )
     return {(r["code"], r["date_str"]) for r in rows}
 
 
 def get_valuation_coverage() -> dict:
-    """返 4 个 valuation 字段覆盖率 {col: count}"""
-    out = {"roc": 0, "ey": 0, "peg": 0, "dcf_l": 0}
+    """返 2 个 valuation 字段覆盖率 {col: count} (2026-11-02: 删 peg / dcf_l)"""
+    out = {"roc": 0, "ey": 0}
     for col in out:
         rows = _query(f"SELECT COUNT(*) AS n FROM analysis_cache WHERE {col} IS NOT NULL")
         out[col] = rows[0]["n"] if rows else 0

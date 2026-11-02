@@ -12,7 +12,7 @@ tools/btf/framework.py — 回测框架核心 (4 个抽象类)
 用法:
     from tools.btf import (
         BacktestRunner, AnalysisCacheData,
-        EY8Strategy, ROC25Strategy, ROC25EY8Strategy, PEG15Strategy, MarketStrategy,
+        EY8Strategy, ROC25Strategy, ROC25EY8Strategy, MarketStrategy,
         EqualWeightPortfolio,
         ReturnEvaluator, RiskEvaluator, RiskAdjReturnEvaluator, TradingEvaluator,
     )
@@ -71,7 +71,7 @@ class DataLayer(ABC):
         """加载回测窗口
 
         Returns:
-            DataFrame[code, date, close, roc, ey, peg, dcf_l, daily_return]
+            DataFrame[code, date, close, roc, ey, daily_return]
             daily_return 算好 (close.pct_change)
         """
         pass
@@ -89,14 +89,15 @@ class AnalysisCacheData(DataLayer):
         self.kline_dir = kline_dir
 
     def load_window(self, start: str, end: str, codes: Optional[list[str]] = None) -> pd.DataFrame:
-        # 1) 1 次 SQL 查 valuation 4 列 (analysis_cache)
+        # 1) 1 次 SQL 查 valuation 2 列 (analysis_cache)
+        # 2026-11-02: 删 peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
         if codes:
             codes_str = ",".join(f"'{c}'" for c in codes)
             where_extra = f" AND code IN ({codes_str})"
         else:
             where_extra = ""
         sql = f"""
-            SELECT code, date_str, roc, ey, peg, dcf_l
+            SELECT code, date_str, roc, ey
             FROM analysis_cache
             WHERE date_str >= '{start}' AND date_str <= '{end}'{where_extra}
             ORDER BY code, date_str
@@ -153,7 +154,7 @@ class Strategy(ABC):
     def select(self, date: str, today_df: pd.DataFrame, top_n: int = 20) -> list[str]:
         """从 today_df (当天全票快照) 选 top N code
 
-        today_df 含: code, close, roc, ey, peg, dcf_l
+        today_df 含: code, close, roc, ey
         """
         pass
 
@@ -186,15 +187,6 @@ class ROC25EY8Strategy(Strategy):
             & (today_df["roc"] > 25) & (today_df["ey"] > 8)
         ]
         return sub.sort_values(["roc", "ey"], ascending=False)["code"].head(top_n).tolist()
-
-
-class PEG15Strategy(Strategy):
-    """PEG 便宜: 选 PEG < 1.5 的票"""
-    name = "PEG<1.5 (便宜)"
-
-    def select(self, date, today_df, top_n=20):
-        sub = today_df[today_df["peg"].notna() & (today_df["peg"] < 1.5) & (today_df["peg"] > 0)]
-        return sub.sort_values("peg")["code"].head(top_n).tolist()
 
 
 class MarketStrategy(Strategy):

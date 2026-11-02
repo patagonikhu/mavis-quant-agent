@@ -13,8 +13,8 @@ from typing import Optional
 
 
 # 2026-09-09 删: compute_fundamental_4d (基本面 4 维评分, 死代码)
-# 原因: 4 维 (估值/盈利/成长/安全) 走 PEG/ROC/EY/行业, 已被 ValuationStrategy (PEG+DCF+Magic ROC/EY v6.2.5) 取代
-# 决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 估值双指标 (PEG/DCF L)
+# 2026-11-02 删注释里的 PEG/DCF 引用 (PEG/DCF 整档已删 — PEG 是假指标)
+# 决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 估值单指标 (PE 静态 + ROC/EY 盈利质量)
 # 报告 section 整个删掉, 函数也删
 
 

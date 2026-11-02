@@ -1082,9 +1082,10 @@ def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_exit_signals(ctx: RawContext, raw: dict) -> dict:
-    """退场信号 9 项 (PEG + L_E3 + MA120 + 板块 + 缠论)
+    """退场信号 9 项 (MA120 + 板块 + 缠论 等)
 
     2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
+    2026-11-02 改: 删 PEG / L_E3 (PEG/DCF 整档已删 — PEG 是假指标)
     """
     from tools.factors.factor_risk import compute_exit_signals
     try:

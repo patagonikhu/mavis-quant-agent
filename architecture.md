@@ -87,7 +87,7 @@ df = DataStore.load_stock_basic()                    # 静态股票基础信息
 # ✅ 唯一入口
 from tools.analysis.analysis_engine import AnalysisEngine
 result = AnalysisEngine().analyze(ctx)                # 7 strategy + 派生
-# result.raw 拿所有数据: result.raw["chan"] / ["wyckoff"] / ["peg"] / ...
+# result.raw 拿所有数据: result.raw["chan"] / ["wyckoff"] / ["finance"] / ...
 ```
 
 ### 4.3 通用 factor (纯函数)
