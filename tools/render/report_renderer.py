@@ -74,10 +74,10 @@ def _section_quarterly_table(data: RenderData) -> str:
 
     cols1 = ["季", "营收 yoy", "净利 yoy", "毛利率", "ROE", "营收 (亿)", "净利 (亿)",
              "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)",
-             "PE", "动态 PE"]
-    sep1 = ["---"] * 16
+             "PE"]
+    sep1 = ["---"] * 15
     rows = [f"### 最近 4 季财务 + Magic 公式 ({period_label if has_magic else 'TTM'})", "",
-            "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期; PE=季末市值/YTD净利年化 (Q1×4 / Q2×2 / Q3×4/3 / Q4×1); 动态PE=forward PE, 1致预期净利):**", "",
+            "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期; PE=季末市值/YTD净利年化 (Q1×4 / Q2×2 / Q3×4/3 / Q4×1)):**", "",
             "| " + " | ".join(cols1) + " |",
             "| " + " | ".join(sep1) + " |"]
 
@@ -90,8 +90,6 @@ def _section_quarterly_table(data: RenderData) -> str:
         ey_s  = f"{ey_q:.2f}%" if ey_q is not None else "—"
         pe_q = r.get('static_pe')
         pe_s = f"{pe_q:.1f}" if pe_q is not None else "—"
-        fwd_pe_q = r.get('fwd_pe')
-        fwd_pe_s = f"{fwd_pe_q:.1f}" if fwd_pe_q is not None else "—"
         rows.append(
             f"| {r['quarter']} "
             f"| {r['or_yoy']:+.1f}% "
@@ -107,8 +105,7 @@ def _section_quarterly_table(data: RenderData) -> str:
             f"| {_fmt(r.get('netdebt_yi'))} "
             f"| {_fmt(r.get('ev_yi'))} "
             f"| {_fmt(r.get('capital_yi'))} "
-            f"| {pe_s} "
-            f"| {fwd_pe_s} |"
+            f"| {pe_s} |"
         )
 
     if has_magic:
@@ -140,7 +137,7 @@ def _section_eps(data: RenderData) -> str:
             rows.append(f"| {r.year} | {r.eps:.2f} | {r.net_profit_yi:.1f} | {r.revenue_yi:.1f} | {r.roe:.1f}% |")
         parts.append("### EPS 一致预期 (Tushare)\n\n" + "\n".join(rows))
     else:
-        parts.append("> EPS 一致预期: ❌ 缺失 (PEG/DCF 标记 N/A)")
+        parts.append("> EPS 一致预期: ❌ 缺失")
 
     # 2) 4 季大表 (复用 helper)
     parts.append(_section_quarterly_table(data))
@@ -261,37 +258,6 @@ def _section_ga_factor(data: RenderData) -> str:
 """
     except Exception as e:
         return f"> ⚠️ GA 因子计算失败: {e}\n"
-
-
-def _section_peg(data: RenderData) -> str:
-    # 2026-09-02 改: 读 data.valuation_data (ValuationStrategy 输出)
-    # v6.2.5 改: 表头全英文 (PEG / Forward PE / g)
-    _v = data.valuation_data or {}
-    if _v.get("PEG_真实") is not None and _v.get("PEG_真实") != "数据不足":
-        return f"""| Metric | Value |
-|---|---|
-| **PEG_Real** | **{_v.get('PEG_真实')}** ({_v.get('verdict', '—')}) |
-| Forward PE | {_v.get('fwd_pe', '—')} |
-| g (CAGR) | {_v.get('g', '—')} |
-"""
-    return """> **Data Status:** ⚠️ PEG not computed (ValuationStrategy missing EPS)
-> **Fallback:** PE_TTM as proxy, marked ⚠️
-"""
-
-
-def _section_dcf(data: RenderData) -> str:
-    # 2026-09-02 改: 读 data.valuation_data
-    # v6.2.5 改: 表头全英文 (Discount r / Implied L / L/E3)
-    _v = data.valuation_data or {}
-    if _v.get("L_r10") is not None:
-        return f"""| Discount r | Implied L (¥Bn) | L/E3 |
-|---|---|---|
-| 8% | {_v.get('L_r8', '—')} | — |
-| 10% | {_v.get('L_r10', '—')} | {_v.get('L_E3_r10', '—')}x |
-| 12% | {_v.get('L_r12', '—')} | — |
-"""
-    return """> **Data Status:** ⚠️ DCF L not computed (ValuationStrategy missing EPS)
-"""
 
 
 def _section_signal_5cat(data: RenderData) -> str:
@@ -1353,16 +1319,8 @@ def _section_four_q_short(data: RenderData) -> str:
     """报告头的简短四问 + 评级"""
     if data.four_questions:
         fq = data.four_questions
-        # 2026-09-02 改: 读 data.valuation_data.PEG_真实 (旧 peg_detail 字段已合并)
-        peg_str = fq.get('peg_summary')
-        if not peg_str:
-            _v = data.valuation_data or {}
-            peg_val = _v.get('PEG_真实')
-            if isinstance(peg_val, (int, float)):
-                peg_str = f"{peg_val:.2f}"
-            else:
-                peg_str = "未算"
-        return f"""**评级:** {fq.get('verdict', '待判定')} | **龙头:** {fq.get('leader_score', '?')}/14 | **PEG:** {peg_str}"""
+        # 2026-11-02 删: PEG 展示 (PEG 是假指标, 整档已删)
+        return f"""**评级:** {fq.get('verdict', '待判定')} | **龙头:** {fq.get('leader_score', '?')}/14"""
     return "**评级:** ⏳ 等待四问评分"
 
 
@@ -1822,7 +1780,8 @@ def render_report(data: RenderData, sector: str = "—") -> str:
     details = [comp[k][1] for k in keys]
     comp_table += "| 详情 | " + " | ".join(details) + " |\n"
 
-    # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 5️⃣PEG → 6️⃣仓位)
+    # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 6️⃣仓位)
+    # 2026-11-02: 5️⃣ PEG/DCF 整档已删
     # 2026-10-28: 主力 fflow 维度整体删除, 6️⃣ 位取消
     report = f"""# {code} {name} | {today}
 
@@ -1878,16 +1837,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🌍 大盘 + 美股背景
 {_section_market_context(data)}
-
----
-
-## 💰 PEG 实算
-{_section_peg(data)}
-
----
-
-## 📊 DCF L 实算
-{_section_dcf(data)}
 
 ---
 

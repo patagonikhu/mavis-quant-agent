@@ -227,7 +227,7 @@ def check_factor(args):
     规则: 所有 Factor 必须是纯函数, 统一在 tools/factors/valuation/factor_lib.py
     禁止:
       1. class XXX(Factor) 包装 (Mavis 早期架构, 已废弃)
-      2. 在 tools/factors/valuation/ 目录下创建多文件 (除 dcf_engine.py)
+      2. 在 tools/factors/valuation/ 目录下创建多文件 (只允许 factor_lib.py)
       3. tools/analysis/valuation.py (2026-09-09 已删, 不能复活)
     """
     print("🛡️  守门员: factor-guard (Factor 风格统一检查)")
@@ -246,9 +246,6 @@ def check_factor(args):
         # 只检查 valuation/ 子目录 (其他子目录的 class Factor 是正常架构, 保留)
         if "/factors/valuation/" not in rel:
             continue
-        # 允许的特殊文件: dcf_engine.py (DCF 假设工具, 不算 Factor)
-        if rel.endswith("dcf_engine.py"):
-            continue
         try:
             content = py_file.read_text(encoding="utf-8")
         except Exception:
@@ -266,11 +263,12 @@ def check_factor(args):
             "❌ 复活了 tools/analysis/valuation.py (应统一到 tools/factors/valuation/factor_lib.py)",
         ))
 
-    # 规则 3: 检查 tools/factors/valuation/ 下是否有除 dcf_engine.py 外的多文件
+    # 规则 3: 检查 tools/factors/valuation/ 下是否有除 factor_lib.py 外的多文件
+    # 2026-11-02: dcf_engine.py 已删 (DCF 整档删除后它完全没人用)
     valuation_dir = ROOT / "tools" / "factors" / "valuation"
     if valuation_dir.exists():
         py_files = [f for f in valuation_dir.glob("*.py") if f.name != "__init__.py"]
-        allowed = {"factor_lib.py", "dcf_engine.py"}
+        allowed = {"factor_lib.py"}
         for f in py_files:
             if f.name not in allowed:
                 violations.append((
@@ -314,7 +312,7 @@ def write_report_factor(violations, args):
     md.append("- ✅ 统一在 `tools/factors/valuation/factor_lib.py`")
     md.append("- ❌ 禁止 `class XXX(Factor)` 包装")
     md.append("- ❌ 禁止 `tools/analysis/valuation.py` 复活")
-    md.append("- ❌ 禁止 `tools/factors/valuation/` 多文件 (除 valuation.py + dcf_engine.py)")
+    md.append("- ❌ 禁止 `tools/factors/valuation/` 多文件 (只允许 factor_lib.py)")
     md.append("")
     md.append("## 扫描结果")
     md.append("")

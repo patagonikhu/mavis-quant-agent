@@ -73,10 +73,13 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 2️⃣ | 3 个缠论补充策略 (SMC-OB + 威科夫 + 多市场共振) | 🥇 一等 |
 | 3️⃣ | 市场状态定量判断 + 方法优先级矩阵 | 🥈 二等 |
 | 4️⃣ | 大盘 + 美股背景 | 🥈 可选 |
-| 5️⃣ | PEG / DCF L (基本面对冲, 必须在 1️⃣2️⃣ 之后) | 🥉 二等 |
 | 6️⃣ | 三层仓位 + 买卖点 (1买/2买/3买/1卖/2卖/3卖) | 综合 必须 |
 
-详细 22 section / 因子矩阵 / 数据源 fallback: 见 `tools/render/report_schema.py`。
+> **2026-11-02: 5️⃣ PEG / DCF L 整档已删** —— PEG 是假指标 (依赖 EPS 预测, 预测本身不准),
+> DCF 用的是同一套 EPS 预测。估值只看 **PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆)**。
+> 报告从 20 section 变 18 section。
+
+详细 section 列表 / 因子矩阵 / 数据源 fallback: 见 `tools/render/report_schema.py`。
 
 ---
 

@@ -33,7 +33,7 @@ finance_roc_ey.py — ROC + EY 联合排名 (Greenblatt 公式) + 摘要 + 加 w
 
 输出:
     1) docs/roc-ey-top20.md              (Top N 表 + 统计)
-    2) docs/roc-ey-top20-summary.md      (Top N + PEG/DCF/ROC 4 项摘要, 卡点⭐ N/A)
+    2) docs/roc-ey-top20-summary.md      (Top N + 4 季财务大表摘要, 卡点⭐ N/A)
     3) data/watchlist.json (via DataStore.load_watchlist)              (加 list_type="ROC_EY初筛", 跳已存在)
     4) stdout: Top 5 速览
 """
@@ -325,10 +325,10 @@ def main() -> int:
                 f"综合={r['combined_rank']:4.1f}  市值={mc_yi:,.0f}亿  ({r['industry']})"
             )
 
-    # 6) 摘要 (Top 20 + PEG/DCF/ROC 4 项) — 2026-09-02 合并, 2026-09-09 改名
+    # 6) 摘要 (Top 20 + 4 季财务大表) — 2026-09-02 合并, 2026-11-02 删 PEG/DCF 项
     if not args.rank_only and top_n:
         print()
-        print("📊 跑 4 项摘要 (PEG/DCF/ROC 排名)...")
+        print("📊 跑摘要 (ROC/EY 排名 + 4 季财务大表)...")
         summary_path = _TOOLS.parent / "docs" / "finance-top20-summary.md"
         _run_summary(top_n, out_path, summary_path)
         print(f"   ✅ 写: {summary_path}")
@@ -351,7 +351,7 @@ def _run_summary(top_n: list[dict], top_md_path: Path, out_path: Path):
     """Top 20 + 4 季财务大表摘要
 
     解析 roc-ey-top20.md 拿排名, 逐只补 4 季财务大表 (复用 report_renderer._section_quarterly_table)
-    2026-09-15 改: 删 EPS/PEG/DCF (避免 datacenter 拉取 + 跟 /t-analyze 22 section 第 1 张表完全一致)
+    2026-09-15 改: 删 EPS/PEG/DCF (避免 datacenter 拉取 + 跟 /t-analyze 18 section 第 1 张表完全一致)
     """
     # 解析 Top N 拿 code/name/industry/roc/ey 5 字段
     rank_data = parse_top20_md(top_md_path)
@@ -454,13 +454,13 @@ def parse_top20_md(md_path: Path) -> list[dict]:
 def render_summary_md(items: list[dict]) -> str:
     """Top 20 摘要 markdown (2026-09-15 重写)
 
-    每票 1 个 4 季大表 (复用 _section_quarterly_table, 跟 /t-analyze 22 section 第 1 张表完全一致)
+    每票 1 个 4 季大表 (复用 _section_quarterly_table, 跟 /t-analyze 18 section 第 1 张表完全一致)
     2026-09-15 改: 删 PEG/DCF L/L-E3 (避免 datacenter 拉取; 4 季大表已含 ROC/EY/Magic 估值列)
     """
     today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     md = f"# ROC + EY Top 20 摘要 — {today}\n\n"
     md += "> **范围:** ROC + EY 联合排名 Top 20 (Greenblatt 公式: ROC 降序 + EY 降序, 综合 = (ROC 排名 + EY 排名) / 2)\n"
-    md += "> **4 季大表:** 复用 `tools/render/report_renderer.py::_section_quarterly_table` (跟 /t-analyze 22 section 第 1 张表完全一致)\n"
+    md += "> **4 季大表:** 复用 `tools/render/report_renderer.py::_section_quarterly_table` (跟 /t-analyze 18 section 第 1 张表完全一致)\n"
     md += "> **2026-09-15 改:** 删 PEG/DCF L (避免 datacenter 拉取, 4 季大表已含 ROC/EY 估值列)\n\n"
     md += "## 📊 Top 20 排名速览 (按综合排名)\n\n"
     md += "| 综合 | 代码 | 名称 | 行业 | ROC | EY |\n"

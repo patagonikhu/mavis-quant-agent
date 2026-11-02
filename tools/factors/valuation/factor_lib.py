@@ -6,12 +6,14 @@ tools/factors/valuation/factor_lib.py — 估值算子全集 (纯函数, 2026-09
   - tools/factors/valuation/multi.py  (PegFactor / DcfFactor / SectorOverheatFactor / FiveCategoriesFactor)
   - (2026-10-27: tools/analysis/report_section_evaluators.py 已删, 是死代码副本)
 
-合并后: 1 个文件, 11 个纯函数, 统一风格, 无 class 包装。
+合并后: 1 个文件, 纯函数, 统一风格, 无 class 包装。
 Mavis 守门员 (t-guardrail) 规则: 所有 factor 统一放 1 个文件, 纯函数风格。
 
+2026-11-02 删: compute_peg / compute_dcf_l
+  → PEG 是假指标 (依赖 EPS 预测, 预测本身不准), DCF 依赖同一套 EPS 预测.
+  → 估值只看 PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆).
+
 # 公开 API
-  - compute_peg(eps_table, current_price)         # PEG 估值
-  - compute_dcf_l(eps_table, market_cap_yi)       # DCF 隐含 L
   - compute_roc(financials, as_of_date, min_capital_yi)  # ROC 资本回报率
   - compute_ey(financials, as_of_date, market_cap_wan)   # EY 盈利收益率
   - compute_magic_one_day(...)                    # ROC+EY 合并
@@ -29,7 +31,7 @@ from typing import Optional
 from pathlib import Path
 
 # ============================================================
-# 行业黑名单 (ROC/EY/PEG 在这些行业失真)
+# 行业黑名单 (ROC/EY 在这些行业失真)
 # ============================================================
 EXCLUDED_INDUSTRIES = {
     "银行", "保险", "证券", "信托", "期货", "租赁",  # 金融
@@ -290,162 +292,7 @@ def compute_magic_one_day(financials: list[dict], as_of_date: str, market_cap_wa
 
 
 # ============================================================
-# PEG 估值 (Forward PE / 3 年 CAGR)
-# ============================================================
-def compute_peg(eps_table: list[dict], current_price: Optional[float] = None) -> dict:
-    """
-    PEG = Forward PE / 3 年 EPS CAGR
-
-    边界修复 (2026-09-03):
-    - E0/E1/E3 ≤ 0 或缺失 → 返 {"error": "..."}, 不算 PEG
-    - g_pct 算出后再算 PEG, 缺 g 直接返错误
-    - 避免 1 年前半导体 EPS=0.01 → PEG=0.01 误选
-    """
-    if not eps_table or not current_price:
-        return {"error": "数据不足"}
-
-    actuals = [r for r in eps_table if r.get("year_mark") == "A"]
-    estimates = [r for r in eps_table if r.get("year_mark") == "E"]
-
-    if not actuals or not estimates:
-        return {"error": "需要 actual + estimate 数据"}
-
-    e0 = actuals[-1].get("eps", 0) or 0
-    e1 = estimates[0].get("eps", 0) or 0
-    e2 = estimates[1].get("eps", 0) or 0 if estimates else 0
-    e3 = estimates[2].get("eps", 0) or 0 if len(estimates) >= 3 else 0
-
-    if e1 <= 0:
-        return {"error": "E1 数据无效 (≤0 或缺失)"}
-
-    fwd_pe = current_price / e1
-    if e0 <= 0 or e3 <= 0:
-        return {
-            "price": current_price, "E0": e0, "E1": e1, "E2": e2, "E3": e3,
-            "fwd_pe": round(fwd_pe, 2),
-            "g": None, "peg": None, "verdict": "— 数据不足 (E0/E3 缺)",
-            "error": "no_growth",
-        }
-
-    n = 3
-    g_pct = (((e3 / e0) ** (1.0 / n)) - 1) * 100
-    if g_pct <= 0:
-        return {
-            "price": current_price, "E0": e0, "E1": e1, "E2": e2, "E3": e3,
-            "fwd_pe": round(fwd_pe, 2),
-            "g": round(g_pct, 1), "peg": None, "verdict": "— 增长 ≤0",
-            "error": "negative_growth",
-        }
-
-    peg = fwd_pe / g_pct
-    if peg < 1.0:
-        verdict = "🟢 健康 (Lynch 买入区, <1.0)"
-    elif peg < 1.5:
-        verdict = "🟡 合理 (1.0-1.5)"
-    elif peg < 2.0:
-        verdict = "🟠 偏贵 (1.5-2.0)"
-    else:
-        verdict = "🔴 高估 (>2.0)"
-
-    return {
-        "price": current_price,
-        "E0": e0, "E1": e1, "E2": e2, "E3": e3,
-        "fwd_pe": round(fwd_pe, 2),
-        "g": round(g_pct, 1),
-        "peg": round(peg, 2),
-        "verdict": verdict,
-    }
-
-
-# ============================================================
-# DCF 隐含 L (3 档 r=8/10/12%)
-# ============================================================
-def compute_dcf_l(eps_table: list[dict], market_cap_yi: Optional[float] = None) -> dict:
-    """DCF 隐含 L (3 档 r=8/10/12% 折现率, 二分搜索)"""
-    if not eps_table or not market_cap_yi:
-        return {"error": "数据不足"}
-
-    estimates = [r for r in eps_table if r.get("year_mark") == "E"]
-    if len(estimates) < 2:
-        return {"error": "需要至少 2 年 E 数据"}
-
-    e1 = estimates[0].get("net_profit_yi", 0)
-    e2 = estimates[1].get("net_profit_yi", 0)
-    e3 = estimates[2].get("net_profit_yi", 0) if len(estimates) >= 3 else e2
-
-    if e1 <= 0 or e3 <= 0:
-        return {"error": "净利润数据无效"}
-
-    GROWTH_YEARS = 5
-
-    def fair_value(L, e1, e2, e3, r_pct):
-        r = r_pct / 100.0
-        pv = e1 / (1 + r) ** 1 + e2 / (1 + r) ** 2 + e3 / (1 + r) ** 3
-        if e3 > 0 and L > 0 and abs(L - e3) > 1e-9:
-            g = (L / e3) ** (1.0 / GROWTH_YEARS) - 1.0
-            for t in range(4, 9):
-                pv += e3 * (1 + g) ** (t - 3) / (1 + r) ** t
-        elif e3 > 0 and L > 0:
-            for t in range(4, 9):
-                pv += e3 / (1 + r) ** t
-        pv += (L / r) / (1 + r) ** (3 + GROWTH_YEARS)
-        return pv
-
-    def implied_L(cap, e1, e2, e3, r_pct):
-        r = r_pct / 100.0
-        hi = max(cap * r * (1 + r) ** 8 * 10, e3 * 100, 1000.)
-        lo = 0.
-        for _ in range(300):
-            mid = (lo + hi) / 2.
-            if fair_value(mid, e1, e2, e3, r_pct) < cap:
-                lo = mid
-            else:
-                hi = mid
-        return (lo + hi) / 2.
-
-    L_r8 = implied_L(market_cap_yi, e1, e2, e3, 8)
-    L_r10 = implied_L(market_cap_yi, e1, e2, e3, 10)
-    L_r12 = implied_L(market_cap_yi, e1, e2, e3, 12)
-
-    L_actual = round(L_r8, 1)
-
-    L_E3_r8 = round(L_r8 / e3, 2)
-    L_E3_r10 = round(L_r10 / e3, 2)
-
-    g_r8 = round(((L_r8 / e3) ** 0.2 - 1) * 100, 1)
-    g_r10 = round(((L_r10 / e3) ** 0.2 - 1) * 100, 1)
-    g_r12 = round(((L_r12 / e3) ** 0.2 - 1) * 100, 1)
-
-    # 简化的可达利润 (用当前净利率 × 当前营收 × 1.5x)
-    estimates_now = estimates[0]
-    nm = estimates_now["net_profit_yi"] / estimates_now["revenue_yi"] * 100 if estimates_now.get("revenue_yi", 0) > 0 else 15
-    revenue_ceiling = estimates_now.get("revenue_yi", 0) * 1.5
-    achievable = revenue_ceiling * nm / 100
-
-    L_achievable = f"{L_actual:.0f}/{achievable:.0f}={L_actual/achievable if achievable > 0 else 0:.2f}x"
-    if achievable > 0 and L_actual / achievable < 0.8:
-        verdict = "🟢 低估 (<0.8, 双侧便宜)"
-    elif achievable > 0 and L_actual / achievable < 1.5:
-        verdict = "🟡 合理 (0.8-1.5)"
-    else:
-        verdict = "🔴 偏贵 (>1.5, 叙事透支)"
-
-    return {
-        "L_r8": round(L_r8, 1), "L_r10": round(L_r10, 1), "L_r12": round(L_r12, 1),
-        "L_actual": L_actual,
-        "L_E3_r8": L_E3_r8, "L_E3_r10": L_E3_r10, "L_E3_r12": round(L_r12 / e3, 2),
-        "g_r8": g_r8, "g_r10": g_r10, "g_r12": g_r12,
-        "L_achievable": L_achievable,
-        "verdict": verdict,
-        "market_cap_yi": market_cap_yi,
-    }
-
-
-# ============================================================
 # 板块过热预警 (1周/1月/3月涨幅)
-# ============================================================
-# ============================================================
-# 5 类 14 子信号 (组合层, 调其他 5 个 factor)
 # ============================================================
 # ============================================================
 # 模块级缓存 (2026-09-09 性能优化, N+1 修复)

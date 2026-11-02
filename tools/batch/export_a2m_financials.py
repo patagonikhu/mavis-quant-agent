@@ -69,10 +69,7 @@ def collect() -> list[dict]:
             "mc_yi": ctx.market_cap_yi,
             "period_label": fin.get("period_label") or "",
             "quarterly": quarterly,
-            "peg": fin.get("PEG_真实"),
-            "fwd_pe": fin.get("fwd_pe"),
-            "g": fin.get("g"),
-            "peg_verdict": fin.get("verdict"),
+            # 2026-11-02 删: peg / fwd_pe / g / peg_verdict (PEG 是假指标, 整档已删)
         })
         # 守护: quarterly 必须是降序 (最新季在 [0])，否则汇总表会取到最旧季
         qs = [r.get("quarter", "") for r in quarterly]
@@ -164,16 +161,16 @@ def build_md(data: list[dict]) -> str:
         L.append(f"### 最近 4 季财务 + Magic 公式 ({pl})")
         L.append("")
         L.append("**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期; "
-                 "PE=季末市值/YTD净利年化 (Q1×4 / Q2×2 / Q3×4/3 / Q4×1); 动态PE=forward PE, 1致预期净利):**")
+                 "PE=季末市值/YTD净利年化 (Q1×4 / Q2×2 / Q3×4/3 / Q4×1)):**")
         L.append("")
         cols1 = ["季", "营收 yoy", "净利 yoy", "毛利率", "ROE", "营收 (亿)", "净利 (亿)",
                  "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)",
-                 "EV (亿)", "投入资本 (亿)", "PE", "动态 PE"]
+                 "EV (亿)", "投入资本 (亿)", "PE"]
         L.append("| " + " | ".join(cols1) + " |")
         L.append("|" + "---|" * len(cols1))
         for q in d["quarterly"]:
             L.append("| {quarter} | {or_yoy} | {np_yoy} | {gm} | {roe} | {rev} | {np} | {ebit} | "
-                     "{roc} | {ey} | {mc} | {nd} | {ev} | {cap} | {pe} | {fpe} |".format(
+                     "{roc} | {ey} | {mc} | {nd} | {ev} | {cap} | {pe} |".format(
                          quarter=q.get("quarter", ""),
                          or_yoy=fmt_signed(q.get("or_yoy")), np_yoy=fmt_signed(q.get("np_yoy")),
                          gm=fmt(q.get("gm"), 1, "%"), roe=fmt(q.get("roe"), 1, "%"),
@@ -182,7 +179,7 @@ def build_md(data: list[dict]) -> str:
                          roc=fmt(q.get("roc"), 1, "%"), ey=fmt(q.get("ey"), 2, "%"),
                          mc=fmt0(q.get("mc_yi")), nd=fmt0(q.get("netdebt_yi")),
                          ev=fmt0(q.get("ev_yi")), cap=fmt0(q.get("capital_yi")),
-                         pe=fmt(q.get("static_pe"), 1, ""), fpe=fmt(q.get("fwd_pe"), 1, "")))
+                         pe=fmt(q.get("static_pe"), 1, "")))
         L.append("")
         L.append(f"**行业:** {d['industry']}")
         L.append("")
@@ -201,8 +198,7 @@ def build_csv(data: list[dict]) -> str:
     w = csv.writer(buf)
     header = ["code", "name", "industry", "turn", "quarter", "or_yoy", "np_yoy", "gm", "roe",
               "ebit_yi", "revenue_yi", "netprofit_yi", "mc_yi", "netdebt_yi", "ev_yi",
-              "capital_yi", "roc", "ey", "static_pe", "fwd_pe", "peg", "g", "peg_verdict",
-              "L_r8", "L_r10", "L_r12", "L_E3_r10"]
+              "capital_yi", "roc", "ey", "static_pe"]
     w.writerow(header)
     for d in data:
         for q in d["quarterly"]:
@@ -211,9 +207,7 @@ def build_csv(data: list[dict]) -> str:
                 q.get("or_yoy"), q.get("np_yoy"), q.get("gm"), q.get("roe"),
                 q.get("ebit_yi"), q.get("revenue_yi"), q.get("netprofit_yi"),
                 q.get("mc_yi"), q.get("netdebt_yi"), q.get("ev_yi"), q.get("capital_yi"),
-                q.get("roc"), q.get("ey"), q.get("static_pe"), q.get("fwd_pe"),
-                q.get("peg"), q.get("g"), q.get("peg_verdict"),
-                q.get("L_r8"), q.get("L_r10"), q.get("L_r12"), q.get("L_E3_r10"),
+                q.get("roc"), q.get("ey"), q.get("static_pe"),
             ])
     return buf.getvalue()
 

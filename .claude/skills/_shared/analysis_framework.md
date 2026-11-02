@@ -1,7 +1,10 @@
-# 统一分析框架 — 缠论 + 估值双指标
+# 统一分析框架 — 缠论 + 估值
 
 > **本框架是所有 `/t-*` skill 的统一分析基础。** 任何分析个股的 skill 必须使用本框架。
-> 决策走 **缠论 1买/2买/3买/1卖/2卖/3卖** + 估值双指标 (PEG + DCF L).
+> 决策走 **缠论 1买/2买/3买/1卖/2卖/3卖** + 估值 (PE + Magic ROC/EY).
+>
+> **2026-11-02: 估值双指标 (PEG + DCF L) 已删** —— PEG 依赖 EPS 预测, 预测本身不准,
+> DCF 用同一套 EPS 预测。估值只看 **PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆)**。
 
 ---
 
@@ -9,7 +12,7 @@
 
 **2 个核心分析维度**:
 1. **缠论 (chan)** — 1买/2买/3买/1卖/2卖/3卖 + 中枢 + 背驰 + 止跌信号 (3 要素)
-2. **估值 (valuation)** — PEG (双指标) + DCF L (3 档 r=8/10/12%) + Magic ROC/EY 三合一 (v6.2.5 合并)
+2. **估值 (valuation)** — 静态 PE + Magic ROC/EY (2026-11-02 删 PEG/DCF)
 
 **辅助维度 (仅供参考, 不汇总)**:
 - 威科夫 (wyckoff) — 3 阶段: Accumulation / Markup / Distribution (阶段判定)
@@ -21,7 +24,7 @@
 - **周线** (1-3 个月) — 决定主升浪方向
 - **日线** (1-4 周) — 决定子浪位置 + 缠论 4 级别买卖点
 
-**联合输出**: 缠论 6 个买卖点 (1买/2买/3买/1卖/2卖/3卖) + 估值双指标 (PEG + DCF L) = 决策 2 维
+**联合输出**: 缠论 6 个买卖点 (1买/2买/3买/1卖/2卖/3卖) + 估值 (PE + Magic ROC/EY) = 决策 2 维
 
 **权重**: 无. 决策走缠论 1买/2买/3买/1卖/2卖/3卖 + 风控.
 
@@ -51,13 +54,13 @@
 ### 阶段 2: 套框架 (LLM, 必读本文件)
 - 投资四问 (卡点/TAM/龙头/估值) ← handbook/analysis-framework.md §2
 - T 框架 (T 位置计算) ← handbook/analysis-framework.md §3
-- 缠论 1买/2买/3买 + 估值双指标 (PEG + DCF L) ← handbook/analysis-framework.md §2.4
+- 缠论 1买/2买/3买 + 估值 (PE + Magic ROC/EY) ← handbook/analysis-framework.md §2.4
 - 因子 × 2 周期 综合矩阵 (4 类等权投票: chan/wyckoff/smc/resonance, 仅作参考, 不进仓位/退出决策)
 
-### 阶段 3: 落报告 (LLM 套 22 section 模板)
+### 阶段 3: 落报告 (LLM 套 18 section 模板)
 - 工具: `tools/render/report_renderer.py`
 - 输出: `docs/analyze-{code}-{name}.md`
-- 强制项: 缠论三要素 (第一段) + PEG/DCF L (中段) + 三层仓位 (末段)
+- 强制项: 缠论三要素 (第一段) + 4 季财务大表 (中段) + 三层仓位 (末段)
 
 ---
 
@@ -75,13 +78,13 @@ data/history/daily/{YYYYQN}.parquet (duckdb 读)
         └── finance (PegFactor + DcfFactor + MagicFormula) — 合并
         │
         ▼
-PEG + DCF L (basic_data/peg_calc/dcf_calc) — **决策第二维**
+Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
         │
         ▼
 退出信号 (exit_signals) + 止盈止损 (stop_profit_loss) + 三层仓位 (three_layer_position) — 走纯缠论
         │
         ▼
-报告 (22 section) ← tools/render/report_renderer.py
+报告 (18 section) ← tools/render/report_renderer.py
 ```
 
 ---
@@ -121,4 +124,4 @@ PEG + DCF L (basic_data/peg_calc/dcf_calc) — **决策第二维**
 
 - `handbook/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行)
 - `tools/factors/` — 22 个 factor 库 (缠论/威科夫/SMC/量价/多市场 + 估值/风控/仓位)
-- `tools/render/report_renderer.py` — 22 section 报告模板
+- `tools/render/report_renderer.py` — 18 section 报告模板

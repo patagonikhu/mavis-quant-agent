@@ -84,23 +84,18 @@ def compute_exit_signals(
     决策走 缠论 1卖/2卖/3卖/顶背/止跌反转, 退出信号纯缠论判定.
     估值 作为参考字段保留, 不再进绿/红信号汇总.
 
+    2026-11-02 删: PEG / L_E3 / L_可达 参考字段 (PEG 是假指标, 整档已删).
+      → 现在只留 板块_MA20_偏离 参考字段 + 纯缠论 verdict.
+
     输出字段 (dict):
       - 60分_底背/60分_顶背/止跌信号/缠论综合: 缠论固化信号
       - 威科夫阶段: 阶段判定
-      - PEG/L_E3/板块_MA20_偏离: 参考字段 (不汇总)
+      - 板块_MA20_偏离: 参考字段 (不汇总)
       - 退出建议: 纯缠论 verdict
     """
-    eps_table = eps_table or []
     chan_signals = chan_signals or {}
 
-    # === 1. PEG/L_E3 (保留参考, 不进汇总) ===
-    E1 = eps_table[1].get("eps", 0) if len(eps_table) > 1 else 0
-    E3 = eps_table[3].get("eps", 0) if len(eps_table) > 3 else 0
-    fwd_pe = current_price / E1 if E1 else 0
-    E0 = eps_table[0].get("eps", 0) if eps_table else 0
-    g = (E3 / E0 - 1) / 3 if E0 else 0
-    peg = fwd_pe / (g * 100) if g > 0 else 0
-    L_E3 = 0.69 if peg < 1.0 else 1.5
+    # === 1. 2026-11-02 删: PEG/L_E3 计算 (原本就是参考字段, 不进 verdict) ===
 
     # === 2. vs MA120 (占位) ===
     ma120_dev = -31
@@ -130,9 +125,7 @@ def compute_exit_signals(
         "止跌信号": "🟢 触发" if stop_sig else "❌",
         "威科夫阶段": wyckoff,
         "缠论综合": chan_verdict,
-        "PEG": round(peg, 2),                # 参考字段, 不汇总
-        "L_E3": round(L_E3, 2),              # 参考字段
-        "L_可达": 0.67 if peg < 1.0 else 1.0,  # 参考字段
+        # 2026-11-02 删: PEG / L_E3 / L_可达 (PEG 是假指标)
         "vs_MA120": ma120_dev,                # 参考字段
         "板块_MA20_偏离": sector_ma20_dev,    # 参考字段
         "退出建议": verdict,

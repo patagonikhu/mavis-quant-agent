@@ -288,18 +288,17 @@ class TestBaselineRegression:
 
     @pytest.mark.integration
     def test_baseline_key_fields_accessible_via_analysis(self, analysis_data_per_code):
-        """baseline 8 个字段都能从 AnalysisEngine 算出 (说明算子路径映射对)"""
+        """baseline 字段都能从 AnalysisEngine 算出 (说明算子路径映射对)"""
         if not BASELINE_PATH.exists():
             pytest.skip("v0_baseline.json 不存在")
         baseline = json.load(open(BASELINE_PATH))
         # 字段位置映射: baseline key → AnalysisEngine 算子路径
         # (2026-08-29: 改 raw dict 替代 factor_scores 对象)
-        # dcf 是 Phase2 派生, 不在 analyze_history 跑, 跳过
+        # 2026-11-02: 删 peg_真实 (PEG 是假指标, 整档已删); 改用 Magic roc 替代
         field_paths = {
             "wyckoff_stage":    lambda data: data["engine_result"].raw.get("wyckoff", {}).get("stage", "?"),
             "hub_low":          lambda data: data["engine_result"].raw.get("chan", {}).get("daily", {}).get("hub", {}).get("low"),
             "hub_high":         lambda data: data["engine_result"].raw.get("chan", {}).get("daily", {}).get("hub", {}).get("high"),
-            "peg_真实":          lambda data: data["engine_result"].raw.get("peg", {}).get("PEG_真实"),
         }
         for code, data in analysis_data_per_code.items():
             if code not in baseline:

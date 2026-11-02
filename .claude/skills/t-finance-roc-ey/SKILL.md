@@ -1,6 +1,6 @@
 ---
 name: t-finance-roc-ey
-description: 财务多维分析 (ROC+EY 联合排名 + 4 季财务大表 + PEG + DCF L). 财务类, 0 网络, 走 DataStore. **季报披露后跑一次** (1/5/9/11月). 触发词: "财务分析"、"ROC+EY 排名"、"好公司+便宜股"、"低估优质"、"4 季财务".
+description: 财务多维分析 (ROC+EY 联合排名 + 4 季财务大表). 财务类, 0 网络, 走 DataStore. **季报披露后跑一次** (1/5/9/11月). 触发词: "财务分析"、"ROC+EY 排名"、"好公司+便宜股"、"低估优质"、"4 季财务".
 user-invocable: true
 allowed-tools:
   - Bash

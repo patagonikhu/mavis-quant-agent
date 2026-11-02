@@ -30,9 +30,9 @@ L3 Render  →  tools/render/                     # 报告渲染
 | **Phase2 派生** | `tools/analysis/analysis_result_signals.py` | `compute_factor_history` 等 | 复制 strategy 逻辑 |
 | **RenderData 容器** | `tools/analysis/render_data.py` | `RenderData.from_result(ctx, result)` | 拼 markdown 字符串 |
 | **通用 factor** | `tools/factors/{basic,risk}.py` (纯函数) | `compute_xxx(...)` | `class XXX(Factor)` 包装 |
-| **估值 factor** | `tools/factors/valuation/factor_lib.py` (单文件) | `compute_peg/dcf/roc/ey` | 散到多文件 |
+| **估值 factor** | `tools/factors/valuation/factor_lib.py` (单文件) | `compute_roc/ey/magic` | 散到多文件 |
 | **缠论/威科夫/SMC** | `tools/factors/{chan,wyckoff,smc}/` | 复杂框架, 允许 class | 写业务逻辑 |
-| **报告 schema** | `tools/render/report_schema.py` (单一真源) | `report_linter` 校验 | 在 8 处各定义 22 section |
+| **报告 schema** | `tools/render/report_schema.py` (单一真源) | `report_linter` 校验 | 在 8 处各定义 18 section |
 | **报告渲染** | `tools/render/report_renderer.py` | `render_report(data)` | 业务层调 report 前自己拼 markdown |
 | **批量入口** | `tools/batch/<skill>.py` (one-file-per-skill) | 调 DataStore + AnalysisEngine | 直读 parquet / 调 duckdb / 直连 sqlite |
 | **守门员** | `tools/batch/guardrail.py` | `check_xxx()` + `--check xxx` | 在 review 阶段手动验 |
@@ -95,7 +95,7 @@ from tools.factors.factor_risk import (
     compute_stop_profit_loss,
 )
 from tools.factors.valuation.factor_lib import (
-    compute_peg, compute_dcf_l, compute_roc, compute_ey,
+    compute_roc, compute_ey,
     compute_magic_one_day, find_full_year_financials,
 )
 ```

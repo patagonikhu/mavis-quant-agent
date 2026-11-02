@@ -12,8 +12,10 @@ CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
   2️⃣ 3 个缠论补充策略 (SMC-OB+威科夫+多市场共振) — 一等公民
   3️⃣ 大盘+美股背景 — 二等 (可跳过)
-  5️⃣ PEG/DCF L (基本面对冲) — 二等, 必须在 1️⃣2️⃣ 之后
   6️⃣ 三层仓位+买卖点 — 综合 (止盈/止损/退场/仓位/监控)
+
+2026-11-02 删: 5️⃣ PEG/DCF L 整档 (PEG 是假指标, DCF 依赖同一套 EPS 预测)
+  → 估值只看 4 季财务大表里的 PE + 盈利质量 (ROC/EY/毛利率/杠杆)
 
 refresh 字段说明 (2026-07-24 加入, 方案 B 核心):
   "REGEN"    — 每次 enhance 强制重新生成 (数据驱动, 不保留旧内容)
@@ -79,23 +81,6 @@ REPORT_SECTIONS = [
         "render": "render_market_context",
         "required": False,
         "refresh": "REGEN",
-    },
-    # === 5️⃣ PEG/DCF L (必须在 1️⃣2️⃣ 之后) ===
-    {
-        "id": "peg",
-        "title": "💰 PEG 实算",
-        "category": "5️⃣",
-        "render": "render_peg",
-        "required": True,
-        "refresh": "PRESERVE",  # LLM 填充, 保留
-    },
-    {
-        "id": "dcf",
-        "title": "📊 DCF L 实算",
-        "category": "5️⃣",
-        "render": "render_dcf",
-        "required": True,
-        "refresh": "PRESERVE",  # LLM 填充, 保留
     },
     # === 基本面 + 策略 (数据驱动) ===
     # 2026-09-09 删: 基本面 (4 维) section (走 缠论 + ValuationStrategy PEG+DCF+Magic)
@@ -356,8 +341,9 @@ def validate_schema() -> dict:
     if len(set(ids)) != len(ids):
         errors.append(f"❌ 重复 section ID: {[i for i in ids if ids.count(i) > 1]}")
 
-    # 2. 顺序: 1️⃣ 必须在 2️⃣ 之前, 5️⃣ 必须在 1️⃣2️⃣ 之后, 6️⃣ 在 5️⃣ 之后, 7️⃣ 在 6️⃣ 之后
-    cat_order = {"1️⃣": 1, "2️⃣": 2, "3️⃣": 3, "4️⃣": 4, "5️⃣": 5, "6️⃣": 6, "7️⃣": 7}
+    # 2. 顺序: 1️⃣ 必须在 2️⃣ 之前, 6️⃣ 在 2️⃣ 之后, 7️⃣ 在 6️⃣ 之后
+    # 2026-11-02: 5️⃣ PEG/DCF 整档已删
+    cat_order = {"1️⃣": 1, "2️⃣": 2, "3️⃣": 3, "4️⃣": 4, "6️⃣": 6, "7️⃣": 7}
     last_cat = 0
     for s in REPORT_SECTIONS:
         cat = s.get("category", "📋")
@@ -369,7 +355,8 @@ def validate_schema() -> dict:
 
     # 3. 关键 section 必填 (chan_supplement 已于 7-29 废弃, 用 method_matrix 替代)
     # 2026-08-31: fflow section 已停用; 2026-10-28: 主力资金流维度整体删除
-    required = {"method_matrix", "peg", "dcf"}
+    # 2026-11-02: peg / dcf 已删 (PEG 是假指标)
+    required = {"method_matrix"}
     missing = required - set(ids)
     if missing:
         errors.append(f"❌ 必填 section 缺失: {missing}")

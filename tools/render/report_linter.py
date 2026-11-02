@@ -59,9 +59,7 @@ KEY_DATA_PATTERNS = {
     "价格": r"股价:\s*¥[\d.]+|当前价\s*[\|格]?\s*¥[\d.]+|¥[\d.]+\s*\|",  # 2026-07-24 改: 容忍"当前价格"和"价格"列
     "EPS 表格": r"\|\s*20\d{2}[AE]\s*\|\s*[\d.]+\s*\|",
     "MA 表格": r"\|\s*MA(5|20|60|120)\s*\|",
-    "PEG 数值": r"PEG_真实.*(\d+|—)",  # 2026-07-24 改: 容忍 999 或 "—" (PE 缺失)
-    "DCF L 数值": r"r=8%.*[\d.]+\s*亿|L\s*/\s*可达利润",
-    "L/可达利润": r"L\s*/\s*可达利润\s*\|?\s*[\d.]+",
+    # 2026-11-02 删: "PEG 数值" / "DCF L 数值" / "L/可达利润" (PEG 是假指标, 整档已删)
     "板块 MA20 偏离": r"MA20\s*偏离.*[\+\-]?[\d.]+%",
     "止盈价": r"\+20%\s*\|\s*¥[\d.]+|当前\s*→\s*\+20%.*¥[\d.]+",
     "止损价": r"-10%.*¥[\d.]+",
@@ -157,10 +155,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
         warnings.append("⚠️ 未找到 EPS 表格 (datacenter 可能没拉到)")
     if not key_data["MA 表格"]:
         warnings.append("⚠️ 未找到 MA 表 (K线可能不够)")
-    if not key_data["PEG 数值"] and "PEG" in content:
-        warnings.append("⚠️ PEG section 存在但无数值 (LLM 可能没算)")
-    if not key_data["DCF L 数值"] and "DCF" in content:
-        warnings.append("⚠️ DCF L section 存在但无数值")
+    # 2026-11-02 删: PEG / DCF 数值检查 (整档已删)
 
     # 2026-07-24: 逻辑校验 (升级, 之前只查"存在"不查"合理")
     # 检查"价格 vs 中枢"距离, 防止"位置: 下方⚠️" 但实际是"跌穿" 的语义模糊
@@ -279,7 +274,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
     try:
         from tools.render.report_schema import get_ordered_titles
         ordered_titles = get_ordered_titles()
-        # 只检查 CLAUDE.md 红字铁律: 缠论 1️⃣2️⃣ 必须在 PEG 5️⃣ 之前
+        # 只检查 CLAUDE.md 红字铁律: 缠论 1️⃣2️⃣ 必须最先
         # 2026-07-25: 优先用 id 注释 (按 REPORT_SECTIONS 顺序), fallback 标题文案
         section_titles_in_doc = re.findall(r"^##\s+(.+)$", content, re.MULTILINE)
         # 构建 id → 标题的索引顺序
@@ -308,22 +303,15 @@ def lint_report(md_path: str) -> dict[str, Any]:
 
         # 2026-07-25: 用 id 注释精确找位置 (不用关键词模糊匹配)
         # 2️⃣ 5 方法详情 = chan_supplement (chan_signals 已于 7-29 废弃合并入 factor_history)
-        # 5️⃣ PEG = peg
+        # 2026-11-02: 删 PEG/DCF 顺序检查 (5️⃣ 整档已删)
         def _find_id_idx(target_id: str) -> int:
             for i, doc_id in enumerate(md_ids):
                 if doc_id == target_id:
                     return i
             return -1
 
-        supp_idx = _find_id_idx("chan_supplement")
         matrix_idx = _find_id_idx("method_matrix")
-        peg_idx = _find_id_idx("peg")
-        dcf_idx = _find_id_idx("dcf")
 
-        if supp_idx >= 0 and peg_idx >= 0 and peg_idx < supp_idx:
-            warnings.append(
-                f"🔴 顺序违反铁律: PEG (第{peg_idx+1}个) 在 因子详情 (第{supp_idx+1}个) 之前 — CLAUDE.md 5️⃣ 必须在 2️⃣ 之后"
-            )
         if matrix_idx < 0:
             warnings.append("🔴 因子 × 3 周期 矩阵 section 缺失 (id:method_matrix)")
     except ImportError:
@@ -511,15 +499,15 @@ def lint_summary(results: list[dict]) -> str:
 # ============================================================
 
 def lint_finance_section(content: str) -> list[str]:
-    """财务数据 section 格式检查 — 4 季数据行 + 16 列大表 (含 Magic 列 + ROC/EY 列)
+    """财务数据 section 格式检查 — 4 季数据行 + 15 列大表 (含 Magic 列 + ROC/EY 列)
 
-    期望格式 (v6.2.8+, 2026-10-30 确认):
+    期望格式 (2026-11-02 起, fwd_pe 列已删):
         ## 财务数据
         > **EPS 一致预期 (Tushare):** ...
         ### 最近 4 季财务 + Magic 公式 (20260630)
-        | 季 | 营收 yoy | 净利 yoy | 毛利率 | ROE | 营收 (亿) | 净利 (亿) | EBIT (亿) | ROC 资本回报率 | EY 收益率 | 总市值 (亿) | 净负债 (亿) | EV (亿) | 投入资本 (亿) | PE | 动态 PE |  (16 列)
-        | --- | ... |  (16 个 ---)
-        | 20260630 | or_yoy | np_yoy | gm | roe | rev_yi | np_yi | ebit_yi | roc | ey | mc | nd | ev | capital | pe | fwd_pe |  (4 季行)
+        | 季 | 营收 yoy | 净利 yoy | 毛利率 | ROE | 营收 (亿) | 净利 (亿) | EBIT (亿) | ROC 资本回报率 | EY 收益率 | 总市值 (亿) | 净负债 (亿) | EV (亿) | 投入资本 (亿) | PE |  (15 列)
+        | --- | ... |  (15 个 ---)
+        | 20260630 | or_yoy | np_yoy | gm | roe | rev_yi | np_yi | ebit_yi | roc | ey | mc | nd | ev | capital | pe |  (4 季行)
 
     ⚠️ 2026-10-30 改: 旧版检查找独立的 "**💎 Magic**" 行 + "**核心指标**" 行 (12 列格式),
        但 v6.2.8 起 Magic 数据和 ROC/EY 已并进每个季度行 (16 列), 没有独立行了.
@@ -541,7 +529,7 @@ def lint_finance_section(content: str) -> list[str]:
 
     # 3. EPS 一致预期 必填
     if "EPS 一致预期" not in section:
-        warnings.append("🔴 财务数据: 缺 EPS 一致预期 (PEG/DCF 必填)")
+        warnings.append("🔴 财务数据: 缺 EPS 一致预期")
 
     # 4. 4 季财务 + Magic 大表 必填 (12 列)
     expected_cols = ["营收 yoy", "净利 yoy", "毛利率", "ROE",

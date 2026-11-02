@@ -35,7 +35,6 @@ from tools.storage.store import (
 # v6.0 改: 不再 import sync_incremental (sync 走 /t-sync, 本脚本 0 网络)
 from tools.factors.valuation.factor_lib import (
     find_full_year_financials, compute_ey, compute_roc,
-    compute_peg, compute_dcf_l,
 )
 from tools.storage.caches.eps import EPS_DIR
 
@@ -165,24 +164,9 @@ def _calc_4cols_for_code(
             magic = compute_ey([fin], d, mc_wan)
             ey = magic.get("ey")
 
-        # 3) PEG (要 EPS 预期 + 当前价)
-        peg = None
-        if eps_table and len(eps_table) >= 4 and db_d.get("close"):
-            r = compute_peg(eps_table, db_d["close"]) or {}
-            p = r.get("peg")
-            if isinstance(p, (int, float)) and 0 < p < 1000:  # 过滤 PEG=999 (g 缺失)
-                peg = p
-
-        # 4) DCF L/E3 (要 EPS 预期 + market_cap_yi)
-        dcf_l = None
-        if eps_table and len(eps_table) >= 4 and mc_wan:
-            market_cap_yi = mc_wan / 1e4
-            r = compute_dcf_l(eps_table, market_cap_yi) or {}
-            l_e3 = r.get("L_E3_r10")
-            if l_e3 is not None and l_e3 > 0:
-                dcf_l = l_e3
-
-        out[d] = (roc, ey, peg, dcf_l)
+        # 2026-11-02 删: 3) PEG 计算 + 4) DCF L/E3 计算 (PEG 是假指标, 整档已删)
+        #   → 现在只算 roc / ey 2 列
+        out[d] = (roc, ey, None, None)
     return out
 
 

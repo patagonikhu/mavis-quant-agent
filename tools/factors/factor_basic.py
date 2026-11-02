@@ -45,7 +45,6 @@ import pandas as pd
 def compute_three_layer_position(
     price: float = 0,
     chan_d: dict = None,
-    peg: float = 0,
     chan_signals: dict = None,
 ) -> dict:
     """三层仓位策略因子 (逆势/底/中/波动 + 止损目标阶梯)
@@ -53,11 +52,11 @@ def compute_three_layer_position(
     输入:
       - price: 当前价
       - chan_d: 日线中枢结果
-      - peg: PEG 估值
       - chan_signals: 缠论固化信号
     输出: dict (市况/三级别中枢/位置/4 层仓位/止损阶梯/目标阶梯)
 
     2026-10-28 删 fflow 参数 (主力资金流已整体删除)
+    2026-11-02 删 peg 参数 (PEG 是假指标, 整档已删; 之前也没被读过)
     """
     chan_d = chan_d or {}
     chan_signals = chan_signals or {}

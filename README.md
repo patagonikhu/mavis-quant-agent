@@ -11,7 +11,7 @@
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报 (22 section: 投资四问 + T 框架 + PEG + DCF + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
+| `/t-analyze <code> [name]` | 单只详报 (18 section: 投资四问 + T 框架 + 因子矩阵 + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-roc-ey` | 跑 ROC+EY 联合排名 + 4 季大表 (PEG/DCF L 已移除, 性能优化), Top 20 写到 docs/finance-top20.md | `/t-roc-ey` |
@@ -59,25 +59,22 @@
 
 ### 1.3 输出格式
 
-`/t-analyze` 报告关键字段（22 section）:
+`/t-analyze` 报告关键字段（18 section）:
 
 ```
-**PEG 四件套** (v4 强制):
-  - PEG_真实 (稳态 CAGR): X.X ✅
-  - PEG_A (本财年, 后视镜): X.X
-  - PEG_C (下一财年, 前视镜): X.X
-  - PEG_表观 (NTM YoY): X.X
+**4 季财务 + Magic 估值** (15 列大表, linter 必查):
+  - 营收/净利 yoy, 毛利率, ROE
+  - ROC 资本回报率, EY 收益率 (Greenblatt 联合排名)
+  - 总市值 / 净负债 / EV / 投入资本, 静态 PE
 
-**DCF 隐含 L** (r=8/10/12% 三档, 板块-aware 假设):
-  - r=10%  L=X亿  L/E3=X.Xx  L/可达利润=X.Xx
-
-**7 strategy × 2 周期 矩阵** (linter 必查, v6.2.5 重构 6 strategy, v6.2.8 加 technical):
-  - 场景: A/B/C/D/E
-  - 共振数: N 重
-  - 行动: 🥇/🥈/🥉/🟢/🟡/⬜/❌
+**因子 × 2 周期 矩阵** (linter 必查, 4 因子等权投票: chan/wyckoff/smc/共振):
+  - 建仓阈值 bottom_signals >= 2, 减仓阈值 top_signals >= 2
 
 **综合:** 🥇 / 🥈 / 🥉 / ⚠️ / ❌
 ```
+
+> **2026-11-02: PEG / DCF 整档已删** —— PEG 是假指标 (依赖 EPS 预测, 预测本身不准),
+> DCF 用同一套 EPS 预测。估值只看 PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆)。
 
 ---
 
@@ -89,7 +86,7 @@
 1. **卡点** — 产业链上的不可替代环节? (⭐ 1-5)
 2. **TAM** — 5 年总市场够大? (倍数)
 3. **龙头评分** — 真龙头? (0-14, ≥ 11)
-4. **估值** — PEG < 1.5 且 L/可达利润 < 1.0 才是双侧便宜
+4. **估值** — PE 不过高 + ROC/EY 盈利质量过关 (2026-11-02 起不再用 PEG/DCF)
 
 T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 
@@ -103,7 +100,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 .
 ├── CLAUDE.md                              # Agent 人设 + 决策框架 + 铁律
 ├── handbook/
-│   ├── analysis-framework.md              # 投资四问 + T框架 + PEG + DCF
+│   ├── analysis-framework.md              # 投资四问 + T框架
 │   ├── AGENT_MEMORY.md                    # 项目记忆 (活跃 skill 列表)
 │   ├── finance-glossary.md                # 财务术语表
 │   └── backtest-roc-ey-formula.md         # ROC_EY 算法公式
@@ -139,7 +136,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── wyckoff/stage_factor.py
 │   │   ├── chan/czsc_signals.py
 │   │   ├── smc/                           # OB/FVG/Sweep
-│   │   ├── valuation/multi.py             # PEG + DCF + Magic (合并 v6.2.5)
+│   │   ├── valuation/factor_lib.py        # ROC + EY + Magic (纯函数)
 │   │   └── risk/                          # 退出信号/止盈止损/监控触发
 │   │
 │   ├── render/                            # 报告渲染 (22 section)
@@ -191,7 +188,7 @@ WyckoffStrategy.analyze_history(ctx, dates)  O(n) — 1次循环: 每根bar O(1)
 ChanStrategy.analyze_history(ctx, dates)     O(n) — czsc 内部已 O(n) 优化
 SmcStrategy.analyze_history(ctx, dates)      O(n) — OB/FVG/Sweep 全量扫一次
 TechnicalStrategy.analyze_history(ctx, dates) O(n) — 8 个技术指标时序
-FinanceStrategy.analyze_history(ctx, dates)   O(n) — 季报粒度: Magic/PEG/DCF
+FinanceStrategy.analyze_history(ctx, dates)   O(n) — 季报粒度: Magic (ROC/EY) + 静态 PE
   │
   ▼
 AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonance_count 硬编码 if-else
@@ -261,7 +258,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 ### 4.3 sectors.json (v6.2 起 **删除**)
 
 > 板块分类走 `stock_basic.parquet` 的 `industry` 字段 (5555 只全覆盖)。
-> 细分板块 → DCF 假设 (WACC/FCF/g) 走 `SECTOR_DCF_ASSUMPTIONS` 字典 (代码内 `tools/factors/valuation/dcf_engine.py`)。
+> 2026-11-02: DCF 假设字典 (`dcf_engine.py`) 已随 DCF 整档删除。
 
 ---
 
@@ -735,7 +732,7 @@ market_trend = (market[-1] / market[-6] - 1) * 100
 |---|---|---|
 | 🟢 | 实数据 (parquet) | Tushare 同步 → `data/history/` → DataStore |
 | 🟡 | 硬编码 (LLM/STOCK_REGISTRY) | 卡点/leader/板块等元数据 |
-| ⚪ | 计算派生 | PEG / DCF L / MA / 7 strategy × 2 周期 |
+| ⚪ | 计算派生 | Magic (ROC/EY) / MA / 4 因子 × 2 周期 |
 
 > 报告里每个数字都标来源, 用户一眼能看出真数据 vs 估算。
 

@@ -95,10 +95,10 @@ class AnalysisResult:
       raw["wyckoff"]  = {"score": ..., "stage": ..., "sub_events": ..., "3period": ...}
       raw["chan"]      = {"score": ..., "weekly": {...}, "daily": {...}}
       raw["smc"]       = {"score": ..., "ob": [...], "smc_weekly": {...}}
-      raw["peg"]       = {"score": ..., "PEG_真实": ..., ...}
+      raw["finance"]   = {"quarterly": [...], "roc": ..., "ey": ..., ...}
       raw["position"]  = {"close_pos_day": ..., ...}
       # Phase2 派生 (weight=0)
-      raw["dcf"]                 = {r_8%: ..., r_10%: ..., r_12%: ...}
+      # 2026-11-02 删: raw["peg"] / raw["dcf"] (PEG/DCF 整档已删)
       raw["sector_overheat"]     = {1周涨幅: ..., ...}
       raw["five_categories"]     = {score: ..., verdict: ...}
       raw["buy_sell_points"]     = {daily: {...}, weekly: {...}}
@@ -840,8 +840,8 @@ class ChanStrategy:
 class FinanceStrategy:
     """季度财务 + 估值 factor (合并原 ValuationStrategy, 2026-09-08)
 
-    按季报日各算一次: Magic (ROC/EY/EBIT/EV/capital/netdebt/mc) + PEG + DCF。
-    PEG/DCF 用最新 EPS 预期，所有季共享同一份。
+    按季报日各算一次: Magic (ROC/EY/EBIT/EV/capital/netdebt/mc) + 静态 PE。
+    2026-11-02 删: PEG + DCF (PEG 是假指标; 估值只看 PE + 盈利质量)。
     analyze_history 所有日期共享同一结果 (季报频率)。
     weight=0, 不参与 total_score。
     """
@@ -854,7 +854,7 @@ class FinanceStrategy:
     def analyze(self, ctx: "RawContext") -> dict:
         from tools.storage.store import DataStore
         from tools.factors.valuation.factor_lib import (
-            compute_magic_one_day, compute_peg, compute_dcf_l,
+            compute_magic_one_day,
         )
         _empty = {"quarterly": [], "score": 0.0, "signals": [], "summary": ""}
 
@@ -898,16 +898,7 @@ class FinanceStrategy:
             except Exception:
                 pass
 
-        eps_table = ctx.eps_table or []
-        try:
-            if not eps_table:
-                eps_table = DataStore.get_eps(ctx.code) or []
-        except Exception:
-            pass
-
-        # PEG / DCF 用最新 EPS 预期，所有季共享
-        peg_out = compute_peg(eps_table, ctx.current_price) or {}
-        dcf_out = compute_dcf_l(eps_table, ctx.market_cap_yi) or {}
+        # 2026-11-02 删: eps_table + PEG/DCF 计算 (整档已删 — PEG 是假指标)
 
         quarterly = []
         for r in reversed(financials[-4:]):
@@ -981,14 +972,8 @@ class FinanceStrategy:
                 "capital_yi":   capital_yi,
                 "roc":          magic.get("roc"),
                 "ey":           magic.get("ey"),
-                "peg":          peg_out.get("peg"),
-                "fwd_pe":       peg_out.get("fwd_pe"),
-                "g":            peg_out.get("g"),
-                "peg_verdict":  peg_out.get("verdict"),
-                "L_r8":         (dcf_out.get("r_8%")  or {}).get("L_隐含(亿)"),
-                "L_r10":        (dcf_out.get("r_10%") or {}).get("L_隐含(亿)"),
-                "L_r12":        (dcf_out.get("r_12%") or {}).get("L_隐含(亿)"),
-                "L_E3_r10":     (dcf_out.get("r_10%") or {}).get("L/E3(每share)"),
+                # 2026-11-02 删: peg / fwd_pe / g / peg_verdict / L_r8 / L_r10 / L_r12 / L_E3_r10
+                #   (PEG/DCF 整档已删 — PEG 是假指标; 估值只看 PE + 盈利质量)
                 # 2026-09-30 加: 静态 PE (YTD 净利按季报类型年化 / 该季末市值)
                 # 公式: PE = mc_yi / (np_yi × ytd_factor), ytd_factor 修正为:
                 #   Q1 (03-31) → ×4  Q2 (06-30) → ×2  Q3 (09-30) → ×4/3  Q4 (12-31) → ×1
@@ -1011,21 +996,12 @@ class FinanceStrategy:
             "quarterly": quarterly,
             "score":   0.0,
             "signals": [
-                f"PEG {peg_out.get('peg', '—')}",
-                f"DCF r=10% L={dcf_out.get('L_r10', '—')}",
                 f"ROC {latest_q.get('roc', '—')}% | EY {latest_q.get('ey', '—')}%",
             ],
-            "summary": f"PEG {peg_out.get('peg','—')} | ROC {latest_q.get('roc','—')}% | EY {latest_q.get('ey','—')}%",
-            # 顶层字段 (兼容原 valuation_data 读法，供 _section_peg/_section_dcf/_compute_fundamental_4d)
-            "PEG_真实":  peg_out.get("peg"),
-            "fwd_pe":    peg_out.get("fwd_pe"),
-            "g":         peg_out.get("g"),
-            "verdict":   peg_out.get("verdict"),
-            "L_r8":      dcf_out.get("L_r8"),
-            "L_r10":     dcf_out.get("L_r10"),
-            "L_r12":     dcf_out.get("L_r12"),
-            "L_E3_r10":  dcf_out.get("L_E3_r10"),
-            "L_achievable": dcf_out.get("L_achievable", ""),
+            "summary": f"ROC {latest_q.get('roc','—')}% | EY {latest_q.get('ey','—')}%",
+            # 顶层字段 (valuation_data: Magic 为主)
+            # 2026-11-02 删: PEG_真实 / fwd_pe / g / verdict / L_r8 / L_r10 / L_r12 /
+            #   L_E3_r10 / L_achievable (PEG/DCF 整档已删)
             "roc":       latest_magic.get("roc"),
             "ey":        latest_magic.get("ey"),
             "ev_yi":     latest_magic.get("ev_yi"),
@@ -1140,9 +1116,10 @@ def _derive_stop_profit_loss(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
-    """三层仓位 (日线中枢+缠论+PEG)
+    """三层仓位 (日线中枢+缠论)
 
     2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
+    2026-11-02 删: peg 参数 (PEG 是假指标)
     """
     from tools.factors.factor_basic import compute_three_layer_position
     try:
@@ -1150,7 +1127,6 @@ def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
         out = compute_three_layer_position(
             price=ctx.current_price,
             chan_d=res_d,
-            peg=0.76,
             chan_signals=ctx.chan_result,
         )
         return out if isinstance(out, dict) else {}

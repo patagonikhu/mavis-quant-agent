@@ -176,7 +176,7 @@ class RenderData:
 
     # ===== 自动评估器 (Phase 1 自动算, 不再是占位符) =====
     # 2026-09-09 改: 删 total_score 加权字段, 4 维独立 dict
-    # 2026-09-09 删: fundamental 字段 (4 维基本面, 走 ValuationStrategy PEG+DCF+Magic)
+    # 2026-09-09 删: fundamental 字段 (4 维基本面, 走 Magic)
     # fundamental: Optional[dict] = None
     # fundamental_status: Optional[DataStatus] = None
 
@@ -190,17 +190,10 @@ class RenderData:
     # 因子历史缓存 — 计算一次后由 render/_section_factor_history 复用，避免重复 analyze_history
     factor_history_rows: Optional[list] = field(default=None, repr=False)
 
-    # v5.10.35: 9 个派生字段兼容层 (peg/dcf/exit_signals/...) — render 读 data.<字段> 现在自动从 analysis 拿
-    # 之前 v5.10.34 前: 这 9 个字段从 dump 顶层读; 现在挪到 analysis 层
+    # v5.10.35: 派生字段兼容层 — render 读 data.<字段> 现在自动从 analysis 拿
+    # 之前 v5.10.34 前: 这些字段从 dump 顶层读; 现在挪到 analysis 层
     # render 改读 data.analysis.<字段> 太散, 加 property 兼容老代码
-    @property
-    def peg(self) -> Optional[dict]:
-        return (self.analysis or {}).get("peg")
-
-    @property
-    def dcf(self) -> Optional[dict]:
-        return (self.analysis or {}).get("dcf")
-
+    # 2026-11-02 删: peg / dcf 两个 property (PEG/DCF 整档已删, 0 调用)
     @property
     def five_categories(self) -> Optional[dict]:
         return (self.analysis or {}).get("five_categories")
@@ -251,48 +244,8 @@ class RenderData:
     def monitor_triggers(self) -> Optional[dict]:
         return (self.analysis or {}).get("monitor_triggers")
 
-    # v5.10.35: peg_detail/dcf_detail 优先用 analysis 层 factor 库算的真值
-    @classmethod
-    def _merge_peg_detail(cls, old_detail, analysis_dict):
-        """合并 peg_detail: analysis.peg (factor 库) 真值优先"""
-        factor_peg = (analysis_dict or {}).get("peg") or {}
-        if not factor_peg or "PEG_真实" not in factor_peg or not isinstance(factor_peg.get("PEG_真实"), (int, float)):
-            return old_detail
-        # factor 库有真值, 转成 render 期望的 peg_detail 格式
-        return {
-            "price": old_detail.get("price") if old_detail else None,
-            "E0": factor_peg.get("E0_本年"),
-            "E1": factor_peg.get("E1_NTM"),
-            "E2": factor_peg.get("E2"),
-            "E3": factor_peg.get("E3"),
-            "fwd_pe": factor_peg.get("Forward PE"),
-            "g": str(factor_peg.get("g_CAGR", "—")).rstrip("%"),
-            "peg": factor_peg.get("PEG_真实"),
-            "verdict": factor_peg.get("PEG_判定", "—"),
-        }
-
-    @classmethod
-    def _merge_dcf_detail(cls, old_detail, analysis_dict):
-        """合并 dcf_detail: analysis.dcf (factor 库) 真值优先"""
-        factor_dcf = (analysis_dict or {}).get("dcf") or {}
-        if not factor_dcf or not any(k.startswith("r_") for k in factor_dcf):
-            return old_detail
-        # factor 库有真值, 转成 render 期望的 dcf_detail 格式
-        # render 期望 L_r8/L_r10/L_r12 + L_E3_r8/10/12
-        def _val(rate, key):
-            d = factor_dcf.get(f"r_{rate}%") or {}
-            return d.get(key) if isinstance(d, dict) else None
-        return {
-            "L_r8": _val(8, "L_隐含(亿)"),
-            "L_r10": _val(10, "L_隐含(亿)"),
-            "L_r12": _val(12, "L_隐含(亿)"),
-            "L_E3_r8": _val(8, "L/E3(每share)"),
-            "L_E3_r10": _val(10, "L/E3(每share)"),
-            "L_E3_r12": _val(12, "L/E3(每share)"),
-            "L_actual": old_detail.get("L_actual") if old_detail else "—",
-            "L_achievable": old_detail.get("L_achievable") if old_detail else "—",
-            "verdict": old_detail.get("verdict") if old_detail else "—",
-        }
+    # 2026-11-02 删: _merge_peg_detail / _merge_dcf_detail
+    #   (2026-09-02 就没人调了 — peg_detail/dcf_detail 已合并成 valuation_data; PEG/DCF 整档也已删)
 
     signal_5cat: Optional[dict] = None  # {signals, raw_score, rating, missing}
     signal_5cat_status: Optional[DataStatus] = None
@@ -307,7 +260,8 @@ class RenderData:
     four_questions: Optional[dict] = None
     t_frame: Optional[dict] = None
     # 2026-09-02 合并: peg_detail / dcf_detail / magic_formula_detail → valuation_data 1 个
-    valuation_data: Optional[dict] = None  # ValuationStrategy 输出 (PEG + DCF + Magic)
+    # 2026-11-02: PEG/DCF 已删, valuation_data 现在只剩 Magic (ROC/EY)
+    valuation_data: Optional[dict] = None  # FinanceStrategy 输出 (Magic)
     signal_5cat: Optional[dict] = None
     xgboost_prob: Optional[float] = None
     supplement: Optional[dict] = None
@@ -452,7 +406,7 @@ class RenderData:
             #   它们走 _mech_* stub (永远返回 None), 且会把上面删掉的字段重新加回来,
             #   导致 property 再次被遮蔽. 现在统一由 property 从 analysis dict 派生.
             market_cap_yi=ctx.market_cap_yi,
-            # Magic Formula: 跟 PEG/DCF 一样, 在 from_result 里直接算, 不留 N/A
+            # Magic Formula: 在 from_result 里直接算, 不留 N/A
             # market_cap 入参单位"万" (跟 Tushare daily_basic 一致), 内部 / 1e4 转亿
             # 2026-09-02 改: 删 magic_formula_detail, 用 valuation_data 1 个字段
             valuation_data=cls._compute_valuation(ctx, result),
@@ -465,7 +419,7 @@ class RenderData:
     def _compute_magic(cls, ctx: "RawContext") -> Optional[dict]:
         """旧 _compute_magic: 2026-09-02 保留兼容, 实际数据从 valuation_data 读。
 
-        报告渲染层已经从 data.valuation_data 读 (合并 PEG+DCF+Magic)。
+        报告渲染层已经从 data.valuation_data 读 (Magic)。
         这个方法保持存在但不再被 from_result 调用, 避免删了破坏向后兼容。
         """
         return None  # 已废弃, 用 _compute_valuation 替代
@@ -494,7 +448,7 @@ class RenderData:
             return DataStatus(name=name, status="OK")
 
         # 2026-09-09 删: 基本面 (4 维) — 估值/盈利/增长/安全 评分
-        # 走 缠论 + ValuationStrategy (PEG+DCF+Magic ROC/EY), 报告 section 整个删掉
+        # 走 缠论 + Magic (ROC/EY), 报告 section 整个删掉
         # 2) 5 类信号 — 5 个 strategy 信号聚合
         out["signal_5cat"] = cls._agg_5_categories(raw, signals_5, ctx)
         out["signal_5cat_status"] = _ok("5类信号")
@@ -514,6 +468,9 @@ class RenderData:
 
         决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再按 5 类信号加权汇总.
         signals 字段保留 (子信号独立展示), 删 score/raw_score/rating 加权字段.
+
+        2026-11-02 删: 估值类 PEG 子信号 (PEG 是假指标).
+          → 剩下 龙头/政策/情绪 3 项全部是"未接入"占位, 实际无有效子信号.
         """
         signals: list[dict] = []
 
@@ -525,15 +482,6 @@ class RenderData:
                 "category": cat, "name": f"{cat}_neutral", "score": 5,
                 "triggered": False, "reason": f"需 {cat} 数据 (暂未接入)",
             })
-        # 估值: PEG (子信号独立)
-        val = raw.get("finance", {})
-        peg = val.get("PEG_真实")
-        peg_score = 9 if isinstance(peg, (int, float)) and peg < 1.5 else 4
-        signals.append({
-            "category": "估值", "name": "PEG", "score": peg_score,
-            "triggered": isinstance(peg, (int, float)) and peg < 1.5,
-            "reason": f"PEG {peg} (<1.5 合理)" if isinstance(peg, (int, float)) and peg < 1.5 else f"PEG {peg or '—'} (偏贵)",
-        })
         # 2026-09-09 删: score/raw_score/rating 加权汇总
         return {
             "signals": signals,
@@ -586,7 +534,7 @@ class RenderData:
         line("K线", self.kline_status, f"{len(self.kline)} 条")
         line("MA", self.ma_status, f"{len(self.ma_table)} 条")
         line("技术指标", self.technical_status, "8 种 (MACD/RSI/KDJ/BOLL/ATR/量比)")
-        # 2026-09-09 删: 基本面 status 行 (4 维基本面, 走 ValuationStrategy PEG+DCF+Magic)
+        # 2026-09-09 删: 基本面 status 行 (4 维基本面, 走 Magic)
         # 2026-09-09 改: 5类信号 删 raw_score/rating, 改子信号数
         s5_summary = f"{len(self.signal_5cat.get('signals', []))} 子信号" if self.signal_5cat else "—"
         line("5类信号", self.signal_5cat_status, s5_summary)
@@ -597,27 +545,9 @@ class RenderData:
         report["缠论"] = ("✅" if self.chan_data else "❓", "OK" if self.chan_data else "未计算")
         report["四问"] = ("✅" if self.four_questions else "❓", "OK" if self.four_questions else "未计算")
         report["T框架"] = ("✅" if self.t_frame else "❓", "OK" if self.t_frame else "未计算")
-        # 2026-09-02 改: 合并 PEG/DCF/Magic 1 个 valuation_data
-        # 2026-09-03 改: 区分"完全没字段"(❓ 未计算) vs "字段在但 None"(❌ 原因)
+        # 2026-09-02 改: 合并 valuation_data 1 个
+        # 2026-11-02 删: PEG / DCF L 两行 (整档已删)
         _val = self.valuation_data or {}
-        # PEG
-        if "PEG_真实" in _val:
-            peg_v = _val.get("PEG_真实")
-            if peg_v is not None and peg_v != "数据不足":
-                report["PEG"] = ("✅", f"={peg_v}")
-            else:
-                report["PEG"] = ("❌", f"={_val.get('verdict', '数据不足')}")
-        else:
-            report["PEG"] = ("❓", "未计算")
-        # DCF
-        if "L_r10" in _val:
-            dcf_v = _val.get("L_r10")
-            if dcf_v is not None:
-                report["DCF L"] = ("✅", f"L={dcf_v}亿")
-            else:
-                report["DCF L"] = ("❌", "L=E0 缺/EPS 缺")
-        else:
-            report["DCF L"] = ("❓", "未计算")
         # Magic — 区分 roc/ey 是否在字段
         if "roc" in _val or "ey" in _val:
             roc_v, ey_v = _val.get("roc"), _val.get("ey")
@@ -633,7 +563,8 @@ class RenderData:
                     report["Magic"] = ("❌", f"ROC/EY={reason}")
         else:
             report["Magic"] = ("❓", "未计算")
-        report["5类信号"] = ("✅" if self.signal_5cat else "❓", "OK" if self.signal_5cat else "未计算")
+        # 2026-11-02 修: 删重复的 report["5类信号"] 赋值
+        #   (上面 line("5类信号", ...) 已经赋过, 这里再赋会覆盖掉子信号数详情)
         report["缠论补充"] = ("✅" if self.supplement else "❓", "OK" if self.supplement else "未计算")
         report["止盈止损"] = ("✅" if self.take_profit else "❓", "OK" if self.take_profit else "未计算")
 
@@ -644,16 +575,7 @@ class RenderData:
         ok = sum(1 for emoji, _ in report.values() if emoji == "✅")
         return int(ok / len(report) * 100)
 
-    def can_calc_peg(self) -> bool:
-        return (
-            self.current_price is not None
-            and len(self.eps_table) > 0
-            and any(r.year_mark in ("E", "A") and r.eps > 0 for r in self.eps_table)
-        )
-
-    def can_calc_dcf(self) -> bool:
-        e_count = sum(1 for r in self.eps_table if r.year_mark == "E" and r.eps > 0)
-        return e_count >= 2 and self.current_price is not None
+    # 2026-11-02 删: can_calc_peg / can_calc_dcf (0 调用; PEG/DCF 整档已删)
 
     def can_calc_supplement(self) -> bool:
         return len(self.kline) >= 30
