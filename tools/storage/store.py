@@ -1489,10 +1489,18 @@ class DataStore:
 
         # 2026-10-08 删: cyq_perf (胜率/中位成本, 跟 RSI/MA 同步, 没新信息)
 
+        # 2026-11-02 修: current_price 优先用 K线最新收盘, 不再优先 daily_basic.close
+        #   背景: stk_factor/daily_basic 落盘比 K线慢 (Tushare 先发沪市后发深市,
+        #         11-02 当天只到 2368 只, 002/300/301 全缺)。
+        #   旧写法 `db.get("close") or close` → 报告里股价显示昨天的, 跟实际差 10%。
+        #   现在: K线是权威源且永远 >= daily_basic 新鲜度, 直接用 K线收盘。
+        #   daily_basic 只提供 PE/市值/换手率等 K线没有的估值字段。
+        current_price = close or (db.get("close") or 0.0)
+
         return RawContext(
             kline=kline, weekly=weekly,
             eps_table=eps,
-            current_price=db.get("close") or close,
+            current_price=current_price,
             market_cap_yi=total_mv_yi,
             industry=sb.get("industry", ""),
             code=code, name=_INDEX_NAMES.get(code) or sb.get("name", ""),
