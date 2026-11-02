@@ -1,39 +1,39 @@
 """
-data_fetcher.py — 统一数据抓取层 (v4.0, 2026-07-22)
+eastmoney.py — datacenter.eastmoney.com 数据源 + 技术指标计算
 
-⚠️ 2026-07-22 重大升级: 全部走 Tushare Pro, 单一权威源
-  - 历史: v1-v3 用 push2/qtimg/ifzq/datacenter, WAF 频发 + 多源不一致
-  - 现在: 5 个 getter 全部委托给 tools.tushare_fetcher, 单一权威源
-  - 历史 fallback 链 (push2/qtimg/datacenter) 全部移除, 函数签名保留
-    以保 render_report / analysis_data / 老 data 工具 等外部 import 不破坏
+⚠️ 2026-11-02 大幅瘦身 (928 → 668 行):
+  - 删 get_kline / fetch_all / status_emoji 三个 0 外部调用点的死函数
+    (AST 可达性分析: 全仓只 import compute_indicators / _build_eps_table /
+     _synthesize_weekly 三个)
+  - 删未用 import (json / subprocess / Any / Optional)
+  - 历史 curl helper (_get_with_retry / _get_session / _secid / _secucode 等)
+    2026-10-30 已删 (0 调用, 且 push2 属 WAF 拒接域)
 
-数据源矩阵 (v4.0):
+**现在只剩 3 个对外入口:**
+  1. _build_eps_table(code)    → datacenter EPS 一致预期 (唯一联网的函数)
+  2. _synthesize_weekly(kline) → 日线合成周线 (纯计算)
+  3. compute_indicators(kline) → 8 大技术指标 (纯计算, 无网络)
+
+数据源矩阵:
   ┌──────────────┬─────────────────────────────────────────┐
   │ 数据         │  唯一源                                     │
   ├──────────────┼─────────────────────────────────────────┤
-  │ 实时价       │  Tushare.daily (close) + Tushare.daily_basic (pe_ttm/pb) │
-  │ 历史 K 线    │  Tushare.daily                                 │
-  │ EPS / 财务   │  Tushare.fina_indicator (ROE/EPS/CAGR 自建) │
+  │ EPS 一致预期 │  datacenter.eastmoney.com (本文件唯一联网) │
+  │ K 线         │  Tushare.daily (见 tools/storage/sources/tushare.py) │
+  │ 财务         │  Tushare.fina_indicator (financials parquet) │
   │ 总股本/市值  │  Tushare.stock_basic.total_share + daily_basic.total_mv │
   └──────────────┴─────────────────────────────────────────┘
 
-历史 curl helper (_get_with_retry / _get_session / _secid / _secucode 等)
-2026-10-30 已删 (0 调用, 且 push2 属 WAF 拒接域)。
-
-使用方式:
-  from tools.storage.sources.eastmoney import get_realtime_price
-  data, status = get_realtime_price("002371")
-  if status == "OK":
-      print(data["price"])
+调用方:
+  - sync.py / caches/eps.py   → _build_eps_table
+  - store.py / etf_macd_scan.py → _synthesize_weekly
+  - analysis_engine.py / render_data.py → compute_indicators
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import subprocess
 import time
-from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -51,65 +51,7 @@ except FileNotFoundError:
     )
 
 # ============================================================
-# 基础配置
-# ============================================================
-
-# ============================================================
-# secid / secucode 工具
-# ============================================================
-
-# ============================================================
-# 2. 历史 K 线
-# ============================================================
-
-def get_kline(code: str, days: int = 250, use_cache: bool = True) -> tuple[list[dict] | None, str]:
-    """
-    v4.0 (2026-07-22): 单一源 Tushare.daily
-      - 字段: trade_date / open / high / low / close / vol (amount 在 tushare 是成交额)
-
-    v5.3 (2026-07-28): 加增量缓存 use_cache=True
-      - 读 data/_old_d/{code}.json 找 kline 最后一日
-      - 仅拉新数据 (start_date=last_date+1), merge 旧数据
-      - 跨数不变 (仍是 days 根), 但 API 调用从 1 次变 N 根新增
-      - 节省: 重 dump 全部 57 只从 ~2.4 分钟 → ~30 秒
-
-    历史 (v3.1): web.ifzq 腾讯备源 WAF 频发, 已移除
-    """
-    try:
-        from .tushare import get_daily as _ts_daily
-    except Exception as e:
-        return None, f"IMPORT_FAIL_{type(e).__name__}"
-
-    rows, status = _ts_daily(code, limit=days)
-    if not rows:
-        return None, status or "EMPTY"
-
-    result = []
-    for r in rows:
-        try:
-            result.append({
-                "trade_date": r.get("trade_date", ""),
-                "open":  float(r.get("open",  0) or 0),
-                "close": float(r.get("close", 0) or 0),
-                "high":  float(r.get("high",  0) or 0),
-                "low":   float(r.get("low",   0) or 0),
-                "volume":float(r.get("vol",   0) or 0),
-            })
-        except (TypeError, ValueError):
-            continue
-    if not result:
-        return None, "PARSE_FAIL"
-
-    return result, "OK"
-
-
-# ============================================================
-# 4. EPS 一致预期
-# ============================================================
-
-
-# ============================================================
-# 5. 一次性拉全 (给 t-analyze 用)
+# 1. EPS 一致预期 (datacenter.eastmoney.com)
 # ============================================================
 
 def _build_eps_table(code: str) -> tuple[list[dict] | None, str]:
@@ -174,191 +116,6 @@ def _build_eps_table(code: str) -> tuple[list[dict] | None, str]:
 
     return None, "EMPTY"
 
-
-def fetch_all(code: str, kline_days: int = 250, sector: str = "") -> dict:
-    """
-    v4.0 (2026-07-22): 顶层直接调 tushare 6 段 (避免 getter 内部重复拉)
-      - stock_basic (1 次)
-      - daily K 线 limit=kline_days (1 次)
-      - daily_basic limit=30 (1 次, 复用给 price + shares)
-      - fina_indicator (1 次, 给 EPS 用)
-      - income (1 次, 给 EPS np_yi 用)
-    v5.6 (2026-07-29): daily_basic_long 拆出 fetch_all
-      - fetch_all 保持 4 段并发 (sb/daily/mf/wk) + daily_basic 串行 = 5 段
-        (Tushare 全接口 80/分 内, 实际跑 watchlist 平均 6-7 段/秒)
-      - daily_basic_long (250 天 PE/PB/市值/换手率) v5.10.23 删, 改走 stk_factor_history/ 按日落盘
-        1 只票 +1 API call, watchlist 间隔 60s 自然恢复, 不在 fetch_all 内部串行 (会拖累 13s+)
-
-    配合 tushare_fetcher 1 小时内存缓存, 同一只股二次跑 0.5s 内
-
-    Returns:
-        {
-            "code": str, "name": str, "current_price": float, "pe_ttm": float,
-            "kline": list[dict], "eps_table": list[dict],
-            "shares_yi": float, "market_cap_yi": float,
-            "statuses": {...}
-        }
-    """
-    from datetime import datetime
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from .tushare import (
-        get_stock_basic as _ts_sb,
-        get_daily as _ts_daily,
-        get_daily_basic as _ts_db,
-        get_weekly as _ts_weekly,
-    )
-    result = {
-        "code": code,
-        "name": "",
-        "sector": sector,
-        "close": None,
-        "pe_ttm": None,
-        "kline": None,
-        "eps_table": None,
-        "total_share": None,
-        "total_mv": None,
-        "weekly": None,  # 2026-07-28 v5.5 加 (周线 156 根, 给 5方法×3周期 周线维度用)
-        "statuses": {},
-        "fetch_time": datetime.now().isoformat(),
-    }
-
-    # 2026-07-28 v5.5 加: 周线 250 根 (强制走 config.project.yaml:data.weekly_limit, 读不到报错)
-    weekly_limit = _PROJECT_CFG.get("data", {}).get("weekly_limit")
-    if weekly_limit is None:
-        raise FileNotFoundError(
-            "config/project.yaml 缺 data.weekly_limit 字段 (跟 weekly_limit 硬编码已废, 全部走 config)"
-        )
-    # 2026-07-29 v5.6 加: daily_basic 历史 (PE/PB/市值/换手率), 走 config
-    daily_basic_days = _PROJECT_CFG.get("data", {}).get("daily_basic_days", 250)
-
-    # ===== 并发拉 4 段 =====
-    import time as _t
-    _t0 = _t.time()
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        fut_sb  = ex.submit(_ts_sb,   code)
-        fut_day = ex.submit(_ts_daily, code, limit=kline_days)
-        fut_wk  = ex.submit(_ts_weekly, code, limit=weekly_limit)
-
-        sb,  sb_s  = fut_sb.result()
-        daily, d_s = fut_day.result()
-        wk,  wk_s  = fut_wk.result()
-    logger.info("[fetch_all] 3 段并发耗时 %.1fs", _t.time() - _t0)
-
-    # daily_basic 改 limit=1 (v5.10.23: 只取最新 1 行给顶层 pe_ttm/pb/total_mv 等)
-    # 之前 limit=100 拉 22 年历史 5296 行 = 1253 KB/dump, 0 consumer (TrendPullback 从 market_cap_yi 顶层读)
-    # 改 limit=1: dump 从 2052 KB 降到 ~800 KB, 节省 62%
-    db, db_s = _ts_db(code, 1)  # 5000 积分档单只 limit=1 (1 行 1 调用, 给顶层字段)
-
-    # 1. stock_basic
-    if sb:
-        result["name"] = sb.get("name", "")
-        result["industry"] = sb.get("industry", "")
-        result["list_date"] = sb.get("list_date", "")
-    result["statuses"]["stock_basic"] = sb_s
-
-    # 2. daily K 线
-    if daily:
-        kline = []
-        for r in daily:
-            try:
-                kline.append({
-                    "trade_date": r.get("trade_date", ""),
-                    "open":       float(r.get("open",    0) or 0),
-                    "close":      float(r.get("close",   0) or 0),
-                    "high":       float(r.get("high",    0) or 0),
-                    "low":        float(r.get("low",     0) or 0),
-                    "volume":     float(r.get("vol",     0) or 0),
-                    "amount":     float(r.get("amount",  0) or 0),
-                    "pct_chg":    float(r.get("pct_chg", 0) or 0),
-                })
-            except (TypeError, ValueError):
-                continue
-        result["kline"] = kline
-        if kline:
-            result["close"] = kline[-1]["close"]
-    result["statuses"]["kline"] = d_s
-
-    # 3. daily_basic
-    if db:
-        # v5.10.23 改: 不存 daily_basic_long (22 年历史 5296 行, 1253 KB/dump, 0 consumer)
-        # 之前 v5.6: 存完整历史给 TrendPullback 大市值缩放 / PE 历史趋势
-        # 实际 TrendPullback 从 market_cap_yi 顶层读 (line 102 scanner.py), 不读 daily_basic_long
-        # 顶层字段 pe_ttm/pb/total_mv/... 从 db[-1] 取 (v5.10.23 db 改 limit=1, 1 行)
-        last_db = db[-1]
-        if last_db.get("pe_ttm") is not None:
-            try:
-                result["pe_ttm"] = float(last_db["pe_ttm"])
-            except (TypeError, ValueError):
-                pass
-        if last_db.get("pb") is not None:
-            try:
-                result["pb"] = float(last_db["pb"])
-            except (TypeError, ValueError):
-                pass
-        if last_db.get("total_mv") is not None:
-            try:
-                result["total_mv"] = round(float(last_db["total_mv"]) / 1e4, 2)
-            except (TypeError, ValueError):
-                pass
-        if last_db.get("circ_mv") is not None:
-            try:
-                result["circ_mv"] = round(float(last_db["circ_mv"]) / 1e4, 2)
-            except (TypeError, ValueError):
-                pass
-        if last_db.get("turnover_rate") is not None:
-            try:
-                result["turnover_rate"] = float(last_db["turnover_rate"])
-            except (TypeError, ValueError):
-                pass
-        if last_db.get("volume_ratio") is not None:
-            try:
-                result["volume_ratio"] = float(last_db["volume_ratio"])
-            except (TypeError, ValueError):
-                pass
-    result["statuses"]["daily_basic"] = db_s
-
-    # v5.6: 7 段并发改为 6 段并发 + daily_basic 串行, 大幅降低 Tushare 单接口频控撞墙
-    # 如果 daily_basic 还返空 (db_s=EMPTY), watchlist 级 dump 跨票间隔会自然恢复, 不再单票内部 sleep
-    if not db and db_s == "EMPTY":
-        logger.warning("daily_basic 仍 EMPTY, 跨票间隔会自动恢复 (本票不阻塞)")
-
-    # 4. weekly 周线 (2026-07-28 v5.5 加, 给 5方法×3周期 周线维度用)
-    if wk:
-        result["weekly"] = wk
-        result["statuses"]["weekly"] = wk_s
-    else:
-        result["statuses"]["weekly"] = wk_s or "EMPTY"
-
-    # ===== 从 raw 数据组合输出 =====
-    # 7. EPS 表 (2026-07-22 修复: 优先 datacenter 机构一致预期, 失败 fallback tushare 自建)
-    #   之前 v4.0 改造时砍了 datacenter 路径, 用 tushare fina_indicator 自建 NTM, 但那是 Q1 单季 EPS 推算
-    #   导致 PEG 错算 (例: 阳光电源 PEG 0.98→8.09, 8x 偏差). 修.
-    eps_table, eps_source = _build_eps_table(code)
-    if eps_table:
-        result["eps_table"] = eps_table
-        result["eps_source"] = eps_source
-        result["statuses"]["eps"] = "OK"
-    else:
-        result["statuses"]["eps"] = "EMPTY"
-
-    # 8. total_share (从 daily_basic.total_mv / close 反推)
-    if result.get("total_mv") and result.get("close"):
-        try:
-            result["total_share"] = round(
-                (result["total_mv"] * 1e4) / result["close"] / 1e4, 4
-            )  # 市值(万) / 价 / 1e4 = 亿股
-            result["statuses"]["shares"] = "OK"
-        except (TypeError, ValueError, ZeroDivisionError):
-            result["statuses"]["shares"] = "EMPTY"
-    else:
-        result["statuses"]["shares"] = "EMPTY"
-
-    # 9. price status (复用 daily_basic)
-    result["statuses"]["price"] = "OK" if result.get("close") else "EMPTY"
-
-    return result
-
-
 def _synthesize_weekly(kline: list[dict]) -> list[dict]:
     """从日线合成周线（自然周，周一开盘~周五收盘）。"""
     from datetime import datetime
@@ -395,34 +152,8 @@ def _synthesize_weekly(kline: list[dict]) -> list[dict]:
         })
     return result
 
-
 # ============================================================
-# 状态展示
-# ============================================================
-
-def status_emoji(status: str) -> str:
-    """状态 → emoji (用于报告)"""
-    if status == "OK":
-        return "✅"
-    if status.startswith("NET_") or status == "ALL_FAILED":
-        return "❌"
-    if status == "TIMEOUT":
-        return "⏱"
-    if status == "EMPTY":
-        return "📭"
-    if status == "PARSE_FAIL":
-        return "🔧"
-    if status.startswith("HTTP_"):
-        return "🚫"
-    if status.startswith("CURL_ERR") or status.startswith("SSL"):
-        return "🚫"
-    if status.startswith("EXCEPTION"):
-        return "❌"
-    return "❓"
-
-
-# ============================================================
-# 6. 技术指标计算 (Wilder 标准公式)
+# 2. 技术指标计算 (Wilder 标准公式)
 # ============================================================
 
 def compute_indicators(kline: list[dict]) -> dict:
@@ -643,7 +374,7 @@ def compute_indicators(kline: list[dict]) -> dict:
 
 
 # ============================================================
-# 指标计算子函数 (Wilder 标准)
+# 3. 指标计算子函数 (Wilder 标准)
 # ============================================================
 
 def _ema_series(data: list[float], period: int) -> list[float]:
