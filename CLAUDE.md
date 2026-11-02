@@ -95,7 +95,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 
 ---
 
-## 9 个 Slash 命令 (skill 描述见 `.claude/skills/`)
+## 8 个 Slash 命令 (skill 描述见 `.claude/skills/`)
 
 | 命令 | 用途 |
 |---|---|
@@ -103,10 +103,9 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | `/t-backtest <signal>` | 信号回测 (5 年) |
 | `/t-sync-data [flags]` | 7 flag 正交 sync, 默认 --auto |
 | `/t-rsi6-tech` | RSI6<25+RSI12<30 双指标超卖 + 科技板块 + 季报 yoy>0 (4 重, 5%/5% 胜率 51%, 期望 +0.16%, 0 网络) |
-| `/t-roc-ey [--top N]` | ROC+EY+4 季大表 (PEG/DCF L 已移除, 性能优化) |
 | `/t-earnings-blowout` | R3 启动期反转信号, 找 10x 票 |
 | `/t-factor-5y <code>` | 5 年因子历史轨迹 (120 日窗口) |
 | `/t-wyckoff-a2m` | 全市场 A→M (Accumulation→Markup) 三重确认扫描 |
 | `/t-guardrail [--check X]` | 静态守门员 (network/factor/eps-scope/parquet/safe-fs) |
 
-已删: `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking` `/t-near-low` (2026-11-02)。
+已删: `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking` `/t-near-low` `/t-roc-ey` (2026-11-02)。

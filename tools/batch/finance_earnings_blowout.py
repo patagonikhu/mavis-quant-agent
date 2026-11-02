@@ -2,7 +2,7 @@
 tools/batch/finance_earnings_blowout.py — Earnings Blowout 财季炸裂扫描 (v6.3.0, 2026-09-24 prefilter 重构)
 
 原名 quality_growth_scan.py, 改名理由: "财季炸裂 (Earnings Blowout)" 更贴切 R3 反转信号语义,
-跟 /t-roc-ey 形成 "质量" 主题兄弟 skill, 用户更容易理解"营收+净利+毛利率同向爆量"是什么
+跟 /t-rsi6-tech 形成 "质量" 主题兄弟 skill, 用户更容易理解"营收+净利+毛利率同向爆量"是什么
 
 v6.3.0 (2026-09-24): 5 闸 prefilter 跑在 3 rule 之前
   prefilter: ST / 周期股 / 市值 / 上市时间 / EBIT 预警 (ebit_crash + ebit_peak_down)

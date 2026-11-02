@@ -14,11 +14,10 @@
 | `/t-analyze <code> [name]` | 单只详报 (18 section: 投资四问 + T 框架 + 因子矩阵 + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
-| `/t-roc-ey` | 跑 ROC+EY 联合排名 + 4 季大表 (PEG/DCF L 已移除, 性能优化), Top 20 写到 docs/finance-top20.md | `/t-roc-ey` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
 | `/t-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-earnings-blowout --top-np-jump 30` |
 
-> 9 个 skill (含 t-earnings-blowout, 2026-09-09 改自 t-quality-growth; 2026-11-02 删 t-near-low), 加 `t-sync-data --cache` 替代旧 `t-sync-cache`
+> 8 个 skill (含 t-earnings-blowout, 2026-09-09 改自 t-quality-growth; 2026-11-02 删 t-near-low / t-roc-ey), 加 `t-sync-data --cache` 替代旧 `t-sync-cache`
 
 ### 1.1 典型用法
 
@@ -143,7 +142,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │       ├── batch_backtest.py              # /t-backtest (走 signal_cache)
 │       ├── signal_cache_warmup.py         # /t-sync-cache (增量断点续跑)
 │
-└── .claude/skills/                        # 9 个 slash 命令
+└── .claude/skills/                        # 8 个 slash 命令
     ├── t-analyze/SKILL.md
     ├── t-backtest/SKILL.md
     ├── t-sync-cache/SKILL.md

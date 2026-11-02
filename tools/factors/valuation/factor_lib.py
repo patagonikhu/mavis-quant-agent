@@ -409,11 +409,10 @@ def batch_magic_scores(codes: list[str], with_market_cap: bool = True,
             continue
 
         latest_date = fins[-1].get("end_date", "20251231").replace("-", "")[:8]
-        # 2026-09-09 设计: /t-roc-ey 是"全市场 Top20 排名"工具
-        # 用最新可用全年 TTM EBIT (找 12-31 全年报) → 跨股票可比
+        # 2026-09-09 设计: 全市场排名用"最新可用全年 TTM EBIT" (找 12-31 全年报) → 跨股票可比
         # 注: 这与 /t-analyze 4 季大表的"每季单期"语义不同, 是有意区分:
         #   - /t-analyze 4 季大表: 每行是该季快照 (周期分析)
-        #   - /t-roc-ey Top20: 跨股票统一用最新全年 TTM (排名可比)
+        #   - 全市场排名: 跨股票统一用最新全年 TTM (排名可比)
         score = compute_magic_one_day(fins, latest_date, mc, min_capital_yi=min_capital_yi)
         score["code"] = code
         score["name"] = name

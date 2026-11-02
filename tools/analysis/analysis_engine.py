@@ -984,7 +984,7 @@ class FinanceStrategy:
         latest_magic = {}
         if financials and market_cap_wan > 0:
             try:
-                # 2026-09-09 修: 传完整 financials, 让 _ttm_ebit 找 12-31 全年 (与 /t-roc-ey 一致)
+                # 2026-09-09 修: 传完整 financials, 让 _ttm_ebit 找 12-31 全年 (与全市场排名口径一致)
                 latest_magic = compute_magic_one_day(
                     financials, str(financials[-1].get("end_date", "")), market_cap_wan
                 ) or {}

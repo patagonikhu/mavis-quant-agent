@@ -1312,7 +1312,7 @@ class DataStore:
         """每只股票最新一季财务 dict (0 网络, 走 financials parquet)
 
         2026-09-18 加: 替代 batch 脚本里散落的 financials 拉取逻辑
-        (finance_earnings_blowout, finance_roc_ey). 一处定义, 多处复用.
+        (finance_earnings_blowout 等). 一处定义, 多处复用.
 
         Args:
             code6_set: 只返回这个集合里的 code (可选, 减少 dict 体积). None = 全市场.

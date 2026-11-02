@@ -92,13 +92,12 @@ NETWORK_ALLOWED = {
 }
 
 # 哪些 skill 是"0 网络"声明 (2026-10-20 修: 跟当前真实 skill 列表对齐)
-# 注意: 改名 / 删名的 skill 历史上叫过 t-bb-obv / t-earnings-blowout / t-roc-ey / t-sector-ma,
+# 注意: 改名 / 删名的 skill 历史上叫过 t-bb-obv / t-earnings-blowout / t-sector-ma,
 #       那些已废弃, 不要在这里复活
 ZERO_NET_SKILLS = {
     "t-analyze": "0 网络, 走 DataStore",
     "t-backtest": "0 网络, 走 DataStore",
     "t-factor-5y": "0 网络, 走 DataStore",
-    "t-finance-roc-ey": "0 网络, 走 DataStore",
     "t-finance-earnings-blowout": "0 网络, 走 DataStore",
     "t-rsi6-tech": "0 网络, 走 DataStore",
     "t-wyckoff-a2m": "0 网络, 走 DataStore",
@@ -641,11 +640,8 @@ def infer_skill(file_path: str) -> str:
         "t_analyze_all": "t-analyze",
         "t_earnings_blowout_scan": "t-earnings-blowout",
         "earnings_blowout_scan": "t-earnings-blowout",
-        "backtest_roc_ey": "t-backtest",
-        "roc_ey_top20": "t-roc-ey",
         "sector_ma_scan": "t-sector-ma",
         "sector_breakout_scan": "t-sector-ma",
-        "magic_top20": "t-roc-ey",  # 老名字
         "backtest_magic": "t-backtest",
         "quality_growth_scan": "t-earnings-blowout",  # 老名字
         "batch_matrix": "t-analyze",

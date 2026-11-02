@@ -2,7 +2,7 @@
 tools/storage/caches/quarter_utils.py — 季度工具 (纯函数)
 
 2026-10-28 新建: fflow 完全删除时, 原 `caches/fflow_history.py` 里的通用季度函数
-被大量复用 (backtest_blowout / blowout_backtest_v630 / finance_roc_ey /
+被大量复用 (backtest_blowout / blowout_backtest_v630 /
 finance_earnings_blowout / sync.py), 跟着一起删会连带 5 处 ImportError.
 所以把 3 个跟 fflow 无关的纯函数搬到这里, 保持原语义不变。
 

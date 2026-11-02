@@ -5,7 +5,7 @@
 用 '自选' 类型 + 'a2m' tag, 不污染持仓/blowout 分类。
 
 ⚠️ **一次性脚本** (不挂任何 skill): HITS 是硬编码的, 不会自动更新。
-要加新票先改下面的 HITS 列表, 或改用 /t-finance-roc-ey --add-watchlist。
+要加新票先改下面的 HITS 列表。
 
 用法:
     bash tools/with_venv.sh python -m tools.batch.add_watchlist_from_a2m [--dry-run]

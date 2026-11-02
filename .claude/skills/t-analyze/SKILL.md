@@ -58,4 +58,4 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_all --include-blowout
 
 ## 相关
 
-- `/t-sync-data` (跑前必跑) / `/t-finance-roc-ey` / `/t-finance-earnings-blowout` / `/t-rsi6-tech` / `/t-backtest` / `/t-guardrail` / `/t-factor-5y`
+- `/t-sync-data` (跑前必跑) / `/t-finance-earnings-blowout` / `/t-rsi6-tech` / `/t-backtest` / `/t-guardrail` / `/t-factor-5y`

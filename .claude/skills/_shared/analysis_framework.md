@@ -102,7 +102,6 @@ Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
 |---|---|---|
 | t-analyze | ✅ 是 (单股详报) | ✅ 主入口 |
 | t-sector-ma | ✅ 是 (板块) | 调 batch factor_matrix |
-| t-roc-ey | ❌ 否 (全市场排名) | 不引用 |
 | t-earnings-blowout | ✅ 是 (R3 反转) | 走 financials parquet |
 | t-backtest | ❌ 否 (5y 回测) | 不引用 |
 | t-sync-data | ❌ 否 (sync 入口) | 唯一允许网络 |

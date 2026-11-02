@@ -65,7 +65,6 @@ bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --dry-run
 
 ## 相关
 
-- **`/t-finance-roc-ey`** (配套: 财务多维分析)
 - **`/t-rsi6-tech`** (下游: 技术面 RSI 双超卖过滤)
 - `/t-analyze <code>` (命中后深挖)
 - `/t-sync-data --financials` (跑前必跑)

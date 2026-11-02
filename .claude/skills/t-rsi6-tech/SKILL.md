@@ -56,5 +56,4 @@ bash tools/with_venv.sh python -m tools.batch.rsi6_tech_scan --limit 20
 
 - `/t-finance-earnings-blowout` (上游业绩过滤)
 - `/t-analyze <code>` (单只深挖)
-- `/t-finance-roc-ey` (财务多维)
 - `/t-sync-data --kline` (跑前必跑)
