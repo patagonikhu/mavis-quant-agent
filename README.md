@@ -11,7 +11,7 @@
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报 (9 section: 因子矩阵 + 缠论 4 级别 + 买卖点) | `/t-analyze 688256 寒武纪` |
+| `/t-analyze <code> [name]` | 单只详报 (8 section: 因子矩阵 + 缠论 4 级别 + 买卖点) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
@@ -22,7 +22,7 @@
 ### 1.1 典型用法
 
 ```bash
-# 单只分析 (9 section 详报, 800+ 行)
+# 单只分析 (8 section 详报, 800+ 行)
 /t-analyze 688256 寒武纪
 
 # 批量 (后台跑 54 只约 50s)
@@ -45,7 +45,7 @@
 ```
 /t-wyckoff-a2m            ← 1. 全市场 A→M 扫描 (威科夫积累期→拉升期)
               ↓
-/t-analyze {code}                ← 2. 对候选标的做完整 9 section 详报
+/t-analyze {code}                ← 2. 对候选标的做完整 8 section 详报
               ↓
 /t-backtest --signal Accumulation  ← 3. 验证信号历史胜率 (signal_cache 加速)
               ↓
@@ -54,7 +54,7 @@
 
 ### 1.3 输出格式
 
-`/t-analyze` 报告关键字段（9 section）:
+`/t-analyze` 报告关键字段（8 section）:
 
 ```
 **4 季财务 + Magic 估值** (15 列大表, linter 必查):
@@ -77,8 +77,9 @@
 
 ### 2.1 投资四问 + T框架（核心）
 
-> ⚠️ 2026-11-03 起: 「🎯 投资四问」「⏰ T 框架」「🚨 5 类 14 子信号」三个 section 已从 md 报告删除。
-> 以下四问 / T 框架仍是 **LLM 手动套框架** 的方法论 (不自动进报告), T 事件 (`🎯 T 框架事件`) section 保留。
+> ⚠️ 2026-11-03 起: 「🎯 投资四问」「⏰ T 框架」「🎯 T 框架事件」「🚨 5 类 14 子信号」四个 section 已从 md 报告删除。
+> 以下四问 / T 框架仍是 **LLM 手动套框架** 的方法论 (不自动进报告); T 事件内容由 LLM 在生成报告时
+> 从外部查 (年报/新闻/公告) 后直接写入正文, 不再走固定 section。
 >
 > ⚠️ 2026-11-03 起: 「🎯 止盈 3 层」「🛑 止损 4 档」「🟢 退场信号检查」「📋 3 层仓位策略」「📌 监控触发点」五档已从 md 报告删除, 数据管线一并删除。
 > 理由: 止盈/止损是「当前价 × 固定百分比」的机械外推, 无标的特异性; 退场信号/3 层仓位/监控触发点都是纯缠论派生,
@@ -142,7 +143,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── valuation/factor_lib.py        # ROC + EY + Magic (纯函数)
 │   │   └── risk/                          # 退出信号/监控触发
 │   │
-│   ├── render/                            # 报告渲染 (9 section)
+│   ├── render/                            # 报告渲染 (8 section)
 │   │   └── report_renderer.py
 │   │
 │   └── batch/                             # 批量脚本
@@ -254,7 +255,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 ### 4.2 events.json (v6.2 起 **删除**)
 
 > T 事件由 LLM 报告生成时从外部源查 (年报/新闻/公告), 不再走本地配置。
-> 2026-11-03 起「⏰ T 框架」section 已删; 「🎯 T 框架事件」section 保留, 由 LLM 后续补。
+> 2026-11-03 起「⏰ T 框架」与「🎯 T 框架事件」两个 section 均已删, T 事件由 LLM 写入正文。
 
 ### 4.3 sectors.json (v6.2 起 **删除**)
 

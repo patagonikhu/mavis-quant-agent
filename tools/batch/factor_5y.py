@@ -28,7 +28,7 @@
     └─ 🗒 5 年阶段摘要 (5 年累计, MA20 偏离段)
 
 不替代 /t-analyze:
-  - /t-analyze 是 9 section 全要素详报 (近 120 日 lookback=120)
+  - /t-analyze 是 8 section 全要素详报 (近 120 日 lookback=120)
   - /t-factor-5y 只输出因子历史表 (长周期 1-2-3-5 年节奏视角)
   - 信号 / 买/卖/警告 不在长周期表里, 看 /t-analyze
 

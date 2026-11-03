@@ -60,7 +60,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 3️⃣ | 市场状态定量判断 + 方法优先级矩阵 | 🥈 |
 | 6️⃣ | 买卖点 (1买/2买/3买/1卖/2卖/3卖) | 必须 |
 
-section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (9 有效 section, 唯一事实源)。
+section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (8 有效 section, 唯一事实源)。
 
 ---
 
@@ -81,7 +81,7 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (9 有
 
 | 文件 | 用途 | 维护者 |
 |---|---|---|
-| `data/events.json` | 关键事件库 (T 点) | 你 + LLM 协作 |
+| `data/events.json` | ~~关键事件库 (T 点)~~ v6.2 已删, T 事件由 LLM 写正文 | — |
 | `data/watchlist.json` | 关注清单 | **你手维护** |
 | `data/sectors.json` | 板块/ETF → 成分股 | LLM 首填, 你改 |
 
@@ -93,7 +93,7 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (9 有
 
 | 命令 | 用途 |
 |---|---|
-| `/t-analyze <code> [--all]` | 单只/批量, 9 section 详报 |
+| `/t-analyze <code> [--all]` | 单只/批量, 8 section 详报 |
 | `/t-backtest <signal>` | 信号回测 (5 年) |
 | `/t-sync-data [flags]` | 8 数据段 flag 正交 sync, 默认 `--auto` |
 | `/t-rsi6-tech` | RSI6<25 + RSI12<30 双指标超卖 + 科技板块 + 季报 yoy>0 (4 重, 0 网络) |

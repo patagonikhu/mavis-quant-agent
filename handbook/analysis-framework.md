@@ -9,6 +9,10 @@
 
 > ⚠️ **Disclaimer:** This framework is built on public information and reasonable inference. It does **not** constitute investment advice. Verify all data independently. All decisions are the investor's own. Markets carry risk; invest prudently.
 
+> ⚠️ **过时提示 (2026-11-03):** 本文档是 **LLM 手动套框架** 的方法论参考, 不自动进 md 报告。
+> 文中引用的 `data/events.json` 事件库已于 v6.2 删除, 「⏰ T 框架」「🎯 T 框架事件」两个 section
+> 也已从报告删除 —— T 事件改为由 LLM 在生成报告时从外部查 (年报/新闻/公告) 后直接写入正文。
+
 ---
 
 ## 1. Framework Overview — 框架总览

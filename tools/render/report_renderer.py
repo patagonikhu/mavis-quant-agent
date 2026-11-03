@@ -7,7 +7,7 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
   ❌ 禁止 import requests / subprocess curl / fetch_all / 任何网络调用
 
 设计目标:
-  1. 9 个 section 标题全部固定, 缺数据也输出
+  1. 8 个 section 标题全部固定, 缺数据也输出
   2. 每个 section 头部显示数据状态 (OK/TIMEOUT/EMPTY/...)
   3. 报告头 + 报告尾各有一个完整性表格
   4. 给 LLM 看的"占位符"明确, 不会因 LLM 自由发挥而漏
@@ -48,7 +48,7 @@ from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERA
 def _section_quarterly_table(data: RenderData) -> str:
     """4 季大表 (从 RenderData.quarterly_finance 读 14 列, 含 ROC/EY/季末市值/EV/投入资本)
 
-    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 9 section 第 1 张表保持一致
+    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 8 section 第 1 张表保持一致
     返回 markdown 字符串 (header + note + 表格 + 行业)
     """
     _val = data.valuation_data or {}
@@ -1475,13 +1475,9 @@ def _section_ts_basic(data: RenderData) -> str:
             "> **数据源:** Tushare.stock_basic (dump)\n")
 
 
-def _section_t_events(data: RenderData) -> str:
-    """🎯 T 框架事件 (T 位置由 LLM 从外部源补: 年报/新闻/公告)"""
-    return (
-        f"> **数据状态:** ⚠️ {data.code} T 框架事件待 LLM 补 (年报/新闻/公告)\n"
-    )
-
-
+# 2026-11-03: 删除 _section_t_events (🎯 T 框架事件)
+#   正文只剩一句 "⚠️ {code} T 框架事件待 LLM 补" 占位符, LLM 从未填充
+#   事件清单改由 LLM 在生成报告时从外部查 (年报/新闻/公告) 后直接写入正文
 # 2026-08-31: 删除 _section_ts_money_flow
 # 2026-10-28: 主力资金流 (fflow) 维度整体删除, 详见 docs/fflow-removal-assessment.md
 # (量价维度噪音大, 用户要求)
@@ -1493,7 +1489,7 @@ def _section_t_events(data: RenderData) -> str:
 
 def render_report(data: RenderData, sector: str = "—") -> str:
     """
-    渲染完整分析报告 (9 section 全部输出, 缺数据也保留)
+    渲染完整分析报告 (8 section 全部输出, 缺数据也保留)
 
     Args:
         data: RenderData 实例
@@ -1588,11 +1584,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 📊 基础信息 (Tushare)
 {_section_ts_basic(data)}
-
----
-
-## 🎯 T 框架事件 (业绩自动 + 非业绩手维护, 2026-07-23 升级)
-{_section_t_events(data)}
 
 ---
 

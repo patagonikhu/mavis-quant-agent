@@ -40,9 +40,9 @@
 |---|---|---|
 | 投资四问 + T 框架 | 缠论 + 估值双指标 | 卡点/TAM/龙头/估值 + T 位置 |
 
-> ⚠️ 2026-11-03 起: 「🎯 投资四问」「⏰ T 框架」「🚨 5 类 14 子信号」三个 section 已从 md 报告删除,
+> ⚠️ 2026-11-03 起: 「🎯 投资四问」「⏰ T 框架」「🎯 T 框架事件」「🚨 5 类 14 子信号」四个 section 已从 md 报告删除,
 > 数据管线一并删除。以下两套命名仍用于 **LLM 手动套框架** (不自动进报告);
-> 「🎯 T 框架事件」section 保留。
+> T 事件内容由 LLM 在生成报告时从外部查 (年报/新闻/公告) 后直接写入正文。
 >
 > ⚠️ 2026-11-03 起: 「🎯 止盈 3 层」「🛑 止损 4 档」两档已从 md 报告删除, 数据管线一并删除。
 > 理由: 两档都是「当前价 × 固定百分比」的机械外推 (止盈 +5/+10/+20%, 止损 -3/-5/-8/-10%),
@@ -84,7 +84,7 @@
 - 缠论 1买/2买/3买 + 估值 (PE + Magic ROC/EY) ← handbook/analysis-framework.md §2.4
 - 因子 × 2 周期 综合矩阵 (3 类等权投票: chan/wyckoff/resonance, 仅作参考, 不进仓位/退出决策)
 
-### 阶段 3: 落报告 (LLM 套 9 section 模板)
+### 阶段 3: 落报告 (LLM 套 8 section 模板)
 - 工具: `tools/render/report_renderer.py`
 - 输出: `docs/analyze-{code}-{name}.md`
 - 强制项: 缠论三要素 (第一段) + 4 季财务大表 (中段) + 缠论买卖点 (末段)
@@ -111,7 +111,7 @@ Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
 缠论买卖点 (buy_sell_points) — 走纯缠论
         │
         ▼
-报告 (9 section) ← tools/render/report_renderer.py
+报告 (8 section) ← tools/render/report_renderer.py
 ```
 
 ---
@@ -149,4 +149,4 @@ Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
 
 - `handbook/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行, 方法论; 2026-11-03 起不再进报告)
 - `tools/factors/` — 22 个 factor 库 (缠论/威科夫/结构/量价/多市场 + 估值/风控/仓位)
-- `tools/render/report_renderer.py` — 9 section 报告模板
+- `tools/render/report_renderer.py` — 8 section 报告模板

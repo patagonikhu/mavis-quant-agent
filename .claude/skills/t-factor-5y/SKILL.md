@@ -15,7 +15,7 @@ allowed-tools:
 - 单只看 5 年长周期(找中枢切换、5 年最大回撤、5 年最低 RSI)
 - 多只并行扫描找"穿越牛熊"的票
 - 教学:回看 2021-2024 完整牛熊周期,看缠论 1 买 / 1 卖 / 3 卖 在长周期里的位置
-- 想看**长周期结构复盘**,**不替代** `/t-analyze` (9 section 短周期)
+- 想看**长周期结构复盘**,**不替代** `/t-analyze` (8 section 短周期)
 
 ## 跑
 
@@ -40,7 +40,7 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 - **0 网络**, 走 DataStore parquet
 - 5 年窗口硬编码: `lookback=1250` (≈ 252 交易日 × 5 年)
 - 23 只持仓批量 ~20 秒 (`--workers 4`)
-- **不替代 /t-analyze**:本 skill 只输出因子历史表(长周期 1-2-3-5 年节奏);`/t-analyze` 是 9 section 全要素详报
+- **不替代 /t-analyze**:本 skill 只输出因子历史表(长周期 1-2-3-5 年节奏);`/t-analyze` 是 8 section 全要素详报
 
 ## 跑后验证
 
@@ -52,5 +52,5 @@ head -50 docs/factor-5y/analyze-600089-特变电工-5y.md
 
 ## 相关
 
-- `/t-analyze <code>` (单只 9 section 详报, 120 日)
+- `/t-analyze <code>` (单只 8 section 详报, 120 日)
 - `/t-sync-data --kline` (跑前必跑,落盘 K 线到 1250 天)

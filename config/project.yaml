@@ -93,7 +93,6 @@ paths:
   docs_dir: docs
   baseline: tests/baselines/v0_baseline.json
   watchlist: data/watchlist.json
-  events: data/events.json
 
 # === 评分表 (analysis_evaluators) ===
 scores:
