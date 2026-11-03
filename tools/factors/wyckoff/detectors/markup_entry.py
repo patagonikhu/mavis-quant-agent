@@ -3,6 +3,12 @@ detectors/markup_entry.py - MarkupEntry 主升浪起点 (跟 WyckoffTradingAgent
 
 触发: MA50/MA200 金叉 + 持续 N 日在 MA200 上方 + MA50 角度足够
 返回: bool
+
+2026-11-03 改: MA200 用**真 200 日均线** (precomputed_arrs['ma200']),
+   不再用 precomputed_arrs['ma_window'] (window=250 均线).
+   参考实现 WTA 用的是 close.rolling(cfg.ma_long=200).mean() —— 真 200 日均线.
+   原来用 ma_window 会让"MA50 刚上穿 250 日线"的票被误判为金叉
+   (实测 688617: 只上穿 250 日线, 从未上穿真 200 日线, 却被判 True).
 """
 from ..helpers import _bias_200_exceeds_limit
 
@@ -15,9 +21,10 @@ def detect_markup_entry(c, h, l, v, o, i, ma_short_w=50, ma_long_w=200,
     if i < ma_long_w + 1:
         return False
     # MA50 / MA200 — 优先用预算数组
+    #   注意: ma200 用 arrs['ma200'] (真 200 日均线), 不用 arrs['ma_window'] (250 日均线)
     if precomputed_arrs is not None:
         ma_short = precomputed_arrs['ma50'][i]
-        ma_long  = precomputed_arrs['ma_window'][i]
+        ma_long  = precomputed_arrs['ma200'][i]
     else:
         ma_short = sum(c[i-ma_short_w:i]) / ma_short_w
         ma_long  = sum(c[i-ma_long_w:i])  / ma_long_w
@@ -29,7 +36,7 @@ def detect_markup_entry(c, h, l, v, o, i, ma_short_w=50, ma_long_w=200,
         return False
     if precomputed_arrs is not None:
         ma_short_recent = precomputed_arrs['ma50'][i-lookback:i+1]
-        ma_long_recent  = precomputed_arrs['ma_window'][i-lookback:i+1]
+        ma_long_recent  = precomputed_arrs['ma200'][i-lookback:i+1]
     else:
         ma_short_recent = [sum(c[i-ma_short_w+k:i+k]) / ma_short_w for k in range(-lookback+1, 1)]
         ma_long_recent  = [sum(c[i-ma_long_w+k:i+k])  / ma_long_w  for k in range(-lookback+1, 1)]

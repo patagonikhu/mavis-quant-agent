@@ -34,6 +34,94 @@ from tools.factors.wyckoff.helpers import _find_range
 from tools.factors.wyckoff.detectors import scan_sub_events
 
 
+# ============================================================================
+# Markup 判定 — 1:1 对齐 WyckoffTradingAgent/core/wyckoff_engine.py::_detect_markup_entry
+# ============================================================================
+#
+# 参考实现 (Layer 2.5) 的 4 条判据, 必须**全满足**:
+#   ① 当前 MA50 > MA200                              (严格比较, 无 0.95 容差)
+#   ② 近 lookback(=10) 日内发生过 MA50 上穿 MA200     (金叉)
+#   ③ 最近 confirm_days(=5) 日, MA50 连续 > MA200
+#   ④ MA50 近 5 日角度 >= 2.0%                        (markup_ma_angle_min)
+#
+# 与参考实现的差异 (有意为之, 已实测):
+#   - 参考实现跑在已过 L1/L2/L3 漏斗的池子上 (本身就是强过滤);
+#     本项目的 fallback2 是"主路径分数全 0 时的兜底", 地位不同。
+#   - 所以这里做成**可开关的判定器**, 由 wyckoff_judge 统一调用,
+#     而不是替换掉整个评分体系。
+#
+MARKUP_CONFIRM_DAYS = 5       # 对齐 cfg.markup_ma_crossover_confirm_days
+MARKUP_CROSS_LOOKBACK = 10    # 对齐 max(confirm_days*2, 10)
+MARKUP_ANGLE_MIN = 2.0        # 对齐 cfg.markup_ma_angle_min
+
+
+def detect_markup_entry(i, arrs, window=None):
+    """Markup 趋势判定 — 1:1 对齐参考实现 _detect_markup_entry。
+
+    返回 dict:
+        {
+          "hit":        bool,   # 4 条判据是否全满足
+          "score":      float,  # recent_above / confirm_days (对齐参考实现返回值)
+          "ma50_gt":    bool,   # ① MA50 > MA200
+          "cross":      bool,   # ② 近 10 日发生过金叉
+          "sustained":  bool,   # ③ 最近 5 日 MA50 连续 > MA200
+          "angle_ok":   bool,   # ④ MA50 近 5 日角度 >= 2%
+          "angle_5d":   float,
+          "above_days": int,    # 最近 5 日里 MA50 > MA200 的天数
+          "ma50":       float,
+          "ma200":      float,
+        }
+    """
+    closes = arrs['closes']
+    n = len(closes)
+    ma50_arr = arrs['ma50']
+    ma200_arr = arrs['ma200']
+
+    # 参考实现: len(df) < max(ma_long=200, confirm_days) + 5 → None
+    #           即至少 205 根 K 线 (200 日均线 warm-up + 5 日确认)
+    if n < max(205, MARKUP_CONFIRM_DAYS + 5) or i < 205:
+        return None
+
+    ma50 = ma50_arr[i]
+    ma200 = ma200_arr[i]
+
+    # ① MA50 > MA200 (严格)
+    ma50_gt = ma50 > ma200
+
+    # ② 近 lookback 日内发生过 MA50 上穿 MA200
+    cross = False
+    lo = max(1, i - MARKUP_CROSS_LOOKBACK + 1)
+    for j in range(lo, i + 1):
+        if ma50_arr[j - 1] <= ma200_arr[j - 1] and ma50_arr[j] > ma200_arr[j]:
+            cross = True
+            break
+
+    # ③ 最近 confirm_days 日 MA50 连续 > MA200 (参考实现统计个数并要求 == confirm_days)
+    above_days = sum(1 for j in range(i - MARKUP_CONFIRM_DAYS + 1, i + 1)
+                     if ma50_arr[j] > ma200_arr[j])
+    sustained = above_days >= MARKUP_CONFIRM_DAYS
+
+    # ④ MA50 近 5 日角度 (参考实现: tail(6) 首尾变化率)
+    ma50_5d_ago = ma50_arr[i - 5]
+    angle = (ma50 / ma50_5d_ago - 1) * 100.0 if ma50_5d_ago > 0 else 0.0
+    angle_ok = angle >= MARKUP_ANGLE_MIN
+
+    hit = ma50_gt and cross and sustained and angle_ok
+
+    return {
+        "hit": hit,
+        "score": float(above_days / MARKUP_CONFIRM_DAYS),
+        "ma50_gt": ma50_gt,
+        "cross": cross,
+        "sustained": sustained,
+        "angle_ok": angle_ok,
+        "angle_5d": angle,
+        "above_days": above_days,
+        "ma50": ma50,
+        "ma200": ma200,
+    }
+
+
 def wyckoff_judge(i, arrs, sub_events, window, period_label,
                   ma_short=20, ma_long=60, pos_lookback=60):
     """威科夫阶段判定 — O(1) per call，使用 kline_arrays.build_kline_features() 返回的预算数组。
@@ -59,6 +147,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     ma60  = arrs['ma60'][i]
     # ma200 = window 均线, 当 i < 199 时退化为 ma60
     ma200 = arrs['ma_window'][i] if i >= 199 else arrs['ma60'][i]
+    # 2026-11-03 加: 真 MA200 (arrs['ma200'] = sliding_ma(closes, 200)).
+    #   本项目的 "ma200" 变量是 window(250) 均线, 不是真的 200 日均线;
+    #   而参考实现 WyckoffTradingAgent 的 ma_long=200 用的是 rolling(200).
+    #   Markup 判定的 4 条判据全部要跟 MA200 比, 所以这里必须用真 MA200。
+    ma200_true = arrs['ma200'][i]
 
     dev_ma20  = (p / ma20  - 1) * 100 if ma20  > 0 else 0.0
     dev_ma60  = (p / ma60  - 1) * 100 if ma60  > 0 else 0.0
@@ -75,25 +168,30 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     )
 
     # MA 金叉 / 持续上方
-    ma50_prev  = arrs['ma50'][i - 1]      if i >= 1   else ma50
-    ma200_prev = arrs['ma_window'][i - 1] if i >= 200 else ma200
+    # 2026-11-03: ma200_prev / golden_cross_recent 统一改用**真 MA200** (arrs['ma200']),
+    #   不再用 arrs['ma_window'] (window=250 均线) —— 跟 above_ma200_sustained 保持一致,
+    #   也跟参考实现 WTA 的 close.rolling(200).mean() 一致。
+    ma50_prev  = arrs['ma50'][i - 1]  if i >= 1   else ma50
+    ma200_prev = arrs['ma200'][i - 1] if i >= 200 else ma200
     # 2026-10-19 对齐 WTA: 当前 MA50 必须仍在 MA200 上方 (guard), 窗口 5→10 天,
     #   above_ma200_sustained 语义改为 MA50>MA200 (无容差), 与 markup_entry.py 路径统一
     golden_cross_recent = False
     if i >= 2 and i >= 200 and ma50 > ma200:   # guard: 当前仍须在上方
         # 近 10 日内任一天发生金叉即 True
         for j in range(max(1, i - 9), i + 1):
-            if (arrs['ma50'][j - 1] <= arrs['ma_window'][j - 1]
-                    and arrs['ma50'][j] > arrs['ma_window'][j]):
+            if (arrs['ma50'][j - 1] <= arrs['ma200'][j - 1]
+                    and arrs['ma50'][j] > arrs['ma200'][j]):
                 golden_cross_recent = True
                 break
 
     confirm_days = 5
     above_ma200 = p > ma200
-    if i >= ma_long + confirm_days:
-        # 对齐 WTA: MA50 > MA200 (无容差), 不用 price vs ma_long×0.98
+    # 2026-11-03 修 BUG: 原来比的是 arrs['ma_long'] (= MA60!) 而不是 MA200.
+    #   注释写"MA50 > MA200"但代码用 ma_long, 语义与注释不符 → 134/443 只候选票判定错误
+    #   (含持仓 002415 海康威视). 现在改用真 MA200 (arrs['ma200']).
+    if i >= 205:   # 需要 200 日均线 warm-up + 5 日确认窗口
         above_ma200_sustained = all(
-            arrs['ma50'][j] > arrs['ma_long'][j]
+            arrs['ma50'][j] > arrs['ma200'][j]
             for j in range(i - confirm_days + 1, i + 1)
         )
     else:
@@ -191,6 +289,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
         if ma50_5d_ago > 0:
             ma50_angle_5d = (ma50 / ma50_5d_ago - 1) * 100
 
+    # 2026-11-03 加: 参考实现 Layer 2.5 的 Markup 判定 (4 条全满足)
+    #   跟本项目原评分体系并行: 原评分算 score_Markup, 这里算独立的 hit 标志
+    markup_wta = detect_markup_entry(i, arrs, window=window)
+    markup_wta_hit = bool(markup_wta and markup_wta["hit"])
+
     is_uptrend = slope_60 > 0 and dev_ma200 > -10 and trend_30 > -15
 
     if golden_cross_recent and above_ma200_sustained and ma_gap_pct_above > 0.5 and is_uptrend:
@@ -229,13 +332,29 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
         'Markup': score_Markup,
         'Distribution': score_Distribution,
     }
+    # 2026-11-03 改 (方案 B): fallback2 加严 — 必须满足参考实现 Layer 2.5 的
+    #   Markup 4 条判据 (MA50>MA200 + 近10日金叉 + 连续5日在上方 + 角度>=2%).
+    #
+    #   改动前 fallback2 只要 len(sub_events)>=1 + slope_60>5 + trend_30>5 就判 Markup,
+    #   完全不看 MA200 / 金叉 / 趋势角度 —— 实测 443 只候选池里改前 10 只命中有 9 只
+    #   靠这条兜底, 且被砍的 9 只 MA50/MA200 全在 56.4%~94.7% (无一站上 MA200).
+    #
+    #   保留 markup_wta_hit 作为**独立信号**输出 (报告可显示 "WTA Layer2.5 通过"),
+    #   但 fallback2 的 Markup 判定改用 wta 4 条判据, 不再无条件放行.
+    fb2_base = (len(sub_events) >= 1 and (slope_60 > 5 or slope_60 < -5)
+                and trend_30 > 5 and slope_60 > -20)
+
     if max(scores.values()) > 0:
         stage = max(scores, key=scores.get)
     elif slope_60 > 0 and dev_ma200 > -15 and ma50 >= ma200 * 0.95 and trend_30 > -10:
         stage = 'Markup'; scores['Markup'] = 1
-    elif len(sub_events) >= 1 and (slope_60 > 5 or slope_60 < -5):
+    elif fb2_base:
         if trend_30 > 5 and slope_60 > -20:
-            stage = 'Markup'; scores['Markup'] = 1
+            # fallback2 加严: 需通过参考实现 Layer 2.5 的 Markup 4 条判据
+            if markup_wta_hit:
+                stage = 'Markup'; scores['Markup'] = 1
+            else:
+                stage = '?'; scores['Markup'] = 0
         elif trend_30 < -5:
             stage = 'Accumulation'; scores['Accumulation'] = 1
         else:
@@ -292,6 +411,18 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             "golden_cross_recent": golden_cross_recent,
             "above_ma200_sustained": above_ma200_sustained,
             "ma_gap_pct_above": ma_gap_pct_above, "ma50_angle_5d": ma50_angle_5d,
+            # 2026-11-03 加: 参考实现 Layer 2.5 的 Markup 4 条判据 + 判定依据
+            #   报告可显示 "WTA Layer2.5: ✅通过 / ❌未过 (缺 MA50>MA200)" 等,
+            #   避免 fallback2 判了 Markup 但看不出凭什么。
+            "wta_markup_hit": markup_wta_hit,
+            "wta_ma50_gt_ma200": bool(markup_wta["ma50_gt"]) if markup_wta else None,
+            "wta_cross_recent": bool(markup_wta["cross"]) if markup_wta else None,
+            "wta_sustained": bool(markup_wta["sustained"]) if markup_wta else None,
+            "wta_angle_ok": bool(markup_wta["angle_ok"]) if markup_wta else None,
+            "wta_angle_5d": round(markup_wta["angle_5d"], 2) if markup_wta else None,
+            "wta_above_days": markup_wta["above_days"] if markup_wta else None,
+            "wta_ma50": round(markup_wta["ma50"], 4) if markup_wta else None,
+            "wta_ma200": round(markup_wta["ma200"], 4) if markup_wta else None,
         },
         # 2026-10-17 加: 把判定用到的 24+ 个核心变量的实际值打包暴露
         # 方便用户自己手算验证 (报告里会渲染成"用到的 factor 实际值"表)
@@ -301,6 +432,10 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             # ── 均线 ──
             "ma20": round(ma20, 4), "ma50": round(ma50, 4),
             "ma60": round(ma60, 4), "ma200": round(ma200, 4),
+            # 2026-11-03 加: 真 MA200 (200 日均线) — ma200 变量是 window(250) 均线,
+            #   跟参考实现 WTA 的 rolling(200) 不是一回事. Markup 判据用真 MA200.
+            "ma200_true": round(ma200_true, 4),
+            "ma50_ma200_ratio_pct": round(ma50 / ma200_true * 100, 2) if ma200_true > 0 else None,
             "ma50_prev": round(ma50_prev, 4) if (i >= 51 and ma50_prev is not None) else None,
             "ma200_prev": round(ma200_prev, 4) if (i >= 201 and ma200_prev is not None) else None,
             # ── 偏离度 ──
