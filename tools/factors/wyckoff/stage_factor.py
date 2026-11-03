@@ -30,7 +30,9 @@ class Factor:
     output_type: str = "series"
     def compute(self, df, **kwargs):
         raise NotImplementedError
-from tools.factors.wyckoff.helpers import _find_range, _ma50_reached_ma200, FB1_TREND30_MIN
+from tools.factors.wyckoff.helpers import (
+    _find_range, _ma50_reached_ma200, FB1_TREND30_MIN, MARKUP_ANGLE_MIN, stage_strength,
+)
 from tools.factors.wyckoff.detectors import scan_sub_events
 
 
@@ -55,7 +57,8 @@ from tools.factors.wyckoff.detectors import scan_sub_events
 #
 MARKUP_CONFIRM_DAYS = 5       # 对齐 cfg.markup_ma_crossover_confirm_days
 MARKUP_CROSS_LOOKBACK = 10    # 对齐 max(confirm_days*2, 10)
-MARKUP_ANGLE_MIN = 2.0        # 对齐 cfg.markup_ma_angle_min
+# MARKUP_ANGLE_MIN 已下沉到 helpers (与 FB1_TREND30_MIN / MA50_MA200_TOLERANCE 同处),
+#   生产侧 (本文件) 与报告渲染侧共用同一个常量, 避免阈值一调两边对不上。
 
 
 def detect_markup_entry(i, arrs, window=None):
@@ -347,7 +350,7 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
         score_Markup += 3
         if 'SOS' in sub_events:
             score_Markup += 1
-        if ma50_angle_5d >= 2.0:
+        if ma50_angle_5d >= MARKUP_ANGLE_MIN:
             score_Markup += 1
     elif above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend:
         score_Markup += 1
@@ -517,6 +520,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     return {
         "stage": stage, "stage_name": stage_name, "stage_detail": stage_detail,
         "channel": channel,  # 2026-11-03: 实际命中通道 (main_strict/main_weak_X/fallback1/fallback2_*)
+        # 2026-11-05 加: 判定强度档位 (strict/weak/extra_only/fallback/none)。
+        #   ⚠️ 纯**标注**字段: 不参与任何判定, 只描述本次是走的哪一层门。
+        #   由 (stage, channel) 唯一推出, 口径单一事实源在 helpers.stage_strength。
+        #   报告渲染器只读不算 (规则下沉范式, 同 markup_entry_conditions)。
+        "strength": stage_strength(stage, channel),
         "action": actions.get(stage, '—'),
         "confidence": confidence,
         "sub_events": sub_list, "sub_event_count": len(sub_list),

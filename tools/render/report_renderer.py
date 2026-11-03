@@ -38,7 +38,10 @@ from datetime import datetime
 from typing import Optional
 
 from tools.analysis.render_data import RenderData
-from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERANCE, FB1_TREND30_MIN
+from tools.factors.wyckoff.helpers import (
+    _ma50_reached_ma200, MA50_MA200_TOLERANCE, FB1_TREND30_MIN, MARKUP_ANGLE_MIN,
+    strength_label,
+)
 
 
 # ============================================================
@@ -299,7 +302,7 @@ def _wy_sub_indicators_md(wy_signals: list, level: str) -> str:
 def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, scores: dict,
                     factor_values: dict = None, closes: list = None,
                     sub_events: list = None, stage_detail: str = "",
-                    channel: str = "") -> str:
+                    channel: str = "", strength: str = "") -> str:
     """
     威科夫 阶段判定细节 - 展示为什么判这个阶段
 
@@ -310,6 +313,10 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                     渲染器不再"显示侧反推"(之前反推跟实际分支对不上)。
     2026-11-05: AST 插桩实测 (门槛 -5): 生产 channel=fallback1 的 3 只,
                     标签与实际分支一一对应, 不存在错标。
+    2026-11-05 加: strength 参数 —— **生产侧给出的判定强度档位**
+                    (strict/weak/extra_only/fallback/none)。
+                    解决「报告只写『判 Markup』, 不告诉读者走的是哪一层门」——
+                    extra_only (仅加分线, 连 MA200 都不看) 必须显式暴露。
     """
     # 判断每个条件
     def _yn(ok): return "✅" if ok else "❌"
@@ -395,7 +402,16 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     ma50_i_5 = fv.get("ma50_5d_ago") or 0
 
     # 当前阶段总结
-    rows.append(f"**当前阶段: {stage}** (score={current_score}) — 通过方式: **{pass_method}**")
+    # 2026-11-05 加: 判定强度 (生产侧 strength, 渲染器只读不算)。
+    #   文案按 stage 取 (strength_label) —— 同一个 channel token 在不同 stage
+    #   语义不同 (main_strict 在 Accumulation = 累积 AND 门, 在 Markup = 主升 AND 门)。
+    #   '?' 阶段不显示 —— 那时 strength 恒为 none, 显示出来是噪音。
+    _strength_txt = strength_label(stage, strength)
+    if _strength_txt:
+        rows.append(f"**当前阶段: {stage}** (score={current_score}) — 通过方式: **{pass_method}** — "
+                    f"判定强度: **{_strength_txt}**")
+    else:
+        rows.append(f"**当前阶段: {stage}** (score={current_score}) — 通过方式: **{pass_method}**")
     rows.append("")
 
     # 2026-10-17 v3: 把"实际"列改成"公式 + 代入值 + 计算结果"一格展示
@@ -541,6 +557,8 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     _p_now = fv.get("p", 0)
     # ⚠️ 2026-11-03 修 BUG: 基准改为**真 MA200** (ma200_gap),
     #   原来用 250 日均线 (ma200) —— 同一组判据里金叉/持续上方都用真 MA200。
+    # 「满足」列由渲染侧按数值算 (>0.5) —— 生产侧 markup_detail 只输出数值
+    #   ma_gap_pct_above, 没有对应 bool, 强行"读生产 bool"会渲染成「—」。
     rows.append(f"| MA gap > 0.5% | (价格-MA200)/MA200 > 0.5% | `({_p_now:.2f} - {ma200_gap:.2f}) / {ma200_gap:.2f} × 100 = {_ma_gap_above:.2f}%` | {_yn(_ma_gap_above > 0.5)} |")
     # MA50 角度 — 完整展开公式 (3 步: 公式 + 代入值 + 计算)
     # ⚠️ 2026-11-03 修 BUG: 分母 ma50[i-5] 现在直接读生产值 fv['ma50_5d_ago'],
@@ -552,8 +570,61 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                        f"({ma50_i:.2f}/{ma50_i_5:.2f}-1)*100 = {_angle_now:+.2f}%`")
     else:
         _angle_cell = "`(ma50[i]/ma50[i-5]-1)*100 = — (i<54, MA50 未满 50 日)`"
-    rows.append(f"| MA50 角度 | ≥2%/5日 (markup_ma_angle_min) | {_angle_cell} | {_yn(ma50_angle_5d >= 2.0)} |")
+    # 阈值用共享常量 MARKUP_ANGLE_MIN (helpers) —— 不写死 2.0。
+    rows.append(f"| MA50 角度 | ≥{MARKUP_ANGLE_MIN:g}%/5日 (markup_ma_angle_min) | {_angle_cell} | {_yn(ma50_angle_5d >= MARKUP_ANGLE_MIN)} |")
     rows.append("")
+
+    # ── Markup 三层门判定 (2026-11-05) ──
+    # 背景: Markup 有 3 层强弱不同的门, 报告原来只写「判 Markup」, 不告诉读者
+    #   走的是哪一档 → 600763 通策医疗 / 301109 军信股份只靠**加分线**成立
+    #   (连 MA200 都不看), 门槛最低, 但报告长得跟严格门命中的票一样。
+    #
+    # ⚠️ 本块**完全由生产侧 channel 驱动** —— 渲染器不自己 AND/比较任何条件。
+    #   channel 里的 main_strict / main_weak / main_extra 三个 token 就是生产侧
+    #   实际走过的分支 (stage_factor 的 channel 段), 「本次判定」列直接由 token
+    #   有无决定 → 渲染器与生产判定**不可能漂移**。
+    #   「生产侧实际值」列只读 factor_values 既有字段, 不做任何派生计算。
+    if stage == "Markup":
+        _ch_parts = [p for p in (channel or "").split("+") if p]
+
+        def _layer_mark(token: str) -> str:
+            return "✅ 走" if token in _ch_parts else "⬜ 未走"
+
+        _gc = fv.get("golden_cross_recent")
+        _ams = fv.get("above_ma200_sustained")
+        _gap = fv.get("ma_gap_pct_above") or 0
+        _up = fv.get("is_uptrend")
+        _am200 = fv.get("above_ma200")
+        _d20 = fv.get("dev_ma20") or 0
+        _pp = fv.get("pos_pct") or 0
+
+        rows.append("**Markup 三层门判定** (本次判定走的是哪一层):")
+        rows.append("")
+        rows.append("| 判定层 | 条件 | 生产侧实际值 | 本次判定 |")
+        rows.append("|---|---|---|---|")
+        rows.append(
+            f"| 严格门 | 金叉 + 持续 MA200 上方 + MA gap>0.5% + 上升趋势 | "
+            f"`golden_cross_recent={_gc}` / `above_ma200_sustained={_ams}` / "
+            f"`ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | {_layer_mark('main_strict')} |")
+        rows.append(
+            f"| 弱信号门 | MA200 上方 + MA gap>0.5% + 上升趋势 | "
+            f"`above_ma200={_am200}` / `ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | "
+            f"{_layer_mark('main_weak')} |")
+        rows.append(
+            f"| **加分线** | MA20 偏离>5% + 价格位置>60% + 上升趋势 | "
+            f"`dev_ma20={_d20:+.2f}%` / `pos_pct={_pp:.1f}%` / `is_uptrend={_up}` | "
+            f"{_layer_mark('main_extra')} |")
+        rows.append("")
+        rows.append("> ℹ️ **「⬜ 未走」= 本次判定不是靠这一层成立**, 不代表该层条件不满足。"
+                    "严格门与弱信号门是**互斥 elif**(先满足者生效), 加分线是**独立 if**(可与前两层叠加)。")
+        rows.append("")
+
+        if strength == "extra_only":
+            rows.append("> ⚠️ **仅加分线成立 (extra_only)** — 严格门与弱信号门**均未走**, "
+                        "本次 Markup 判定**完全由加分线**给出。")
+            rows.append("> 加分线只看 MA20 偏离 / 价格位置 / 上升趋势, **不看 MA200 / 金叉**, "
+                        "门槛明显低于前两层 → 权重应低于严格门命中的票。")
+            rows.append("")
 
     # ── 均线结构参考判据的独立表: 2026-11-03 整块删除 ──
     # 理由: 该组 4 条判据 (对齐外部参考实现的 _detect_markup_entry) 当前状态版
@@ -959,7 +1030,8 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
                                       wy_data.get("factor_values", {}),
                                       closes=_c, sub_events=sub_events,
                                       stage_detail=wy_data.get("stage_detail", ""),
-                                      channel=wy_data.get("channel", ""))
+                                      channel=wy_data.get("channel", ""),
+                                      strength=wy_data.get("strength", ""))
     wy_sub_events_md = _wy_sub_events_md(sub_events, SUB_EVENT_GLOSSARY, wy_stage,
                                           c=_c, h=_h, l=_l, v=_v, o=_o, pct=_pct)
     scores_str = " / ".join(f"{k}:{v}" for k, v in scores.items() if v > 0) if scores else "无得分"

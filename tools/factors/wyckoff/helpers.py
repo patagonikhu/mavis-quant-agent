@@ -169,6 +169,127 @@ MA50_MA200_TOLERANCE = 0.90
 FB1_TREND30_MIN = -5.0
 
 
+# ============================================================
+# Markup MA50 角度阈值 (2026-11-05)
+#
+# 原来定义在 stage_factor.py, 报告渲染器拿不到 → 渲染器只能写死 2.0,
+#   阈值一调, 报告显示就跟代码对不上 (第二份实现, 必然漂移)。
+# 现在下沉到 helpers (跟 FB1_TREND30_MIN / MA50_MA200_TOLERANCE 同处),
+#   生产侧与渲染侧共用同一个常量。
+#
+# 用途: Markup 加分项「MA50 近 5 日角度 >= 2%」
+#   ⚠️ 注意它是**加分项**, 不参与 strict/weak/extra 三层门的通过与否。
+# ============================================================
+MARKUP_ANGLE_MIN = 2.0
+
+
+# ============================================================
+# 判定强度分档 (2026-11-05)
+#
+# 问题: Markup 判定有 3 层强弱不同的门, 报告只写「判 Markup」, 不告诉读者
+#   走的是哪一档 → 600763 通策医疗 / 301109 军信股份只靠**加分线**成立
+#   (连 MA200 都不看), 门槛最低, 但报告长得跟严格门命中的票一样。
+#
+# 单一事实源: 生产侧 stage_factor 算 strength, 渲染器只读不算
+#   (同 markup_entry_conditions() 的「规则下沉」范式)。
+#
+# 分档口径 (按 stage 分, 由强到弱):
+#   Markup:
+#     strict     — 严格 AND 门全中 (金叉 + 持续 MA200 上方 + MA gap>0.5 + 上升趋势)
+#     weak       — 弱信号门成立 (MA200 上方 + MA gap>0.5 + 上升趋势, 缺金叉)
+#     extra_only — **仅**加分线成立 (MA20 偏离>5 + 位置>60% + 上升趋势), 不看 MA200
+#     fallback   — fallback1 / fallback2 启发式路径 (主路径三层门全 0 时兜底)
+#   Accumulation:
+#     strict     — 累积 AND 门全中 (底部测试 + MA 胶着 + 缩量)
+#     weak       — 弱信号 A/B/C 单条成立
+#     fallback   — fallback2 双向下启发式 (真跌势中的底部累积区)
+#   Distribution:
+#     strict     — 分布起始信号成立 (MA250 偏离>30% + 连续缩量)
+#     weak       — 分布弱信号 (MA250 偏离>15% + 缩量 + 派发类事件)
+#     extra_only — 仅 UTAD 加分 (实际不可达: UTAD 加分要求 distribution_start 同时成立)
+#
+# ⚠️ channel 是**多值** ("main_weak+main_extra"), 因为 Markup/Distribution 的
+#   加分线在代码里是**独立 if** —— 可以和主判据同时成立。所以分档取**最强档**:
+#   strict > weak > extra_only。
+# ============================================================
+STRENGTH_LABEL = {
+    "Markup": {
+        "strict":     "强 — 严格 AND 门全中 (金叉 + 持续 MA200 上方 + MA gap>0.5% + 上升趋势)",
+        "weak":       "中 — 弱信号门成立 (MA200 上方 + MA gap>0.5% + 上升趋势, 缺金叉)",
+        "extra_only": "弱 — 仅加分线成立 (MA20 偏离>5% + 价格位置>60% + 上升趋势), 不看 MA200/金叉",
+        "fallback":   "兜底 — fallback 启发式路径 (严格门 / 弱信号门 / 加分线均未过)",
+        "none":       "未判定 — 三阶段均未给出得分",
+    },
+    "Accumulation": {
+        "strict":     "强 — 累积 AND 门全中 (底部测试 + MA 胶着 + 缩量)",
+        "weak":       "中 — 弱信号单条成立 (A / B / C 任一)",
+        "fallback":   "兜底 — fallback 启发式路径 (真跌势中的底部累积区)",
+        "none":       "未判定 — 三阶段均未给出得分",
+    },
+    "Distribution": {
+        "strict":     "强 — 分布起始信号成立 (MA250 偏离>30% + 连续 3 日缩量)",
+        "weak":       "中 — 分布弱信号 (MA250 偏离>15% + 缩量 + 派发类事件)",
+        "extra_only": "弱 — 仅 UTAD 加分 (无严格门/弱信号)",
+        "none":       "未判定 — 三阶段均未给出得分",
+    },
+}
+
+
+def strength_label(stage: str, strength: str) -> str:
+    """(stage, strength) → 中文强度标签。
+
+    ⚠️ 必须带 stage: 同一个 channel token 在不同 stage 语义不同
+      ("main_strict" 在 Accumulation = 累积 AND 门, 在 Markup = 主升 AND 门),
+      标签文案也完全不同。stage 未知 (如 '?') 时返回空串 —— 调用方据此不渲染。
+    """
+    return STRENGTH_LABEL.get(stage, {}).get(strength or "", "")
+
+
+def stage_strength(stage: str, channel: str) -> str:
+    """(stage, channel) → 判定强度档位
+
+    Returns: "strict" / "weak" / "extra_only" / "fallback" / "none"
+
+    ⚠️ stage 相关: 同一个 channel token 在不同 stage 下语义不同 ——
+    "main_strict" 在 Accumulation 指「累积 AND 门严格通过」,
+    在 Markup 指「主升 AND 门严格通过」。所以必须带 stage。
+    """
+    parts = [p for p in (channel or "").split("+") if p]
+    if not parts:
+        return "none"
+
+    if stage == "Markup":
+        if "main_strict" in parts:
+            return "strict"
+        if "main_weak" in parts:
+            return "weak"
+        if "main_extra" in parts:
+            return "extra_only"
+        if "fallback1" in parts or "fallback2_markup" in parts:
+            return "fallback"
+        return "none"
+
+    if stage == "Accumulation":
+        if "main_strict" in parts:
+            return "strict"
+        if any(p.startswith("main_weak_") for p in parts):
+            return "weak"
+        if "fallback2_accum" in parts or "fallback1" in parts:
+            return "fallback"
+        return "none"
+
+    if stage == "Distribution":
+        if "main_strict" in parts:
+            return "strict"
+        if "main_weak" in parts:
+            return "weak"
+        if "main_extra" in parts:
+            return "extra_only"
+        return "none"
+
+    return "none"
+
+
 def _ma50_reached_ma200(ma50: float, ma200: float,
                         tolerance: float = MA50_MA200_TOLERANCE) -> bool:
     """MA50 是否"够到" MA200 (带容差)
