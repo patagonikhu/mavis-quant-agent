@@ -433,7 +433,20 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         if markup_d.get('golden_cross_recent', False) and markup_d.get('above_ma200_sustained', False):
             pass_method = "强信号 (金叉 + 持续上方)"
         elif current_score > 0:
-            pass_method = "弱信号 / 起点 fallback"
+            # 2026-11-03: 区分是 fallback1 还是 fallback2 触发的, 避免报告跟代码说的不是一回事
+            _slope_60 = (factor_values or {}).get("slope_60", 0)
+            _trend_30 = (factor_values or {}).get("trend_30", 0)
+            _ma50 = (factor_values or {}).get("ma50", 0)
+            _ma200 = (factor_values or {}).get("ma200", 0)
+            _fb1 = (_slope_60 > 0 and (factor_values or {}).get("dev_ma200", 0) > -15
+                    and _ma50 >= _ma200 * 0.95 and _trend_30 > -10)
+            _fb2 = (_trend_30 > 5 and _slope_60 > -20)
+            if _fb2 and not _fb1:
+                pass_method = "弱信号 / 起点 fallback2 (sub-event + 斜率, 不检查 MA200/金叉)"
+            elif _fb1:
+                pass_method = "弱信号 / 起点 fallback1 (4 项软条件)"
+            else:
+                pass_method = "弱信号 / 起点 fallback"
         else:
             pass_method = "未通过"
     elif stage == "Distribution":
@@ -554,6 +567,40 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append("> 📖 **Fallback 设计哲学**: 严格金叉漏检『已走强但金叉未完成』的票(主力压住空头但 MA50 还没破 MA200), "
                "4 项软条件捕获『大方向向上 + 接近金叉 + 短期不崩』的反弹主升。")
     rows.append("")
+
+    # ── 2026-11-03 加: fallback2 路径 (stage_factor.py:236) ──
+    # 背景: stage 判定实际有 3 条 fallback 路径, 报告原来只渲染 fallback1 (上面那张表),
+    #   导致西麦食品这类票显示「Markup AND 门全 ❌ + Fallback 也 ❌」但结论是 Markup。
+    #   真正做决定的是 fallback2, 必须渲染出来, 否则报告跟代码说的不是一回事。
+    #   fallback2 (stage_factor.py:236-242):
+    #     elif len(sub_events) >= 1 and (slope_60 > 5 or slope_60 < -5):
+    #         if trend_30 > 5 and slope_60 > -20:  → stage='Markup', scores['Markup']=1
+    #         elif trend_30 < -5:                  → stage='Accumulation', scores['Accumulation']=1
+    # 2026-11-03 加: 活跃 sub-event 数 (fallback2 用 len(sub_events) >= 1, 不是历史累计数)
+    n_sub = fv.get("active_sub_event_count")
+    if n_sub is None:
+        n_sub = len(fv.get("active_sub_events") or [])
+    _active = fv.get("active_sub_events") or []
+    fb2_slope_ok = slope_60 > 5 or slope_60 < -5
+    fb2_trend_up = trend_30 > 5 and slope_60 > -20
+    fb2_trend_dn = trend_30 < -5
+    fb2_entry = fb2_slope_ok and (fb2_trend_up or fb2_trend_dn)
+    rows.append("**Fallback 路径 2** (sub-event + 斜率, fallback1 不满足时启动):")
+    rows.append("")
+    rows.append("| 条件 | 阈值 | 实际 | 满足 |")
+    rows.append("|---|---|---|---|")
+    _sub_desc = f"{n_sub} 个 ({', '.join(_active[:6])}{'...' if len(_active) > 6 else ''})" if _active else f"{n_sub} 个"
+    rows.append(f"| 有 sub-event | ≥ 1 个 | 当前 {_sub_desc} | {_yn(n_sub >= 1)} |")
+    rows.append(f"| 60 日斜率明显 | slope_60 > 5 或 < -5 | `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_slope_ok)} |")
+    rows.append(f"| 30 日趋势向上 | trend_30 > 5 且 slope_60 > -20 | `trend_30 = {trend_30:+.2f}%` | {_yn(fb2_trend_up)} |")
+    rows.append(f"| 30 日趋势向下 | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | {_yn(fb2_trend_dn)} |")
+    fb2_result = ("→ Markup" if fb2_trend_up else "→ Accumulation" if fb2_trend_dn else "→ ?")
+    rows.append(f"| **Fallback2 判定** | 入口 + 趋势方向 | `{fb2_result}` | {_yn(fb2_entry)} |")
+    rows.append("")
+    if fb2_entry:
+        rows.append(f"> ⚠️ **本次阶段判定走的是 Fallback 2** ({fb2_result}) —— 不是上面的 AND 门严格通过。"
+                   f"Fallback 2 **不检查** MA200 位置 / 金叉 / is_uptrend, 只看 sub-event 数 + 斜率 + 趋势。")
+        rows.append("")
 
     # Distribution 派发条件
     rows.append("**Distribution 派发** (AND 门强信号 / 弱信号 fallback):")

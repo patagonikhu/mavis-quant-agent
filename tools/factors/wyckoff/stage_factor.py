@@ -314,6 +314,10 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             # ── 价格位置 ──
             "recent_low": round(recent_low, 4), "recent_high": round(recent_high, 4),
             "pos_pct": round(pos_pct, 1),
+            # 2026-11-03 加: 活跃 sub-event 数 (fallback2 判定用 len(sub_events) >= 1)
+            #   注意: 跟顶层 sub_event_count (历史累计 sub_list) 不是一回事
+            "active_sub_event_count": len(sub_events),
+            "active_sub_events": sorted(sub_events),
             # ── Accumulation 用 ──
             "period_low": round(period_low, 4),
             "vol_recent_avg": round(vol_recent_avg, 2), "vol_baseline_avg": round(vol_baseline_avg, 2),
