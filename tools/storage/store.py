@@ -835,38 +835,32 @@ def sync_stock_basic() -> int:
     # 2026-09-04 修: 跨积分档 stock_basic 都不返 total_share, 用本地 stk_factor_pro parquet 兜底
     # 注意: 不能用 _latest_trade_date, 今天 (盘后) stk_factor_pro 还没出
     # 用本地 parquet 最新一天 (一定有数据, 除非全新 sync 第一次)
+    # 2026-11-03 修: 原代码读 data/history/daily_basic/*.parquet, 但 v6.2.4 已用
+    #   stk_factor_pro 取代 daily_basic, 该目录不存在 → 兜底静默失败,
+    #   stock_basic 落盘时丢了 total_share/float_share 两列 →
+    #   详报「基础信息」总股本/流通股本全显示 0.00亿股。改读 stk_factor。
     try:
         import duckdb as _dd
-        # 从本地 daily_basic 找最新一天 (1 次 SQL, 0 网络)
+        # 从本地 stk_factor_pro 找最新一天 (1 次 SQL, 0 网络)
         local_date = _dd.execute("""
-            SELECT MAX(trade_date) FROM read_parquet('data/history/daily_basic/*.parquet')
+            SELECT MAX(trade_date) FROM read_parquet('data/history/stk_factor/*.parquet')
         """).fetchone()[0]
         if not local_date:
-            raise RuntimeError("本地 daily_basic parquet 空")
-        print(f"  📊 用本地 daily_basic@{local_date} 补 total_share/circ_share...")
+            raise RuntimeError("本地 stk_factor parquet 空")
+        print(f"  📊 用本地 stk_factor@{local_date} 补 total_share/float_share...")
         db_df = _dd.execute(f"""
-            SELECT ts_code, total_share, circ_mv
-            FROM read_parquet('data/history/daily_basic/*.parquet')
+            SELECT ts_code, total_share, float_share
+            FROM read_parquet('data/history/stk_factor/*.parquet')
             WHERE trade_date = '{local_date}'
         """).df()
         db_df["code"] = db_df["ts_code"].str.split(".").str[0]
-        # circ_mv 是流通市值 (万元), 股价 (元) → 流通股数 (万股)
-        # 万股 = 万元 / 元 (1万 = 1元 × 1万股 = 1万元市值)
-        # 示例: 25244873 万 / 159.02 元 = 158753 万股 = 15.88 亿股 ✅
-        price_df = _dd.execute(f"""
-            SELECT ts_code, close FROM read_parquet('data/history/daily_basic/*.parquet')
-            WHERE trade_date = '{local_date}'
-        """).df()
-        db_df = db_df.merge(price_df, on="ts_code", how="left")
-        db_df["float_share"] = (db_df["circ_mv"] / db_df["close"]).round(2)  # 万股
-        db_df = db_df.drop(columns=["circ_mv", "close"], errors="ignore")
         # merge: 覆盖 stock_basic 的 total_share/float_share (NaN 来自跨积分档都缺)
         df = df.drop(columns=["total_share", "float_share"], errors="ignore")
         df = df.merge(db_df[["code", "total_share", "float_share"]], on="code", how="left")
         n_filled = df["total_share"].notna().sum()
         print(f"  ✅ 补 {n_filled}/{len(df)} 只股本")
     except Exception as e:
-        print(f"  ⚠️ daily_basic 兜底失败: {e}")
+        print(f"  ⚠️ stk_factor 兜底失败: {e}")
 
     import duckdb
     _conn().execute(f"COPY (SELECT * FROM df) TO '{STOCK_BASIC_PARQUET}' (FORMAT PARQUET)")
