@@ -77,3 +77,28 @@ caches/analysis) 都走 `AnalysisEngine.analyze_history()`。两者子事件扫�
 
 **周线段文案单位**: 生产侧 `slope_60` / `trend_30` 是**按周期 bars** 算的 (周线段 = 60 周/30 周),
 报告里写「60 日斜率」是错的 → renderer 用 `period_unit` 参数 (日/周) 分开。
+
+## 威科夫强度简写记法 (2026-11-05)
+
+报告「因子历史走势」表 (22 列 → **24 列**) 的「威科夫强度」列, 原「A天(日/周)」列改造而来
+(原内容 = 连续累积天数, 已连同 `accum_days_daily/weekly` 一并删除)。
+
+**记法**:
+
+| token | 含义 |
+|---|---|
+| `m` | Markup 严格门 (strict) |
+| `m1` | Markup 弱信号门 (weak) |
+| `m2` | Markup 加分线 (extra_only) / fallback 兜底 (两档合并) |
+| `A` | Accumulation (不分强弱档, 一律 A) |
+| `D` | Distribution (不分强弱档, 一律 D) |
+| `—` | 未判定 (stage=`?` 或 strength=`none`/缺失) |
+
+**单一事实源**: `tools/factors/wyckoff/helpers.py::strength_token(stage, strength)`。
+renderer **只读不算**, 不自己查表 —— 映射下沉生产侧是硬规则。
+
+**必须带 stage**: 同一 strength 档在不同 stage 语义不同 (Accumulation 的 weak 也显示 `A`)。
+**判定逻辑不动**: `stage_factor.py` 未改, strength 直接复用 commit `0f76fe8` 已加的字段。
+
+**列序**: ... MA偏离 → 威科夫(日/周) → 威科夫强度 → 子事件(日/周) → ...
+`FACTOR_HISTORY_HEADER` 是 24 列的唯一真源, sep 按其自动算列数。
