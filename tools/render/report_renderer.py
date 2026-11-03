@@ -667,13 +667,15 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append(f"| MA50 角度 | ≥2%/5日 (markup_ma_angle_min) | {_angle_cell} | {_yn(ma50_angle_5d >= 2.0)} |")
     rows.append("")
 
-    # ── WTA Layer 2.5 独立表: 2026-11-03 整块删除 ──
-    # 理由: WTA 当前状态版 (只看最后一根 K 线) 在 443 只生产池里 **0/443 命中**,
-    #   瓶颈是判据②「近 10 日金叉」只 4/443 通过 → 表里永远是 4 条全 ❌, 零信息量。
+    # ── 均线结构参考判据的独立表: 2026-11-03 整块删除 ──
+    # 理由: 该组 4 条判据 (对齐外部参考实现的 _detect_markup_entry) 当前状态版
+    #   (只看最后一根 K 线) 在 443 只生产池里 **0/443 命中**, 瓶颈是判据②
+    #   「近 10 日金叉」只 4/443 通过 → 表里永远是 4 条全 ❌, 零信息量。
     #   而本项目的 Markup 判定用的是 stage_factor 的 AND 门 + fallback1/2,
-    #   WTA 的 4 条判据**不参与判定** (commit c5cf58a 已降级为参考信号)。
+    #   这 4 条判据**不参与判定** (commit c5cf58a 起已降级为参考信号)。
     #   → 展示一个「永远不通过、又不决定结论」的表 = 纯噪音 + 重复。
     #   生产侧仍保留 markup_detail.wta_* 输出 (detector 依赖), 只是报告不再展示。
+    # ⚠️ 报告 md 里不再出现任何 "WTA" 字样 (用户 2026-11-03 明确要求)。
 
     # Fallback 路径
     rows.append("**Fallback 路径** (4 项 AND 门, 严格判定 0 分时启动):")
@@ -708,9 +710,9 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     #   导致西麦食品这类票显示「Markup AND 门全 ❌ + Fallback 也 ❌」但结论是 Markup。
     #   真正做决定的是 fallback2, 必须渲染出来, 否则报告跟代码说的不是一回事。
     # 2026-11-03 修正: fallback2 是「主路径全 0 时的**兜底**」, 逻辑上必须比主路径宽松。
-    #   之前误把 WTA Layer 2.5 的 4 条判据当 fallback2 门槛 → fallback2 放行 0 只 (死代码),
+    #   之前误把那组外部参考判据当 fallback2 门槛 → fallback2 放行 0 只 (死代码),
     #   且语义上比主路径还严。现改为只要求 60 日方向向上 (slope_60 > 5),
-    #   WTA 4 判据降级为**参考信息**展示, 不参与判定。
+    #   那组判据不参与判定, 报告也不展示。
     n_sub = fv.get("active_sub_event_count")
     if n_sub is None:
         n_sub = len(fv.get("active_sub_events") or [])

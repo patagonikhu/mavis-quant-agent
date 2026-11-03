@@ -123,7 +123,7 @@ def _creek_line(swing_high_points_list, breakout_pct: float = 0.5):
 # 语义: MA50 追到 MA200 的 90% 即视为"已接近/站上年线", 不要求严格穿越。
 # 用途: 统一所有"MA50 是否站上 MA200"的判定口径, 避免各处写死产生分歧。
 #   - stage_factor.py fallback1 (主升浪兜底路径)
-#   - stage_factor.py::detect_markup_entry 判据 ①②③ (WTA Layer 2.5)
+#   - stage_factor.py::detect_markup_entry 判据 ①②③ (外部参考实现 Layer 2.5)
 #   - detectors/markup_entry.py (MarkupEntry detector)
 #   - report_renderer.py 报告渲染 (fallback1 判定复算 + 展示)
 #

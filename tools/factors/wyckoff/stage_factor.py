@@ -396,8 +396,9 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     # 改后 (方案 C): 保留兜底的宽松性质, 只把 **slope_60 > -20 收紧为 slope_60 > 5**
     #   → 要求 60 日方向确实向上, 跟 fallback1 的 slope_60 > 0 语义一致但更严。
     #
-    # WTA 4 判据不再作为 fallback2 门槛, 但仍作为**独立信号**输出
-    #   (markup_detail.wta_* / 报告「WTA Layer 2.5 判定」表), 供人工判断参考。
+    # 那 4 条外部参考判据不再作为 fallback2 门槛, 但仍作为**独立信号**输出
+    #   (markup_detail.wta_*), 供人工判断参考。
+    #   ⚠️ 报告 md 里不展示这张表 (2026-11-03 起整块删除, 当前状态版 0/443 命中)。
     #
     # ── 2026-11-03 语义归属定案 (实测 462 只生产候选池) ──
     #
@@ -535,8 +536,7 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             "above_ma200_sustained": above_ma200_sustained,
             "ma_gap_pct_above": ma_gap_pct_above, "ma50_angle_5d": ma50_angle_5d,
             # 2026-11-03 加: 参考实现 Layer 2.5 的 Markup 4 条判据 + 判定依据
-            #   报告可显示 "WTA Layer2.5: ✅通过 / ❌未过 (缺 MA50>MA200)" 等,
-            #   避免 fallback2 判了 Markup 但看不出凭什么。
+            #   (报告不展示这张表, 仅保留在 markup_detail 里供人工排查)。
             "wta_markup_hit": markup_wta_hit,
             "wta_ma50_gt_ma200": bool(markup_wta["ma50_gt"]) if markup_wta else None,
             "wta_cross_recent": bool(markup_wta["cross"]) if markup_wta else None,
