@@ -38,7 +38,7 @@ from datetime import datetime
 from typing import Optional
 
 from tools.analysis.render_data import RenderData
-from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERANCE
+from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERANCE, FB1_TREND30_MIN
 
 
 # ============================================================
@@ -307,8 +307,9 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     2026-10-17 加: Fallback 路径 + factor 实际值表 + 计算公式速查
     2026-11-03 加: Accumulation 弱信号路径 (严格门没过但仍给分时显示)
     2026-11-03 加: channel 参数 —— **生产侧直接给出的实际命中通道**,
-                    渲染器不再"显示侧反推"(之前反推跟实际分支对不上:
-                    45 只标 fallback1 的里只有 6 只真走 fallback1)。
+                    渲染器不再"显示侧反推"(之前反推跟实际分支对不上)。
+    2026-11-05: AST 插桩实测 (门槛 -5): 生产 channel=fallback1 的 3 只,
+                    标签与实际分支一一对应, 不存在错标。
     """
     # 判断每个条件
     def _yn(ok): return "✅" if ok else "❌"
@@ -321,7 +322,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         "main_strict": "主路径强信号 (金叉 + 持续 MA200 上方 + MA gap > 0.5% + 上升趋势)",
         "main_weak": "主路径弱信号 (价格在 MA200 上方 + MA gap > 0.5% + 上升趋势)",
         "main_extra": "主路径加分线 (MA20 偏离 > 5% + 价格位置 > 60% + 上升趋势)",
-        "fallback1": "fallback1 (4 项软条件: slope_60>0 + dev_ma200>-15% + MA50 够到 MA200 + trend_30>-10)",
+        "fallback1": f"fallback1 (4 项软条件: slope_60>0 + dev_ma200>-15% + MA50 够到 MA200 + trend_30>{FB1_TREND30_MIN:g})",
         "fallback2_markup": "fallback2 → Markup (sub-event + 60日斜率向上 + 30日趋势向上)",
     }
 
@@ -354,8 +355,8 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         if current_score > 0:
             # 2026-11-03: 通道标签改读**生产侧 channel**, 不再显示侧反推。
             #   旧逻辑重算 fb1/fb2/main_weak 条件, 跟生产实际分支对不上
-            #   (实测 45 只标 fallback1 的里只有 6 只真走 fallback1;
-            #    标 fallback2 的 8 只里只有部分真走 fb2)。
+            #   (旧口径: 标 fallback1 的 45 只里只有 6 只真走 fallback1)。
+            #   现标签直接来自 stage_factor 的 channel 输出, 与实际分支一致。
             pass_method = _channel_label(channel)
         else:
             pass_method = "未通过"
@@ -584,8 +585,8 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append(f"| MA50 接近 MA250 | MA50 ≥ MA250 × {MA50_MA200_TOLERANCE} | "
                 f"`{ma50:.2f} ≥ {ma200:.2f} × {MA50_MA200_TOLERANCE} = {_ma50_thr:.2f}` | {_yn(_ma50_ma200_ok)} |")
     # 30 日不崩 — 3 步展开
-    rows.append(f"| 30 日不崩 | trend_30 > -10% | `(p/closes[i-31]-1)*100 = ({p:.2f}/{c_i_31:.2f}-1)*100 = {(p/c_i_31-1)*100:+.2f}%` | {_yn(trend_30 > -10)} |")
-    fb_pass = slope_60 > 0 and dev_ma200 > -15 and _ma50_ma200_ok and trend_30 > -10
+    rows.append(f"| 30 日不崩 | trend_30 > {FB1_TREND30_MIN:g}% | `(p/closes[i-31]-1)*100 = ({p:.2f}/{c_i_31:.2f}-1)*100 = {(p/c_i_31-1)*100:+.2f}%` | {_yn(trend_30 > FB1_TREND30_MIN)} |")
+    fb_pass = slope_60 > 0 and dev_ma200 > -15 and _ma50_ma200_ok and trend_30 > FB1_TREND30_MIN
     rows.append(f"| **Fallback 触发** | 4 项全满足 | — | {_yn(fb_pass)} |")
     rows.append("")
     rows.append("> 📖 **Fallback 设计哲学**: 严格金叉漏检『已走强但金叉未完成』的票(主力压住空头但 MA50 还没破 MA200), "

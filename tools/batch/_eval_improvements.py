@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from tools.factors.wyckoff.helpers import FB1_TREND30_MIN
 
 import statistics
 
@@ -169,7 +170,7 @@ def judge_replica(i, arrs, evs, sub_all, sub_recent, closes, vols,
 
     sm = slope_min if slope_min is not None else 0
     fb1 = (slope_60 > sm and dev_ma200 > -15
-           and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10 and vol_dry_ok)
+           and _ma50_reached_ma200(ma50, ma200) and trend_30 > FB1_TREND30_MIN and vol_dry_ok)
     fb2_base = (len(subs) >= 1 and (slope_60 > 5 or slope_60 < -5))
 
     # ── 取 max stage (生产 stage_factor.py L383-402) ──

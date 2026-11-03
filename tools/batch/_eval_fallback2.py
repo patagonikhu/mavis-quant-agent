@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from tools.factors.wyckoff.helpers import FB1_TREND30_MIN
 
 from tools.batch.wyckoff_a2m_scan import (
     _load_all_klines, _filter_by_st, _filter_by_pe, _filter_by_quality,
@@ -71,7 +72,7 @@ def main():
         ma50 = fv.get("ma50", 0)
         ma200 = fv.get("ma200", 0)
         fb1 = (slope_60 > 0 and dev_ma200 > -15
-               and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10)
+               and _ma50_reached_ma200(ma50, ma200) and trend_30 > FB1_TREND30_MIN)
         fb2 = (len(sub_all) >= 1 and slope_60 > 5 and trend_30 > 5)
 
         # 各 sub_event 的年龄

@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from tools.factors.wyckoff.helpers import FB1_TREND30_MIN
 
 SRC = ROOT / "tools" / "factors" / "wyckoff" / "stage_factor.py"
 
@@ -85,7 +86,7 @@ def build_patched():
         c = ast.unparse(node.test)
         if c == "max(scores.values()) > 0":
             main_line = node.lineno
-        elif "slope_60 > 0" in c and "trend_30 > -10" in c:
+        elif "slope_60 > 0" in c and "trend_30 > FB1_TREND30_MIN" in c:
             fb1_line = node.lineno
         elif c == "fb2_base":
             fb2_line = node.lineno
@@ -310,7 +311,7 @@ def main():
             disp_counter["强信号 (金叉+持续上方)"] += 1
             continue
         _fb1 = (r["slope_60"] > 0 and r["dev_ma200"] > -15
-                and _ma50_reached_ma200(r["ma50"], r["ma200"]) and r["trend_30"] > -10)
+                and _ma50_reached_ma200(r["ma50"], r["ma200"]) and r["trend_30"] > FB1_TREND30_MIN)
         _fb2 = (r["trend_30"] > 5 and r["slope_60"] > 5)
         _main_weak = (r["above_ma200"] and (r["ma_gap_pct_above"] or 0) > 0.5 and r["is_uptrend"])
         _main_extra = ((r["dev_ma20"] or 0) > 5 and (r["pos_pct"] or 0) > 60 and r["is_uptrend"])

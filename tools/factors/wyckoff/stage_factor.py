@@ -30,7 +30,7 @@ class Factor:
     output_type: str = "series"
     def compute(self, df, **kwargs):
         raise NotImplementedError
-from tools.factors.wyckoff.helpers import _find_range, _ma50_reached_ma200
+from tools.factors.wyckoff.helpers import _find_range, _ma50_reached_ma200, FB1_TREND30_MIN
 from tools.factors.wyckoff.detectors import scan_sub_events
 
 
@@ -427,8 +427,9 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
 
     # 2026-11-03: 记录**实际命中通道**。
     #   之前渲染器靠"显示侧反推"猜通道 (读 factor_values 重算一遍条件),
-    #   跟生产实际分支对不上 (实测 45 只标 fallback1 的里只有 6 只真走 fallback1)。
+    #   跟生产实际分支对不上 (旧口径: 45 只标 fallback1 的里只有 6 只真走 fallback1)。
     #   现在生产侧直接输出 channel, 渲染器只读不算。
+    #   2026-11-05 AST 插桩实测 (门槛 -5): 真走 fallback1 = 3 只。
     channel = ""
 
     if max(scores.values()) > 0:
@@ -461,7 +462,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             if distribution_start and 'UTAD' in sub_events:
                 _ch.append('main_extra')
             channel = '+'.join(_ch) if _ch else 'none'
-    elif slope_60 > 0 and dev_ma200 > -15 and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10:
+    elif (slope_60 > 0 and dev_ma200 > -15 and _ma50_reached_ma200(ma50, ma200)
+          and trend_30 > FB1_TREND30_MIN):
+        # 2026-11-05: trend_30 门槛 -10 → -5 (常量 FB1_TREND30_MIN, 口径见 helpers)。
+        #   实测 F1 52.1% → 55.5%, 准确率 60.3% → 70.4%, 召回率不变 (45.8%)。
+        #   挡住的是"近 31 根跌超 5% 但还在反弹"的票 (旧放行里 30% 的在跌组准确率仅 31.6%)。
         stage = 'Markup'; scores['Markup'] = 1; channel = 'fallback1'
     elif fb2_base:
         if slope_60 > 5 and trend_30 > 5:

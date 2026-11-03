@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from tools.factors.wyckoff.helpers import FB1_TREND30_MIN
 
 from collections import Counter
 
@@ -78,7 +79,7 @@ def main():
         n_sub = len(sub_set)
         fb2_base = (n_sub >= 1 and (slope_60 > 5 or slope_60 < -5))
         fb1 = (slope_60 > 0 and dev_ma200 > -15
-               and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10)
+               and _ma50_reached_ma200(ma50, ma200) and trend_30 > FB1_TREND30_MIN)
 
         if stage == "Markup":
             if fb1:
