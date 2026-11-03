@@ -622,8 +622,10 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         n_sub = len(fv.get("active_sub_events") or [])
     _active = fv.get("active_sub_events") or []
     fb2_slope_ok = slope_60 > 5 or slope_60 < -5
+    # 2026-11-03 同步 stage_factor.py 的修复: Accumulation 分支要求**双向下**
+    #   (原来只有 trend_30 < -5, 跟代码里的 slope_60 < -5 && trend_30 < -5 不一致)
     fb2_trend_up = trend_30 > 5 and slope_60 > 5
-    fb2_trend_dn = trend_30 < -5
+    fb2_trend_dn = trend_30 < -5 and slope_60 < -5
     fb2_entry = fb2_slope_ok and (fb2_trend_up or fb2_trend_dn)
     _wta_gate = markup_d.get('wta_markup_hit', False)
     rows.append("**Fallback 路径 2** (sub-event + 斜率, fallback1 不满足时启动):")
@@ -639,17 +641,20 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     if fb2_trend_up:
         rows.append(f"| **30 日趋势向上** (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ✅ |")
-        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | ⬜ 未走 |")
+        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
+                    f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
         fb2_result = "→ Markup"
     elif fb2_trend_dn:
         rows.append(f"| 30 日趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
-        rows.append(f"| **30 日趋势向下** (→ Accumulation 分支) | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | ✅ |")
+        rows.append(f"| **30 日趋势向下** (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
+                    f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ✅ |")
         fb2_result = "→ Accumulation"
     else:
         rows.append(f"| 30 日趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
-        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | ⬜ 未走 |")
+        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
+                    f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
         fb2_result = "→ ?"
     rows.append(f"| **Fallback2 判定** | 入口 + 趋势方向 | `{fb2_result}` | {_yn(fb2_entry)} |")
     rows.append(f"| *(参考)* WTA Layer 2.5 | 4 条判据全满足 | `MA50够到MA200 + 金叉 + 连续5日上方 + 角度≥2%` | {_yn(_wta_gate)} |")

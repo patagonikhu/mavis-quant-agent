@@ -354,18 +354,47 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     #
     # WTA 4 判据不再作为 fallback2 门槛, 但仍作为**独立信号**输出
     #   (markup_detail.wta_* / 报告「WTA Layer 2.5 判定」表), 供人工判断参考。
-    fb2_base = (len(sub_events) >= 1 and (slope_60 > 5 or slope_60 < -5)
-                and trend_30 > 5 and slope_60 > -20)
+    #
+    # ── 2026-11-03 语义归属定案 (实测 462 只生产候选池) ──
+    #
+    # 原始设计 (2026-07-25 commit「fix: 周线威科夫 0 个 `?` 阶段」):
+    #   "弱信号 fallback 4 (避免 `?`): 有 sub_event + 明确趋势
+    #    (slope > 5 → Markup, slope < -5 → Accumulation)"
+    #   → Markup / Accumulation 是**互斥双分支, 靠 slope 正负号区分**,
+    #     入口条件只有「有 sub_event + |slope| > 5」, **没有 trend_30 门槛**。
+    #
+    # ⚠️ 已确认的**结构 bug** (非语义之争, 必须修):
+    #   入口条件里多了一条 `trend_30 > 5`, 导致内部分支 `elif trend_30 < -5`
+    #   (判 Accumulation) **永远进不去** —— 原始设计的「跌势 → Accumulation」
+    #   这条分支是死代码。当前唯一能走到 fb2 的情况是 trend_30 > 5。
+    #   修法: 入口去掉 trend_30 门槛, 让两个分支真正互斥;
+    #         Accumulation 分支额外要求 trend_30 < -5 (60日跌 + 30日也跌 = 真跌势)。
+    #
+    # 语义之争 (slope_60 > 5 vs > -20) 实测结论:
+    #   对 A→M 命中集合**零影响**。分歧区 (-20 < slope_60 <= 5) 的票
+    #   (000333 美的 slope=+0.07 / 603199 九华 slope=+4.76) 都走 **fallback1**
+    #   —— fallback1 在串行链里优先于 fallback2, 根本轮不到 fallback2 判定。
+    #   6 只命中票在两种语义下集合完全相同 (fallback1 3 + fallback2 3)。
+    #   → 保留当前 `slope_60 > 5` (它拦住了历史 4 只「60日跌15%死猫反弹」误判:
+    #     000423 东阿阿胶 -10.18% / 002946 新乳业 -13.38%
+    #     300357 我武生物 -8.96% / 688615 合合信息 -15.38%)。
+    fb2_base = (len(sub_events) >= 1 and (slope_60 > 5 or slope_60 < -5))
 
     if max(scores.values()) > 0:
         stage = max(scores, key=scores.get)
     elif slope_60 > 0 and dev_ma200 > -15 and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10:
         stage = 'Markup'; scores['Markup'] = 1
     elif fb2_base:
-        if trend_30 > 5 and slope_60 > 5:
-            # fallback2 兜底: 60 日方向必须真的向上 (修 "60日跌但近30日反弹" 误判)
+        if slope_60 > 5 and trend_30 > 5:
+            # fallback2 → Markup: 60 日 + 30 日双向上
+            # (2026-11-03: 加 slope_60 > 5 修 "60日跌但近30日反弹" 误判;
+            #  实测拦住 000423 东阿阿胶 -10.18% / 002946 新乳业 -13.38%
+            #        300357 我武生物 -8.96% / 688615 合合信息 -15.38%)
             stage = 'Markup'; scores['Markup'] = 1
-        elif trend_30 < -5:
+        elif slope_60 < -5 and trend_30 < -5:
+            # fallback2 → Accumulation: 60 日 + 30 日双向下 (真跌势 → 底部累积区)
+            # 2026-11-03 修: 原入口条件带 `trend_30 > 5`, 把这个分支堵成死代码。
+            #   原始设计 (2026-07-25) 明确要 "slope < -5 → Accumulation"。
             stage = 'Accumulation'; scores['Accumulation'] = 1
         else:
             stage = '?'
