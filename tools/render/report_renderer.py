@@ -7,7 +7,7 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
   ❌ 禁止 import requests / subprocess curl / fetch_all / 任何网络调用
 
 设计目标:
-  1. 22 个 section 标题全部固定, 缺数据也输出
+  1. 11 个 section 标题全部固定, 缺数据也输出
   2. 每个 section 头部显示数据状态 (OK/TIMEOUT/EMPTY/...)
   3. 报告头 + 报告尾各有一个完整性表格
   4. 给 LLM 看的"占位符"明确, 不会因 LLM 自由发挥而漏
@@ -48,7 +48,7 @@ from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERA
 def _section_quarterly_table(data: RenderData) -> str:
     """4 季大表 (从 RenderData.quarterly_finance 读 14 列, 含 ROC/EY/季末市值/EV/投入资本)
 
-    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 17 section 第 1 张表保持一致
+    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 11 section 第 1 张表保持一致
     返回 markdown 字符串 (header + note + 表格 + 行业)
     """
     _val = data.valuation_data or {}
@@ -237,15 +237,6 @@ def _section_xgboost(data: RenderData) -> str:
 """
     return """> **数据状态:** ⚠️ XGBoost 校准未运行 (可选, 需训练数据)
 > **降级:** 报告只显示规则分
-"""
-
-
-def _section_exit_signals(data: RenderData) -> str:
-    if data.exit_signals:
-        es = data.exit_signals
-        return "\n".join(f"- {k}: {v}" for k, v in es.items())
-    return """> **数据状态:** ⚠️ 退场信号检查未完成
-> **检查项:** 缠论 1卖/2卖/3卖 / MACD 高位死叉 / v11≤-3
 """
 
 
@@ -1606,7 +1597,7 @@ def _section_t_events(data: RenderData) -> str:
 
 def render_report(data: RenderData, sector: str = "—") -> str:
     """
-    渲染完整分析报告 (22 section 全部输出, 缺数据也保留)
+    渲染完整分析报告 (11 section 全部输出, 缺数据也保留)
 
     Args:
         data: RenderData 实例
@@ -1691,11 +1682,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🤖 XGBoost 校准
 {_section_xgboost(data)}
-
----
-
-## 🟢 退场信号检查
-{_section_exit_signals(data)}
 
 ---
 

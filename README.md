@@ -11,7 +11,7 @@
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报 (12 section: 因子矩阵 + 缠论 4 级别 + 仓位/买卖点) | `/t-analyze 688256 寒武纪` |
+| `/t-analyze <code> [name]` | 单只详报 (11 section: 因子矩阵 + 缠论 4 级别 + 仓位/买卖点) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
@@ -22,7 +22,7 @@
 ### 1.1 典型用法
 
 ```bash
-# 单只分析 (12 section 详报, 800+ 行)
+# 单只分析 (11 section 详报, 800+ 行)
 /t-analyze 688256 寒武纪
 
 # 批量 (后台跑 54 只约 50s)
@@ -45,7 +45,7 @@
 ```
 /t-wyckoff-a2m            ← 1. 全市场 A→M 扫描 (威科夫积累期→拉升期)
               ↓
-/t-analyze {code}                ← 2. 对候选标的做完整 12 section 详报
+/t-analyze {code}                ← 2. 对候选标的做完整 11 section 详报
               ↓
 /t-backtest --signal Accumulation  ← 3. 验证信号历史胜率 (signal_cache 加速)
               ↓
@@ -54,7 +54,7 @@
 
 ### 1.3 输出格式
 
-`/t-analyze` 报告关键字段（12 section）:
+`/t-analyze` 报告关键字段（11 section）:
 
 ```
 **4 季财务 + Magic 估值** (15 列大表, linter 必查):
@@ -79,6 +79,10 @@
 
 > ⚠️ 2026-11-03 起: 「🎯 投资四问」「⏰ T 框架」「🚨 5 类 14 子信号」三个 section 已从 md 报告删除。
 > 以下四问 / T 框架仍是 **LLM 手动套框架** 的方法论 (不自动进报告), T 事件 (`🎯 T 框架事件`) section 保留。
+>
+> ⚠️ 2026-11-03 起: 「🎯 止盈 3 层」「🛑 止损 4 档」「🟢 退场信号检查」三档已从 md 报告删除, 数据管线一并删除。
+> 理由: 止盈/止损是「当前价 × 固定百分比」的机械外推, 无标的特异性; 退场信号是纯缠论退出判定,
+> 与「📋 3 层仓位策略」+「📌 监控触发点」完全重叠。卖点 (1卖/2卖/3卖) 仍由缠论买卖点 section 独立提供。
 
 任何标的必答 4 个问题:
 1. **卡点** — 产业链上的不可替代环节? (⭐ 1-5)
@@ -137,7 +141,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── valuation/factor_lib.py        # ROC + EY + Magic (纯函数)
 │   │   └── risk/                          # 退出信号/监控触发
 │   │
-│   ├── render/                            # 报告渲染 (12 section)
+│   ├── render/                            # 报告渲染 (11 section)
 │   │   └── report_renderer.py
 │   │
 │   └── batch/                             # 批量脚本

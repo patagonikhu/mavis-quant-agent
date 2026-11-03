@@ -177,10 +177,6 @@ class RenderData:
         return (self.analysis or {}).get("position") or {}
 
     @property
-    def exit_signals(self) -> Optional[dict]:
-        return (self.analysis or {}).get("exit_signals")
-
-    @property
     def three_layer_position(self) -> Optional[dict]:
         return (self.analysis or {}).get("three_layer_position")
 
@@ -216,13 +212,14 @@ class RenderData:
     xgboost_prob: Optional[float] = None
     supplement: Optional[dict] = None
     # 2026-11-03 删: take_profit / stop_loss 两个字段 (止盈 3 层 + 止损 4 档整档已删)
-    # 2026-10-30 修: 删掉 exit_signals / position_layer / monitor_triggers 三个字段声明
+    # 2026-11-03 删: exit_signals property (退场信号检查整档已删)
+    # 2026-10-30 修: 删掉 position_layer / monitor_triggers 两个字段声明
     #   原因: 它们在 class body 里声明在 @property 之后 (356 行 vs 279/291 行),
     #   class body 自上而下执行 → 字段声明把 property 覆盖成 None, 导致
-    #   renderer 永远读到 None → 报告出 "3 层仓位/监控触发点/退场信号 未生成" 占位符.
-    #   实测: analysis dict 里 exit_signals / three_layer_position / monitor_triggers
+    #   renderer 永远读到 None → 报告出 "3 层仓位/监控触发点 未生成" 占位符.
+    #   实测: analysis dict 里 three_layer_position / monitor_triggers
     #   都有真实数据, 只是被字段遮蔽了.
-    #   现在这三个值统一由上面对应的 @property 从 analysis dict 派生.
+    #   现在这两个值统一由上面对应的 @property 从 analysis dict 派生.
     #   (position_layer 由 three_layer_position 别名提供, 见上方 property)
 
     # ===== Tushare 扩展数据 (幂等性: 存入 dump，不在 renderer 实时拉) =====
@@ -349,9 +346,10 @@ class RenderData:
             analysis=signals_5,
             chan_data=chan_data,
             ctx=ctx,
-            # 2026-10-30 修: 删掉 exit_signals / position_layer / monitor_triggers 三个传参
+            # 2026-10-30 修: 删掉 position_layer / monitor_triggers 两个传参
             #   它们走 _mech_* stub (永远返回 None), 且会把上面删掉的字段重新加回来,
             #   导致 property 再次被遮蔽. 现在统一由 property 从 analysis dict 派生.
+            #   (exit_signals 同样在 2026-11-03 整档删除, 不再传参)
             # 2026-11-03 删: four_questions / t_frame 两个传参 (两档整档已删)
             market_cap_yi=ctx.market_cap_yi,
             # Magic Formula: 在 from_result 里直接算, 不留 N/A
@@ -406,7 +404,8 @@ class RenderData:
         # 2026-11-03 删: 止盈 3 层 + 止损 4 档 (整档已删)
         #   原: out["take_profit"] = compute_stop_pl(ctx.kline or [])
         #   价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断;
-        #   真实风控由 exit_signals (纯缠论) + three_layer_position (中枢位) 承担
+        #   真实风控由 three_layer_position (中枢位) + monitor_triggers 承担
+        # 2026-11-03 删: 退场信号检查 (exit_signals) — 与上面两档重叠
 
         return out
 

@@ -2,76 +2,19 @@
 tools/factors/factor_risk.py — 风控类 factor 库 (纯函数, 2026-09-09 统一)
 
 合并来源 (2026-09-09 之前散落的 class Factor 全部改成纯函数):
-  - tools/factors/risk/exit_signals.py     (ExitSignalsFactor)
   - tools/factors/risk/monitor_triggers.py (MonitorTriggersFactor)
 
-公开 API (2 个):
-  - compute_exit_signals      退场信号判定 (缠论+估值)
+公开 API (1 个):
   - compute_monitor_triggers  监控触发点 (缠论+中枢+事件)
 
 2026-11-03 删: compute_stop_profit_loss (止盈 3 层 + 止损 4 档整档已删)
   → 价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断
+
+2026-11-03 删: compute_exit_signals (退场信号检查整档已删)
+  → 纯缠论退出判定, 与 3 层仓位 + 监控触发点 重叠;
+    卖点 (1卖/2卖/3卖) 仍由 缠论买卖点 section 提供
 """
 from __future__ import annotations
-
-
-def compute_exit_signals(
-    eps_table: list = None,
-    current_price: float = 0,
-    sector_ma20_dev: float = 0,
-    chan_signals: dict = None,
-) -> dict:
-    """退出判定 (2026-09-09 改: 纯缠论, 删 PEG/L_E3/fflow 加权汇总; 2026-10-28 删 fflow 参数)
-
-    决策走 缠论 1卖/2卖/3卖/顶背/止跌反转, 退出信号纯缠论判定.
-    估值 作为参考字段保留, 不再进绿/红信号汇总.
-
-    2026-11-02 删: PEG / L_E3 / L_可达 参考字段 (PEG 是假指标, 整档已删).
-      → 现在只留 板块_MA20_偏离 参考字段 + 纯缠论 verdict.
-
-    输出字段 (dict):
-      - 60分_底背/60分_顶背/止跌信号/缠论综合: 缠论固化信号
-      - 威科夫阶段: 阶段判定
-      - 板块_MA20_偏离: 参考字段 (不汇总)
-      - 退出建议: 纯缠论 verdict
-    """
-    chan_signals = chan_signals or {}
-
-    # === 1. 2026-11-02 删: PEG/L_E3 计算 (原本就是参考字段, 不进 verdict) ===
-
-    # === 2. vs MA120 (占位) ===
-    ma120_dev = -31
-
-    # === 3. 缠论信号 (固化字段) ===
-    bot_60 = chan_signals.get("60min_底背", False)
-    top_60 = chan_signals.get("60min_顶背", False)
-    stop_sig = chan_signals.get("止跌信号", False)
-    chan_verdict = chan_signals.get("缠论综合", "—")
-    wyckoff = chan_signals.get("威科夫阶段", "—")
-
-
-    # === 5. 2026-09-09 改: 退出判定纯缠论 ===
-    # 1卖/2卖/3卖 = 卖出, 1买/2买/3买 = 持仓, 顶背 = 警惕减仓
-    if top_60:
-        verdict = "🔴 减仓 (60分顶背触发)"
-    elif stop_sig:
-        verdict = "🟢 持仓 (止跌信号触发, 等待 1买/2买)"
-    elif bot_60:
-        verdict = "🟢 持仓 (60分底背, 缠论确认底部)"
-    else:
-        verdict = chan_verdict or "🟡 观望 (无缠论信号)"
-
-    return {
-        "60分_底背": "🟢 触发" if bot_60 else "❌",
-        "60分_顶背": "🔴 触发" if top_60 else "❌",
-        "止跌信号": "🟢 触发" if stop_sig else "❌",
-        "威科夫阶段": wyckoff,
-        "缠论综合": chan_verdict,
-        # 2026-11-02 删: PEG / L_E3 / L_可达 (PEG 是假指标)
-        "vs_MA120": ma120_dev,                # 参考字段
-        "板块_MA20_偏离": sector_ma20_dev,    # 参考字段
-        "退出建议": verdict,
-    }
 
 
 def compute_monitor_triggers(
