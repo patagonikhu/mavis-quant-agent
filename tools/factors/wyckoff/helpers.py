@@ -120,11 +120,24 @@ def _creek_line(swing_high_points_list, breakout_pct: float = 0.5):
 # ============================================================
 
 # MA50 相对 MA200 的容差比例。
-# 语义: MA50 追到 MA200 的 95% 即视为"已接近/站上年线", 不要求严格穿越。
-# 用途: 统一所有"MA50 是否站上 MA200"的判定口径, 避免各处写死 0.95 产生分歧。
+# 语义: MA50 追到 MA200 的 80% 即视为"已接近/站上年线", 不要求严格穿越。
+# 用途: 统一所有"MA50 是否站上 MA200"的判定口径, 避免各处写死产生分歧。
 #   - stage_factor.py fallback1 (主升浪兜底路径)
+#   - stage_factor.py::detect_markup_entry 判据 ①②③ (WTA Layer 2.5)
+#   - detectors/markup_entry.py (MarkupEntry detector)
 #   - report_renderer.py 报告渲染 (fallback1 判定复算 + 展示)
-MA50_MA200_TOLERANCE = 0.95
+#
+# 2026-11-03 调参轨迹 (443 只生产候选池实测 A→M 命中):
+#   0.95 → 4 只 (美的/九强/恒锋/九华)      ← 改前
+#   0.90 → 3 只   0.85 → 2 只   ← 净损失, 放宽反而变差
+#   0.80 → 3 只 (美的/恒锋/中国电研)        ← 当前
+#   0.75 → 5 只 (多出西麦食品, 净利 yoy +81.9%) ← 更好但引入弱票巴比食品
+#
+# ⚠️ 命中数对容差**非单调**, 因为放宽有双向效果:
+#   正向: 让"均线差一点"的票能进候选
+#   负向: 让已启动的票在 40 根窗口内更早被判 Markup → m_ratio 撑破 10% 上限
+#         → 被 V13 当成"反复 M"踢掉
+MA50_MA200_TOLERANCE = 0.80
 
 
 def _ma50_reached_ma200(ma50: float, ma200: float,
@@ -133,7 +146,7 @@ def _ma50_reached_ma200(ma50: float, ma200: float,
 
     判定: ma50 >= ma200 * tolerance
       - ma200 <= 0 (数据不足) → False
-      - tolerance 默认 0.95, 即 MA50 追到年线的 95% 就算数
+      - tolerance 默认 0.80, 即 MA50 追到年线的 80% 就算数
 
     ⚠️ 注意这是**放宽**口径, 跟 WyckoffTradingAgent Layer 2.5 的严格
        `MA50 > MA200` 不同。参考实现跑在已过 L1/L2/L3 漏斗的池子上 (本身就是强过滤),
