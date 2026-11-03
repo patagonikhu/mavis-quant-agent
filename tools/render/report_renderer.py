@@ -7,7 +7,7 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
   ❌ 禁止 import requests / subprocess curl / fetch_all / 任何网络调用
 
 设计目标:
-  1. 11 个 section 标题全部固定, 缺数据也输出
+  1. 10 个 section 标题全部固定, 缺数据也输出
   2. 每个 section 头部显示数据状态 (OK/TIMEOUT/EMPTY/...)
   3. 报告头 + 报告尾各有一个完整性表格
   4. 给 LLM 看的"占位符"明确, 不会因 LLM 自由发挥而漏
@@ -48,7 +48,7 @@ from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERA
 def _section_quarterly_table(data: RenderData) -> str:
     """4 季大表 (从 RenderData.quarterly_finance 读 14 列, 含 ROC/EY/季末市值/EV/投入资本)
 
-    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 11 section 第 1 张表保持一致
+    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 10 section 第 1 张表保持一致
     返回 markdown 字符串 (header + note + 表格 + 行业)
     """
     _val = data.valuation_data or {}
@@ -238,28 +238,6 @@ def _section_xgboost(data: RenderData) -> str:
     return """> **数据状态:** ⚠️ XGBoost 校准未运行 (可选, 需训练数据)
 > **降级:** 报告只显示规则分
 """
-
-
-def _section_position_layer(data: RenderData) -> str:
-    if data.position_layer:
-        pl = data.position_layer
-        # 兼容两种字段命名
-        contrarian = pl.get('contrarian') or pl.get('逆势仓')
-        base       = pl.get('base')       or pl.get('底仓', '未算')
-        mid        = pl.get('mid')        or pl.get('中仓', '未算')
-        wave       = pl.get('wave')       or pl.get('波动仓', '未算')
-        summary    = pl.get('summary',    '未算')
-        lines = []
-        if contrarian:
-            lines.append(f"- **逆势仓 10-15%:** {contrarian}")
-        else:
-            lines.append("- **逆势仓 10-15%:** 当前价格在中枢上方/内部，不适用逆势仓")
-        lines += [f"- **底仓 25-30%:** {base}",
-                  f"- **中仓 20-25%:** {mid}",
-                  f"- **波动仓 20-25%:** {wave}",
-                  f"\n**综合:** {summary}"]
-        return "\n".join(lines) + "\n"
-    return "> **数据状态:** ⚠️ 3 层仓位策略未生成，需重新 sync_watchlist_fresh\n"
 
 
 def _fmt_date(d: str) -> str:
@@ -1597,7 +1575,7 @@ def _section_t_events(data: RenderData) -> str:
 
 def render_report(data: RenderData, sector: str = "—") -> str:
     """
-    渲染完整分析报告 (11 section 全部输出, 缺数据也保留)
+    渲染完整分析报告 (10 section 全部输出, 缺数据也保留)
 
     Args:
         data: RenderData 实例
@@ -1682,11 +1660,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🤖 XGBoost 校准
 {_section_xgboost(data)}
-
----
-
-## 📋 3 层仓位策略
-{_section_position_layer(data)}
 
 ---
 

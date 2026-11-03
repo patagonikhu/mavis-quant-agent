@@ -11,7 +11,7 @@ tools/factors/factor_risk.py — 风控类 factor 库 (纯函数, 2026-09-09 统
   → 价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断
 
 2026-11-03 删: compute_exit_signals (退场信号检查整档已删)
-  → 纯缠论退出判定, 与 3 层仓位 + 监控触发点 重叠;
+  → 纯缠论退出判定, 与 监控触发点 重叠;
     卖点 (1卖/2卖/3卖) 仍由 缠论买卖点 section 提供
 """
 from __future__ import annotations

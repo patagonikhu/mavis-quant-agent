@@ -177,20 +177,6 @@ class RenderData:
         return (self.analysis or {}).get("position") or {}
 
     @property
-    def three_layer_position(self) -> Optional[dict]:
-        return (self.analysis or {}).get("three_layer_position")
-
-    @property
-    def position_layer(self) -> Optional[dict]:
-        """三层仓位的别名 (renderer 读的是 data.position_layer)
-
-        2026-10-30 加: analysis dict 里的 key 是 'three_layer_position',
-        但 report_renderer._section_position_layer 读 'position_layer'.
-        之前 'position_layer' 是个 dataclass 字段 (恒 None), 现在改成 alias property.
-        """
-        return (self.analysis or {}).get("three_layer_position")
-
-    @property
     def monitor_triggers(self) -> Optional[dict]:
         return (self.analysis or {}).get("monitor_triggers")
 
@@ -216,11 +202,11 @@ class RenderData:
     # 2026-10-30 修: 删掉 position_layer / monitor_triggers 两个字段声明
     #   原因: 它们在 class body 里声明在 @property 之后 (356 行 vs 279/291 行),
     #   class body 自上而下执行 → 字段声明把 property 覆盖成 None, 导致
-    #   renderer 永远读到 None → 报告出 "3 层仓位/监控触发点 未生成" 占位符.
-    #   实测: analysis dict 里 three_layer_position / monitor_triggers
-    #   都有真实数据, 只是被字段遮蔽了.
-    #   现在这两个值统一由上面对应的 @property 从 analysis dict 派生.
-    #   (position_layer 由 three_layer_position 别名提供, 见上方 property)
+    #   renderer 永远读到 None → 报告出 "监控触发点 未生成" 占位符.
+    #   实测: analysis dict 里 monitor_triggers 有真实数据, 只是被字段遮蔽了.
+    #   现在这个值统一由上面对应的 @property 从 analysis dict 派生.
+    # 2026-11-03 删: three_layer_position / position_layer 两个 property
+    #   (3 层仓位策略整档已删)
 
     # ===== Tushare 扩展数据 (幂等性: 存入 dump，不在 renderer 实时拉) =====
     ts_weekly: list = field(default_factory=list)       # 周线 K
@@ -404,7 +390,7 @@ class RenderData:
         # 2026-11-03 删: 止盈 3 层 + 止损 4 档 (整档已删)
         #   原: out["take_profit"] = compute_stop_pl(ctx.kline or [])
         #   价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断;
-        #   真实风控由 three_layer_position (中枢位) + monitor_triggers 承担
+        #   真实风控由 monitor_triggers (中枢位 + 缠论/时间触发) 承担
         # 2026-11-03 删: 退场信号检查 (exit_signals) — 与上面两档重叠
 
         return out

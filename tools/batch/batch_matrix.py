@@ -2,7 +2,7 @@
 batch_matrix.py — 批量跑 N 只股票 因子 × 3 周期 矩阵 (2026-07-30 v1.0, 2026-08-17 改名)
 
 **用户原话**:
-- '你就的每个section 需要单独的方法, 这样可以复用' → 不调 render_report 11 section
+- '你就的每个section 需要单独的方法, 这样可以复用' → 不调 render_report 10 section
 - '只读现成 markdown 的 因子矩阵 section' → 但不走 awk 提 md (hack)
 - 应该有 render 方法直接输出 因子矩阵 section 字符串
 
@@ -61,7 +61,7 @@ def _resolve_codes(args) -> list[str]:
 def render_one_matrix(code: str) -> str:
     """单只 因子 × 3 周期 矩阵 section 字符串 (走现成 render, 2026-08-17 改名前 5 方法)
 
-    不调 render_report (11 section), 调 build_factor_matrix + render_factor_matrix_md
+    不调 render_report (10 section), 调 build_factor_matrix + render_factor_matrix_md
     1 个 section, 0 重复计算
 
     v5.10.30 改: 走 AnalysisEngine.analyze_dump_to_dict() (内含 factor.* 3 周期桥接)

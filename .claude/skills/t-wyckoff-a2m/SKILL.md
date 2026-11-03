@@ -13,7 +13,7 @@ allowed-tools:
 
 - 全市场找"刚开始走主升浪"的票(威科夫 A→M 转变)
 - K 线每日变化 → **不天天跑**,每周 / 每次大跌后跑一次
-- 命中后用 `/t-analyze <code>` 看单只 11 section 详报
+- 命中后用 `/t-analyze <code>` 看单只 10 section 详报
 
 ## 跑
 

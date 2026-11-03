@@ -102,9 +102,10 @@ class AnalysisResult:
       raw["sector_overheat"]     = {1周涨幅: ..., ...}
       raw["buy_sell_points"]     = {daily: {...}, weekly: {...}}
       # 2026-11-03 删: raw["exit_signals"] (退场信号检查整档已删 —
-      #   与 3 层仓位 + 监控触发点 重叠; 卖点仍由 buy_sell_points 提供)
+      #   与 监控触发点 重叠; 卖点仍由 buy_sell_points 提供)
       # 2026-11-03 删: raw["stop_profit_loss"] (止盈 3 层 + 止损 4 档整档已删)
-      raw["three_layer_position"]= {位置: ..., 市况: ...}
+      # 2026-11-03 删: raw["three_layer_position"] (3 层仓位策略整档已删 —
+      #   与 监控触发点 重叠; 止损/目标阶梯是当前价 × 固定百分比的机械外推)
       raw["monitor_triggers"]    = {触发N项: ...}
     """
     code: str
@@ -1073,25 +1074,6 @@ def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
     return out
 
 
-def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
-    """三层仓位 (日线中枢+缠论)
-
-    2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
-    2026-11-02 删: peg 参数 (PEG 是假指标)
-    """
-    from tools.factors.factor_basic import compute_three_layer_position
-    try:
-        res_d = ctx.chan_result.get("daily") or {}
-        out = compute_three_layer_position(
-            price=ctx.current_price,
-            chan_d=res_d,
-            chan_signals=ctx.chan_result,
-        )
-        return out if isinstance(out, dict) else {}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
     """监控触发点 (4 缠论 + 2 中枢位 + 时间触发)
 
@@ -1131,7 +1113,6 @@ PHASE1_STRATEGY_CLASSES = [
 PHASE2_FUNCTIONS = [
     _derive_sector_overheat,
     _derive_buy_sell_points,
-    _derive_three_layer_position,
     _derive_monitor_triggers,
 ]
 
@@ -1187,7 +1168,7 @@ class AnalysisEngine:
     def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
         """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
 
-        Phase 2 (three_layer_position/monitor_triggers/...) 不在此处运行 — 由
+        Phase 2 (monitor_triggers/...) 不在此处运行 — 由
         RenderData.from_result() 在 render 路径按需执行一次。
 
         Args:

@@ -5,11 +5,12 @@ tools/factors/__init__.py - 因子库入口 (2026-09-09 简化)
   - 删了 Factor 基类 (Factor) + Registry (FactorRegistry/Runner/StandardFactorSets/print_registry)
   - 删了 FactorConfig (yaml 配置)
   - 删了 FactorMeta
-  - 全部改成纯函数, 统一在 3 个文件:
-    - factor_basic.py  (基础通用: ma / returns / position / 3 层仓位 / alpha)
-    - factor_risk.py   (风控: 止盈止损 / 退出信号 / 监控触发)
-    - valuation/factor_lib.py (估值: ROC/EY/PEG/DCF/Magic 等 11 个)
+  - 全部改成纯函数, 统一在 2 个文件:
+    - factor_risk.py   (风控: 监控触发)
+    - valuation/factor_lib.py (估值: ROC/EY/Magic 等)
   - 2026-10-28 删: factor_volume.py (量能: fflow) — 主力资金流维度整体删除
+  - 2026-11-03 删: factor_basic.py (3 层仓位策略整档已删后该文件无任何函数,
+    其余因子早已迁走, 直接删除整个模块)
   - 保留框架: utils.py (K 线处理) + kline_arrays.py (滑动窗口)
   - 保留专用: chan/ structure/ wyckoff/ (各自保留 class Factor 风格)
 

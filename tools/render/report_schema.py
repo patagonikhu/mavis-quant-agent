@@ -11,11 +11,24 @@ report_schema.py — 报告格式定义 (单一真源, 不可变)
 CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
   2️⃣ 2 个缠论补充策略 (威科夫+多市场共振) — 一等公民
-  6️⃣ 三层仓位+买卖点 — 综合 (仓位/监控)
+  6️⃣ 买卖点 (1买/2买/3买/1卖/2卖/3卖) — 综合 (买点/卖点)
+
+2026-11-03 删: 📋 3 层仓位策略 一档 (three_layer_position)
+  → 输出中枢位三档仓位 (逆势/底/中/波动) + 止损阶梯 + 目标阶梯,
+    其中价位全是"当前价 × 固定百分比"的机械外推 (止损 ×0.85/0.92/0.97,
+    目标 +5%/+10%/+20%), 不含标的特异性判断
+  → 与 "📌 监控触发点" 重叠; 删除后真实风控只剩监控触发点一档
+  → 卖点 (1卖/2卖/3卖) 仍由 缠论买卖点 section (_fmt_bs) + 因子矩阵
+    独立提供, 删除本档不丢卖点信息
+  → 数据管线一并删除: factor_basic.compute_three_layer_position (该文件删空后
+    整个模块移除) + analysis_engine._derive_three_layer_position + render_data
+    的 three_layer_position / position_layer 两个 property
+  → 注意: factor_risk.compute_monitor_triggers 独立自算中枢位
+    (chan_d["hub"]["low"/"high"]), 不依赖本档, 无需改动
 
 2026-11-03 删: 🟢 退场信号检查 一档 (exit_signals)
   → 纯缠论退出判定 (60分底背/60分顶背/止跌信号 → 一句话 verdict),
-    信息量与 "📋 3 层仓位策略" (中枢位三档仓位) + "📌 监控触发点"
+    信息量与 "📌 监控触发点"
     (缠论 4 触发 + 中枢 2 触发 + 时间触发) 完全重叠
   → 卖点 (1卖/2卖/3卖) 仍由 缠论买卖点 section (_fmt_bs) + 因子矩阵
     独立提供, 删除本档不丢卖点信息
@@ -25,8 +38,7 @@ CLAUDE.md 红字硬约束 (2026-07-20 固化):
 2026-11-03 删: 🎯 止盈 3 层 + 🛑 止损 4 档 两档
   → 止盈/止损价位是"当前价 × 固定百分比"的机械外推 (止盈 +5/+10/+20%,
     止损 -3/-5/-8/-10%), 不含任何标的特异性判断
-  → 真实的风控决策由 3 层仓位策略 (中枢位) + 监控触发点 承担,
-    两档属于重复表达
+  → 真实的风控决策由 监控触发点 承担, 两档属于重复表达
   → 数据管线一并删除: mech.compute_stop_pl (MA20/MA60 外推) +
     factor_risk.compute_stop_profit_loss (中枢位外推) + analysis_engine
     ._derive_stop_profit_loss + render_data.take_profit/stop_loss 字段
@@ -176,11 +188,11 @@ REPORT_SECTIONS = [
         "required": True,
         "refresh": "REGEN",
     },
-    # === 7️⃣ 三层仓位 + 买卖点 (数据驱动) ===
+    # === 7️⃣ 买卖点 + 监控触发点 (数据驱动) ===
     # 2026-11-03: 止盈 3 层 + 止损 4 档 两档整档从 md 报告里删除 (用户指令)
     #   原因: 价位 = 当前价 × 固定百分比的机械外推, 无标的特异性判断;
-    #         真实风控决策由 three_layer_position (中枢位三档仓位) +
-    #         monitor_triggers (缠论/中枢/时间触发) 承担, 两档属于重复表达
+    #         真实风控决策由 monitor_triggers (缠论/中枢/时间触发) 承担,
+    #         两档属于重复表达
     {
         "id": "stop_profit",
         "title": "🎯 止盈 3 层",
@@ -209,7 +221,7 @@ REPORT_SECTIONS = [
         "required": False,
         "refresh": "REGEN",
         # 2026-11-03: renderer 已不再输出该 section (函数 _section_exit_signals 一并删除)
-        #   纯缠论退出判定与 3 层仓位 + 监控触发点 重叠; 卖点仍由缠论买卖点 section 提供
+        #   纯缠论退出判定与 监控触发点 重叠; 卖点仍由缠论买卖点 section 提供
         "_deprecated": True,
     },
     {
@@ -217,8 +229,11 @@ REPORT_SECTIONS = [
         "title": "📋 3 层仓位策略",
         "category": "7️⃣",
         "render": "render_three_layer_position",
-        "required": True,
+        "required": False,
         "refresh": "REGEN",
+        # 2026-11-03: renderer 已不再输出该 section (函数 _section_position_layer 一并删除)
+        #   中枢位三档仓位 + 止损/目标阶梯 (机械百分比外推) 与 监控触发点 重叠
+        "_deprecated": True,
     },
     {
         "id": "monitor_triggers",
