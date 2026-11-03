@@ -1527,13 +1527,13 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 > 📌 **结构说明**: 上面矩阵是 1 眼总览 (因子 × 3 周期各 1 行概要), 下面是每个周期的详情 (段表 / 9 子事件 / OB 列表等矩阵没包含的独有信息)
 > 不重复: 矩阵已包含的概要不在详情里再写
 
-### 📋 周线分析 (因子 × 周线视角)
-{_section_weekly(data)}
+### 📋 日线分析 (因子 × 日线视角)
+{_section_daily(data)}
 
 ---
 
-### 📋 日线分析 (因子 × 日线视角)
-{_section_daily(data)}
+### 📋 周线分析 (因子 × 周线视角)
+{_section_weekly(data)}
 
 ---
 
