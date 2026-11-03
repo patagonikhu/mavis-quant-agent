@@ -49,7 +49,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_all --include-blowout
 
 - **0 网络**, 走 `DataStore.get_ctx()` + `AnalysisEngine.analyze()`, 详见 architecture.md §4
 - **缺数据**: 报"请先 /t-sync-data", 不兜底拉
-- **报告 8 section**: schema 在 `tools/render/report_schema.py`, 改这里不要散到 batch/*.py
+- **报告 7 section**: schema 在 `tools/render/report_schema.py`, 改这里不要散到 batch/*.py
 
 ## 输出
 

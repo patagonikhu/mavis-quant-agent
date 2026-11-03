@@ -13,6 +13,14 @@ CLAUDE.md 红字硬约束 (2026-07-20 固化):
   2️⃣ 2 个缠论补充策略 (威科夫+多市场共振) — 一等公民
   6️⃣ 买卖点 (1买/2买/3买/1卖/2卖/3卖) — 综合 (买点/卖点)
 
+2026-11-03 删: 📊 基础信息 (Tushare) 一档 (ts_basic)
+  → 本档内容: 代码/名称/行业/上市日期/总股本/流通股本/市场, 一行文本
+  → 信息重复度高: 报告头已有 "# {code} {name}" + 板块 + 股价,
+    行业在板块行, 市值在 PE/PB 段, 股本类指标在估值段
+  → 数据源 DataStore.get_stock_basic 保留 (factor_lib / analysis_engine /
+    t_analyze_one 名字回退仍在用), 只删 renderer 的 _section_ts_basic
+    + 调用块 + schema 条目
+
 2026-11-03 删: 🎯 T 框架事件 一档 (t_events)
   → 本档正文只剩一句占位符: "⚠️ {code} T 框架事件待 LLM 补 (年报/新闻/公告)"
     —— LLM 从未填充过, 常年零有效信息
@@ -291,8 +299,12 @@ REPORT_SECTIONS = [
         "title": "📊 基础信息 (Tushare)",
         "category": "📋",
         "render": "render_ts_basic",
-        "required": True,
+        "required": False,
         "refresh": "REGEN",
+        # 2026-11-03: 标记废弃 — 信息重复度高 (报告头已有代码/名称/板块/股价),
+        #   renderer 的 _section_ts_basic + 调用块已删。
+        #   数据源 DataStore.get_stock_basic 保留 (别处仍在用)。
+        "_deprecated": True,
     },
     {
         "id": "ts_pe_pb",

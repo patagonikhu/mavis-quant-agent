@@ -32,7 +32,7 @@ L3 Render  →  tools/render/                     # 报告渲染
 | **通用 factor** | `tools/factors/{basic,risk}.py` (纯函数) | `compute_xxx(...)` | `class XXX(Factor)` 包装 |
 | **估值 factor** | `tools/factors/valuation/factor_lib.py` (单文件) | `compute_roc/ey/magic` | 散到多文件 |
 | **缠论/威科夫/结构** | `tools/factors/{chan,wyckoff,structure}/` | 复杂框架, 允许 class | 写业务逻辑 |
-| **报告 schema** | `tools/render/report_schema.py` (单一真源) | `report_linter` 校验 | 在 8 处各定义 8 section |
+| **报告 schema** | `tools/render/report_schema.py` (单一真源) | `report_linter` 校验 | 在 8 处各定义 7 section |
 | **报告渲染** | `tools/render/report_renderer.py` | `render_report(data)` | 业务层调 report 前自己拼 markdown |
 | **批量入口** | `tools/batch/<skill>.py` (one-file-per-skill) | 调 DataStore + AnalysisEngine | 直读 parquet / 调 duckdb / 直连 sqlite |
 | **守门员** | `tools/batch/guardrail.py` | `check_xxx()` + `--check xxx` | 在 review 阶段手动验 |
@@ -44,7 +44,7 @@ L3 Render  →  tools/render/                     # 报告渲染
 1. **业务层 0 网络** — `tools/analysis/` + `tools/render/` + `tools/factors/` + `tools/batch/`(除 `sync.py` / `guardrail.py` / `_test_speed.py`) 禁止 `import requests/tushare/urllib/duckdb-socket` 实际调用
 2. **业务层走 DataStore** — 禁止 `pd.read_parquet` / `duckdb.execute('read_parquet...')` / `sqlite3.connect('data/...')` (signal_cache 业务 sqlite 除外)
 3. **新 factor 走纯函数** — 通用 factor 必须 `def compute_xxx(...)`, 禁止 `class XxxFactor(Strategy)`
-4. **报告 8 section 单一真源** — 在 `tools/render/report_schema.py` 改, 不在 batch/*.py 拼 markdown
+4. **报告 7 section 单一真源** — 在 `tools/render/report_schema.py` 改, 不在 batch/*.py 拼 markdown
 
 ### 守门员覆盖
 
@@ -53,7 +53,7 @@ L3 Render  →  tools/render/                     # 报告渲染
 | 1. 业务层 0 网络 | `network` | `python -m tools.batch.guardrail --check network` |
 | 2. 业务层走 DataStore | `parquet` | `python -m tools.batch.guardrail --check parquet` |
 | 3. factor 纯函数 | `factor` | `python -m tools.batch.guardrail --check factor` |
-| 4. 8 section schema | `report_linter` | 走 `report_renderer` 自动跑 |
+| 4. 7 section schema | `report_linter` | 走 `report_renderer` 自动跑 |
 | 5. 用户数据不可删 | `safe-fs` | `python -m tools.batch.guardrail --check safe-fs` |
 
 > **第 5 条 (2026-11-02 加)**: 批量脚本不许直接 `unlink`/`rmtree` `config/` `docs/` 下的文件, 不许直接覆盖写 `config/*.json`。
@@ -106,7 +106,7 @@ from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report
 
 data = RenderData.from_result(ctx, result)
-md = render_report(data)  # 8 section markdown
+md = render_report(data)  # 7 section markdown
 ```
 
 ---
@@ -155,5 +155,5 @@ r = requests.get("https://api.tushare.com/...")
 - **CLAUDE.md** — 项目铁律 (3 层架构 / 数据拉取 / 报告顺序)
 - **`.claude/skills/_shared/analysis_framework.md`** — 统一分析框架 (缠论 + 估值双指标)
 - **`.claude/skills/strategy_recipe.md`** — 新 Strategy 模板 (5 步)
-- **`tools/render/report_schema.py`** — 8 section 单一真源
+- **`tools/render/report_schema.py`** — 7 section 单一真源
 - **`docs/architecture.md` / `docs/guardrail-report.md`** — 守门员报告

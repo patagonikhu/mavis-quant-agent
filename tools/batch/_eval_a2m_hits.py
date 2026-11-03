@@ -1,7 +1,7 @@
 """A→M 命中清单 (只算命中, 不落盘详报)
 
 复用 wyckoff_a2m_scan 的生产判定路径 (_process_one) + 生产过滤链,
-只跑扫描不跑 8 section 详报, 用于评估 stage_factor 改动的影响。
+只跑扫描不跑 7 section 详报, 用于评估 stage_factor 改动的影响。
 
 跑法: bash tools/with_venv.sh python -m tools.batch._eval_a2m_hits
 """

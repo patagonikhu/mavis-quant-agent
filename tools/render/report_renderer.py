@@ -7,7 +7,7 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
   ❌ 禁止 import requests / subprocess curl / fetch_all / 任何网络调用
 
 设计目标:
-  1. 8 个 section 标题全部固定, 缺数据也输出
+  1. 7 个 section 标题全部固定, 缺数据也输出
   2. 每个 section 头部显示数据状态 (OK/TIMEOUT/EMPTY/...)
   3. 报告头 + 报告尾各有一个完整性表格
   4. 给 LLM 看的"占位符"明确, 不会因 LLM 自由发挥而漏
@@ -48,7 +48,7 @@ from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERA
 def _section_quarterly_table(data: RenderData) -> str:
     """4 季大表 (从 RenderData.quarterly_finance 读 14 列, 含 ROC/EY/季末市值/EV/投入资本)
 
-    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 8 section 第 1 张表保持一致
+    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 7 section 第 1 张表保持一致
     返回 markdown 字符串 (header + note + 表格 + 行业)
     """
     _val = data.valuation_data or {}
@@ -1449,32 +1449,9 @@ def _section_data_sources(data: RenderData) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _section_ts_basic(data: RenderData) -> str:
-    """📊 基础信息 (Tushare) — 从 DataStore 读
-
-    v6.2.4 修: 表达式优先级 bug — `sb.get(...) or data.industry if hasattr(...) else "未知"`
-    Python 优先级实际是 `(sb.get(...) or data.industry) if hasattr(...) else "未知"`,
-    永远走 else 分支 → 行业/总股本/流通股本全显示"未知/0.00"
-
-    现在拆成显式 if/else, 优先用 stock_basic 真实值
-    """
-    from tools.storage.store import DataStore
-    sb = DataStore.get_stock_basic(data.code)
-    # 行业: 优先 stock_basic, fallback data.industry, fallback "未知"
-    industry = sb.get("industry") or "未知"
-    name     = sb.get("name") or getattr(data, "name", None) or "未知"
-    list_date= sb.get("list_date", "未知")
-    total_sh = (sb.get("total_share") or 0) / 1e4   # 万股 → 亿股
-    float_sh = (sb.get("float_share") or 0) / 1e4
-    market   = sb.get("market", "A股")
-    if not sb:
-        return f"**代码:** {data.code}  **名称:** {name}  **数据源:** parquet (tushare.stock_basic 未存入，需重新 sync_watchlist_fresh)\n"
-    return (f"**代码:** {data.code}  **名称:** {name}  "
-            f"**行业:** {industry}  **上市日期:** {list_date}  "
-            f"**总股本:** {total_sh:.2f}亿股  **流通股本:** {float_sh:.2f}亿股  **市场:** {market}\n\n"
-            "> **数据源:** Tushare.stock_basic (dump)\n")
-
-
+# 2026-11-03: 删除 _section_ts_basic (📊 基础信息 (Tushare))
+#   内容与报告头/板块行/估值段重复度极高 (代码/名称/行业/股本/市值)
+#   数据源 DataStore.get_stock_basic 保留 (valuation / analysis_engine / batch 仍在用)
 # 2026-11-03: 删除 _section_t_events (🎯 T 框架事件)
 #   正文只剩一句 "⚠️ {code} T 框架事件待 LLM 补" 占位符, LLM 从未填充
 #   事件清单改由 LLM 在生成报告时从外部查 (年报/新闻/公告) 后直接写入正文
@@ -1489,7 +1466,7 @@ def _section_ts_basic(data: RenderData) -> str:
 
 def render_report(data: RenderData, sector: str = "—") -> str:
     """
-    渲染完整分析报告 (8 section 全部输出, 缺数据也保留)
+    渲染完整分析报告 (7 section 全部输出, 缺数据也保留)
 
     Args:
         data: RenderData 实例
@@ -1579,11 +1556,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 📡 数据源矩阵 (类型/主源/备源/状态) — 固化不丢
 {_section_data_sources(data)}
-
----
-
-## 📊 基础信息 (Tushare)
-{_section_ts_basic(data)}
 
 ---
 
