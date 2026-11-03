@@ -498,15 +498,13 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         c_i_31 = closes[i - 31] if i >= 31 else 0
     else:
         c_i_60 = c_i_31 = 0
-    # 找 ma50[i-5]: arrs 没暴露, 用 closes 反推 (i-5 的 ma50 ≈ 当前 ma50 + 5 日斜率反推不精确)
-    # 简化: 直接用 factor_values 里的 ma50_angle_5d 反算
+    # ma50[i-5]: 2026-11-03 改成**直接读生产值** fv['ma50_5d_ago']。
+    #   原来是用 ma50_angle_5d 反算: ma50[i-5] = ma50[i] / (1 + angle/100) ——
+    #   那是用「已被四舍五入到 2 位」的角度反解, 误差被放大, 且 angle=0 时直接置 0。
+    #   规则下沉到代码: 生产侧 stage_factor 已直接输出 ma50_5d_ago。
     ma50_i = fv.get("ma50", 0)
     ma50_angle_5d_v = fv.get("ma50_angle_5d", 0)
-    if ma50_angle_5d_v and ma50_i:
-        # (ma50[i] / ma50[i-5] - 1) * 100 = ma50_angle_5d → ma50[i-5] = ma50[i] / (1 + ma50_angle_5d/100)
-        ma50_i_5 = ma50_i / (1 + ma50_angle_5d_v / 100)
-    else:
-        ma50_i_5 = 0
+    ma50_i_5 = fv.get("ma50_5d_ago") or 0
 
     # 当前阶段总结
     rows.append(f"**当前阶段: {stage}** (score={current_score}) — 通过方式: **{pass_method}**")
@@ -528,8 +526,14 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     # MA 胶着
     ma50 = fv.get("ma50", 0)
     ma200 = fv.get("ma200", 0)
+    # ⚠️ 2026-11-03: 三个 MA 基准必须分清, 报告里不能混用
+    #   ma200      = window(250) 均线  → Accumulation MA 胶着 / fallback1 用的是它
+    #   ma200_true = 真 200 日均线     → Markup 主路径判据用真 MA200
+    #   ma200_gap  = Markup gap / above_ma200 的基准 (= 真 MA200, warm-up 退回 ma60)
+    ma200_true = fv.get("ma200_true", 0)
+    ma200_gap = fv.get("ma200_gap", ma200_true) or ma200_true
     ma_gap = abs(ma50 - ma200) / ma200 * 100 if ma200 > 0 else 0
-    rows.append(f"| MA 胶着 (短期/长期均线接近) | \\|MA50-MA_long\\|/MA_long ≤ 8% | `\\|{ma50:.2f} - {ma200:.2f}\\| / {ma200:.2f} × 100 = {ma_gap:.2f}%` | {_yn(accum_d.get('ma_gap_ok', False))} |")
+    rows.append(f"| MA 胶着 (短期/长期均线接近) | \\|MA50-MA250\\|/MA250 ≤ 8% | `\\|{ma50:.2f} - {ma200:.2f}\\| / {ma200:.2f} × 100 = {ma_gap:.2f}%` | {_yn(accum_d.get('ma_gap_ok', False))} |")
     # 量能萎缩 (近期 N 日均量 / 基线 M 日均量 < 0.75)
     # 2026-10-19: 详报里直接显示窗口天数, 不再 "近期" / "参考" 含糊
     vol_recent_avg   = fv.get("vol_recent_avg", 0)
@@ -619,23 +623,18 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append("")
     rows.append("| 条件 | 阈值 | 实际 (公式 + 代入值 + 结果) | 满足 |")
     rows.append("|---|---|---|---|")
-    # MA50/MA200 金叉 (近 5 日内, 2026-10-17 改: 之前实现是"当天", 名字误导)
+    # MA50/MA200 金叉
+    # ⚠️ 2026-11-03 修 BUG: 原来这一格同格混用两个 MA200 源 ——
+    #   ma200_prev 取自真 MA200 (i-1), 而 ma50 > ma200 比的是 250 日均线,
+    #   读者看到 "ma200_prev=22.65 但 ma200=23.65" 完全对不上。
+    #   现在两边统一用**真 MA200** (与 stage_factor 代码一致)。
     ma50_prev = fv.get("ma50_prev", 0)
     ma200_prev = fv.get("ma200_prev", 0)
-    gc_result = ma50_prev <= ma200_prev and ma50 > ma200
-    # 2026-10-17 v4: 展示"近 5 日"完整判定过程 (5 对 ma50/ma200 检查)
-    if closes and len(closes) > 200:
-        i_last = len(closes) - 1
-        check_lines = []
-        for j_off in range(0, 5):
-            j = i_last - (4 - j_off)  # i-4, i-3, ..., i
-            if j < 1 or j >= len(closes):
-                continue
-            ma50_j = arrs_get(arrs_dummy, "ma50", j) if False else None  # placeholder
-        # 简化: 直接用 wyckoff_judge 内部的检查结果, 显示有金叉的索引
-        # 实际: golden_cross_recent 现在是"近 5 日内", 我们用 markup_d['golden_cross_recent'] 显示最终结果
-    # 用 markup_d 的最终结果, 避免重复计算 5 对
-    rows.append(f"| MA50/MA200 金叉 | 近 5 日内任一天『ma50_prev ≤ ma200_prev AND ma50 > ma200』| `遍历 j ∈ [i-4..i] (5 对), 命中 = True; 当前对: ma50_prev={ma50_prev:.2f} ≤ ma200_prev={ma200_prev:.2f} AND ma50={ma50:.2f} > ma200={ma200:.2f} → {gc_result}` (注: 当前对可能 False, 但近 5 日内可能 True) | {_yn(markup_d.get('golden_cross_recent', False))} |")
+    gc_result = ma50_prev <= ma200_prev and ma50 > ma200_true
+    # ⚠️ 2026-11-03 修 BUG: 文案写 "近 5 日 ... (5 对)", 代码是
+    #   `for j in range(max(1, i-9), i+1)` = 近 10 日 / 10 对。改成 10 日 / 10 对。
+    #   (原来这下面还有一段 placeholder 死代码, 一并清掉)
+    rows.append(f"| MA50/MA200 金叉 | 近 10 日内任一天『ma50_prev ≤ ma200_prev AND ma50 > ma200』| `遍历 j ∈ [i-9..i] (10 对), 命中 = True; 当前对: ma50_prev={ma50_prev:.2f} ≤ ma200_prev={ma200_prev:.2f} AND ma50={ma50:.2f} > MA200={ma200_true:.2f} → {gc_result}` (注: 当前对可能 False, 但近 10 日内可能 True) | {_yn(markup_d.get('golden_cross_recent', False))} |")
     # 持续 MA200 上方
     # ⚠️ 2026-11-03 修 BUG: 说明文字写 "近 5 日 close > ma_long*0.98 全满足",
     #   但 stage_factor.py L195-199 实际判的是
@@ -652,50 +651,29 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     #   现在统一用 ma_gap_pct_above (代码实际判定值)。
     _ma_gap_above = fv.get("ma_gap_pct_above", 0)
     _p_now = fv.get("p", 0)
-    rows.append(f"| MA gap > 0.5% | (价格-MA200)/MA200 > 0.5% | `({_p_now:.2f} - {ma200:.2f}) / {ma200:.2f} × 100 = {_ma_gap_above:.2f}%` | {_yn(_ma_gap_above > 0.5)} |")
+    # ⚠️ 2026-11-03 修 BUG: 基准改为**真 MA200** (ma200_gap),
+    #   原来用 250 日均线 (ma200) —— 同一组判据里金叉/持续上方都用真 MA200。
+    rows.append(f"| MA gap > 0.5% | (价格-MA200)/MA200 > 0.5% | `({_p_now:.2f} - {ma200_gap:.2f}) / {ma200_gap:.2f} × 100 = {_ma_gap_above:.2f}%` | {_yn(_ma_gap_above > 0.5)} |")
     # MA50 角度 — 完整展开公式 (3 步: 公式 + 代入值 + 计算)
+    # ⚠️ 2026-11-03 修 BUG: 分母 ma50[i-5] 现在直接读生产值 fv['ma50_5d_ago'],
+    #   原来是"5 天前收盘均价" (sum(closes[i-54:i-49])/5) —— 公式和数值对不上。
     ma50_angle_5d = fv.get("ma50_angle_5d", 0)
-    rows.append(f"| MA50 角度 | ≥2%/5日 (markup_ma_angle_min) | `(ma50[i]/ma50[i-5]-1)*100 = ({ma50_i:.2f}/{ma50_i_5:.2f}-1)*100 = {(ma50_i/ma50_i_5-1)*100:+.2f}%` | {_yn(ma50_angle_5d >= 2.0)} |")
+    if ma50_i_5 > 0:
+        _angle_now = (ma50_i / ma50_i_5 - 1) * 100
+        _angle_cell = (f"`(ma50[i]/ma50[i-5]-1)*100 = "
+                       f"({ma50_i:.2f}/{ma50_i_5:.2f}-1)*100 = {_angle_now:+.2f}%`")
+    else:
+        _angle_cell = "`(ma50[i]/ma50[i-5]-1)*100 = — (i<54, MA50 未满 50 日)`"
+    rows.append(f"| MA50 角度 | ≥2%/5日 (markup_ma_angle_min) | {_angle_cell} | {_yn(ma50_angle_5d >= 2.0)} |")
     rows.append("")
 
-    # ── WTA Layer 2.5 判定 (参考实现 _detect_markup_entry 1:1) — 独立参考信号 ──
-    # 背景: fallback2 原来只要 sub-event + 斜率 + 趋势就判 Markup, 完全不看 MA200/金叉,
-    #   实测 443 只候选池里 10 只命中有 9 只靠这条兜底, 且被误判的 9 只
-    #   MA50/MA200 全在 56.4%~94.7% (无一站上 MA200).
-    # ⚠️ 定案 (commit c5cf58a): WTA 4 判据**不是** fallback2 的门槛。
-    #   0a16616 曾经把它当门槛 → fallback2 放行 0 只 (死代码) 且比主路径还严,
-    #   已摘掉; 现在 WTA 只作为**独立参考信号**输出, 不参与 stage/channel 判定。
-    _wta_avail = markup_d.get('wta_ma50_gt_ma200') is not None
-    if _wta_avail:
-        _wta_ma50 = markup_d.get('wta_ma50', 0) or 0
-        _wta_ma200 = markup_d.get('wta_ma200', 0) or 0
-        _wta_ratio = (_wta_ma50 / _wta_ma200 * 100) if _wta_ma200 > 0 else 0
-        _wta_angle = markup_d.get('wta_angle_5d', 0) or 0
-        _wta_above = markup_d.get('wta_above_days', 0)
-        rows.append("**WTA Layer 2.5 判定** (对齐 WyckoffTradingAgent `_detect_markup_entry`, 4 条全满足才算主升浪):")
-        rows.append("")
-        rows.append("| 判据 | 阈值 | 实际 | 满足 |")
-        rows.append("|---|---|---|---|")
-        _wta_thr = _wta_ma200 * MA50_MA200_TOLERANCE
-        rows.append(f"| ① MA50 够到 MA200 | MA50 ≥ MA200 × {MA50_MA200_TOLERANCE} | `MA50={_wta_ma50:.2f} vs 门槛 {_wta_thr:.2f} (MA200={_wta_ma200:.2f}, 比值 {_wta_ratio:.1f}%)` | {_yn(markup_d.get('wta_ma50_gt_ma200', False))} |")
-        rows.append(f"| ② 近 10 日发生过金叉 | MA50 上穿 MA200×{MA50_MA200_TOLERANCE} | `近 10 日内扫描 ma50[j-1] < ma200[j-1]×{MA50_MA200_TOLERANCE} AND ma50[j] ≥ ma200[j]×{MA50_MA200_TOLERANCE}` | {_yn(markup_d.get('wta_cross_recent', False))} |")
-        rows.append(f"| ③ 连续 5 日够到 MA200 | 近 5 日 MA50 全 ≥ MA200×{MA50_MA200_TOLERANCE} | `above_days={_wta_above} / 5` | {_yn(markup_d.get('wta_sustained', False))} |")
-        rows.append(f"| ④ MA50 角度 | ≥ 2.0% / 5 日 | `(ma50[i]/ma50[i-5]-1)*100 = {_wta_angle:+.2f}%` | {_yn(markup_d.get('wta_angle_ok', False))} |")
-        rows.append(f"| **WTA 综合** | 4 条全满足 | — | {_yn(markup_d.get('wta_markup_hit', False))} |")
-        rows.append("")
-        if not markup_d.get('wta_markup_hit', False):
-            _miss = []
-            if not markup_d.get('wta_ma50_gt_ma200', False):
-                _miss.append(f"① MA50 未达 MA200×{MA50_MA200_TOLERANCE}")
-            if not markup_d.get('wta_cross_recent', False):
-                _miss.append("② 近 10 日无金叉")
-            if not markup_d.get('wta_sustained', False):
-                _miss.append(f"③ MA50 未连续 5 日达 MA200×{MA50_MA200_TOLERANCE}")
-            if not markup_d.get('wta_angle_ok', False):
-                _miss.append("④ MA50 角度不足 2%")
-            rows.append(f"> ❌ **未通过 WTA Layer 2.5** — 缺: {'; '.join(_miss)}。"
-                       f"即: 均线结构不支持『主升浪』判定。")
-            rows.append("")
+    # ── WTA Layer 2.5 独立表: 2026-11-03 整块删除 ──
+    # 理由: WTA 当前状态版 (只看最后一根 K 线) 在 443 只生产池里 **0/443 命中**,
+    #   瓶颈是判据②「近 10 日金叉」只 4/443 通过 → 表里永远是 4 条全 ❌, 零信息量。
+    #   而本项目的 Markup 判定用的是 stage_factor 的 AND 门 + fallback1/2,
+    #   WTA 的 4 条判据**不参与判定** (commit c5cf58a 已降级为参考信号)。
+    #   → 展示一个「永远不通过、又不决定结论」的表 = 纯噪音 + 重复。
+    #   生产侧仍保留 markup_detail.wta_* 输出 (detector 依赖), 只是报告不再展示。
 
     # Fallback 路径
     rows.append("**Fallback 路径** (4 项 AND 门, 严格判定 0 分时启动):")
@@ -708,12 +686,13 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     _ma50_ma200_ok = _ma50_reached_ma200(ma50, ma200)
     # 60 日斜率 — 3 步展开
     rows.append(f"| 60 日斜率向上 | slope_60 > 0 | `(p/closes[i-60]-1)*100 = ({p:.2f}/{c_i_60:.2f}-1)*100 = {(p/c_i_60-1)*100:+.2f}%` | {_yn(slope_60 > 0)} |")
-    # MA200 偏离
-    rows.append(f"| MA200 偏离不深 | dev_ma200 > -15% | `(p/ma200-1)*100 = ({p:.2f}/{ma200:.2f}-1)*100 = {dev_ma200:+.2f}%` | {_yn(dev_ma200 > -15)} |")
-    # MA50 接近 MA200 — 阈值必须用 MA50_MA200_TOLERANCE (代码实际用的值),
+    # MA250 偏离 — fallback1 代码用的就是 window(250) 均线 (stage_factor.py L152),
+    #   不是真 MA200 → 标签必须写 MA250, 否则跟 Markup 段的真 MA200 混淆。
+    rows.append(f"| MA250 偏离不深 | dev_ma200 > -15% | `(p/ma250-1)*100 = ({p:.2f}/{ma200:.2f}-1)*100 = {dev_ma200:+.2f}%` | {_yn(dev_ma200 > -15)} |")
+    # MA50 接近 MA250 — 阈值必须用 MA50_MA200_TOLERANCE (代码实际用的值),
     #   不能写死 0.95 (容差调参后展示会跟代码对不上)
     _ma50_thr = ma200 * MA50_MA200_TOLERANCE
-    rows.append(f"| MA50 接近 MA200 | MA50 ≥ MA200 × {MA50_MA200_TOLERANCE} | "
+    rows.append(f"| MA50 接近 MA250 | MA50 ≥ MA250 × {MA50_MA200_TOLERANCE} | "
                 f"`{ma50:.2f} ≥ {ma200:.2f} × {MA50_MA200_TOLERANCE} = {_ma50_thr:.2f}` | {_yn(_ma50_ma200_ok)} |")
     # 30 日不崩 — 3 步展开
     rows.append(f"| 30 日不崩 | trend_30 > -10% | `(p/closes[i-31]-1)*100 = ({p:.2f}/{c_i_31:.2f}-1)*100 = {(p/c_i_31-1)*100:+.2f}%` | {_yn(trend_30 > -10)} |")
@@ -742,7 +721,6 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     fb2_trend_up = trend_30 > 5 and slope_60 > 5
     fb2_trend_dn = trend_30 < -5 and slope_60 < -5
     fb2_entry = fb2_slope_ok and (fb2_trend_up or fb2_trend_dn)
-    _wta_gate = markup_d.get('wta_markup_hit', False)
     rows.append("**Fallback 路径 2** (sub-event + 斜率, fallback1 不满足时启动):")
     rows.append("")
     rows.append("| 条件 | 阈值 | 实际 | 满足 |")
@@ -772,17 +750,12 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
         fb2_result = "→ ?"
     rows.append(f"| **Fallback2 判定** | 入口 + 趋势方向 | `{fb2_result}` | {_yn(fb2_entry)} |")
-    rows.append(f"| *(参考)* WTA Layer 2.5 | 4 条判据全满足 | `MA50够到MA200 + 金叉 + 连续5日上方 + 角度≥2%` | {_yn(_wta_gate)} |")
     rows.append("")
     rows.append("> ℹ️ 表中「⬜ 未走」= 该互斥分支不成立 (不是『条件没过』); "
                "**Fallback2 判定** 那行才是最终结论。")
     rows.append("")
     if fb2_entry and fb2_trend_up:
         rows.append("> ✅ **本次阶段判定走的是 Fallback 2** (兜底路径): 有威科夫 sub-event + 60 日斜率向上 + 30 日趋势向上。")
-        rows.append("")
-    if not _wta_gate:
-        rows.append("> ℹ️ 本票 **未通过 WTA Layer 2.5 的 4 条均线判据** (见上表) —— "
-                   "即均线结构本身不支持『主升浪』, 仅靠威科夫结构 + 趋势兜底判定。")
         rows.append("")
 
     # Distribution 派发条件
@@ -792,7 +765,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append("|---|---|---|---|")
     # bias_200 偏离
     bias_200_val = fv.get("dev_ma200", 0)
-    rows.append(f"| bias_200 偏离 | bias_200 > 30% (强) / > 15% (弱) | `(p/ma200-1)*100 = {bias_200_val:+.2f}%` | {_yn(dist_d.get('bias_200_ok', False))} |")
+    rows.append(f"| bias_200 偏离 (MA250) | bias_200 > 30% (强) / > 15% (弱) | `(p/ma250-1)*100 = {bias_200_val:+.2f}%` | {_yn(dist_d.get('bias_200_ok', False))} |")
     # 3 日连续缩量
     vol_5 = fv.get("vol_5", 0)
     vol_60 = fv.get("vol_60", 0)
@@ -884,8 +857,6 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     ma50_i = arrs["ma50"][i]
     ma60_i = arrs["ma60"][i]
     ma200_i = arrs["ma_window"][i]
-    ma50_prev = arrs["ma50"][i - 1] if i >= 1 else ma50_i
-    ma200_prev = arrs["ma_window"][i - 1] if i >= 1 else ma200_i
     bias_200 = (p / ma200_i - 1) * 100 if ma200_i > 0 else 0
     rmin60 = arrs["rmin_l_pos"][i]
     rmax60 = arrs["rmax_h_pos"][i]
@@ -929,10 +900,21 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     h_10max = max(h[max(0, i - 10):i + 1]) if i >= 0 else p
     pullback = (h_10max - p) / h_10max * 100 if h_10max > 0 else 0
 
-    # MarkupEntry
-    ma50_i_5 = arrs["ma50"][i - 5] if i >= 5 else ma50_i
-    ma50_angle_5d = (ma50_i / ma50_i_5 - 1) * 100 if ma50_i_5 > 0 else 0
-    golden_cross = (ma50_prev <= ma200_prev and ma50_i > ma200_i)
+    # MarkupEntry — 2026-11-03 规则下沉: 直接读生产 detector 的逐条判据结果,
+    #   报告不再自己手算一遍 (手算 = 两份实现必然漂移)。
+    #   ⚠️ detector 里的 MA200 是**真 200 日均线**, 不是 bias_200 用的 250 日均线。
+    from tools.factors.wyckoff.detectors.markup_entry import markup_entry_conditions
+    _me = markup_entry_conditions(c, h, l, v, o, i, precomputed_arrs=arrs)
+    ma200_true_i = _me["ma200"]
+    ma50_i_5 = _me["ma50_5d_ago"]
+    ma50_angle_5d = _me["angle"]
+    _tol = MA50_MA200_TOLERANCE
+    me_reached = _me["ma50_reached"]
+    golden_cross = _me["golden_cross"]
+    above_ma200_5d = _me["above_5d"]
+    _me_thr = _me["ma50_thr"]
+    _above5 = _me["above_days"]
+    _me_pairs = _me["pairs"]
 
     # DistributionStart
     vol_3_avg = sum(v[max(0, i - 2):i + 1]) / 3
@@ -967,9 +949,10 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     rows.append(f"| | 缩量 ≤ 0.6 | `mean(v[i-4..i+1]) / mean(v[i-24..i+1]) = {vol_5_25_avg:.0f} / {vol_25_5_avg:.0f} = {vol_decline:.3f}` ({'✅' if vol_decline <= 0.6 else '❌'}) |")
     rows.append(f"| **TrendPullback** | bias_200 ≤ 35 | `{bias_200:+.2f}%` ({'✅' if bias_200 <= 35 else '❌'}) |")
     rows.append(f"| | 回调幅度 | `(peak - c[i]) / peak = ({h_10max:.2f} - {p:.2f}) / {h_10max:.2f} = {pullback:.2f}%` ∈ [5%, 20%] ({'✅' if 5 <= pullback <= 20 else '❌'}) |")
-    rows.append(f"| **MarkupEntry** | MA50 > MA200 | `ma50 = {ma50_i:.2f} > ma200 = {ma200_i:.2f}` ({'✅' if ma50_i > ma200_i else '❌'}) |")
-    rows.append(f"| | 金叉 (5 日内) | `ma50_prev = {ma50_prev:.2f} <= ma200_prev = {ma200_prev:.2f} AND ma50 = {ma50_i:.2f} > ma200 = {ma200_i:.2f}` ({'✅' if golden_cross else '❌'}) |")
-    rows.append(f"| | MA50 5 日角度 | `(ma50[i] / ma50[i-5] - 1) * 100 = ({ma50_i:.2f} / {ma50_i_5:.2f} - 1) * 100 = {ma50_angle_5d:+.2f}%` (≥ 2%: {'✅' if ma50_angle_5d >= 2 else '❌'}) |")
+    rows.append(f"| **MarkupEntry** | MA50 够到 MA200 (×{_tol}) | `ma50 = {ma50_i:.2f} ≥ ma200 × {_tol} = {ma200_true_i:.2f} × {_tol} = {_me_thr:.2f}` ({'✅' if me_reached else '❌'}) |")
+    rows.append(f"| | 金叉 (近 {_me['lookback']} 日内, {_me_pairs} 对) | 前一日不够到 → 当日够到, 遍历 j ∈ [i-{_me['lookback'] - 1}..i] ({'✅' if golden_cross else '❌'}) |")
+    rows.append(f"| | 连续 5 日够到 | 最近 5 根 (i-5..i-1) 全部够到 = {_above5}/5 ({'✅' if above_ma200_5d else '❌'}) |")
+    rows.append(f"| | MA50 5 日角度 | `(ma50[i] / ma50[i-5] - 1) * 100 = ({ma50_i:.2f} / {ma50_i_5:.2f} - 1) * 100 = {ma50_angle_5d:+.2f}%` (≥ 2%: {'✅' if _me['angle_ok'] else '❌'}) |")
     rows.append(f"| **DistributionStart** | bias_200 > 30 | `{bias_200:+.2f}%` ({'✅' if bias_200 > 30 else '❌'}) |")
     rows.append(f"| | 3 日缩量 | `mean(v[i-2..i+1]) = {vol_3_avg:.0f} < 0.5 * mean(v[i-59..i+1]) = {0.5*vol_60_avg:.0f}` ({'✅' if vol_3_avg < 0.5 * vol_60_avg else '❌'}) |")
     rows.append(f"| **UTAD** | 突破 1% | `h[i] = {h[i]:.2f} > max(h[i-60..i]) * 1.01 = {h_60max*1.01:.2f}` ({'✅' if h[i] > h_60max * 1.01 else '❌'}) |")

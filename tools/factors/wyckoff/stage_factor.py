@@ -39,7 +39,7 @@ from tools.factors.wyckoff.detectors import scan_sub_events
 # ============================================================================
 #
 # 参考实现 (Layer 2.5) 的 4 条判据, 必须**全满足**:
-#   ① 当前 MA50 够到 MA200                           (0.95 容差, 见 _ma50_reached_ma200)
+#   ① 当前 MA50 够到 MA200                           (0.90 容差, 见 _ma50_reached_ma200)
 #   ② 近 lookback(=10) 日内发生过 MA50 上穿 MA200      (金叉, 同一容差口径)
 #   ③ 最近 confirm_days(=5) 日, MA50 连续够到 MA200   (同一容差口径)
 #   ④ MA50 近 5 日角度 >= 2.0%                        (markup_ma_angle_min)
@@ -47,8 +47,9 @@ from tools.factors.wyckoff.detectors import scan_sub_events
 # 与参考实现的差异 (有意为之, 已实测):
 #   - 参考实现跑在已过 L1/L2/L3 漏斗的池子上 (本身就是强过滤);
 #     本项目的 fallback2 是"主路径分数全 0 时的兜底", 地位不同。
-#   - 参考实现用严格 `MA50 > MA200`; 本项目统一用 0.95 容差
-#     (MA50 追到年线 95% 即算数), 口径集中定义在 helpers._ma50_reached_ma200。
+#   - 参考实现用严格 `MA50 > MA200`; 本项目统一用 0.90 容差
+#     (MA50 追到年线 90% 即算数), 口径集中定义在 helpers._ma50_reached_ma200
+#     (常量 MA50_MA200_TOLERANCE = 0.90)。
 #   - 所以这里做成**可开关的判定器**, 由 wyckoff_judge 统一调用,
 #     而不是替换掉整个评分体系。
 #
@@ -87,7 +88,7 @@ def detect_markup_entry(i, arrs, window=None):
     ma50 = ma50_arr[i]
     ma200 = ma200_arr[i]
 
-    # ① MA50 够到 MA200 (带 0.95 容差, 口径统一见 helpers._ma50_reached_ma200)
+    # ① MA50 够到 MA200 (带 0.90 容差, 口径统一见 helpers._ma50_reached_ma200)
     ma50_gt = _ma50_reached_ma200(ma50, ma200)
 
     # ② 近 lookback 日内发生过 MA50 上穿 MA200 (同样用 0.95 容差口径)
@@ -155,6 +156,13 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     #   而参考实现 WyckoffTradingAgent 的 ma_long=200 用的是 rolling(200).
     #   Markup 判定的 4 条判据全部要跟 MA200 比, 所以这里必须用真 MA200。
     ma200_true = arrs['ma200'][i]
+    # 2026-11-03 修 BUG (MA 基准混用): ma_gap_pct_above / above_ma200 原来用 ma200
+    #   (window=250 均线), 但同一组 Markup 判据里的金叉 / 持续上方用的是**真 MA200**
+    #   → 同一个判定块里混了两个 MA200 源, 报告里也会出现「ma200_prev=真MA200
+    #   而 ma200=250均线」这种同格两个基准的情况。
+    #   统一改用真 MA200。warm-up (i < 199, MA200 还没满 200 根) 时退回 ma60,
+    #   与 ma200 变量本身的降级策略一致。
+    ma200_gap = ma200_true if i >= 199 else ma60
 
     dev_ma20  = (p / ma20  - 1) * 100 if ma20  > 0 else 0.0
     dev_ma60  = (p / ma60  - 1) * 100 if ma60  > 0 else 0.0
@@ -175,11 +183,17 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     #   不再用 arrs['ma_window'] (window=250 均线) —— 跟 above_ma200_sustained 保持一致,
     #   也跟参考实现 WTA 的 close.rolling(200).mean() 一致。
     ma50_prev  = arrs['ma50'][i - 1]  if i >= 1   else ma50
-    ma200_prev = arrs['ma200'][i - 1] if i >= 200 else ma200
+    # 2026-11-03 修 BUG (MA 基准混用): else 分支原来退回 `ma200` (250 均线),
+    #   但 ma200_prev 的正常分支是真 MA200 → 同一变量两个基准。
+    #   统一退回真 MA200。
+    ma200_prev = arrs['ma200'][i - 1] if i >= 200 else ma200_true
     # 2026-10-19 对齐 WTA: 当前 MA50 必须仍在 MA200 上方 (guard), 窗口 5→10 天,
     #   above_ma200_sustained 语义改为 MA50>MA200 (无容差), 与 markup_entry.py 路径统一
     golden_cross_recent = False
-    if i >= 2 and i >= 200 and ma50 > ma200:   # guard: 当前仍须在上方
+    # 2026-11-03 修 BUG: guard 原来比的是 250 均线 (ma200), 而循环体内用的是
+    #   真 MA200 (arrs['ma200']) → guard 和被检条件不是同一个基准, 金叉被误挡。
+    #   统一改用真 MA200。
+    if i >= 2 and i >= 200 and ma50 > ma200_true:   # guard: 当前仍须在上方
         # 近 10 日内任一天发生金叉即 True
         for j in range(max(1, i - 9), i + 1):
             if (arrs['ma50'][j - 1] <= arrs['ma200'][j - 1]
@@ -188,7 +202,10 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
                 break
 
     confirm_days = 5
-    above_ma200 = p > ma200
+    # 2026-11-03 修 BUG: 原来比的是 250 均线 (ma200), 但同一组判据里的
+    #   above_ma200_sustained / golden_cross_recent 用的是真 MA200。
+    #   统一改用 ma200_gap (真 MA200, warm-up 退回 ma60)。
+    above_ma200 = p > ma200_gap
     # 2026-11-03 修 BUG: 原来比的是 arrs['ma_long'] (= MA60!) 而不是 MA200.
     #   注释写"MA50 > MA200"但代码用 ma_long, 语义与注释不符 → 134/443 只候选票判定错误
     #   (含持仓 002415 海康威视). 现在改用真 MA200 (arrs['ma200']).
@@ -304,10 +321,18 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             stage_detail = 'Accum_A'
 
     # Markup 主升浪
-    ma_gap_pct_above = (p - ma200) / ma200 * 100 if ma200 > 0 else 0.0
+    # 2026-11-03 修 BUG (MA 基准混用): ma_gap_pct_above 原来用 ma200 (window=250 均线),
+    #   而同一组判据里的金叉 / 持续上方用真 MA200 → 同一 AND 门里两个 MA200 源。
+    #   统一改用 ma200_gap (真 MA200)。
+    ma_gap_pct_above = (p - ma200_gap) / ma200_gap * 100 if ma200_gap > 0 else 0.0
+    # 2026-11-03 修 BUG (分母写错): ma50_angle_5d 原来分母是
+    #   sum(closes[i-54:i-49])/5 —— 那是「5 天前的收盘均价」, **不是 MA50**。
+    #   报告里印的公式却是 (ma50[i]/ma50[i-5]-1)*100, 公式和数值对不上。
+    #   改成真正的 arrs['ma50'][i-5] (i>=54 保证 i-5>=49, 是完整 50 日均线)。
     ma50_angle_5d = 0.0
+    ma50_5d_ago = 0.0
     if i >= 54:
-        ma50_5d_ago = sum(closes[i - 54:i - 49]) / 5
+        ma50_5d_ago = arrs['ma50'][i - 5]
         if ma50_5d_ago > 0:
             ma50_angle_5d = (ma50 / ma50_5d_ago - 1) * 100
 
@@ -533,6 +558,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             # 2026-11-03 加: 真 MA200 (200 日均线) — ma200 变量是 window(250) 均线,
             #   跟参考实现 WTA 的 rolling(200) 不是一回事. Markup 判据用真 MA200.
             "ma200_true": round(ma200_true, 4),
+            # 2026-11-03 加: ma200_gap = Markup gap / above_ma200 的统一基准 (真 MA200,
+            #   warm-up i<199 退回 ma60)。跟 "ma200" (window=250 均线) 区别见渲染器标签。
+            "ma200_gap": round(ma200_gap, 4),
+            # 2026-11-03 加: MA50 五日前的值 (ma50_angle_5d 的分母)
+            "ma50_5d_ago": round(ma50_5d_ago, 4) if ma50_5d_ago > 0 else None,
             "ma50_ma200_ratio_pct": round(ma50 / ma200_true * 100, 2) if ma200_true > 0 else None,
             "ma50_prev": round(ma50_prev, 4) if (i >= 51 and ma50_prev is not None) else None,
             "ma200_prev": round(ma200_prev, 4) if (i >= 201 and ma200_prev is not None) else None,
@@ -574,7 +604,9 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             f"{window}根斜率({period_label}): {slope_60:+.1f}%",
             f"MA20偏({period_label}): {dev_ma20:+.1f}%",
             f"MA60偏({period_label}): {dev_ma60:+.1f}%",
-            f"MA200偏({period_label}): {dev_ma200:+.1f}%",
+            # 2026-11-03: dev_ma200 的基准是 window(250) 均线 (ma200 变量), 不是真 MA200
+            #   → 标签改成 MA250, 避免和 Markup 段的真 MA200 混淆
+            f"MA250偏({period_label}): {dev_ma200:+.1f}%",
             f"{window//2}根位置({period_label}): {pos_pct:.0f}%",
             f"子事件: {','.join(sub_list) if sub_list else '无'}",
         ],
