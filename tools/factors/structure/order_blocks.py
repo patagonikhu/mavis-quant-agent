@@ -1,7 +1,7 @@
 """
-smc/order_blocks.py - Order Block (OB) 算法
+structure/order_blocks.py - Order Block (OB) 算法
 
-从 tools/smc.py find_order_blocks 搬过来 (跟原版 1:1)
+订单块识别 (主力最后反向 K + displacement 阈值)
 """
 from typing import List, Dict
 from .atr import calc_atr

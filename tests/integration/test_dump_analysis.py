@@ -125,7 +125,7 @@ class TestAnalysisEngineStrategies:
         self, analysis_data_per_code, strategy_class
     ):
         """每个 Phase1 strategy 都在 result.raw 里, score 范围合理"""
-        strategy_name = strategy_class.name  # chan/wyckoff/smc
+        strategy_name = strategy_class.name  # chan/wyckoff/structure
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
             assert strategy_name in raw, (
@@ -135,7 +135,7 @@ class TestAnalysisEngineStrategies:
             # score 范围因 strategy 而异:
             score_ranges = {
                 "wyckoff":  (-1.5, 1.5),
-                "smc":      (-1.5, 1.5),
+                "structure": (-1.5, 1.5),
                 "chan":     (-1.5, 1.5),
             }
             lo, hi = score_ranges.get(strategy_name, (-1.5, 1.5))
@@ -166,7 +166,7 @@ class TestCtxResults:
 
     @pytest.mark.integration
     @pytest.mark.parametrize("strategy_name", [
-        "chan", "wyckoff", "smc",
+        "chan", "wyckoff", "structure",
     ])
     def test_raw_strategy_not_empty(self, analysis_data_per_code, strategy_name):
         """2026-08-29: ctx.*_result 字段已删, 改读 raw[strategy_name]"""

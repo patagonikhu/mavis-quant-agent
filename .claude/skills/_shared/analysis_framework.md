@@ -16,7 +16,7 @@
 
 **辅助维度 (仅供参考, 不汇总)**:
 - 威科夫 (wyckoff) — 3 阶段: Accumulation / Markup / Distribution (阶段判定)
-- SMC (smc) — Order Block + FVG + Liquidity Sweep (周/日 双周期)
+- 结构分析 (structure) — Order Block + FVG + Liquidity Sweep (周/日 双周期)
 - TechnicalStrategy (technical) — 8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比)
 - 多市场共振 (resonance) — 不参与 (v3.1 起 WAF 频发)
 
@@ -48,7 +48,7 @@
 
 ### 阶段 1: 拉数据 (Python 工具, 自动)
 - `tools/batch/t_analyze_all.py` (v6.2.5 起作为 watchlist 全刷入口)
-- 拉 parquet + 跑 4 个 strategy 类 (chan/wyckoff/smc/finance), 写 `docs/{portfolio,watchlist}/analyze-{code}-{name}.md`
+- 拉 parquet + 跑 4 个 strategy 类 (chan/wyckoff/structure/finance), 写 `docs/{portfolio,watchlist}/analyze-{code}-{name}.md`
 - 包含: 缠论三要素 (周/日 中枢+背驰) + 缠论补充 4 方法 + 退出判定 + 3 层仓位 + 止盈止损 4 档 (走缠论, 不走 strategy 权重)
 
 ### 阶段 2: 套框架 (LLM, 必读本文件)
@@ -74,7 +74,7 @@ data/history/daily/{YYYYQN}.parquet (duckdb 读)
         │
         ├── 缠论 (analysis['chan'].*) — **决策主入口**
         ├── 威科夫 (wyckoff_stage)
-        ├── SMC (smc_ob)
+        ├── 结构分析 (structure_ob)
         └── finance (PegFactor + DcfFactor + MagicFormula) — 合并
         │
         ▼
@@ -121,5 +121,5 @@ Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
 ## 8. 关联文件
 
 - `handbook/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行)
-- `tools/factors/` — 22 个 factor 库 (缠论/威科夫/SMC/量价/多市场 + 估值/风控/仓位)
+- `tools/factors/` — 22 个 factor 库 (缠论/威科夫/结构/量价/多市场 + 估值/风控/仓位)
 - `tools/render/report_renderer.py` — 18 section 报告模板

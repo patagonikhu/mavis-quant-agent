@@ -1,7 +1,7 @@
 """
-smc/analysis.py - SMC 综合分析主入口
+structure/analysis.py - 结构分析主入口
 
-从 tools/smc.py smc_analysis 搬过来 (跟原版 1:1)
+OB / FVG / Sweep 综合判定主入口
 """
 from typing import List, Dict
 from .atr import calc_atr
@@ -10,13 +10,13 @@ from .fvg import find_fvg
 from .swings_sweeps import find_liquidity_sweeps
 
 
-def smc_analysis(opens: List[float], highs: List[float], lows: List[float],
+def structure_analysis(opens: List[float], highs: List[float], lows: List[float],
                  closes: List[float], dates: List[str], vols: List[float],
                  current_price: float, lookback: int = 120,
                  displacement_atr_mult: float = None,
                  max_ob_age_bars: int = 80) -> Dict:
     """
-    SMC 综合分析 (主入口)
+    结构分析 (主入口)
 
     修复 (2026-08-15 v2):
       1. lookback 默认 50 → 120 (日线级)。50 根在 250 根 dump 里只覆盖 2-3 个月,
@@ -114,7 +114,7 @@ def smc_analysis(opens: List[float], highs: List[float], lows: List[float],
         type_zh = "买侧扫" if last_sweep['type'] == "buy_side_sweep" else "卖侧扫"
         wick = last_sweep.get('wick_size', 0)
         parts.append(f"{type_zh} {last_sweep['date']} ¥{last_sweep['swept_level']:.2f} 影线¥{wick:.2f}")
-    summary = ' / '.join(parts) if parts else '无明显 SMC 信号'
+    summary = ' / '.join(parts) if parts else '无明显结构信号'
 
     return {
         "nearest_bull_ob": nearest_bull_ob,

@@ -29,7 +29,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 |---|---|---|
 | L1 Sync | `tools/storage/sync.py` (8 数据段 flag, 默认 `--auto`) | — |
 | L1 Store | `tools/storage/store.py` | ❌ 网络 |
-| L2 Analysis | `tools/analysis/analysis_engine.py` (4 strategy: chan/wyckoff/smc/finance) | ❌ 网络, ❌ 直读 db |
+| L2 Analysis | `tools/analysis/analysis_engine.py` (4 strategy: chan/wyckoff/structure/finance) | ❌ 网络, ❌ 直读 db |
 | L2 容器 | `tools/analysis/render_data.py` | ❌ 网络 |
 | L3 Render | `tools/render/report_renderer.py` | ❌ 网络 |
 
@@ -74,7 +74,7 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (18 �
 
 删除后综合判定 = **3 类等权投票** (chan / wyckoff / 多市场共振), 建仓阈值 `bottom_signals >= 2`, 减仓阈值 `top_signals >= 2`。
 
-> 2026-11-04: SMC 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变)。生产计算层保留, 仅不进 md。
+> 2026-11-04: 结构分析 (OB/FVG/Sweep) 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变); 同日生产层完成改名, 全仓统一用 `structure` / `结构` 命名。
 
 ---
 

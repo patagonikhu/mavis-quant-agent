@@ -126,11 +126,11 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── signal_cache.py                # SQLite 缓存 (wyckoff 9 bool + chan 5 bool + hub)
 │   │   └── render_data.py                 # RenderData (9 派生字段)
 │   │
-│   ├── factors/                           # 4 strategy 算子 (chan/wyckoff/smc/finance)
+│   ├── factors/                           # 4 strategy 算子 (chan/wyckoff/structure/finance)
 │   │   ├── kline_arrays.py                # build_kline_features() O(n) 预算层
 │   │   ├── wyckoff/stage_factor.py
 │   │   ├── chan/czsc_signals.py
-│   │   ├── smc/                           # OB/FVG/Sweep
+│   │   ├── structure/                     # OB/FVG/Sweep
 │   │   ├── valuation/factor_lib.py        # ROC + EY + Magic (纯函数)
 │   │   └── risk/                          # 退出信号/止盈止损/监控触发
 │   │
@@ -179,7 +179,7 @@ build_kline_features()                       O(n) 一次（预算层，共享）
   ▼
 WyckoffStrategy.analyze_history(ctx, dates)  O(n) — 1次循环: 每根bar O(1) 索引
 ChanStrategy.analyze_history(ctx, dates)     O(n) — czsc 内部已 O(n) 优化
-SmcStrategy.analyze_history(ctx, dates)      O(n) — OB/FVG/Sweep 全量扫一次
+StructureStrategy.analyze_history(ctx, dates) O(n) — OB/FVG/Sweep 全量扫一次
 TechnicalStrategy.analyze_history(ctx, dates) O(n) — 8 个技术指标时序
 FinanceStrategy.analyze_history(ctx, dates)   O(n) — 季报粒度: Magic (ROC/EY) + 静态 PE
   │
@@ -195,7 +195,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 | +1 | `scan_sub_events` 预扫一次，per-date filter | ~6.6s |
 | +2 | `kline_arrays.precompute()` 共享预算层 | ~3.6s |
 | +3 | `WyckoffStrategy.analyze_history`: `wyckoff_judge(i, arrs)` O(1) per-bar | ~0.4s |
-| +4 | `SmcStrategy.analyze_history`: OB/FVG/Sweep 全量扫一次 | ~0.4s |
+| +4 | `StructureStrategy.analyze_history`: OB/FVG/Sweep 全量扫一次 | ~0.4s |
 | +6 | `analysis_result_signals.py` 内 3 处 O(n) 查找改预建 dict/bisect | ~0.4s |
 
 **总提升 ~150x**（63s → 0.4s，lookback=120 step=1）。
@@ -205,10 +205,10 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 | 文件 | 职责 |
 |------|------|
 | `tools/factors/kline_arrays.py::build_kline_features` | O(n) 预算层：MA/vol/slope/rolling min/max，返回 `arrs[key][i]` |
-| `tools/analysis/analysis_engine.py::AnalysisEngine.analyze_history` | 4 strategy 顺序调用 (chan/wyckoff/smc/finance), signal_action 由 LLM render 时聚合 |
+| `tools/analysis/analysis_engine.py::AnalysisEngine.analyze_history` | 4 strategy 顺序调用 (chan/wyckoff/structure/finance), signal_action 由 LLM render 时聚合 |
 | `tools/analysis/analysis_engine.py::WyckoffStrategy.analyze_history` | 用 `arrs` 预算层 + pre_scan sub_events，循环内 O(1) |
 | `tools/analysis/analysis_engine.py::ChanStrategy.analyze_history` | czsc 批量，内部已 O(n) |
-| `tools/analysis/analysis_engine.py::SmcStrategy.analyze_history` | OB/FVG/Sweep 全量跑一次，per-date 按 idx 过滤 |
+| `tools/analysis/analysis_engine.py::StructureStrategy.analyze_history` | OB/FVG/Sweep 全量跑一次，per-date 按 idx 过滤 |
 | `tools/analysis/analysis_result_signals.py` | 外层用 `date_to_ki` dict + `bisect` 替代 O(n) 查找 |
 
 ### 4.3 并发铁律
@@ -259,7 +259,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 
 1. **数据本地化优先** — 所有 K 线/EPS 走 parquet (`DataStore` 读), 避免运行时网络调用
 2. **三层分离** — `tools/storage/sync.py` (数据) → `tools/analysis/` (引擎) → `tools/render/` (报告)
-3. **O(n) 单次遍历** — strategy 共享 `ctx.chan_result / wyckoff_result / smc_result / technical_result` 预算层, FinanceStrategy 不预写 ctx (历史切片独立算), 单次遍历出全历史
+3. **O(n) 单次遍历** — strategy 共享 `ctx.chan_result / wyckoff_result / structure_result / technical_result` 预算层, FinanceStrategy 不预写 ctx (历史切片独立算), 单次遍历出全历史
 4. **缓存优先** — `analysis_cache.db` SQLite 让回测/分析秒级返回; `/t-sync-data --cache` 增量预热
 5. **架构守门 (v6.2.2)** — 所有数据/网络操作只在 `tools/storage/` 下 (DataStore / caches / sources), 不散落
 6. **异常立即抛** — 禁止 `except Exception` 吞错; 渲染失败立即 raise 停下整批
@@ -494,7 +494,7 @@ def beichi(hist, closes, t0, p1, t1, p2):
 
 ---
 
-## 9. 补充分析框架 — SMC + 量价 + 多市场共振 + 威科夫
+## 9. 补充分析框架 — 结构分析 + 量价 + 多市场共振 + 威科夫
 
 > 缠论补充模块，解决缠论失效场景（主升浪加速/震荡市/跳空）。
 > 全部基于腾讯K线OHLCV数据，无需新数据源，可审计复现。
@@ -511,7 +511,7 @@ def beichi(hist, closes, t0, p1, t1, p2):
 
 ---
 
-### 9.1 SMC（Smart Money Concept）— 解决震荡市无结构
+### 9.1 结构分析（OB / FVG / Sweep）— 解决震荡市无结构
 
 **适用场景**：涨幅<20%、缠论无明显段结构时，识别机构下单区域
 
@@ -700,7 +700,7 @@ market_trend = (market[-1] / market[-6] - 1) * 100
 
 | 场景 | 缠论信号 | 补充信号 | 联合判断 |
 |------|---------|---------|---------|
-| 震荡市 | 背驰面积比噪音 | SMC Order Block | 用OB替代背驰做支撑/压力 |
+| 震荡市 | 背驰面积比噪音 | 结构 Order Block | 用OB替代背驰做支撑/压力 |
 | 突破判断 | 段面积扩张 | 量价：放量突破 | 量价确认真突破 |
 | 主升浪 | 背驰失效 | 威科夫阶段D/E | MA20偏离>20%替代 |
 | 底部确认 | 底背驰触发 | 威科夫阶段C | 双重确认最强买点 |
@@ -816,11 +816,11 @@ python3 tools/batch/regression_test.py test
 | 信号组合 | n | 5d跌率 | 5d均 | 10d跌率 | 10d均 | 评级 |
 |---|---|---|---|---|---|---|
 | **日=Markup 威科夫+缠论** | **77** | **65%** | **-1.8%** | **68%** | **-1.7%** | ⭐⭐ 最大样本双稳定 |
-| 日=Markup 威科夫+SMC | 28 | 67% | -5.9% | 61% | -6.7% | ⭐ |
+| 日=Markup 威科夫+结构 | 28 | 67% | -5.9% | 61% | -6.7% | ⭐ |
 | 日=Markup 强信号≥2个(日线) | 21 | 71% | -4.7% | 75% | -2.1% | ⭐⭐ |
 | 日=Markup 强信号≥2个(60m) | 27 | 70% | -3.3% | 62% | +0.7% | ⭐ |
-| 日=Markup 仅SMC(卖侧扫) | 164 | 62% | -2.0% | 57% | -0.7% | ⭐ |
-| SMC卖侧扫(weekly) | 55 | 64% | -2.3% | 62% | -1.6% | ⭐ |
+| 日=Markup 仅结构(卖侧扫) | 164 | 62% | -2.0% | 57% | -0.7% | ⭐ |
+| 结构卖侧扫(weekly) | 55 | 64% | -2.3% | 62% | -1.6% | ⭐ |
 | 缠论 1卖(daily) | 13 | 82% | -4.5% | 89% | -13.5% | ⭐⭐ 样本少 |
 
 #### 威科夫+缠论同时触发的完整样本 (77条)
@@ -921,8 +921,8 @@ python3 tools/batch/regression_test.py test
 | 缠论 2卖(daily) | 122 | 57% | 57% | 大样本稳定 |
 | 缠论 2卖(60m) | 208 | 57% | 56% | 大样本稳定 |
 | 缠论 顶背驰(daily) | 18 | 47% | 65% | 10d有效 |
-| SMC 卖侧扫(daily) | 323 | 59% | 54% | |
-| SMC 卖侧扫(weekly) | 55 | **64%** | **62%** | 周线最稳 |
+| 结构 卖侧扫(daily) | 323 | 59% | 54% | |
+| 结构 卖侧扫(weekly) | 55 | **64%** | **62%** | 周线最稳 |
 
 ### 底部信号胜率汇总
 

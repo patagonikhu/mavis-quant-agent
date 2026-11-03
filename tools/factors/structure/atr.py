@@ -1,7 +1,7 @@
 """
-smc/atr.py - ATR (Average True Range, SMC 算法基础)
+structure/atr.py - ATR (Average True Range, 结构算法基础)
 
-从 tools/smc.py calc_atr 搬过来 (跟原版 1:1)
+ATR 计算 (OB / FVG 过滤用)
 """
 from typing import List, Optional
 

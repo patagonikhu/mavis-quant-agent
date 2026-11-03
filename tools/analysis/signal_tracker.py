@@ -105,7 +105,7 @@ def save_signals_to_file(signals, date):
 MODEL_INFERENCE = [
     ('BC+中枢+MA+威科夫', ['BC+中枢+MA+威科夫', '3合1', '3合 1', 'BC_HUB_MA', 'top_alert']),
     ('缠论', ['中枢', '背驰', '止跌', '1买', '2买', '3买', '1卖', '2卖', '3卖', '60分底', '60分顶', '日线底', '日线顶']),
-    ('SMC', ['Demand', 'Supply', 'BOS', 'CHoCH', 'OB']),
+    ('结构', ['OB', 'FVG', '扫流', 'Demand', 'Supply', 'BOS', 'CHoCH']),
     ('威科夫', ['威科夫', 'A累积', 'B弹簧', 'C测试', 'D突破', 'E顶部', '阶段A', '阶段B', '阶段C', '阶段D', '阶段E']),
     ('T框架', ['T+', 'T-', 'T_']),
     ('板块', ['板块', 'sector']),
@@ -399,7 +399,7 @@ def main():
     p_st = sub.add_parser('stats', help='统计信号胜率')
     p_st.add_argument('--code', help='按 code 过滤')
     p_st.add_argument('--type', help='按 signal_type 过滤')
-    p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/SMC/威科夫/T框架/板块) 过滤')
+    p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/结构/威科夫/T框架/板块) 过滤')
     p_st.add_argument('--window', type=int, help='只统计最近 N 天')
     p_st.set_defaults(func=cmd_stats)
 

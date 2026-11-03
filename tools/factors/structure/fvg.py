@@ -1,7 +1,7 @@
 """
-smc/fvg.py - Fair Value Gap (FVG) 算法
+structure/fvg.py - Fair Value Gap (FVG) 算法
 
-从 tools/smc.py find_fvg / _fvg_mitigation_pct 搬过来 (跟原版 1:1)
+FVG 识别 + 回补进度 (mitigation_pct)
 """
 from typing import List, Dict
 from .atr import calc_atr

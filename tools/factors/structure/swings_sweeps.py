@@ -1,7 +1,7 @@
 """
-smc/swings_sweeps.py - Swing 高低点 + Liquidity Sweep 算法
+structure/swings_sweeps.py - Swing 高低点 + Liquidity Sweep 算法
 
-从 tools/smc.py find_swings / find_liquidity_sweeps 搬过来 (跟原版 1:1)
+Swing 定位 + 流动性扫单 (假突破) 识别
 """
 from typing import List, Dict
 

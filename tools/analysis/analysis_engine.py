@@ -45,7 +45,7 @@ class RawContext:
     chan_result:    dict = field(default_factory=dict)
     wyckoff_result: dict = field(default_factory=dict)   # 日线
     wyckoff_weekly: dict = field(default_factory=dict)
-    smc_result:     dict = field(default_factory=dict)
+    structure_result: dict = field(default_factory=dict)
     technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
     resonance_result: dict = field(default_factory=dict)
     _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
@@ -94,7 +94,7 @@ class AnalysisResult:
     raw 是唯一数据来源:
       raw["wyckoff"]  = {"score": ..., "stage": ..., "sub_events": ..., "3period": ...}
       raw["chan"]      = {"score": ..., "weekly": {...}, "daily": {...}}
-      raw["smc"]       = {"score": ..., "ob": [...], "smc_weekly": {...}}
+      raw["structure"] = {"score": ..., "ob": [...], "structure_weekly": {...}}
       raw["finance"]   = {"quarterly": [...], "roc": ..., "ey": ..., ...}
       raw["position"]  = {"close_pos_day": ..., ...}
       # Phase2 派生 (weight=0)
@@ -127,10 +127,10 @@ class AnalysisResult:
             "signals_active":  self.signals_active,
             "action":          self.action,
         })
-        # Backward compat: smc_weekly 作为独立顶层 key (render 可能直接读 analysis["smc_weekly"])
-        smc = self.raw.get("smc") or {}
-        if smc.get("smc_weekly"):
-            d.setdefault("smc_weekly", smc["smc_weekly"])
+        # Backward compat: structure_weekly 作为独立顶层 key (render 可能直接读 analysis["structure_weekly"])
+        struct = self.raw.get("structure") or {}
+        if struct.get("structure_weekly"):
+            d.setdefault("structure_weekly", struct["structure_weekly"])
         return d
 
 
@@ -334,18 +334,18 @@ class WyckoffStrategy:
         return results
 
 
-class SmcStrategy:
-    """SMC (OB/FVG/Sweep) → 分数，日线 + 周线两周期"""
-    name = "smc"
+class StructureStrategy:
+    """结构分析 (OB/FVG/Sweep) → 分数，日线 + 周线两周期"""
+    name = "structure"
 
     def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.smc.analysis import smc_analysis as _smc
+        from tools.factors.structure.analysis import structure_analysis as _struct
 
         def _run(kline, label):
             if not kline or len(kline) < 20:
                 return {}
             try:
-                return _smc(
+                return _struct(
                     opens=  [k.get("open", k["close"]) for k in kline],
                     highs=  [k["high"]  for k in kline],
                     lows=   [k["low"]   for k in kline],
@@ -357,40 +357,40 @@ class SmcStrategy:
             except Exception:
                 return {}
 
-        smc_d  = _run(ctx.kline,  "daily")
-        smc_w  = _run(ctx.weekly, "weekly")
+        struct_d = _run(ctx.kline,  "daily")
+        struct_w = _run(ctx.weekly, "weekly")
 
         # 合并存储（daily 向后兼容，双周期独立）
-        smc = {**smc_d, "smc_weekly": smc_w}
-        ctx.smc_result = smc
+        struct = {**struct_d, "structure_weekly": struct_w}
+        ctx.structure_result = struct
 
-        total_obs = (smc_d.get("total_obs", 0) or 0) + \
-                    (smc_w.get("total_obs", 0) or 0)
-        sweeps = len(smc_d.get("recent_sweeps") or [])
+        total_obs = (struct_d.get("total_obs", 0) or 0) + \
+                    (struct_w.get("total_obs", 0) or 0)
+        sweeps = len(struct_d.get("recent_sweeps") or [])
         score = min(total_obs * 0.1, 0.5) if total_obs > 0 else 0.0
         signals = []
         if total_obs > 3:
-            signals.append(f"SMC OB {total_obs}个(日/周)")
+            signals.append(f"结构 OB {total_obs}个(日/周)")
         if sweeps > 0:
-            signals.append(f"SMC 扫流 ×{sweeps}")
+            signals.append(f"结构 扫流 ×{sweeps}")
         return {
             "score":   score,
             "signals": signals,
-            "summary": f"SMC OB={total_obs} 扫流={sweeps}",
-            **smc,
+            "summary": f"结构 OB={total_obs} 扫流={sweeps}",
+            **struct,
         }
 
     def analyze_history(self, ctx: RawContext, dates: list) -> dict:
         """O(n): OB/FVG/Sweep 预扫一次，per date O(小常数) 过滤。"""
-        from tools.factors.smc.order_blocks import find_order_blocks
-        from tools.factors.smc.fvg import find_fvg
-        from tools.factors.smc.swings_sweeps import find_liquidity_sweeps
-        from tools.factors.smc.atr import calc_atr
+        from tools.factors.structure.order_blocks import find_order_blocks
+        from tools.factors.structure.fvg import find_fvg
+        from tools.factors.structure.swings_sweeps import find_liquidity_sweeps
+        from tools.factors.structure.atr import calc_atr
 
         dates_clean = set(d.replace("-", "")[:8] for d in dates)
         kline = ctx.kline or []
         if len(kline) < 20:
-            return {d.replace("-","")[:8]: {"score":0,"signals":[],"summary":"SMC 数据不足"} for d in dates}
+            return {d.replace("-","")[:8]: {"score":0,"signals":[],"summary":"结构数据不足"} for d in dates}
 
         opens  = [k.get("open", k["close"]) for k in kline]
         highs  = [k["high"]  for k in kline]
@@ -399,7 +399,7 @@ class SmcStrategy:
         dates_list = [k.get("trade_date","").replace("-","")[:8] for k in kline]
         vols   = [k.get("volume", 0) for k in kline]
 
-        # displacement_atr_mult 自适应（与 smc_analysis 逻辑一致）
+        # displacement_atr_mult 自适应（与 structure_analysis 逻辑一致）
         atr = calc_atr(highs, lows, closes) or 0
         n_pre = min(50, len(closes) - 1)
         if atr > 0 and n_pre >= 5:
@@ -447,12 +447,12 @@ class SmcStrategy:
 
             score   = min(total_obs * 0.1, 0.5) if total_obs > 0 else 0.0
             signals = []
-            if total_obs > 3:  signals.append(f"SMC OB {total_obs}个")
-            if n_sweeps > 0:   signals.append(f"SMC 扫流 ×{n_sweeps}")
+            if total_obs > 3:  signals.append(f"结构 OB {total_obs}个")
+            if n_sweeps > 0:   signals.append(f"结构 扫流 ×{n_sweeps}")
 
             results[date_clean] = {
                 "score": score, "signals": signals,
-                "summary": f"SMC OB={total_obs} 扫流={n_sweeps}",
+                "summary": f"结构 OB={total_obs} 扫流={n_sweeps}",
                 "nearest_bull_ob": nearest_bull, "nearest_bear_ob": nearest_bear,
                 "total_obs": total_obs, "total_fvgs": total_fvgs,
                 "recent_sweeps": sweeps[-3:],
@@ -471,7 +471,7 @@ class TechnicalStrategy:
           mid_series/upper_series/lower_series/pct_series/atr14_series/atr_pct_series/
           vol_ratio_series/vol_ma5_series), 这里把 series 对齐到 dates.
 
-    weight=0.10, 跟 smc 持平.
+    weight=0.10, 跟结构持平.
     """
     name = "technical"
 
@@ -1164,7 +1164,7 @@ def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
 PHASE1_STRATEGY_CLASSES = [
     ChanStrategy,
     WyckoffStrategy,
-    SmcStrategy,
+    StructureStrategy,
     TechnicalStrategy,  # v6.2.8 加: 8 个技术指标
     FinanceStrategy,
 ]
@@ -1180,7 +1180,7 @@ PHASE2_FUNCTIONS = [
     _derive_monitor_triggers,
 ]
 
-# 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / smc 0.10)
+# 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / structure 0.10)
 # 决策全部走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再加权汇总.
 # 保留空 dict 防止旧 import KeyError.
 _STRATEGY_WEIGHTS: dict[str, float] = {}
