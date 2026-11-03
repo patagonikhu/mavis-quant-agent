@@ -123,6 +123,58 @@ _CS_META_KEYS = frozenset({"id", "dt", "symbol", "high", "low", "open", "close",
                             "vol", "amount", "freq", "cache"})
 
 
+# 买卖点标签的确定性排序优先级 (2026-11-05)
+# 背景: czsc 内部用 set 遍历, 单根 bar 的信号 dict key 顺序随 PYTHONHASHSEED 变化
+#       → points 插入顺序漂移 → 报告 md 同一份数据两次生成内容不同 (已实测)
+# 修法: 在因子层 (唯一事实源) 统一排序, 渲染器不再依赖 dict 插入顺序
+_BSP_ORDER = [
+    # 买点 (级别从小到大, ⭐ = 强确认)
+    "🟢1买⭐", "🟢1买", "🟢0买", "🟢2买", "🟢3买",
+    # 卖点
+    "🔴1卖⭐", "🔴1卖", "🔴2卖", "🔴3卖",
+    # 其他 czsc BSP (结构/形态/背驰/笔)
+    "🟢双中枢", "🟢笔结束",
+    "🟢吞没", "🔴吞没",
+    "🟢孕线", "🔴孕线",
+    "🟢三法", "🔴三法",
+    "🟢反击线", "🔴反击线",
+    "🟢山川", "🟢分手线", "🔴分手线",
+    "🟢MACD底背", "🔴MACD顶背",
+    "🟢DIF走平", "🔴DIF走平",
+    "🟢MACD开仓", "🔴MACD开仓",
+    "🟢趋势跟随",
+    "🔴三只乌鸦", "🔴两只乌鸦", "🔴塔形",
+]
+_BSP_RANK = {lbl: i for i, lbl in enumerate(_BSP_ORDER)}
+
+
+def _bsp_sort_key(label: str):
+    """买卖点标签的确定性排序键。
+
+    已登记标签 → (0, 精确名次, "");
+    含已登记标签的变体 (如 "🟢1买⭐") → 最长前缀匹配名次;
+    未登记标签 → (1, 0, 标签字符串) 排末尾, 按字典序。
+    """
+    if label in _BSP_RANK:
+        return (0, _BSP_RANK[label], "")
+    best = -1
+    best_lbl = ""
+    for lbl, idx in _BSP_RANK.items():
+        if lbl in label and idx > best:
+            best = idx
+            best_lbl = lbl
+    if best >= 0:
+        return (0, best, label)
+    return (1, 0, label)
+
+
+def sort_bsp_points(points: Dict[str, Any]) -> Dict[str, Any]:
+    """买卖点 dict 确定性排序 (返回新 dict, 不改原对象)。"""
+    if not points:
+        return {}
+    return {lbl: points[lbl] for lbl in sorted(points.keys(), key=_bsp_sort_key)}
+
+
 def build_incremental_signals(klines: List[Dict], code: str = "TEMP",
                               warmup_to: int = -1,
                               weekly_bars=None):
@@ -229,7 +281,7 @@ def extract_points_from_sigs(sigs: list, as_of_date: str = "",
             if label not in points:
                 points[label] = f"¥{close:.2f}"
 
-    return {'points': points}
+    return {'points': sort_bsp_points(points)}
 
 
 def compute_buy_sell_signals(klines: List[Dict], code: str = "TEMP") -> Dict[str, Any]:
