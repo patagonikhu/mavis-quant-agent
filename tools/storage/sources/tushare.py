@@ -19,7 +19,9 @@ Token: 从 os.environ["TUSHARE_TOKEN"] 读 (.env 文件, 不进 git)
 设计原则:
   - 永远不 raise (每个接口返回 (data, status), status ∈ {OK/EMPTY/PERM_DENIED/EXCEPTION_xxx})
   - Tushare 5000 积分档: 全接口 200 次/分, 单接口 200 次/分
-    实测 stk_factor_pro 22/分 (sleep 2.0s) 跑 13 分钟 290 天稳定, 未触发限流
+    2026-11-03 实测: 连续调 stk_factor_pro 680 次 (峰值 196/分) 零限频
+    ⚠️ doc_id=328 接口页写的 "5000积分 30次/分" 对本账号**不成立** (官方两页自相矛盾,
+       以 doc_id=290 积分频次对应表 + 实测为准)。别再按 30/分 设 sleep。
   - 网络问题直接 fallback 到空, 不影响其他段
   - 重复行 (tushare 已知 bug) 用 drop_duplicates 去重
 
@@ -332,7 +334,8 @@ def get_stk_factor_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
                  ps, ps_ttm, dv_ratio, dv_ttm}, ...]
 
     1 次拿全市场 5548 只 1 天 (按 trade_date 1 次 API)
-    实测 5000 积分档限频 200/分, sleep 2.0s 跑 22/分稳定 13 分钟 290 天未触发限流
+    2026-11-03 实测: 本账号上限 ≥ 196/分 (连打 680 次零限频), 官方 doc_id=290 标 200/分
+    sync 侧 sleep 0.3s (=200/分) 调用。限流是**抛异常**, 返空 = 非交易日。
 
     字段 (5000 积分档 pro):
       - 基础: ts_code, trade_date, close

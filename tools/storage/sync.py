@@ -248,7 +248,7 @@ def action_stk_factor(force: bool = False) -> int:
 
     行为 (v6.2.5 改造: done 进度塞 parquet metadata, 不用 json):
       1. 删旧 5 季 stk_factor parquet (force=True 强制, False 智能)
-      2. 拉 5 季 trade_date x 1 API = ~8 分钟 (30/分限频, sleep 2.0秒)
+      2. 拉 5 季 trade_date x 1 API = ~5.5 分钟 (200/分限频, sleep 0.3秒; 实测峰值 196/分无限频)
       3. **每 10 个 trade_date 就把当季累积的 rows 写盘 + 更新 metadata** (崩了不丢数据)
       4. 5 季按 trade_date 写季度 parquet: 25Q3 25Q4 26Q1 26Q2 26Q3
          每季文件 metadata.b'done_dates' = JSON 数组 of YYYYMMDD (本季已完成)
@@ -372,7 +372,12 @@ def action_stk_factor(force: bool = False) -> int:
                 if not rows:
                     continue
                 write_stk_factor_quarter(q, rows, done_dates=sorted(quarter_done[q]))
-        time.sleep(2.0)  # 30/分限频
+        # 2026-11-03 改: sleep 2.0 → 0.3 (200/分)
+        # 旧值 2.0s 是按 doc_id=328 的 "5000积分 30次/分" 设的, 但实测本账号跑 680 次
+        # (峰值 196/分) 零限频 —— 账号实际在 doc_id=290 的 200/分 档。
+        # 0.3s = 200/分, 与项目其它 tushare 调用点 (store.py/eps.py) 一致, 留 1.5x 余量。
+        # 注意: 限流表现为**抛异常** (msg 含 "每分钟最多"), 不是返空; 返空 = 非交易日。
+        time.sleep(0.3)
 
     # 5) 最终再写一次 (保险)
     for q, rows in quarter_data.items():
