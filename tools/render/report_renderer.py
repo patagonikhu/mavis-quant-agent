@@ -433,8 +433,6 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     elif stage == "Markup":
         if markup_d.get('golden_cross_recent', False) and markup_d.get('above_ma200_sustained', False):
             pass_method = "强信号 (金叉 + 持续上方)"
-        elif markup_d.get('wta_markup_hit', False):
-            pass_method = f"WTA Layer2.5 通过 (MA50≥MA200×{MA50_MA200_TOLERANCE} + 金叉 + 连续5日 + 角度≥2%)"
         elif current_score > 0:
             # 2026-11-03: 区分是 fallback1 还是 fallback2 触发的, 避免报告跟代码说的不是一回事
             _slope_60 = (factor_values or {}).get("slope_60", 0)
@@ -443,9 +441,9 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
             _ma200 = (factor_values or {}).get("ma200", 0)
             _fb1 = (_slope_60 > 0 and (factor_values or {}).get("dev_ma200", 0) > -15
                     and _ma50_reached_ma200(_ma50, _ma200) and _trend_30 > -10)
-            _fb2 = (_trend_30 > 5 and _slope_60 > -20)
+            _fb2 = (_trend_30 > 5 and _slope_60 > 5)
             if _fb2 and not _fb1:
-                pass_method = "弱信号 / 起点 fallback2 (sub-event + 斜率 + WTA Layer2.5 判据)"
+                pass_method = "弱信号 / 起点 fallback2 (sub-event + 60日斜率向上 + 30日趋势向上)"
             elif _fb1:
                 pass_method = "弱信号 / 起点 fallback1 (4 项软条件)"
             else:
@@ -608,19 +606,20 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                "4 项软条件捕获『大方向向上 + 接近金叉 + 短期不崩』的反弹主升。")
     rows.append("")
 
-    # ── 2026-11-03 加: fallback2 路径 (stage_factor.py:236) ──
+    # ── fallback2 路径 (stage_factor.py) ──
     # 背景: stage 判定实际有 3 条 fallback 路径, 报告原来只渲染 fallback1 (上面那张表),
     #   导致西麦食品这类票显示「Markup AND 门全 ❌ + Fallback 也 ❌」但结论是 Markup。
     #   真正做决定的是 fallback2, 必须渲染出来, 否则报告跟代码说的不是一回事。
-    # 2026-11-03 再改: fallback2 加严 —— 必须同时通过 WTA Layer 2.5 的 4 条判据。
-    #   (改前只要 sub-event + 斜率 + 趋势就判 Markup, 实测 443 只候选池 10 只命中有
-    #    9 只靠这条兜底, 且被误判的 9 只 MA50/MA200 全在 56.4%~94.7%, 无一站上 MA200)
+    # 2026-11-03 修正: fallback2 是「主路径全 0 时的**兜底**」, 逻辑上必须比主路径宽松。
+    #   之前误把 WTA Layer 2.5 的 4 条判据当 fallback2 门槛 → fallback2 放行 0 只 (死代码),
+    #   且语义上比主路径还严。现改为只要求 60 日方向向上 (slope_60 > 5),
+    #   WTA 4 判据降级为**参考信息**展示, 不参与判定。
     n_sub = fv.get("active_sub_event_count")
     if n_sub is None:
         n_sub = len(fv.get("active_sub_events") or [])
     _active = fv.get("active_sub_events") or []
     fb2_slope_ok = slope_60 > 5 or slope_60 < -5
-    fb2_trend_up = trend_30 > 5 and slope_60 > -20
+    fb2_trend_up = trend_30 > 5 and slope_60 > 5
     fb2_trend_dn = trend_30 < -5
     fb2_entry = fb2_slope_ok and (fb2_trend_up or fb2_trend_dn)
     _wta_gate = markup_d.get('wta_markup_hit', False)
@@ -631,21 +630,18 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     _sub_desc = f"{n_sub} 个 ({', '.join(_active[:6])}{'...' if len(_active) > 6 else ''})" if _active else f"{n_sub} 个"
     rows.append(f"| 有 sub-event | ≥ 1 个 | 当前 {_sub_desc} | {_yn(n_sub >= 1)} |")
     rows.append(f"| 60 日斜率明显 | slope_60 > 5 或 < -5 | `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_slope_ok)} |")
-    rows.append(f"| 30 日趋势向上 | trend_30 > 5 且 slope_60 > -20 | `trend_30 = {trend_30:+.2f}%` | {_yn(fb2_trend_up)} |")
+    rows.append(f"| 30 日趋势向上 | trend_30 > 5 且 **slope_60 > 5** | `trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_trend_up)} |")
     rows.append(f"| 30 日趋势向下 | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | {_yn(fb2_trend_dn)} |")
-    rows.append(f"| **WTA Layer 2.5 门槛** | 4 条判据全满足 (见上表) | `MA50>MA200 + 金叉 + 连续5日上方 + 角度≥2%` | {_yn(_wta_gate)} |")
     fb2_result = ("→ Markup" if fb2_trend_up else "→ Accumulation" if fb2_trend_dn else "→ ?")
-    if fb2_trend_up:
-        fb2_result = "→ Markup" if _wta_gate else "→ ? (WTA Layer2.5 未过)"
-    rows.append(f"| **Fallback2 判定** | 入口 + 趋势方向 + WTA 门槛 | `{fb2_result}` | {_yn(fb2_entry and (not fb2_trend_up or _wta_gate))} |")
+    rows.append(f"| **Fallback2 判定** | 入口 + 趋势方向 | `{fb2_result}` | {_yn(fb2_entry)} |")
+    rows.append(f"| *(参考)* WTA Layer 2.5 | 4 条判据全满足 | `MA50够到MA200 + 金叉 + 连续5日上方 + 角度≥2%` | {_yn(_wta_gate)} |")
     rows.append("")
-    if fb2_entry and fb2_trend_up and not _wta_gate:
-        rows.append("> ⚠️ **本次阶段判定走的是 Fallback 2 入口** —— 入口条件满足, "
-                   "但 **WTA Layer 2.5 的 4 条均线判据未全通过**, 因此**不判 Markup**。")
+    if fb2_entry and fb2_trend_up:
+        rows.append("> ✅ **本次阶段判定走的是 Fallback 2** (兜底路径): 有威科夫 sub-event + 60 日斜率向上 + 30 日趋势向上。")
         rows.append("")
-    elif fb2_entry and fb2_trend_up and _wta_gate:
-        rows.append(f"> ✅ **本次阶段判定走的是 Fallback 2**, 且通过了 **WTA Layer 2.5** 的 4 条判据 "
-                   f"(MA50>MA200 + 近10日金叉 + 连续5日在上方 + MA50角度≥2%)。")
+    if not _wta_gate:
+        rows.append("> ℹ️ 本票 **未通过 WTA Layer 2.5 的 4 条均线判据** (见上表) —— "
+                   "即均线结构本身不支持『主升浪』, 仅靠威科夫结构 + 趋势兜底判定。")
         rows.append("")
 
     # Distribution 派发条件

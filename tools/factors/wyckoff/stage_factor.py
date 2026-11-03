@@ -335,15 +335,25 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
         'Markup': score_Markup,
         'Distribution': score_Distribution,
     }
-    # 2026-11-03 改 (方案 B): fallback2 加严 — 必须满足参考实现 Layer 2.5 的
-    #   Markup 4 条判据 (MA50>MA200 + 近10日金叉 + 连续5日在上方 + 角度>=2%).
+    # 2026-11-03 改 (方案 B → 方案 C 修正):
     #
-    #   改动前 fallback2 只要 len(sub_events)>=1 + slope_60>5 + trend_30>5 就判 Markup,
-    #   完全不看 MA200 / 金叉 / 趋势角度 —— 实测 443 只候选池里改前 10 只命中有 9 只
-    #   靠这条兜底, 且被砍的 9 只 MA50/MA200 全在 56.4%~94.7% (无一站上 MA200).
+    # ⚠️ 原实现把 WTA Layer 2.5 的 4 条判据当 fallback2 的门槛 —— **这是错的**:
+    #   fallback2 的定位是「主路径分数全 0 时的**兜底**」, 逻辑上必须比主路径宽松,
+    #   否则它永远兜不住任何东西 (实测: 加 WTA 后 fallback2 放行 **0 只** = 死代码)。
+    #   参考实现里 Markup 判定是**独立一层** (L2.5, 跑在已过漏斗的池子上),
+    #   跟我们的「主路径 → fallback 兜底」串行链不是一回事, 门槛不能直接套。
     #
-    #   保留 markup_wta_hit 作为**独立信号**输出 (报告可显示 "WTA Layer2.5 通过"),
-    #   但 fallback2 的 Markup 判定改用 wta 4 条判据, 不再无条件放行.
+    # 改前 fallback2: len(sub_events)>=1 + |slope_60|>5 + trend_30>5 → 判 Markup
+    #   真实 bug: **完全不看 60 日方向** —— 一只「60 日跌 15%、只是近 30 日反弹」的票
+    #   也会被判成主升浪。实测 10 只命中里 4 只 60 日斜率为负:
+    #     000423 东阿阿胶 -10.18% / 002946 新乳业 -13.38%
+    #     300357 我武生物 -8.96% / 688615 合合信息 -15.38%
+    #
+    # 改后 (方案 C): 保留兜底的宽松性质, 只把 **slope_60 > -20 收紧为 slope_60 > 5**
+    #   → 要求 60 日方向确实向上, 跟 fallback1 的 slope_60 > 0 语义一致但更严。
+    #
+    # WTA 4 判据不再作为 fallback2 门槛, 但仍作为**独立信号**输出
+    #   (markup_detail.wta_* / 报告「WTA Layer 2.5 判定」表), 供人工判断参考。
     fb2_base = (len(sub_events) >= 1 and (slope_60 > 5 or slope_60 < -5)
                 and trend_30 > 5 and slope_60 > -20)
 
@@ -352,12 +362,9 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     elif slope_60 > 0 and dev_ma200 > -15 and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10:
         stage = 'Markup'; scores['Markup'] = 1
     elif fb2_base:
-        if trend_30 > 5 and slope_60 > -20:
-            # fallback2 加严: 需通过参考实现 Layer 2.5 的 Markup 4 条判据
-            if markup_wta_hit:
-                stage = 'Markup'; scores['Markup'] = 1
-            else:
-                stage = '?'; scores['Markup'] = 0
+        if trend_30 > 5 and slope_60 > 5:
+            # fallback2 兜底: 60 日方向必须真的向上 (修 "60日跌但近30日反弹" 误判)
+            stage = 'Markup'; scores['Markup'] = 1
         elif trend_30 < -5:
             stage = 'Accumulation'; scores['Accumulation'] = 1
         else:
