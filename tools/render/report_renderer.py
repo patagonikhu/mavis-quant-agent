@@ -38,6 +38,7 @@ from datetime import datetime
 from typing import Optional
 
 from tools.analysis.render_data import RenderData
+from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERANCE
 
 
 # ============================================================
@@ -433,7 +434,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         if markup_d.get('golden_cross_recent', False) and markup_d.get('above_ma200_sustained', False):
             pass_method = "强信号 (金叉 + 持续上方)"
         elif markup_d.get('wta_markup_hit', False):
-            pass_method = "WTA Layer2.5 通过 (MA50>MA200 + 金叉 + 连续5日上方 + 角度≥2%)"
+            pass_method = f"WTA Layer2.5 通过 (MA50≥MA200×{MA50_MA200_TOLERANCE} + 金叉 + 连续5日 + 角度≥2%)"
         elif current_score > 0:
             # 2026-11-03: 区分是 fallback1 还是 fallback2 触发的, 避免报告跟代码说的不是一回事
             _slope_60 = (factor_values or {}).get("slope_60", 0)
@@ -441,7 +442,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
             _ma50 = (factor_values or {}).get("ma50", 0)
             _ma200 = (factor_values or {}).get("ma200", 0)
             _fb1 = (_slope_60 > 0 and (factor_values or {}).get("dev_ma200", 0) > -15
-                    and _ma50 >= _ma200 * 0.95 and _trend_30 > -10)
+                    and _ma50_reached_ma200(_ma50, _ma200) and _trend_30 > -10)
             _fb2 = (_trend_30 > 5 and _slope_60 > -20)
             if _fb2 and not _fb1:
                 pass_method = "弱信号 / 起点 fallback2 (sub-event + 斜率 + WTA Layer2.5 判据)"
@@ -562,20 +563,21 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         rows.append("")
         rows.append("| 判据 | 阈值 | 实际 | 满足 |")
         rows.append("|---|---|---|---|")
-        rows.append(f"| ① MA50 > MA200 (严格, 无容差) | MA50 > MA200 | `MA50={_wta_ma50:.2f} vs MA200={_wta_ma200:.2f} → 比值 {_wta_ratio:.1f}%` | {_yn(markup_d.get('wta_ma50_gt_ma200', False))} |")
-        rows.append(f"| ② 近 10 日发生过金叉 | MA50 上穿 MA200 | `近 10 日内扫描 ma50[j-1] ≤ ma200[j-1] AND ma50[j] > ma200[j]` | {_yn(markup_d.get('wta_cross_recent', False))} |")
-        rows.append(f"| ③ 连续 5 日在 MA200 上方 | 近 5 日 MA50 全 > MA200 | `above_days={_wta_above} / 5` | {_yn(markup_d.get('wta_sustained', False))} |")
+        _wta_thr = _wta_ma200 * MA50_MA200_TOLERANCE
+        rows.append(f"| ① MA50 够到 MA200 | MA50 ≥ MA200 × {MA50_MA200_TOLERANCE} | `MA50={_wta_ma50:.2f} vs 门槛 {_wta_thr:.2f} (MA200={_wta_ma200:.2f}, 比值 {_wta_ratio:.1f}%)` | {_yn(markup_d.get('wta_ma50_gt_ma200', False))} |")
+        rows.append(f"| ② 近 10 日发生过金叉 | MA50 上穿 MA200×{MA50_MA200_TOLERANCE} | `近 10 日内扫描 ma50[j-1] < ma200[j-1]×{MA50_MA200_TOLERANCE} AND ma50[j] ≥ ma200[j]×{MA50_MA200_TOLERANCE}` | {_yn(markup_d.get('wta_cross_recent', False))} |")
+        rows.append(f"| ③ 连续 5 日够到 MA200 | 近 5 日 MA50 全 ≥ MA200×{MA50_MA200_TOLERANCE} | `above_days={_wta_above} / 5` | {_yn(markup_d.get('wta_sustained', False))} |")
         rows.append(f"| ④ MA50 角度 | ≥ 2.0% / 5 日 | `(ma50[i]/ma50[i-5]-1)*100 = {_wta_angle:+.2f}%` | {_yn(markup_d.get('wta_angle_ok', False))} |")
         rows.append(f"| **WTA 综合** | 4 条全满足 | — | {_yn(markup_d.get('wta_markup_hit', False))} |")
         rows.append("")
         if not markup_d.get('wta_markup_hit', False):
             _miss = []
             if not markup_d.get('wta_ma50_gt_ma200', False):
-                _miss.append("① MA50 未站上 MA200")
+                _miss.append(f"① MA50 未达 MA200×{MA50_MA200_TOLERANCE}")
             if not markup_d.get('wta_cross_recent', False):
                 _miss.append("② 近 10 日无金叉")
             if not markup_d.get('wta_sustained', False):
-                _miss.append("③ MA50 未连续 5 日在 MA200 上方")
+                _miss.append(f"③ MA50 未连续 5 日达 MA200×{MA50_MA200_TOLERANCE}")
             if not markup_d.get('wta_angle_ok', False):
                 _miss.append("④ MA50 角度不足 2%")
             rows.append(f"> ❌ **未通过 WTA Layer 2.5** — 缺: {'; '.join(_miss)}。"
@@ -590,7 +592,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     slope_60 = fv.get("slope_60", 0)
     dev_ma200 = fv.get("dev_ma200", 0)
     trend_30 = fv.get("trend_30", 0)
-    _ma50_ma200_ok = ma50 >= ma200 * 0.95
+    _ma50_ma200_ok = _ma50_reached_ma200(ma50, ma200)
     # 60 日斜率 — 3 步展开
     rows.append(f"| 60 日斜率向上 | slope_60 > 0 | `(p/closes[i-60]-1)*100 = ({p:.2f}/{c_i_60:.2f}-1)*100 = {(p/c_i_60-1)*100:+.2f}%` | {_yn(slope_60 > 0)} |")
     # MA200 偏离

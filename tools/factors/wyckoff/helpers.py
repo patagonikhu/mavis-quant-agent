@@ -119,6 +119,33 @@ def _creek_line(swing_high_points_list, breakout_pct: float = 0.5):
 # Section 3: bias / trading range / support (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
+# MA50 相对 MA200 的容差比例。
+# 语义: MA50 追到 MA200 的 95% 即视为"已接近/站上年线", 不要求严格穿越。
+# 用途: 统一所有"MA50 是否站上 MA200"的判定口径, 避免各处写死 0.95 产生分歧。
+#   - stage_factor.py fallback1 (主升浪兜底路径)
+#   - report_renderer.py 报告渲染 (fallback1 判定复算 + 展示)
+MA50_MA200_TOLERANCE = 0.95
+
+
+def _ma50_reached_ma200(ma50: float, ma200: float,
+                        tolerance: float = MA50_MA200_TOLERANCE) -> bool:
+    """MA50 是否"够到" MA200 (带容差)
+
+    判定: ma50 >= ma200 * tolerance
+      - ma200 <= 0 (数据不足) → False
+      - tolerance 默认 0.95, 即 MA50 追到年线的 95% 就算数
+
+    ⚠️ 注意这是**放宽**口径, 跟 WyckoffTradingAgent Layer 2.5 的严格
+       `MA50 > MA200` 不同。参考实现跑在已过 L1/L2/L3 漏斗的池子上 (本身就是强过滤),
+       本项目跑在财务初筛后的池子上, 两者地位不同, 阈值不可直接照抄。
+
+    Returns: bool
+    """
+    if ma200 is None or ma50 is None or ma200 <= 0:
+        return False
+    return ma50 >= ma200 * tolerance
+
+
 def _bias_200_exceeds_limit(closes, max_bias_200: float = 25.0,
                             precomputed_ma200: float | None = None) -> bool:
     """(WyckoffTradingAgent 975 行) bias_200 过滤

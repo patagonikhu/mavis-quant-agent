@@ -30,7 +30,7 @@ class Factor:
     output_type: str = "series"
     def compute(self, df, **kwargs):
         raise NotImplementedError
-from tools.factors.wyckoff.helpers import _find_range
+from tools.factors.wyckoff.helpers import _find_range, _ma50_reached_ma200
 from tools.factors.wyckoff.detectors import scan_sub_events
 
 
@@ -39,14 +39,16 @@ from tools.factors.wyckoff.detectors import scan_sub_events
 # ============================================================================
 #
 # 参考实现 (Layer 2.5) 的 4 条判据, 必须**全满足**:
-#   ① 当前 MA50 > MA200                              (严格比较, 无 0.95 容差)
-#   ② 近 lookback(=10) 日内发生过 MA50 上穿 MA200     (金叉)
-#   ③ 最近 confirm_days(=5) 日, MA50 连续 > MA200
+#   ① 当前 MA50 够到 MA200                           (0.95 容差, 见 _ma50_reached_ma200)
+#   ② 近 lookback(=10) 日内发生过 MA50 上穿 MA200      (金叉, 同一容差口径)
+#   ③ 最近 confirm_days(=5) 日, MA50 连续够到 MA200   (同一容差口径)
 #   ④ MA50 近 5 日角度 >= 2.0%                        (markup_ma_angle_min)
 #
 # 与参考实现的差异 (有意为之, 已实测):
 #   - 参考实现跑在已过 L1/L2/L3 漏斗的池子上 (本身就是强过滤);
 #     本项目的 fallback2 是"主路径分数全 0 时的兜底", 地位不同。
+#   - 参考实现用严格 `MA50 > MA200`; 本项目统一用 0.95 容差
+#     (MA50 追到年线 95% 即算数), 口径集中定义在 helpers._ma50_reached_ma200。
 #   - 所以这里做成**可开关的判定器**, 由 wyckoff_judge 统一调用,
 #     而不是替换掉整个评分体系。
 #
@@ -85,20 +87,21 @@ def detect_markup_entry(i, arrs, window=None):
     ma50 = ma50_arr[i]
     ma200 = ma200_arr[i]
 
-    # ① MA50 > MA200 (严格)
-    ma50_gt = ma50 > ma200
+    # ① MA50 够到 MA200 (带 0.95 容差, 口径统一见 helpers._ma50_reached_ma200)
+    ma50_gt = _ma50_reached_ma200(ma50, ma200)
 
-    # ② 近 lookback 日内发生过 MA50 上穿 MA200
+    # ② 近 lookback 日内发生过 MA50 上穿 MA200 (同样用 0.95 容差口径)
     cross = False
     lo = max(1, i - MARKUP_CROSS_LOOKBACK + 1)
     for j in range(lo, i + 1):
-        if ma50_arr[j - 1] <= ma200_arr[j - 1] and ma50_arr[j] > ma200_arr[j]:
+        if (not _ma50_reached_ma200(ma50_arr[j - 1], ma200_arr[j - 1])
+                and _ma50_reached_ma200(ma50_arr[j], ma200_arr[j])):
             cross = True
             break
 
-    # ③ 最近 confirm_days 日 MA50 连续 > MA200 (参考实现统计个数并要求 == confirm_days)
+    # ③ 最近 confirm_days 日 MA50 连续够到 MA200
     above_days = sum(1 for j in range(i - MARKUP_CONFIRM_DAYS + 1, i + 1)
-                     if ma50_arr[j] > ma200_arr[j])
+                     if _ma50_reached_ma200(ma50_arr[j], ma200_arr[j]))
     sustained = above_days >= MARKUP_CONFIRM_DAYS
 
     # ④ MA50 近 5 日角度 (参考实现: tail(6) 首尾变化率)
@@ -346,7 +349,7 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
 
     if max(scores.values()) > 0:
         stage = max(scores, key=scores.get)
-    elif slope_60 > 0 and dev_ma200 > -15 and ma50 >= ma200 * 0.95 and trend_30 > -10:
+    elif slope_60 > 0 and dev_ma200 > -15 and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10:
         stage = 'Markup'; scores['Markup'] = 1
     elif fb2_base:
         if trend_30 > 5 and slope_60 > -20:
