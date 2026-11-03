@@ -434,7 +434,16 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         if markup_d.get('golden_cross_recent', False) and markup_d.get('above_ma200_sustained', False):
             pass_method = "强信号 (金叉 + 持续上方)"
         elif current_score > 0:
-            # 2026-11-03: 区分是 fallback1 还是 fallback2 触发的, 避免报告跟代码说的不是一回事
+            # 2026-11-03: 区分是主路径弱信号 / fallback1 / fallback2 触发的,
+            #   避免报告跟代码说的不是一回事。
+            #
+            # ⚠️ 2026-11-03 修 BUG: 原来只有三分支 (强信号 / fallback1 / fallback2),
+            #   主路径的**弱信号** (stage_factor.py L308:
+            #   `elif above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend: score_Markup += 1`)
+            #   因为 golden_cross_recent=False 而掉进最后的 else,
+            #   被错标成「弱信号 / 起点 fallback」。
+            #   实测 443 只池里主路径判出的 4 只 (300864/301109/301603/688628)
+            #   报告全部误标为 fallback —— 实际上走的是主路径弱信号。
             _slope_60 = (factor_values or {}).get("slope_60", 0)
             _trend_30 = (factor_values or {}).get("trend_30", 0)
             _ma50 = (factor_values or {}).get("ma50", 0)
@@ -442,10 +451,25 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
             _fb1 = (_slope_60 > 0 and (factor_values or {}).get("dev_ma200", 0) > -15
                     and _ma50_reached_ma200(_ma50, _ma200) and _trend_30 > -10)
             _fb2 = (_trend_30 > 5 and _slope_60 > 5)
+            # 主路径弱信号的条件 (与 stage_factor.py L308 一致):
+            #   `elif above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend`
+            _ma_gap = (factor_values or {}).get("ma_gap_pct_above", 0)
+            _main_weak = ((factor_values or {}).get("above_ma200", False)
+                          and _ma_gap > 0.5
+                          and (factor_values or {}).get("is_uptrend", False))
+            # 主路径第三条加分线 (与 stage_factor.py L310 一致):
+            #   `if dev_ma20 > 5 and pos_pct > 60 and is_uptrend: score_Markup += 1`
+            _main_extra = ((factor_values or {}).get("dev_ma20", 0) > 5
+                           and (factor_values or {}).get("pos_pct", 0) > 60
+                           and (factor_values or {}).get("is_uptrend", False))
             if _fb2 and not _fb1:
                 pass_method = "弱信号 / 起点 fallback2 (sub-event + 60日斜率向上 + 30日趋势向上)"
             elif _fb1:
                 pass_method = "弱信号 / 起点 fallback1 (4 项软条件)"
+            elif _main_weak:
+                pass_method = "主路径弱信号 (价格在 MA200 上方 + MA gap > 0.5% + 上升趋势)"
+            elif _main_extra:
+                pass_method = "主路径加分线 (MA20 偏离 > 5% + 价格位置 > 60% + 上升趋势)"
             else:
                 pass_method = "弱信号 / 起点 fallback"
         else:
@@ -536,10 +560,22 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     # 用 markup_d 的最终结果, 避免重复计算 5 对
     rows.append(f"| MA50/MA200 金叉 | 近 5 日内任一天『ma50_prev ≤ ma200_prev AND ma50 > ma200』| `遍历 j ∈ [i-4..i] (5 对), 命中 = True; 当前对: ma50_prev={ma50_prev:.2f} ≤ ma200_prev={ma200_prev:.2f} AND ma50={ma50:.2f} > ma200={ma200:.2f} → {gc_result}` (注: 当前对可能 False, 但近 5 日内可能 True) | {_yn(markup_d.get('golden_cross_recent', False))} |")
     # 持续 MA200 上方
-    rows.append(f"| 持续 MA200 上方 | 5 日都在 | `above_ma200_sustained={markup_d.get('above_ma200_sustained', '—')} (近 5 日 close > ma_long*0.98 全满足)` | {_yn(markup_d.get('above_ma200_sustained', False))} |")
+    # ⚠️ 2026-11-03 修 BUG: 说明文字写 "近 5 日 close > ma_long*0.98 全满足",
+    #   但 stage_factor.py L195-199 实际判的是
+    #   `all(arrs['ma50'][j] > arrs['ma200'][j] for j in 最近5日)` —— **MA50 vs 真 MA200**,
+    #   不是 close 也不是 ma_long(=MA60)。说明文字跟代码对不上。
+    rows.append(f"| 持续 MA200 上方 | 近 5 日 MA50 均 > 真 MA200 | `above_ma200_sustained={markup_d.get('above_ma200_sustained', '—')} (MA50 > MA200, 连续 5 日)` | {_yn(markup_d.get('above_ma200_sustained', False))} |")
     # MA gap > 0.5%
-    ma_gap_pct = (ma50 - ma200) / ma200 * 100 if ma200 > 0 else 0
-    rows.append(f"| MA gap > 0.5% | (MA50-MA200)/MA200 > 0.5% | `({ma50:.2f} - {ma200:.2f}) / {ma200:.2f} × 100 = {ma_gap_pct:.2f}%` | {_yn(ma_gap_pct > 0.5)} |")
+    # ⚠️ 2026-11-03 修 BUG: 原来展示 (MA50-MA200)/MA200 并用它判满足与否,
+    #   但 stage_factor.py L288 实际判定用的是 **ma_gap_pct_above = (p - ma200)/ma200**
+    #   (价格在 MA200 上方的偏离), 两个是不同的量。
+    #   实测 301109 乔锋智能: (MA50-MA200)/MA200 = -10.38% (不满足),
+    #   但 (p-ma200)/ma200 = -1.51% 也不满足 → 两边一致; 而 300864 南大环境等票
+    #   两值差异巨大, 报告结论会跟代码说的不是一回事。
+    #   现在统一用 ma_gap_pct_above (代码实际判定值)。
+    _ma_gap_above = fv.get("ma_gap_pct_above", 0)
+    _p_now = fv.get("p", 0)
+    rows.append(f"| MA gap > 0.5% | (价格-MA200)/MA200 > 0.5% | `({_p_now:.2f} - {ma200:.2f}) / {ma200:.2f} × 100 = {_ma_gap_above:.2f}%` | {_yn(_ma_gap_above > 0.5)} |")
     # MA50 角度 — 完整展开公式 (3 步: 公式 + 代入值 + 计算)
     ma50_angle_5d = fv.get("ma50_angle_5d", 0)
     rows.append(f"| MA50 角度 | ≥2%/5日 (markup_ma_angle_min) | `(ma50[i]/ma50[i-5]-1)*100 = ({ma50_i:.2f}/{ma50_i_5:.2f}-1)*100 = {(ma50_i/ma50_i_5-1)*100:+.2f}%` | {_yn(ma50_angle_5d >= 2.0)} |")
