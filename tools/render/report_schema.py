@@ -13,6 +13,13 @@ CLAUDE.md 红字硬约束 (2026-07-20 固化):
   2️⃣ 2 个缠论补充策略 (威科夫+多市场共振) — 一等公民
   6️⃣ 三层仓位+买卖点 — 综合 (止盈/止损/退场/仓位/监控)
 
+2026-11-03 删: 🎯 投资四问 + ⏰ T 框架 + 🚨 5 类 14 子信号 三档
+  → 四问/T框架 只输出机械占位 (LLM 从未填充), 5 类子信号 2026-11-02 起只剩
+    "龙头/政策/情绪" 3 个"暂未接入"占位 → 三档常年零有效信息
+  → 数据管线 (_mech_four_questions / _mech_t_frame / _agg_5_categories /
+    _derive_five_categories) 一并删除; 报告头的"评级/龙头 X/14"复用一并移除
+  → 注意: 🎯 T 框架事件 (t_events) 是独立 section (事件清单), 保留不动
+
 2026-11-03 删: 4️⃣ 大盘+美股背景整档 (本地指数数据常年缺失/滞后, 美股永远是占位符)
 
 2026-11-02 删: 5️⃣ PEG/DCF L 整档 (PEG 是假指标, DCF 依赖同一套 EPS 预测)
@@ -22,7 +29,8 @@ refresh 字段说明 (2026-07-24 加入, 方案 B 核心):
   "REGEN"    — 每次 enhance 强制重新生成 (数据驱动, 不保留旧内容)
                适用: 实时数据 (MA/技术指标), 或之前有单位 bug 的 section
   "PRESERVE" — 保留原报告内容, 只在缺失时补充占位符
-               适用: LLM 填充的分析 (缠论三要素/四问/T框架)
+               适用: LLM 填充的分析 (缠论三要素)
+               注: 2026-11-03 起 PRESERVE 无消费方 (全仓仅定义处出现)
 """
 
 # 报告 section 顺序 (硬编码, 不可改)
@@ -107,30 +115,40 @@ REPORT_SECTIONS = [
     #     "required": True,
     #     "refresh": "REGEN",
     # },
-    # === 投资四问 + T 框架 (LLM 填充, 保留) ===
+    # === 投资四问 + T 框架 + 5 类 14 子信号 ===
+    # 2026-11-03: 三档整档从 md 报告里删除 (用户指令)
+    #   原因: 四问/T 框架只输出机械占位 (LLM 从未真正填充过), 5 类子信号自
+    #         2026-11-02 删 PEG 起只剩"龙头/政策/情绪"3 个"暂未接入"占位
+    #         → 三档常年零有效信息, 却占着报告头部三段位置
     {
         "id": "four_questions",
         "title": "🎯 投资四问",
         "category": "📋",
         "render": "render_four_questions",
-        "required": True,
+        "required": False,
         "refresh": "PRESERVE",
+        # 2026-11-03: renderer 已不再输出该 section (函数 _section_four_questions 一并删除)
+        "_deprecated": True,
     },
     {
         "id": "t_frame",
         "title": "⏰ T 框架",
         "category": "📋",
         "render": "render_t_frame",
-        "required": True,
+        "required": False,
         "refresh": "PRESERVE",
+        # 2026-11-03: renderer 已不再输出该 section (函数 _section_t_frame 一并删除)
+        "_deprecated": True,
     },
     {
         "id": "five_categories",
         "title": "🚨 5 类 14 子信号",
         "category": "📋",
         "render": "render_five_categories",
-        "required": True,
+        "required": False,
         "refresh": "REGEN",
+        # 2026-11-03: renderer 已不再输出该 section (函数 _section_signal_5cat 一并删除)
+        "_deprecated": True,
     },
     {
         "id": "xgboost",

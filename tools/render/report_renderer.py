@@ -170,37 +170,6 @@ def _section_ma(data: RenderData) -> str:
     return "\n".join(rows) + f"\n\n**MA 排列:** {arrange}"
 
 
-def _section_four_questions(data: RenderData) -> str:
-    if data.four_questions:
-        fq = data.four_questions
-        return f"""- **① 卡点:** {fq.get('chokepoint', '—')} {fq.get('chokepoint_reason', '')}
-- **② TAM:** {fq.get('tam', '—')}
-- **③ 龙头评分:** {fq.get('leader_score', '—')}/14 ({fq.get('leader_reason', '')})
-- **④ 估值:** {fq.get('valuation', '—')}
-- **综合:** {fq.get('verdict', '—')}"""
-    return """> **数据状态:** ⚠️ 投资四问未评分
-> **说明:** 由 mavis (LLM) 套框架评分, 需 `/t-analyze` 一次性完成
-"""
-
-
-def _section_t_frame(data: RenderData) -> str:
-    if data.t_frame:
-        tf = data.t_frame
-        event     = tf.get('event') or tf.get('最近事件', '无近期事件')
-        event_date= tf.get('event_date', '')
-        t_pos     = tf.get('t_position') or tf.get('T_position', 'T+0.0')
-        phase     = tf.get('phase', '待判定')
-        strength  = tf.get('signal_strength', '需事件才能判断')
-        action    = tf.get('action', '待 mavis LLM 算 T 位置')
-        event_str = f"{event} ({event_date})" if event_date else event
-        return f"""- **最近事件:** {event_str}
-- **T 位置:** {t_pos}
-- **阶段:** {phase}
-- **信号强度:** {strength}
-- **操作建议:** {action}"""
-    return "> **数据状态:** ⚠️ T 框架未生成 (T 位置由 LLM 从外部源补: 年报/新闻/公告)\n"
-
-
 def _section_ga_factor(data: RenderData) -> str:
     """🧪 GA 因子验证 (2026-07-27 加, 实验性)
 
@@ -259,28 +228,6 @@ def _section_ga_factor(data: RenderData) -> str:
 """
     except Exception as e:
         return f"> ⚠️ GA 因子计算失败: {e}\n"
-
-
-def _section_signal_5cat(data: RenderData) -> str:
-    if not data.signal_5cat or "error" in data.signal_5cat:
-        return "> **数据状态:** ❌ 4 类 12 子信号未计算\n> **降级:** 用 K 线 + 技术指标自动算 (部分项用中性 5/10 分)\n"
-    s = data.signal_5cat
-    parts = [
-        # 2026-09-09 删: 总规则分 (raw_score/123) + rating (🥇/🥈/🥉/⚠️)
-        # 决策走 缠论 1买/2买/3买/1卖/2卖/3卖, 5 类信号只是参考子信号
-        "| 类别 | 子信号 | Score | 触发 | 说明 |",
-        "|---|---|---|---|---|",
-    ]
-    for row in s.get("signals", []):
-        triggered = "✅" if row.get("triggered") else "❌"
-        parts.append(
-            f"| {row.get('category', '—')} | {row.get('name', '—')} "
-            f"| {row.get('score', 0)}/10 | {triggered} "
-            f"| {row.get('reason', '—')} |"
-        )
-    if s.get("missing"):
-        parts.append(f"\n**数据缺失类:** {', '.join(s['missing'])}")
-    return "\n".join(parts) + "\n"
 
 
 def _section_xgboost(data: RenderData) -> str:
@@ -1297,15 +1244,6 @@ def _section_monitor(data: RenderData) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _section_four_q_short(data: RenderData) -> str:
-    """报告头的简短四问 + 评级"""
-    if data.four_questions:
-        fq = data.four_questions
-        # 2026-11-02 删: PEG 展示 (PEG 是假指标, 整档已删)
-        return f"""**评级:** {fq.get('verdict', '待判定')} | **龙头:** {fq.get('leader_score', '?')}/14"""
-    return "**评级:** ⏳ 等待四问评分"
-
-
 # ============================================================
 # Tushare 补充段 + 缠论三要素
 # ============================================================
@@ -1730,7 +1668,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
     # 2026-10-28: 主力 fflow 维度整体删除, 6️⃣ 位取消
     report = f"""# {code} {name} | {today}
 
-**板块:** {sector} | **股价:** {price_str} | {_section_four_q_short(data)}
+**板块:** {sector} | **股价:** {price_str}
 
 ---
 
@@ -1777,21 +1715,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
 {_section_ga_factor(data)}
-
----
-
-## 🎯 投资四问
-{_section_four_questions(data)}
-
----
-
-## ⏰ T 框架
-{_section_t_frame(data)}
-
----
-
-## 🚨 5 类 14 子信号
-{_section_signal_5cat(data)}
 
 ---
 

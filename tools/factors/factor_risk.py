@@ -8,7 +8,7 @@ tools/factors/factor_risk.py — 风控类 factor 库 (纯函数, 2026-09-09 统
 
 公开 API (3 个):
   - compute_stop_profit_loss  止盈 3 层 + 止损 4 档
-  - compute_exit_signals      5 类 14 子信号退出判定 (缠论+估值+主力三维)
+  - compute_exit_signals      退场信号判定 (缠论+估值)
   - compute_monitor_triggers  监控触发点 (缠论+中枢+事件)
 """
 from __future__ import annotations

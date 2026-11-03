@@ -100,7 +100,6 @@ class AnalysisResult:
       # Phase2 派生 (weight=0)
       # 2026-11-02 删: raw["peg"] / raw["dcf"] (PEG/DCF 整档已删)
       raw["sector_overheat"]     = {1周涨幅: ..., ...}
-      raw["five_categories"]     = {score: ..., verdict: ...}
       raw["buy_sell_points"]     = {daily: {...}, weekly: {...}}
       raw["exit_signals"]        = {绿信号数: ..., 红信号数: ..., ...}
       raw["stop_profit_loss"]    = {止盈3层: [...], 止损4档: [...]}
@@ -1041,15 +1040,7 @@ def _derive_sector_overheat(ctx: RawContext, raw: dict) -> dict:
     }
 
 
-def _derive_five_categories(ctx: RawContext, raw: dict) -> dict:
-    """5 类 14 子信号 (缠论+止跌+估值)"""
-    from tools.factors.valuation.multi import FiveCategoriesFactor
-    try:
-        return FiveCategoriesFactor()(df=None,
-                                      eps_table=ctx.eps_table,
-                                      current_price=ctx.current_price) or {}
-    except Exception:
-        return {}
+# 2026-11-03 删: _derive_five_categories (5 类 14 子信号整档已删; multi.py 已不存在, 该函数恒返回 {})
 
 
 def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
@@ -1136,9 +1127,10 @@ def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
 
 
 def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
-    """监控触发点 5 类 14 子 (缠论背驰+止跌+事件)
+    """监控触发点 (4 缠论 + 2 中枢位 + 时间触发)
 
     2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
+    2026-11-03 改: 去掉过时的 "5 类 14 子" 措辞 (该档整体已删)
     """
     from tools.factors.factor_risk import compute_monitor_triggers
     try:
@@ -1172,7 +1164,6 @@ PHASE1_STRATEGY_CLASSES = [
 # Phase2 派生函数列表
 PHASE2_FUNCTIONS = [
     _derive_sector_overheat,
-    _derive_five_categories,
     _derive_buy_sell_points,
     _derive_exit_signals,
     _derive_stop_profit_loss,

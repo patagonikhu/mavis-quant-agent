@@ -11,7 +11,7 @@
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报 (17 section: 投资四问 + T 框架 + 因子矩阵 + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
+| `/t-analyze <code> [name]` | 单只详报 (14 section: 因子矩阵 + 缠论 4 级别 + 仓位/买卖点) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
@@ -54,7 +54,7 @@
 
 ### 1.3 输出格式
 
-`/t-analyze` 报告关键字段（17 section）:
+`/t-analyze` 报告关键字段（14 section）:
 
 ```
 **4 季财务 + Magic 估值** (15 列大表, linter 必查):
@@ -76,6 +76,9 @@
 ## 2. 分析框架概览
 
 ### 2.1 投资四问 + T框架（核心）
+
+> ⚠️ 2026-11-03 起: 「🎯 投资四问」「⏰ T 框架」「🚨 5 类 14 子信号」三个 section 已从 md 报告删除。
+> 以下四问 / T 框架仍是 **LLM 手动套框架** 的方法论 (不自动进报告), T 事件 (`🎯 T 框架事件`) section 保留。
 
 任何标的必答 4 个问题:
 1. **卡点** — 产业链上的不可替代环节? (⭐ 1-5)
@@ -246,7 +249,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 ### 4.2 events.json (v6.2 起 **删除**)
 
 > T 事件由 LLM 报告生成时从外部源查 (年报/新闻/公告), 不再走本地配置。
-> 报告里 T 框架段固定占位, LLM 后续补。
+> 2026-11-03 起「⏰ T 框架」section 已删; 「🎯 T 框架事件」section 保留, 由 LLM 后续补。
 
 ### 4.3 sectors.json (v6.2 起 **删除**)
 

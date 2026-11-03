@@ -3,7 +3,8 @@ tools/factors/valuation/factor_lib.py — 估值算子全集 (纯函数, 2026-09
 
 历史: 之前 3 个文件重复实现:
   - tools/analysis/valuation.py       (calc_roc_at_date / calc_ey_at_date / calc_magic_one_day / batch_magic_scores)
-  - tools/factors/valuation/multi.py  (PegFactor / DcfFactor / SectorOverheatFactor / FiveCategoriesFactor)
+  - tools/factors/valuation/multi.py  (PegFactor / DcfFactor / SectorOverheatFactor)
+                                      [2026-11-02 PEG/DCF 已删; 2026-11-03 FiveCategoriesFactor 已删]
   - (2026-10-27: tools/analysis/report_section_evaluators.py 已删, 是死代码副本)
 
 合并后: 1 个文件, 纯函数, 统一风格, 无 class 包装。

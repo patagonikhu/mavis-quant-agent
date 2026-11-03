@@ -33,48 +33,9 @@ from typing import Optional
 # ============================================================
 # 状态
 # ============================================================
-
-
-def _mech_four_questions(raw, signals_5) -> dict:
-    """机械算投资四问基础分 (PE/ROE/EPS CAGR)"""
-    try:
-        pe = raw.get("pe_ttm") or 0
-        eps_table = raw.get("eps_table") or []
-        roe = eps_table[-1].get("ROE", 0) if eps_table and isinstance(eps_table[-1], dict) else 0
-        # 龙头评分 0-14: 估值(3) + 盈利(4) + 成长(4) + 安全(3)
-        score = 0
-        if 0 < pe < 30: score += 3
-        elif 0 < pe < 50: score += 2
-        if roe > 25: score += 4
-        elif roe > 15: score += 3
-        elif roe > 8: score += 2
-        # 成长: 用 EPS 隐含增速
-        if len(eps_table) >= 2 and eps_table[0].get("EPS", 0) > 0 and eps_table[-1].get("EPS", 0) > 0:
-            cagr = (eps_table[-1]["EPS"] / eps_table[0]["EPS"]) ** (1 / max(len(eps_table) - 1, 1)) - 1
-            if cagr > 0.20: score += 4
-            elif cagr > 0.10: score += 3
-        # 安全
-        if pe > 0: score += 3
-        leader = min(14, max(0, score))
-        return {
-            "chokepoint": "⭐⭐⭐ (产业链中游, 转换环节, 机械占位)",
-            "tam": "5 年 TAM 增长 50-100% (定性, 待 LLM 精调)",
-            "leader_score": f"{leader}/14",
-            "leader_reason": f"PE(TTM)={pe:.1f}, ROE={roe:.1f}%, 机械算基础分",
-            "valuation": f"PE(TTM)={pe:.1f}, {'合理' if pe < 30 else '偏高' if pe < 50 else '过高'}",
-            "verdict": "🥈 标准 (机械算基础分, LLM 待精调)",
-        }
-    except Exception:
-        return None
-
-
-def _mech_t_frame(raw) -> dict:
-    """机械 T 框架占位 (v6.2 起: T 位置由 LLM 从外部源补, 不依赖本地 events.json)"""
-    return {
-        "T_position": "T-? (v6.2 占位, 待 LLM 查年报/新闻/公告补)",
-        "phase": "🟡 待判定",
-        "action": "待 mavis LLM 算 T 位置",
-    }
+# 2026-11-03 删: _mech_four_questions / _mech_t_frame
+#   → 投资四问 + T 框架两档从 md 报告里删除, 这两个机械占位函数一并清理
+#   → handbook/analysis-framework.md 的方法论正文保留 (仍是 LLM 手动分析时的参考)
 
 
 # ============================================================
@@ -194,10 +155,7 @@ class RenderData:
     # 之前 v5.10.34 前: 这些字段从 dump 顶层读; 现在挪到 analysis 层
     # render 改读 data.analysis.<字段> 太散, 加 property 兼容老代码
     # 2026-11-02 删: peg / dcf 两个 property (PEG/DCF 整档已删, 0 调用)
-    @property
-    def five_categories(self) -> Optional[dict]:
-        return (self.analysis or {}).get("five_categories")
-
+    # 2026-11-03 删: five_categories property (5 类 14 子信号整档已删, 0 调用)
     @property
     def buy_sell_points(self) -> Optional[dict]:
         # 多源合并: 1) analysis.buy_sell_points, 2) factor_scores.buy_sell_points.raw
@@ -247,9 +205,6 @@ class RenderData:
     # 2026-11-02 删: _merge_peg_detail / _merge_dcf_detail
     #   (2026-09-02 就没人调了 — peg_detail/dcf_detail 已合并成 valuation_data; PEG/DCF 整档也已删)
 
-    signal_5cat: Optional[dict] = None  # {signals, raw_score, rating, missing}
-    signal_5cat_status: Optional[DataStatus] = None
-
     # 2026-09-09 删: strategy 字段 (5 strategy 投票, 走缠论)
     # strategy: Optional[dict] = None
     # strategy_status: Optional[DataStatus] = None
@@ -257,12 +212,11 @@ class RenderData:
     # ===== 扩展 (mavis LLM 算) =====
     chan_data: Optional[dict] = None
     chan_status: Optional[DataStatus] = None
-    four_questions: Optional[dict] = None
-    t_frame: Optional[dict] = None
+    # 2026-11-03 删: four_questions / t_frame / signal_5cat 三个字段
+    #   (投资四问 / T 框架 / 5 类 14 子信号三档整档已删)
     # 2026-09-02 合并: peg_detail / dcf_detail / magic_formula_detail → valuation_data 1 个
     # 2026-11-02: PEG/DCF 已删, valuation_data 现在只剩 Magic (ROC/EY)
     valuation_data: Optional[dict] = None  # FinanceStrategy 输出 (Magic)
-    signal_5cat: Optional[dict] = None
     xgboost_prob: Optional[float] = None
     supplement: Optional[dict] = None
     take_profit: Optional[dict] = None
@@ -400,18 +354,18 @@ class RenderData:
             analysis=signals_5,
             chan_data=chan_data,
             ctx=ctx,
-            four_questions=_mech_four_questions(raw_for_mech, signals_5),
-            t_frame=_mech_t_frame(raw_for_mech),
             # 2026-10-30 修: 删掉 exit_signals / position_layer / monitor_triggers 三个传参
             #   它们走 _mech_* stub (永远返回 None), 且会把上面删掉的字段重新加回来,
             #   导致 property 再次被遮蔽. 现在统一由 property 从 analysis dict 派生.
+            # 2026-11-03 删: four_questions / t_frame 两个传参 (两档整档已删)
             market_cap_yi=ctx.market_cap_yi,
             # Magic Formula: 在 from_result 里直接算, 不留 N/A
             # market_cap 入参单位"万" (跟 Tushare daily_basic 一致), 内部 / 1e4 转亿
             # 2026-09-02 改: 删 magic_formula_detail, 用 valuation_data 1 个字段
             valuation_data=cls._compute_valuation(ctx, result),
             # 2026-09-03 修 12 处 Phase2 降级: 7 个 schema 字段填值
-            # _compute_phase2 返 dict 包含: fundamental / signal_5cat / strategy / sector_overheat / supplement / take_profit
+            # _compute_phase2 返 dict 包含: sector_overheat / supplement / take_profit
+            #   2026-11-03 删: fundamental / signal_5cat / strategy 三个 key
             **cls._compute_phase2(ctx, result, signals_5, ma_table),
         )
 
@@ -449,9 +403,7 @@ class RenderData:
 
         # 2026-09-09 删: 基本面 (4 维) — 估值/盈利/增长/安全 评分
         # 走 缠论 + Magic (ROC/EY), 报告 section 整个删掉
-        # 2) 5 类信号 — 5 个 strategy 信号聚合
-        out["signal_5cat"] = cls._agg_5_categories(raw, signals_5, ctx)
-        out["signal_5cat_status"] = _ok("5类信号")
+        # 2026-11-03 删: 5 类信号 (整档已删, 只剩"暂未接入"占位, 零有效信息)
         # 2026-09-09 删: 策略 (5 strategy 投票, 走缠论)
         # 4) 缠论补充 — 从 chan 取 (bsp + hub 已经算)
         out["supplement"] = cls._extract_chan_supplement(raw)
@@ -462,35 +414,13 @@ class RenderData:
 
         return out
 
-    @staticmethod
-    def _agg_5_categories(raw: dict, signals_5, ctx) -> dict:
-        """聚合 5 类信号 (量价/资金/龙头/政策/情绪) — 2026-09-09 删 total_score 加权
-
-        决策走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再按 5 类信号加权汇总.
-        signals 字段保留 (子信号独立展示), 删 score/raw_score/rating 加权字段.
-
-        2026-11-02 删: 估值类 PEG 子信号 (PEG 是假指标).
-          → 剩下 龙头/政策/情绪 3 项全部是"未接入"占位, 实际无有效子信号.
-        """
-        signals: list[dict] = []
-
-        # 2026-10-28 删: 量价 + 资金 两个子信号
-        #   主力资金流维度已整体删除, 这两项无数据源
-        # 龙头/政策/情绪: 数据未接入, 标记
-        for cat in ["龙头", "政策", "情绪"]:
-            signals.append({
-                "category": cat, "name": f"{cat}_neutral", "score": 5,
-                "triggered": False, "reason": f"需 {cat} 数据 (暂未接入)",
-            })
-        # 2026-09-09 删: score/raw_score/rating 加权汇总
-        return {
-            "signals": signals,
-            "missing": ["龙头", "政策", "情绪"],
-        }
-
     # 2026-09-09 删: _agg_strategy (5 strategy 投票, 67 行)
     # 原因: 决策走 缠论 1买/2买/3买/1卖/2卖/3卖, 不再单独跑 5 strategy 投票
     # 渲染端: 4 套交易策略 section 整个删掉 (走缠论, 走 TechnicalStrategy 8 个技术指标)
+
+    # 2026-11-03 删: _agg_5_categories (5 类 14 子信号整档已删)
+    #   演进: 2026-10-28 删量价+资金 → 2026-11-02 删 PEG → 只剩 龙头/政策/情绪
+    #         3 项"暂未接入"占位 (score=5, triggered=False) → 零有效子信号
 
     @staticmethod
     @staticmethod
@@ -535,16 +465,13 @@ class RenderData:
         line("MA", self.ma_status, f"{len(self.ma_table)} 条")
         line("技术指标", self.technical_status, "8 种 (MACD/RSI/KDJ/BOLL/ATR/量比)")
         # 2026-09-09 删: 基本面 status 行 (4 维基本面, 走 Magic)
-        # 2026-09-09 改: 5类信号 删 raw_score/rating, 改子信号数
-        s5_summary = f"{len(self.signal_5cat.get('signals', []))} 子信号" if self.signal_5cat else "—"
-        line("5类信号", self.signal_5cat_status, s5_summary)
+        # 2026-11-03 删: 5类信号 status 行 (5 类 14 子信号整档已删)
         # 2026-09-09 删: 策略 status 行 (走缠论, 不再单独展示 5 strategy 投票)
         # 2026-08-31: 资金流 section 已停用 (CLAUDE.md 板块适用性限制), 不展示
         line("EPS", self.eps_status, f"{len(self.eps_table)} 条")
 
         report["缠论"] = ("✅" if self.chan_data else "❓", "OK" if self.chan_data else "未计算")
-        report["四问"] = ("✅" if self.four_questions else "❓", "OK" if self.four_questions else "未计算")
-        report["T框架"] = ("✅" if self.t_frame else "❓", "OK" if self.t_frame else "未计算")
+        # 2026-11-03 删: 四问 / T框架 两行 (两档整档已删)
         # 2026-09-02 改: 合并 valuation_data 1 个
         # 2026-11-02 删: PEG / DCF L 两行 (整档已删)
         _val = self.valuation_data or {}
