@@ -658,11 +658,13 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append(f"| MA50 角度 | ≥2%/5日 (markup_ma_angle_min) | `(ma50[i]/ma50[i-5]-1)*100 = ({ma50_i:.2f}/{ma50_i_5:.2f}-1)*100 = {(ma50_i/ma50_i_5-1)*100:+.2f}%` | {_yn(ma50_angle_5d >= 2.0)} |")
     rows.append("")
 
-    # ── 2026-11-03 加: WTA Layer 2.5 判定 (参考实现 _detect_markup_entry 1:1) ──
+    # ── WTA Layer 2.5 判定 (参考实现 _detect_markup_entry 1:1) — 独立参考信号 ──
     # 背景: fallback2 原来只要 sub-event + 斜率 + 趋势就判 Markup, 完全不看 MA200/金叉,
     #   实测 443 只候选池里 10 只命中有 9 只靠这条兜底, 且被误判的 9 只
     #   MA50/MA200 全在 56.4%~94.7% (无一站上 MA200).
-    # 2026-11-03 起 fallback2 加严: 必须通过参考实现 Layer 2.5 的 4 条判据.
+    # ⚠️ 定案 (commit c5cf58a): WTA 4 判据**不是** fallback2 的门槛。
+    #   0a16616 曾经把它当门槛 → fallback2 放行 0 只 (死代码) 且比主路径还严,
+    #   已摘掉; 现在 WTA 只作为**独立参考信号**输出, 不参与 stage/channel 判定。
     _wta_avail = markup_d.get('wta_ma50_gt_ma200') is not None
     if _wta_avail:
         _wta_ma50 = markup_d.get('wta_ma50', 0) or 0
