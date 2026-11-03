@@ -28,8 +28,10 @@
 """
 import argparse
 import ast
+import io
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -705,6 +707,66 @@ def write_report(by_severity, skill_violations, args):
     print(f"📝 报告: {out}")
 
 
+def _strip_comments_and_docstrings(content: str) -> str:
+    """返回"去掉注释与 docstring"的源码文本, 行号保持不变。
+
+    守门员规则针对的是**真实执行的调用**, 不是文档/注释里写的示例。
+    典型误报: sync.py 模块 docstring 里写 "--eps --all 强制缩回 watchlist",
+    这是规则说明, 不是偷跑 —— 却被 `--eps\\s*--all` 正则命中。
+
+    实现:
+      1) ast 定位 Module/FunctionDef/ClassDef 的 docstring 行区间, 整段挖空
+      2) tokenize 去掉 # 注释 (保留普通字符串字面量, 因为命令常以字符串传给 subprocess)
+
+    2026-11-03 加 (修 eps-scope 误报)。
+    """
+    lines = content.split("\n")
+
+    # 1) docstring 区间
+    spans: list[tuple[int, int]] = []
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        tree = None
+    if tree is not None:
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                body = getattr(node, "body", [])
+                if (body and isinstance(body[0], ast.Expr)
+                        and isinstance(body[0].value, ast.Constant)
+                        and isinstance(body[0].value.value, str)):
+                    doc = body[0]
+                    spans.append((doc.lineno, doc.end_lineno or doc.lineno))
+
+    for start, end in spans:
+        for ln in range(start, end + 1):
+            if 1 <= ln <= len(lines):
+                lines[ln - 1] = ""
+    stripped = "\n".join(lines)
+
+    # 2) 注释
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(stripped).readline))
+    except (tokenize.TokenError, IndentationError):
+        return stripped
+
+    out: list[str] = []
+    prev_row = 1
+    prev_col = 0
+    for tok in toks:
+        if tok.type == tokenize.COMMENT:
+            continue
+        srow, scol = tok.start
+        if srow > prev_row:
+            out.append("\n" * (srow - prev_row))
+            prev_row = srow
+        elif scol > prev_col:
+            out.append(" " * (scol - prev_col))
+        out.append(tok.string)
+        prev_col = tok.end[1]
+    return "".join(out)
+
+
 def check_eps_scope(args):
     """EPS 范围守门员 (2026-09-09 加)
 
@@ -756,6 +818,8 @@ def check_eps_scope(args):
             content = py_file.read_text(encoding="utf-8")
         except Exception:
             continue
+        # 2026-11-03: 只扫真实代码 (去掉注释 + docstring), 避免把规则说明当成偷跑
+        content = _strip_comments_and_docstrings(content)
         for m in pattern_eps_all.finditer(content):
             lineno = content[:m.start()].count("\n") + 1
             rel = py_file.relative_to(ROOT)
