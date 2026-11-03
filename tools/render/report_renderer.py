@@ -411,16 +411,40 @@ def _wy_sub_indicators_md(wy_signals: list, level: str) -> str:
 
 def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, scores: dict,
                     factor_values: dict = None, closes: list = None,
-                    sub_events: list = None, stage_detail: str = "") -> str:
+                    sub_events: list = None, stage_detail: str = "",
+                    channel: str = "") -> str:
     """
     威科夫 阶段判定细节 - 展示为什么判这个阶段
 
     3 大阶段各自的 AND 门条件 + 实际是否满足
     2026-10-17 加: Fallback 路径 + factor 实际值表 + 计算公式速查
     2026-11-03 加: Accumulation 弱信号路径 (严格门没过但仍给分时显示)
+    2026-11-03 加: channel 参数 —— **生产侧直接给出的实际命中通道**,
+                    渲染器不再"显示侧反推"(之前反推跟实际分支对不上:
+                    45 只标 fallback1 的里只有 6 只真走 fallback1)。
     """
     # 判断每个条件
     def _yn(ok): return "✅" if ok else "❌"
+
+    # 2026-11-03: 通道标签表 (生产侧 channel → 中文)。
+    #   channel 可能是多值 ("main_weak+main_extra"), 因为 Markup/Distribution 的
+    #   加分线在代码里是**独立 if**, 可以和主判据同时成立 → 分数累加。
+    #   所以解析时按 "+" 拆开, 逐段映射后用 " + " 连接。
+    _CH_LABEL = {
+        "main_strict": "主路径强信号 (金叉 + 持续 MA200 上方 + MA gap > 0.5% + 上升趋势)",
+        "main_weak": "主路径弱信号 (价格在 MA200 上方 + MA gap > 0.5% + 上升趋势)",
+        "main_extra": "主路径加分线 (MA20 偏离 > 5% + 价格位置 > 60% + 上升趋势)",
+        "fallback1": "fallback1 (4 项软条件: slope_60>0 + dev_ma200>-15% + MA50 够到 MA200 + trend_30>-10)",
+        "fallback2_markup": "fallback2 → Markup (sub-event + 60日斜率向上 + 30日趋势向上)",
+    }
+
+    def _channel_label(ch: str) -> str:
+        """channel → 中文标签; 多值按 '+' 拆开逐段映射。"""
+        parts = [p for p in (ch or "").split("+") if p]
+        labels = [_CH_LABEL[p] for p in parts if p in _CH_LABEL]
+        if labels:
+            return " + ".join(labels)
+        return f"未识别通道 ({ch or '空'})"
 
     # 当前阶段的通过方式说明
     current_score = scores.get(stage, 0)
@@ -429,60 +453,39 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         if accum_d.get('pass_all', False):
             pass_method = "AND 门严格通过"
         elif current_score > 0:
-            pass_method = "弱信号 fallback (横盘/低位 + 累积 sub-event)"
+            # 2026-11-03: 用生产侧 channel 判定来源, 不再自己反推
+            if channel == "fallback2_accum":
+                pass_method = "fallback2 → Accumulation (60日+30日双向下)"
+            elif channel.startswith("main_weak_"):
+                _h = channel[len("main_weak_"):] or "?"
+                pass_method = f"弱信号路径 — 命中分支 {_h} (A OR B OR C, 任一成立即 +1)"
+            else:
+                pass_method = "弱信号路径 (A OR B OR C, 任一成立即 +1)"
         else:
             pass_method = "未通过"
     elif stage == "Markup":
-        if markup_d.get('golden_cross_recent', False) and markup_d.get('above_ma200_sustained', False):
-            pass_method = "强信号 (金叉 + 持续上方)"
-        elif current_score > 0:
-            # 2026-11-03: 区分是主路径弱信号 / fallback1 / fallback2 触发的,
-            #   避免报告跟代码说的不是一回事。
-            #
-            # ⚠️ 2026-11-03 修 BUG: 原来只有三分支 (强信号 / fallback1 / fallback2),
-            #   主路径的**弱信号** (stage_factor.py L308:
-            #   `elif above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend: score_Markup += 1`)
-            #   因为 golden_cross_recent=False 而掉进最后的 else,
-            #   被错标成「弱信号 / 起点 fallback」。
-            #   实测 443 只池里主路径判出的 4 只 (300864/301109/301603/688628)
-            #   报告全部误标为 fallback —— 实际上走的是主路径弱信号。
-            _slope_60 = (factor_values or {}).get("slope_60", 0)
-            _trend_30 = (factor_values or {}).get("trend_30", 0)
-            _ma50 = (factor_values or {}).get("ma50", 0)
-            _ma200 = (factor_values or {}).get("ma200", 0)
-            _fb1 = (_slope_60 > 0 and (factor_values or {}).get("dev_ma200", 0) > -15
-                    and _ma50_reached_ma200(_ma50, _ma200) and _trend_30 > -10)
-            _fb2 = (_trend_30 > 5 and _slope_60 > 5)
-            # 主路径弱信号的条件 (与 stage_factor.py L308 一致):
-            #   `elif above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend`
-            _ma_gap = (factor_values or {}).get("ma_gap_pct_above", 0)
-            _main_weak = ((factor_values or {}).get("above_ma200", False)
-                          and _ma_gap > 0.5
-                          and (factor_values or {}).get("is_uptrend", False))
-            # 主路径第三条加分线 (与 stage_factor.py L310 一致):
-            #   `if dev_ma20 > 5 and pos_pct > 60 and is_uptrend: score_Markup += 1`
-            _main_extra = ((factor_values or {}).get("dev_ma20", 0) > 5
-                           and (factor_values or {}).get("pos_pct", 0) > 60
-                           and (factor_values or {}).get("is_uptrend", False))
-            if _fb2 and not _fb1:
-                pass_method = "弱信号 / 起点 fallback2 (sub-event + 60日斜率向上 + 30日趋势向上)"
-            elif _fb1:
-                pass_method = "弱信号 / 起点 fallback1 (4 项软条件)"
-            elif _main_weak:
-                pass_method = "主路径弱信号 (价格在 MA200 上方 + MA gap > 0.5% + 上升趋势)"
-            elif _main_extra:
-                pass_method = "主路径加分线 (MA20 偏离 > 5% + 价格位置 > 60% + 上升趋势)"
-            else:
-                pass_method = "弱信号 / 起点 fallback"
+        if current_score > 0:
+            # 2026-11-03: 通道标签改读**生产侧 channel**, 不再显示侧反推。
+            #   旧逻辑重算 fb1/fb2/main_weak 条件, 跟生产实际分支对不上
+            #   (实测 45 只标 fallback1 的里只有 6 只真走 fallback1;
+            #    标 fallback2 的 8 只里只有部分真走 fb2)。
+            pass_method = _channel_label(channel)
         else:
             pass_method = "未通过"
     elif stage == "Distribution":
         if dist_d.get('distribution_start', False):
             pass_method = "AND 门严格通过 (派发起点)"
         elif current_score > 0:
-            pass_method = "弱信号 (高位 + 派发 sub-event)"
+            pass_method = _channel_label(channel) or "弱信号 (高位 + 派发 sub-event)"
         else:
             pass_method = "未通过"
+    elif stage == "?":
+        # 2026-11-03: '?' 阶段原本 pass_method 留空 → 渲染成 "****" (空加粗)。
+        #   none = 三阶段都没给出得分; fb2_base_unresolved = fallback2 基础命中但方向不明。
+        if channel == "fb2_base_unresolved":
+            pass_method = "fallback2 基础命中但阶段未解 (有 sub-event + |slope_60|>5, 但 30 日方向不明确)"
+        else:
+            pass_method = "未判定 — 三阶段均未给出得分"
 
     rows = []
     fv = factor_values or {}
@@ -565,13 +568,16 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                 if _nm:
                     _snames.add(_nm)
         _accum_ev = sorted(_snames & {"Spring", "LPS", "EVR"})
-        _cA = abs(_sl60) < 8 and 25 < _pos < 75 and bool(_accum_ev)
-        _cB = _pos < 30 and _dev200 < -5 and bool(_accum_ev)
-        _cC = _pos < 30 and _dev200 < -5 and len(_snames) >= 1
-        # fallback2 → Accumulation 分支
-        _fb2_accum = (len(_snames) >= 1 and _sl60 < -5 and _tr30 < -5)
+        # 2026-11-03: A/B/C 判定**读生产侧 accum_detail**, 渲染器不再自己复刻
+        #   (复刻一旦跟生产漂移, 报告就会说谎 —— fallback 标签就是这么错的)。
+        _wA = bool(accum_d.get("weak_A_ok", False))
+        _wB = bool(accum_d.get("weak_B_ok", False))
+        _wC = bool(accum_d.get("weak_C_ok", False))
+        _hit = accum_d.get("weak_hit") or ""
+        # fallback2 → Accumulation 分支: 同样以生产侧 channel 为准
+        _fb2_accum = (channel == "fallback2_accum")
 
-        if not (_cA or _cB or _cC) and _fb2_accum:
+        if not (_wA or _wB or _wC) and _fb2_accum:
             # 分数来自 fallback2, 不是主路径弱信号
             rows.append(f"> ⚠️ **严格 AND 门未通过 (pass_all=False), 但仍判 Accumulation** —— "
                         f"这一分**不是**主路径弱信号给的, 而是 **fallback2 → Accumulation 分支** "
@@ -585,19 +591,27 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                         f"而不是主升浪。注意它**不看 MA200 位置 / 不看量能 / 不要求近期事件**。")
             rows.append("")
         else:
-            _hit = "A" if _cA else ("B" if _cB else ("C" if _cC else "—"))
+            _hit = _hit or "—"
             rows.append(f"> ⚠️ **严格 AND 门未通过 (pass_all=False), 但仍判 Accumulation** —— "
                         f"Accumulation 是**评分制不是 AND 门**, 实际给分的是下面的**弱信号路径** (score={current_score}):")
             rows.append("")
-            rows.append("| 弱信号分支 | 阈值 | 实际 | 满足 |")
-            rows.append("|---|---|---|---|")
-            rows.append(f"| **A. 横盘/低位 + 累积 sub-event** ⭐ | `abs(slope_60) < 8` 且 `25 < pos_pct < 75` 且有 Spring/LPS/EVR | `abs({_sl60:.2f}) < 8`, `pos_pct={_pos:.1f} ∈ (25,75)`, 累积类事件={_accum_ev or '无'} | {_yn(_cA)} |")
-            rows.append(f"| B. 深跌 + 累积 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且有 Spring/LPS/EVR | `pos_pct={_pos:.1f}`, `dev_ma200={_dev200:+.2f}%`, 累积类事件={_accum_ev or '无'} | {_yn(_cB)} |")
-            rows.append(f"| C. 深跌 + 任意 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且 `len(sub_events) >= 1` | `pos_pct={_pos:.1f}`, `dev_ma200={_dev200:+.2f}%`, sub_event 数={len(_snames)} | {_yn(_cC)} |")
+            rows.append("**弱信号路径 — 逻辑关系: `A OR B OR C`** (三条并列, 任一成立即 +1 分; "
+                        "**可同时成立**, 不互斥)")
             rows.append("")
-            rows.append(f"> **实际命中分支: {_hit}** (三条是 **OR** 关系: 任一满足即 +1 分; "
-                        f"但代码是 elif 链, 按 A→B→C 顺序**只命中第一条**。"
-                        f"「子阶段」({stage_detail}) 由另一条链判定 (L407-416), 与 AND 门无关。")
+            rows.append("| 弱信号分支 | 阈值 | 实际 | 条件成立 | 实际计分 |")
+            rows.append("|---|---|---|---|---|")
+            rows.append(f"| **A. 横盘/低位 + 累积 sub-event** ⭐ | `abs(slope_60) < 8` 且 `25 < pos_pct < 75` 且有 Spring/LPS/EVR | `slope_60={_sl60:+.2f}` → `abs={abs(_sl60):.2f}` (需 <8), `pos_pct={_pos:.1f}` (需 25~75), 累积类事件={_accum_ev or '无'} | {_yn(_wA)} | {'✅ **+1 (命中分支)**' if _hit == 'A' else '⬜ 未走'} |")
+            rows.append(f"| B. 深跌 + 累积 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且有 Spring/LPS/EVR | `pos_pct={_pos:.1f}` (需 <30), `dev_ma200={_dev200:+.2f}%` (需 <-5%), 累积类事件={_accum_ev or '无'} | {_yn(_wB)} | {'✅ **+1 (命中分支)**' if _hit == 'B' else '⬜ 未走'} |")
+            rows.append(f"| C. 深跌 + 任意 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且 `len(sub_events) >= 1` | `pos_pct={_pos:.1f}` (需 <30), `dev_ma200={_dev200:+.2f}%` (需 <-5%), sub_event 数={len(_snames)} (需 >=1) | {_yn(_wC)} | {'✅ **+1 (命中分支)**' if _hit == 'C' else '⬜ 未走'} |")
+            rows.append("")
+            _also = [n for n, ok in (("A", _wA), ("B", _wB), ("C", _wC)) if ok and n != _hit]
+            _extra = (f" (同时成立但被 elif 顺序挡在后面的: {', '.join(_also)})" if _also else "")
+            rows.append(f"> **实际命中分支: {_hit}** —— 得分来自 {_hit} 条 (条件成立 → +1 分){_extra}。")
+            rows.append(">")
+            rows.append("> **⚠️ 「条件成立」≠「实际计分」**: 代码是 `if/elif` 链, A→B→C 顺序**只记第一条**成立的分支; "
+                        "所以「条件成立」列可能有多条 ✅, 但只有命中分支拿到那 +1 分。")
+            rows.append(">")
+            rows.append(f"> 「子阶段」({stage_detail}) 由另一条链判定 (L407-416), 与 AND 门无关。")
             rows.append("")
 
     # Markup 主升浪条件 (核心修改: 实际列展开公式)
@@ -1214,7 +1228,8 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     wy_criteria_md = _wy_criteria_md(wy_stage, accum_d, markup_d, dist_d, scores,
                                       wy_data.get("factor_values", {}),
                                       closes=_c, sub_events=sub_events,
-                                      stage_detail=wy_data.get("stage_detail", ""))
+                                      stage_detail=wy_data.get("stage_detail", ""),
+                                      channel=wy_data.get("channel", ""))
     wy_sub_events_md = _wy_sub_events_md(sub_events, SUB_EVENT_GLOSSARY, wy_stage,
                                           c=_c, h=_h, l=_l, v=_v, o=_o, pct=_pct)
     scores_str = " / ".join(f"{k}:{v}" for k, v in scores.items() if v > 0) if scores else "无得分"

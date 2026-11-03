@@ -211,9 +211,18 @@ def lint_report(md_path: str) -> dict[str, Any]:
         # 防护: 任何 md 里出现"历史计算失败"→ 立即 FAIL, 强制重跑 batch analyze
         ("历史计算失败", "factor_history 实算失败残行 (必须重跑 batch/t_analyze_all.py)"),
     ]
+    # 误报豁免 (2026-11-03 加): 占位符检测是纯子串匹配, 正文里合法的业务术语会误命中。
+    # 例: "金叉未完成" 是 Fallback 设计哲学的固定描述 (report_renderer.py), 不是占位符。
+    placeholder_exempt = {
+        "未完成": ("金叉未完成",),
+    }
     for pattern, desc in placeholder_patterns:
         # 排除合法的"未触发"等业务术语
-        matches = [line for line in content.split("\n") if pattern in line]
+        exempt = placeholder_exempt.get(pattern, ())
+        matches = [
+            line for line in content.split("\n")
+            if pattern in line and not any(e in line for e in exempt)
+        ]
         if matches:
             for line in matches[:3]:  # 只报前 3 个
                 warnings.append(f"⚠️ 占位符 [{desc}]: {line.strip()[:80]}")

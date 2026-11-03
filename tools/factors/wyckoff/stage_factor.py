@@ -265,17 +265,36 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
         if accum_base_low_ok and accum_ma_gap_ok and accum_volume_ok:
             accum_abc_pass = True
 
+    # 2026-11-03: 弱信号 A/B/C 抽成具名变量。
+    #   三条是 **OR 关系** (任一成立即 +1 分), 但执行上是 elif 链 → 只命中第一条。
+    #   渲染器以前自己复刻这三个条件, 跟生产逻辑可能漂移 (跟 fallback 标签出错的教训同源),
+    #   现在把**真实判定结果**下沉到 accum_detail, 报告直接读。
+    _has_accum_ev = any(e in sub_events for e in ('Spring', 'LPS', 'EVR'))
+    accum_weak_A_ok = abs(slope_60) < 8 and 25 < pos_pct < 75 and _has_accum_ev
+    accum_weak_B_ok = pos_pct < 30 and dev_ma200 < -5 and _has_accum_ev
+    accum_weak_C_ok = pos_pct < 30 and dev_ma200 < -5 and len(sub_events) >= 1
+    # 实际命中分支 (elif 链语义: A→B→C 顺序, 只记第一条成立)
+    accum_weak_hit = ""
+    if accum_abc_pass:
+        pass  # 严格 AND 门命中, 弱信号链根本没执行
+    elif accum_weak_A_ok:
+        accum_weak_hit = "A"
+    elif accum_weak_B_ok:
+        accum_weak_hit = "B"
+    elif accum_weak_C_ok:
+        accum_weak_hit = "C"
+
     if accum_abc_pass:
         score_Accumulation += 3
         if any(e in sub_events for e in ('Spring', 'LPS', 'EVR')):
             score_Accumulation += 2
         if dev_ma20 < 5 and dev_ma60 < 0:
             score_Accumulation += 1
-    elif abs(slope_60) < 8 and 25 < pos_pct < 75 and any(e in sub_events for e in ('Spring', 'LPS', 'EVR')):
+    elif accum_weak_A_ok:
         score_Accumulation += 1
-    elif pos_pct < 30 and dev_ma200 < -5 and any(e in sub_events for e in ('Spring', 'LPS', 'EVR')):
+    elif accum_weak_B_ok:
         score_Accumulation += 1
-    elif pos_pct < 30 and dev_ma200 < -5 and len(sub_events) >= 1:
+    elif accum_weak_C_ok:
         score_Accumulation += 1
 
     if accum_abc_pass:
@@ -380,26 +399,60 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
     #     300357 我武生物 -8.96% / 688615 合合信息 -15.38%)。
     fb2_base = (len(sub_events) >= 1 and (slope_60 > 5 or slope_60 < -5))
 
+    # 2026-11-03: 记录**实际命中通道**。
+    #   之前渲染器靠"显示侧反推"猜通道 (读 factor_values 重算一遍条件),
+    #   跟生产实际分支对不上 (实测 45 只标 fallback1 的里只有 6 只真走 fallback1)。
+    #   现在生产侧直接输出 channel, 渲染器只读不算。
+    channel = ""
+
     if max(scores.values()) > 0:
         stage = max(scores, key=scores.get)
+        # 主路径内部再分: 严格 AND 门 / 弱信号 A-B-C / Markup 弱信号
+        if stage == 'Accumulation':
+            if accum_abc_pass:
+                channel = 'main_strict'
+            elif accum_weak_hit:
+                channel = f'main_weak_{accum_weak_hit}'
+        elif stage == 'Markup':
+            # ⚠️ Markup 的**加分线是独立 if**, 不是 elif —— 可以和弱信号**同时**成立
+            #   (score_Markup 累加)。所以 channel 允许多值, 用 "+" 连接。
+            #   写成互斥单值会把「弱信号 + 加分线」误标成只有弱信号。
+            _ch = []
+            if golden_cross_recent and above_ma200_sustained and ma_gap_pct_above > 0.5 and is_uptrend:
+                _ch.append('main_strict')
+            elif above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend:
+                _ch.append('main_weak')
+            if dev_ma20 > 5 and pos_pct > 60 and is_uptrend:
+                _ch.append('main_extra')
+            channel = '+'.join(_ch) if _ch else 'none'
+        elif stage == 'Distribution':
+            # 同理: UTAD 加分是独立 if, 可与 distribution_start 同时成立
+            _ch = []
+            if distribution_start:
+                _ch.append('main_strict')
+            elif distribution_weak:
+                _ch.append('main_weak')
+            if distribution_start and 'UTAD' in sub_events:
+                _ch.append('main_extra')
+            channel = '+'.join(_ch) if _ch else 'none'
     elif slope_60 > 0 and dev_ma200 > -15 and _ma50_reached_ma200(ma50, ma200) and trend_30 > -10:
-        stage = 'Markup'; scores['Markup'] = 1
+        stage = 'Markup'; scores['Markup'] = 1; channel = 'fallback1'
     elif fb2_base:
         if slope_60 > 5 and trend_30 > 5:
             # fallback2 → Markup: 60 日 + 30 日双向上
             # (2026-11-03: 加 slope_60 > 5 修 "60日跌但近30日反弹" 误判;
             #  实测拦住 000423 东阿阿胶 -10.18% / 002946 新乳业 -13.38%
             #        300357 我武生物 -8.96% / 688615 合合信息 -15.38%)
-            stage = 'Markup'; scores['Markup'] = 1
+            stage = 'Markup'; scores['Markup'] = 1; channel = 'fallback2_markup'
         elif slope_60 < -5 and trend_30 < -5:
             # fallback2 → Accumulation: 60 日 + 30 日双向下 (真跌势 → 底部累积区)
             # 2026-11-03 修: 原入口条件带 `trend_30 > 5`, 把这个分支堵成死代码。
             #   原始设计 (2026-07-25) 明确要 "slope < -5 → Accumulation"。
-            stage = 'Accumulation'; scores['Accumulation'] = 1
+            stage = 'Accumulation'; scores['Accumulation'] = 1; channel = 'fallback2_accum'
         else:
-            stage = '?'
+            stage = '?'; channel = 'fb2_base_unresolved'
     else:
-        stage = '?'
+        stage = '?'; channel = 'none'
 
     max_score = scores.get(stage, 0)
     confidence = int(max_score / (sum(scores.values()) or 1) * 100)
@@ -432,6 +485,7 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
 
     return {
         "stage": stage, "stage_name": stage_name, "stage_detail": stage_detail,
+        "channel": channel,  # 2026-11-03: 实际命中通道 (main_strict/main_weak_X/fallback1/fallback2_*)
         "action": actions.get(stage, '—'),
         "confidence": confidence,
         "sub_events": sub_list, "sub_event_count": len(sub_list),
@@ -441,6 +495,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
             "base_low_ok": accum_base_low_ok, "ma_gap_ok": accum_ma_gap_ok,
             "volume_dry_ok": accum_volume_ok, "b_test_count": accum_b_test_count_n,
             "c_stage_ok": accum_c_ok, "pass_all": accum_abc_pass,
+            # 2026-11-03: 弱信号 A/B/C 真实判定 (OR 关系, 报告直接读, 渲染器不再复刻)
+            #   weak_A_ok/weak_B_ok/weak_C_ok = 各条条件是否成立
+            #   weak_hit                   = 实际拿到那 +1 分的是哪条 (A/B/C, 空 = 严格门已过或都没成立)
+            "weak_A_ok": accum_weak_A_ok, "weak_B_ok": accum_weak_B_ok,
+            "weak_C_ok": accum_weak_C_ok, "weak_hit": accum_weak_hit,
         },
         "distribution_detail": {
             "bias_200": dev_ma200, "bias_200_ok": dev_ma200 > 30,
