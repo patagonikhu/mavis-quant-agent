@@ -56,6 +56,23 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_all --include-blowout
 - `docs/portfolio/analyze-{code}-{name}.md` (持仓票) / `docs/watchlist/...` (自选)
 - `docs/signal-watchlist.md` (批量模式汇总)
 
+### 汇总里的信号类型 (2026-11-03)
+
+`signal-watchlist.md` 的 buy / sell 两张表来自 `extract_signals()` 的 direction 字段, 8 类信号:
+
+| 信号 | 方向 | 含义 |
+|---|---|---|
+| `🟢1买/2买/3买` 新出现 | buy | 缠论买卖点 |
+| `A→M主升启动(daily/weekly)` | buy | **威科夫阶段转变** (Accumulation→Markup) |
+| 威科夫子事件 (Spring/LPS/SOS/EVR...) | buy/sell | 按事件性质分 |
+| 中枢位置变化 | buy/sell | 内部→上方=买 |
+| MA 超跌 ≤-10% | buy | |
+| MA 过热 ≥+10% | sell | |
+| `M→D派发开始` | sell | 威科夫 Markup→Distribution |
+
+> ⚠️ 威科夫 **A→M 是 daily 和 weekly 分开算的** —— 日线 A→M 但周线还是 A, 是两个不同的信号, 报表里会分别列出。
+> 「变化」列不会重复显示同一转变 (A→M 只出现一次)。
+
 ## 相关
 
 - `/t-sync-data` (跑前必跑) / `/t-finance-earnings-blowout` / `/t-rsi6-tech` / `/t-backtest` / `/t-guardrail` / `/t-factor-5y`
