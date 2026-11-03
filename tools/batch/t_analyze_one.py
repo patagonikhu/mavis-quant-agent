@@ -2,7 +2,7 @@
 t_analyze_one.py — 单只股票 /t-analyze 入口 (2026-09-04 新增)
 
 复用 t_analyze_all.py::process_one 的完整流程 (含 compute_factor_history),
-保证单只详报跟 watchlist 批量 10 section 完全一致, 不再有 708 vs 829 行差异.
+保证单只详报跟 watchlist 批量 9 section 完全一致, 不再有 708 vs 829 行差异.
 
 用法:
     bash tools/with_venv.sh python3 tools/batch/t_analyze_one.py --code 300274
@@ -159,7 +159,7 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="单只 / 多只股票 /t-analyze 详报 (跟 watchlist 批量 10 section 一致)",
+        description="单只 / 多只股票 /t-analyze 详报 (跟 watchlist 批量 9 section 一致)",
     )
     parser.add_argument("--code", help="6 位股票代码 (单只, 例 300274)")
     parser.add_argument("--codes", help="多只代码, 逗号或空格分隔 (例 '600177,300274,300750')")

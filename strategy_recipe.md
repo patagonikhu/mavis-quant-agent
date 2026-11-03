@@ -82,7 +82,7 @@ def new_factor(self) -> dict:
 python -m tools.batch.guardrail --check parquet
 python -m tools.batch.guardrail --check network
 
-# 跑 1 单只 verify 10 section 报出来
+# 跑 1 单只 verify 9 section 报出来
 python -m tools.batch.t_analyze_one --code 300274
 
 # 跑回测 verify 信号可回放
@@ -95,10 +95,10 @@ python -m tools.batch.batch_backtest --signal new:xxx
 
 **目标:** 加 1 个新 factor (例如 `compute_atr_breakout`),供 analysis_result_signals 或 render_data 调。
 
-### Step 1: 在 `tools/factors/{basic,risk}.py` 加 `def compute_xxx(...)`
+### Step 1: 在 `tools/factors/{valuation/factor_lib.py,utils.py}` 加 `def compute_xxx(...)`
 
 ```python
-# tools/factors/factor_basic.py (或 factor_risk.py)
+# tools/factors/valuation/factor_lib.py
 def compute_atr_breakout(df: pd.DataFrame, window: int = 20) -> dict:
     """纯函数: 输入 df, 输出 dict (无副作用)"""
     atr = df["high"] - df["low"]

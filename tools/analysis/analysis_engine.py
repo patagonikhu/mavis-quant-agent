@@ -106,7 +106,9 @@ class AnalysisResult:
       # 2026-11-03 删: raw["stop_profit_loss"] (止盈 3 层 + 止损 4 档整档已删)
       # 2026-11-03 删: raw["three_layer_position"] (3 层仓位策略整档已删 —
       #   与 监控触发点 重叠; 止损/目标阶梯是当前价 × 固定百分比的机械外推)
-      raw["monitor_triggers"]    = {触发N项: ...}
+      # 2026-11-03 删: raw["monitor_triggers"] (监控触发点整档已删 —
+      #   时间触发恒为空(events=[]/code=""), 中枢突破档"已触发"硬编码 False,
+      #   仓位比例与止损价是机械外推; 缠论买卖点仍由 buy_sell_points 提供)
     """
     code: str
     name: str
@@ -1074,27 +1076,6 @@ def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
     return out
 
 
-def _derive_monitor_triggers(ctx: RawContext, raw: dict) -> dict:
-    """监控触发点 (4 缠论 + 2 中枢位 + 时间触发)
-
-    2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
-    2026-11-03 改: 去掉过时的 "5 类 14 子" 措辞 (该档整体已删)
-    """
-    from tools.factors.factor_risk import compute_monitor_triggers
-    try:
-        res_d = ctx.chan_result.get("daily") or {}
-        out = compute_monitor_triggers(
-            price=ctx.current_price,
-            chan_d=res_d,
-            events=[],
-            code="",
-            chan_signals=ctx.chan_result,
-        )
-        return out if isinstance(out, dict) else {}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 # ============================================================
 # 4. 调度器常量
 # ============================================================
@@ -1113,7 +1094,6 @@ PHASE1_STRATEGY_CLASSES = [
 PHASE2_FUNCTIONS = [
     _derive_sector_overheat,
     _derive_buy_sell_points,
-    _derive_monitor_triggers,
 ]
 
 # 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / structure 0.10)
@@ -1168,7 +1148,7 @@ class AnalysisEngine:
     def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
         """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
 
-        Phase 2 (monitor_triggers/...) 不在此处运行 — 由
+        Phase 2 (sector_overheat/buy_sell_points) 不在此处运行 — 由
         RenderData.from_result() 在 render 路径按需执行一次。
 
         Args:

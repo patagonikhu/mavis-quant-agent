@@ -703,7 +703,7 @@ def main():
     ap.add_argument("--no-write-md", action="store_true", help="不落盘 (默认 False)")
     ap.add_argument("--output", default="docs/wyckoff-a2m.md", help="md 输出路径")
     ap.add_argument("--full-report", action="store_true", default=True,
-                    help="命中后逐只跑 /t-analyze 10 section 详报 (默认 True, 2026-10-16 改)")
+                    help="命中后逐只跑 /t-analyze 9 section 详报 (默认 True, 2026-10-16 改)")
     ap.add_argument("--no-full-report", action="store_true", help="不跑详报 (只输出扫描汇总)")
     ap.add_argument("--report-top", type=int, default=100,
                     help="--full-report 时只详报前 N 只 (默认 100, 0=全部)")
@@ -1095,7 +1095,7 @@ def main():
     else:
         print("\n".join(lines))
 
-    # step 2: 命中后逐只跑 /t-analyze 10 section 详报
+    # step 2: 命中后逐只跑 /t-analyze 9 section 详报
     if args.no_full_report:
         args.full_report = False
     if args.no_write_md:

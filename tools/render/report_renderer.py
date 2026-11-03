@@ -7,7 +7,7 @@ report_renderer.py — 分析报告渲染器 (v1.0, 2026-07-21)
   ❌ 禁止 import requests / subprocess curl / fetch_all / 任何网络调用
 
 设计目标:
-  1. 10 个 section 标题全部固定, 缺数据也输出
+  1. 9 个 section 标题全部固定, 缺数据也输出
   2. 每个 section 头部显示数据状态 (OK/TIMEOUT/EMPTY/...)
   3. 报告头 + 报告尾各有一个完整性表格
   4. 给 LLM 看的"占位符"明确, 不会因 LLM 自由发挥而漏
@@ -48,7 +48,7 @@ from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERA
 def _section_quarterly_table(data: RenderData) -> str:
     """4 季大表 (从 RenderData.quarterly_finance 读 14 列, 含 ROC/EY/季末市值/EV/投入资本)
 
-    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 10 section 第 1 张表保持一致
+    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 9 section 第 1 张表保持一致
     返回 markdown 字符串 (header + note + 表格 + 行业)
     """
     _val = data.valuation_data or {}
@@ -1102,88 +1102,6 @@ def _section_factor_matrix(data: RenderData) -> str:
         return f"> **❌ factor_matrix 调用失败:** {e}\n"
 
 
-def _section_monitor(data: RenderData) -> str:
-    """监控触发点
-
-    2026-10-30 改: 之前 renderer 读 mt.get('add'/'reduce'/'clear') 这种扁平 key,
-      但 compute_monitor_triggers 实际产出的是"触发项列表"结构:
-        {触发项名: {"条件": ..., "操作": ..., "已触发": bool}, ...}
-      → 字段名对不上, 一直显示"未设定".
-      现在直接按触发项渲染 (加仓/减仓/清仓分类), 数据里有的就显示, 没有的不编.
-    """
-    if not data.monitor_triggers:
-        return "> **数据状态:** ⚠️ 监控触发点未生成\n"
-
-    mt = data.monitor_triggers
-    lines = []
-
-    # 老格式兼容 (万一以后改成扁平结构)
-    if any(k in mt for k in ("add", "reduce", "clear", "加仓信号", "减仓信号", "清仓信号")):
-        add    = mt.get('add')    or mt.get('加仓信号') or mt.get('加仓触发', '未设定')
-        reduce = mt.get('reduce') or mt.get('减仓信号') or mt.get('减仓触发', '未设定')
-        clear  = mt.get('clear')  or mt.get('清仓信号') or mt.get('清仓触发', '未设定')
-        time_t = mt.get('time')   or mt.get('时间触发',  '见 T 框架事件')
-        return f"""- **加仓触发:** {add}
-- **减仓触发:** {reduce}
-- **清仓触发:** {clear}
-- **时间触发:** {time_t}
-"""
-
-    # 新格式: 按触发项分类渲染
-    # 加仓类: 含 "加仓" / "建底仓" / "建仓"
-    # 减仓类: 含 "减仓" / "清仓"
-    buckets = {"加仓": [], "减仓": [], "清仓": [], "其他": []}
-    for name, spec in mt.items():
-        if not isinstance(spec, dict):
-            continue
-        op = str(spec.get("操作", ""))
-        if "加仓" in op or "建仓" in op or "底仓" in op:
-            buckets["加仓"].append((name, spec))
-        elif "清仓" in op:
-            buckets["清仓"].append((name, spec))
-        elif "减仓" in op:
-            buckets["减仓"].append((name, spec))
-        else:
-            buckets["其他"].append((name, spec))
-
-    for label in ("加仓", "减仓", "清仓"):
-        items = buckets[label]
-        if not items:
-            continue
-        lines.append(f"**{label}触发**")
-        for name, spec in items:
-            fired = "✅ 已触发" if spec.get("已触发") else "⏳ 未触发"
-            lines.append(f"- **{name}** — {fired}")
-            lines.append(f"  - 条件: {spec.get('条件', '—')}")
-            lines.append(f"  - 操作: {spec.get('操作', '—')}")
-        lines.append("")
-
-    if buckets["其他"]:
-        lines.append("**其他触发**")
-        for name, spec in buckets["其他"]:
-            fired = "✅ 已触发" if spec.get("已触发") else "⏳ 未触发"
-            lines.append(f"- **{name}** — {fired}")
-            if spec.get("条件"):
-                lines.append(f"  - 条件: {spec['条件']}")
-            if spec.get("操作"):
-                lines.append(f"  - 操作: {spec['操作']}")
-        lines.append("")
-
-    # 时间触发
-    time_t = mt.get("时间触发")
-    if time_t:
-        lines.append(f"**时间触发:** {time_t}")
-    else:
-        lines.append("**时间触发:** 无")
-
-    # 缠论综合判定
-    overall = mt.get("缠论_综合判定")
-    if overall and overall != "—":
-        lines.append(f"**缠论综合判定:** {overall}")
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
 # ============================================================
 # Tushare 补充段 + 缠论三要素
 # ============================================================
@@ -1575,7 +1493,7 @@ def _section_t_events(data: RenderData) -> str:
 
 def render_report(data: RenderData, sector: str = "—") -> str:
     """
-    渲染完整分析报告 (10 section 全部输出, 缺数据也保留)
+    渲染完整分析报告 (9 section 全部输出, 缺数据也保留)
 
     Args:
         data: RenderData 实例
@@ -1660,11 +1578,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🤖 XGBoost 校准
 {_section_xgboost(data)}
-
----
-
-## 📌 监控触发点
-{_section_monitor(data)}
 
 ---
 

@@ -176,9 +176,7 @@ class RenderData:
     def position(self) -> dict:
         return (self.analysis or {}).get("position") or {}
 
-    @property
-    def monitor_triggers(self) -> Optional[dict]:
-        return (self.analysis or {}).get("monitor_triggers")
+    # 2026-11-03 删: monitor_triggers property (监控触发点整档已删)
 
     # 2026-11-02 删: _merge_peg_detail / _merge_dcf_detail
     #   (2026-09-02 就没人调了 — peg_detail/dcf_detail 已合并成 valuation_data; PEG/DCF 整档也已删)
@@ -205,6 +203,7 @@ class RenderData:
     #   renderer 永远读到 None → 报告出 "监控触发点 未生成" 占位符.
     #   实测: analysis dict 里 monitor_triggers 有真实数据, 只是被字段遮蔽了.
     #   现在这个值统一由上面对应的 @property 从 analysis dict 派生.
+    #   2026-11-03: monitor_triggers property 已随「📌 监控触发点」整档删除
     # 2026-11-03 删: three_layer_position / position_layer 两个 property
     #   (3 层仓位策略整档已删)
 
@@ -390,8 +389,10 @@ class RenderData:
         # 2026-11-03 删: 止盈 3 层 + 止损 4 档 (整档已删)
         #   原: out["take_profit"] = compute_stop_pl(ctx.kline or [])
         #   价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断;
-        #   真实风控由 monitor_triggers (中枢位 + 缠论/时间触发) 承担
+        #   (原注释说"真实风控由 monitor_triggers 承担" — 该档本轮也已删, 见下)
         # 2026-11-03 删: 退场信号检查 (exit_signals) — 与上面两档重叠
+        # 2026-11-03 删: 3 层仓位策略 + 监控触发点 (整档已删)
+        #   → 报告已无独立风控 section; 仓位/止损需自行从 缠论买卖点 推导
 
         return out
 

@@ -2,7 +2,7 @@
 report_linter.py — 报告完整性校验 (v1.0, 2026-07-21)
 
 作用:
-  1. 读已生成的 md 文件, 检查 10 section 是否齐全
+  1. 读已生成的 md 文件, 检查 9 section 是否齐全
   2. 识别关键数据 (价格/EPS/ROC/EY 等) 是否缺失
   3. 输出校验报告, 追加到 md 末尾
   4. 返回 dict 给调用方, 可作为 quality gate
@@ -394,7 +394,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
     )
     if suspicious_inline:
         warnings.append(
-            f"🔴 发现 {len(suspicious_inline)} 处 bullet 压成单行 (监控触发点典型 bug)"
+            f"🔴 发现 {len(suspicious_inline)} 处 bullet 压成单行 (多行 bullet 被压平成一行)"
         )
 
     return {
