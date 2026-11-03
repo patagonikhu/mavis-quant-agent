@@ -67,14 +67,41 @@ def _filter_by_st(codes: list[str]) -> list[str]:
     return [c for c in codes if c not in st_codes]
 
 
+def _stk_factor_glob() -> str:
+    """stk_factor parquet 的 glob 表达式 (取最近 2 个季度文件, 不硬编码季度)。
+
+    2026-11-03 修: 原来硬编码 'data/history/stk_factor/2026Q4.parquet'
+    → 季度切换 (2027Q1) 时会静默失效 (读不到最新数据)。
+    改成动态取最近 2 个季度文件。
+    """
+    from tools.storage.store import STK_FACTOR_DIR
+    files = sorted(STK_FACTOR_DIR.glob("*.parquet"))
+    if not files:
+        return str(STK_FACTOR_DIR / "*.parquet")
+    recent = [str(f) for f in files[-2:]]
+    return "[" + ", ".join(f"'{f}'" for f in recent) + "]"
+
+
 def _filter_by_pe(codes: list[str], pe_max: float) -> list[str]:
-    """1 次 SQL 按 stk_factor 最新 trade_date 过滤 PE > pe_max 的票 (高估值剔除)
+    """1 次 SQL 按 stk_factor 里**每只票自己的最新 PE** 过滤 PE > pe_max 的票 (高估值剔除)
 
     2026-10-17 加: --exclude-pe 高价股前置过滤
     - 默认 0 = 不过滤
     - 50/80/100 分别为 适中/较严/严 三档 (跟用户 A 股估值分布对账: PE>100 占 23%)
     - PE <= 0 或 NULL (亏损 / 数据缺) 默认放行 (跟 --with-finance 互补)
     - 跟 stk_basic name 字段比 join 一下拿中文名 (但不必要, 过滤只用 ts_code)
+
+    ⚠️ 2026-11-03 修 BUG (静默漏过滤):
+      原来用 `WHERE trade_date = (SELECT MAX(trade_date) ...)`, 只查**全局最新那一天**。
+      但 Tushare 的估值/股本数据是**当天陆续发布**的 —— 实测 20261103:
+        sync 时 1777 只 → 2 小时后 2044 只 → 再 sync 2115 只 (基准 5571)
+      → 缺失的 3794 只**根本没被检查**, 其中 **959 只 PE>60 直接漏过过滤**。
+      实测后果: 恒工精密 (301261) 静态 PE=76.1, 本该被 --exclude-pe 60 排除,
+      却因 20261103 没有它的数据而漏进来, 并且是本次 A→M 命中之一。
+      → 扫描结果会**随上游发布进度漂移** (同一份数据, 早上跑和晚上跑命中数不同)。
+
+      修法: 用 ROW_NUMBER() 取**每只票自己最新**的那天 (per-code latest),
+      这样无论上游发到哪, 每只票都用自己最新可得的数据判 PE。
 
     Args:
         codes: 候选 code 列表 (6 位纯数字)
@@ -86,10 +113,16 @@ def _filter_by_pe(codes: list[str], pe_max: float) -> list[str]:
     if not codes or pe_max <= 0:
         return codes
     in_clause = ",".join(f"'{c}.SZ', '{c}.SH', '{c}.BJ'" for c in codes)
+    glob_expr = _stk_factor_glob()
     df = duckdb.execute(f"""
-        SELECT ts_code FROM read_parquet('data/history/stk_factor/2026Q4.parquet')
-        WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('data/history/stk_factor/2026Q4.parquet'))
-          AND pe > {pe_max} AND pe > 0
+        WITH latest AS (
+            SELECT ts_code, pe,
+                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) rn
+            FROM read_parquet({glob_expr})
+            WHERE ts_code IN ({in_clause})
+        )
+        SELECT ts_code FROM latest
+        WHERE rn = 1 AND pe > {pe_max} AND pe > 0
     """).fetchdf()
     expensive = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
     return [c for c in codes if c not in expensive]
