@@ -32,7 +32,7 @@ class RawContext:
     切片逻辑统一在 Engine 层通过 slice(as_of_date) 完成，Strategy 无需感知时间。
     """
     kline:      list        # 日线 K 线 [{date, open, close, high, low, vol, ...}]
-    weekly:     list        # 周线 K 线（Tushare 真实周线，非合成）
+    weekly:     list        # 周线 K 线（由日线合成，_synthesize_weekly，不额外联网）
     eps_table:  list        # EPS 历史预测（季报，不随 as_of_date 切片）
     # 2026-10-28 删: fflow (主力资金流) / moneyflow (Tushare money_flow 原始列表)
     #   实测 27 只核心票: 删掉后判定更准 (剔掉 2 只假建仓 + 1 只假减仓)

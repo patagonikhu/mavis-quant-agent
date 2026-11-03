@@ -146,5 +146,5 @@ Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
 ## 8. 关联文件
 
 - `handbook/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行, 方法论; 2026-11-03 起不再进报告)
-- `tools/factors/` — 22 个 factor 库 (缠论/威科夫/结构/量价/多市场 + 估值/风控/仓位)
+- `tools/factors/` — 4 个 factor 库 (缠论 `chan/` / 威科夫 `wyckoff/` / 估值 `valuation/` / 宏观 `macro/`) + 顶层 `utils.py` + `kline_arrays.py`
 - `tools/render/report_renderer.py` — 7 section 报告模板

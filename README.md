@@ -503,96 +503,25 @@ def beichi(hist, closes, t0, p1, t1, p2):
 
 ---
 
-## 9. 补充分析框架 — 结构分析 + 量价 + 威科夫
+## 9. 补充分析框架 — 威科夫
 
-> 缠论补充模块，解决缠论失效场景（主升浪加速/震荡市/跳空）。
-> 全部基于腾讯K线OHLCV数据，无需新数据源，可审计复现。
-
-### 9.0 统一数据源
-
-所有补充分析的数据来自同一个API：
-
-每根K线7个字段：
-```
-[日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额]
- [0]   [1]   [2]   [3]   [4]   [5]     [6]
-```
+> 缠论补充模块：看**时间阶段**（主力走到建仓 → 派发的哪一步），与缠论的**空间结构**（中枢/段）互补。
+> 数据源：tushare 日线 parquet（`DataStore.get_ctx`），周线由日线合成，无新数据源、可审计复现。
 
 ---
 
-### 9.1 结构分析（OB / FVG / Sweep）— 解决震荡市无结构
-
-**适用场景**：涨幅<20%、缠论无明显段结构时，识别机构下单区域
-
-#### Order Block（OB）— 机构下单区域
-
-```python
-# 看涨OB：阴线被后续K线突破 → 回踩时是支撑
-if closes[i] < opens[i]:                          # 阴线
-    if any(highs[j] > highs[i] for j in range(i+1,i+10)):
-        bullish_ob = (lows[i], highs[i])           # 支撑区间
-
-# 看跌OB：阳线被后续K线跌破 → 反弹时是压力
-if closes[i] > opens[i]:                          # 阳线
-    if any(lows[j] < lows[i] for j in range(i+1,i+10)):
-        bearish_ob = (lows[i], highs[i])           # 压力区间
-
-# 数据：开盘[1] + 收盘[2] + 最高[3] + 最低[4]
-```
-
-#### FVG（Fair Value Gap）— 价格缺口，必须回填
-
-```python
-# 三根K线，第1根最高 < 第3根最低 → 上涨缺口
-if lows[i+2] > highs[i]:
-    fvg_zone = (highs[i], lows[i+2])              # 支撑区
-
-# 数据：最高[3] + 最低[4]
-```
-
-#### BOS/CHoCH — 趋势延续/反转信号
-
-```python
-swing_highs = [i where highs[i] == max(highs[i-5:i+6])]
-
-新高 (sh2 > sh1) → BOS↑ 趋势延续
-高点降低 (sh2 < sh1) → CHoCH↓ 趋势可能反转  # 类似缠论的段转折
-
-# 数据：最高[3] + 最低[4]
-```
-
----
-
-### 9.2 量价综合 — 区分真突破 vs 假突破
-
-```python
-vol_ratio = 今日成交量[5] / 近20日均量
-
-# 放量突破 → 真信号
-if highs[-1] > recent_high and vol_ratio > 1.5:
-    signal = "✅ 真突破"
-
-# 缩量突破 → 假信号
-if highs[-1] > recent_high and vol_ratio < 0.7:
-    signal = "⚠️ 假突破（量不配合）"
-
-# 数据：收盘[2] + 最高[3] + 最低[4] + 成交量[5]
-```
-
----
-
-### 9.3 威科夫 3 大阶段 + 9 子事件 — 主力在干嘛 (v4 对齐 WyckoffTradingAgent)
+### 9.1 威科夫 3 大阶段 + 9 子事件 — 主力在干嘛 (v4 对齐 WyckoffTradingAgent)
 
 > 📊 **来源**: `tools/factors/wyckoff/stage_factor.py` (3 大阶段) + `tools/factors/wyckoff/detectors/` (9 子事件)
 > 🎯 **核心目标**: 跟缠论互补 — 缠论看"空间结构 (中枢/段)",威科夫看"时间阶段 (主力走到建仓→派发的哪一步)"
 > ⚠️ **v4 重大变更 (2026-07-25)**: 5 阶段 A/B/C/D/E → 3 大阶段 Accumulation/Markup/Distribution (跟 WyckoffTradingAgent 1:1 对齐)
 > 📈 **单方法胜率**: 威 C 派发 (事前) **10d 真阳率 93%** (n=232), 20d 真阳率 98% (n=102) — 4 合 1 顶部预警里最强单信号
 
-#### 9.3.1 3 大阶段 (跟老 5 阶段已废弃)
+#### 9.1.1 3 大阶段 (跟老 5 阶段已废弃)
 
 | 阶段 | 中文 | 含义 | 项目里判定 (AND 门) |
 |---|---|---|---|
-| **Accumulation** | 累积 | 主力在低位吸筹, 准备拉升 | base_low (现价 ≤ 年内 low ×1.45) + MA50/MA200 胶着 (gap ≤8%) + 量能萎缩 (20d/120d <75%) + 触发 Spring/LPS/EVR |
+| **Accumulation** | 累积 | 主力在低位吸筹, 准备拉升 | base_low (现价 ≤ 年内 low ×1.45) + MA50/MA250 胶着 (gap ≤8%) + 量能萎缩 (20d/120d <75%) + 触发 Spring/LPS/EVR |
 | **Markup** | 主升浪 | 主力拉升, 趋势确立 | MA50/200 金叉 + 持续在 MA200 上方 + MA gap >0.5% + MA50 角度 ≥2%/5日 + SOS 触发 |
 | **Distribution** | 派发 | 主力高位卖给散户 | bias_200 >30% (强) 或 >15% (弱) + 3 日缩量 (<60d × 0.5) + UTAD/EVR 触发 |
 
@@ -600,7 +529,7 @@ if highs[-1] > recent_high and vol_ratio < 0.7:
 - **Accum_A** 前置 / **Accum_B** ≥3 次测底 / **Accum_C** C 阶段不破低
 - **UTAD** 派发后再次上探前期阻力 (强顶部信号, bias_200>15%)
 
-#### 9.3.2 9 个 sub-event (实战中真正的"信号", 跟 WyckoffTradingAgent L4 1:1)
+#### 9.1.2 9 个 sub-event (实战中真正的"信号", 跟 WyckoffTradingAgent L4 1:1)
 
 **Accumulation 末段 → Markup 起点 (3 个)**:
 
@@ -626,28 +555,32 @@ if highs[-1] > recent_high and vol_ratio < 0.7:
 | **DistributionStart** | 派发起点 | bias_200>30% + 顶部放量 + 趋势转弱 | 派发开始, 准备减仓 |
 | **UTAD** | 派发后上探 (强顶部) | bias_200>15% + 突破前期阻力 + 上影线 >35% + 量比 1.5× | 派发末期最强顶部信号, **10d 真阳率 93%** |
 
-#### 9.3.3 数据要求 (K 线 + 字段)
+#### 9.1.3 数据要求 (K 线 + 字段)
 
 | 周期 | 最小 K 线根数 | 字段 (除 OHLCV 外) | 用途 |
 |---|---|---|---|
 | 日线 | ≥30 (推荐 250) | open/close/high/low/vol + **pct_chg** | 主判定, 跟 WyckoffTradingAgent 1:1 |
-| 周线 | ≥20 (推荐 250) | 同上 | 长线趋势, 周线中枢对齐 |
-| 60 分 | ≥60 (推荐 200) | 同上 (60m 无 pct_chg 走 fallback) | 5 合 1 顶部预警 |
+| 周线 | ≥20 (推荐 250) | 同上 (由日线合成) | 长线趋势, 周线中枢对齐 |
+
+> 威科夫判定只在 **日线 + 周线** 两个周期跑 (`analysis_engine.py`: `("daily", ctx.kline)` / `("weekly", ctx.weekly)`)，
+> 已无 60 分 / 30 分威科夫。
 
 **OHLCV 之外还需要** (现状, 2026-07-29 v5.6):
 
 | 字段 | 用在 | 当前 | 影响 |
 |---|---|---|---|
-| `pct_chg` | SOS 单日涨幅 | 日线/周线 ✅, 60 分 ✅ (本地算) | 100% |
+| `pct_chg` | SOS 单日涨幅 | 日线/周线 ✅ | 100% |
 | `market_cap_yi` | TrendPullback 大市值缩放 | ✅ 当日 + 250 天历史 | ✅ v5.6 修 |
 | `turnover_rate` | EVR 流动性检查 (默认 0=skip) | ✅ 1 条 | 极小 |
 
-**dump 字段** (v5.6 新加): `data/dump/{code}.json` 顶层:
-- `kline` (日线 250 根) / `kline_60m` (60 分 200 根 + pct_chg) / `weekly` (周线 250 根)
-- ~~`daily_basic_long` (250 天 PE/PB/市值/换手率历史)~~ — v5.10.23 删, 改用 `stk_factor_history/` 按季 parquet 落盘
-- `eps_table` (4 期 EPS)
+**数据来源** (当前):
 
-#### 9.3.4 实战读法 (报告里的输出示例)
+- 日线: tushare `daily` → parquet (`data/history/`) → `DataStore.get_kline()`
+- 周线: 由日线合成 (`_synthesize_weekly`)，不额外联网
+- 市值 / 换手 / PE: `daily_basic` + `stk_factor_history` 按季 parquet
+- ~~`data/dump/{code}.json`~~ — 该 dump 目录已不存在，历史文档作废
+
+#### 9.1.4 实战读法 (报告里的输出示例)
 
 ```markdown
 【威科夫详情】 (对齐 WyckoffTradingAgent 3 大阶段: Accumulation / Markup / Distribution)
@@ -672,30 +605,29 @@ if highs[-1] > recent_high and vol_ratio < 0.7:
 - ✅ UTAD 触发 = **派发末段, 强顶部信号, 减仓**
 - ❌ 0/9 触发 = 数据不足 或 阶段不明, 观望
 
-#### 9.3.5 与缠论的配合 (5 方法矩阵的核心)
+#### 9.1.5 与缠论的配合
 
 | 场景 | 缠论信号 | 威科夫 | 联合判断 |
 |---|---|---|---|
 | 底部建仓 | 底背驰 | 累积 C / Spring | 双重确认, 强买点 |
 | 主升浪启动 | 段面积扩张 | Markup + SOS | 加仓 |
 | 主升浪顶部 | 背驰失效 | 派发 / UTAD | **MA20 偏离 >20% + UTAD = 必减** |
-| 强势股回踩 | 60 分底背 | TrendPullback | 入场机会 |
+| 强势股回踩 | 日线回踩结构 | TrendPullback | 入场机会 |
 
-**4 合 1 顶部预警** (回测 388 样本 10d 真阳率 92%):
-> BC 背驰 + 中枢突破 + MA 偏离 + **威 C 派发** — 任一周期 ≥2/4 满足, 减仓 1/3
-> 其中**威 C 派发单方法 10d 真阳率 93%**, 4 合 1 里最强单信号
+**综合判定口径** (2026-11-05 起):
+> chan / wyckoff **2 类等权投票**，建仓阈值 `bottom_signals >= 2`，减仓阈值 `top_signals >= 2`。
+> 原「4 合 1 顶部预警」矩阵（BC 背驰 + 中枢突破 + MA 偏离 + 威 C 派发）已随 2026-11-05 的因子票精简一起下线，不再作为独立预警输出。
 
 ---
 
-### 9.4 与缠论的配合关系
+### 9.2 与缠论的配合关系
 
 | 场景 | 缠论信号 | 补充信号 | 联合判断 |
 |------|---------|---------|---------|
-| 震荡市 | 背驰面积比噪音 | 结构 Order Block | 用OB替代背驰做支撑/压力 |
-| 突破判断 | 段面积扩张 | 量价：放量突破 | 量价确认真突破 |
-| 主升浪 | 背驰失效 | 威科夫阶段D/E | MA20偏离>20%替代 |
-| 底部确认 | 底背驰触发 | 威科夫阶段C | 双重确认最强买点 |
-| 信号过滤 | 单股背驰 | 量价确认 | 背驰 + 量价同向才操作 |
+| 主升浪 | 背驰失效 | 威科夫派发 (Distribution) | MA20偏离>20%替代 |
+| 底部确认 | 底背驰触发 | 威科夫累积 (Accumulation) | 双重确认最强买点 |
+| 主升浪启动 | 段面积扩张 | Markup + SOS | 加仓 |
+| 主升浪顶部 | 背驰失效 | UTAD | 强顶部信号, 减仓 |
 
 ---
 
