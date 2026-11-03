@@ -43,3 +43,37 @@
 ## v6.3.0 命名规范 (2026-09-24)
 
 详见: [`handbook/naming-convention.md`](naming-convention.md) (158 行, 7 条硬规则 + 5 项 grep 验证)
+
+## 周期口径真源: 威科夫日线/周线 (2026-11-05 修 BUG 后固化)
+
+**症状**: 报告「周线分析」段的威科夫判定 (阶段/强度/基础指标/公式代入值) 显示的是**日线**数据。
+「因子 × N 周期 综合矩阵」的周线列同样错显日线。67 只样本: 47% stage 不一致、53% strength 不一致。
+
+**根因**: analysis dict 里**从来没有** `wyckoff_weekly` 这个顶层 key (它只是 `RawContext`
+上的字段, 没进 raw), 所以 `s5.get("wyckoff_weekly") or s5.get("wyckoff")` 永远 fallback 到日线。
+
+**铁律**:
+
+| 要什么 | 从哪取 |
+|---|---|
+| 日线威科夫判定 | `raw["wyckoff"]` |
+| 周线威科夫判定 | `raw["wyckoff"]["3period"]["weekly"]` |
+| 周线 sub_events | `raw["wyckoff"]["sub_events_by_period"]["weekly"]` |
+| 周线 bars (公式代入) | `ctx.weekly` → `RenderData.weekly_kline` |
+
+**禁止**: `s5.get("wyckoff_weekly")` —— 这个 key 不存在, 写了就等于静默退回日线。
+`analysis_result_signals.py` 是**对的**样板 (用 `p3 = wy_raw.get("3period")`)。
+
+**死代码坑**: `WyckoffStrategy.analyze(ctx)` **没有任何生产调用** —— 全链路
+(report_renderer / t_analyze_one / t_analyze_all / factor_5y / batch_matrix / etf_macd_scan /
+caches/analysis) 都走 `AnalysisEngine.analyze_history()`。两者子事件扫描口径不同:
+`analyze_history` 传 `precomputed_arrs` → detector 里 ma200 取 `arrs['ma_window']` (250 均线);
+`analyze()` 不传 → detector 内部 `sum(c[i-200:i])/200` (真 MA200)。
+→ 实测 67 只里 **1 只日线 + 8 只周线** 判定不同 (死路径更宽松, 多认出 EVR)。
+**验证口径时必须用 `analyze_history`, 用 `WyckoffStrategy().analyze()` 会得到错数。**
+
+**回归防线**: `bash tools/with_venv.sh python -m tools.batch._verify_weekly_period`
+(报告 md ↔ 生产值双向对账, 日线/周线各查 stage + 判定强度)。
+
+**周线段文案单位**: 生产侧 `slope_60` / `trend_30` 是**按周期 bars** 算的 (周线段 = 60 周/30 周),
+报告里写「60 日斜率」是错的 → renderer 用 `period_unit` 参数 (日/周) 分开。
