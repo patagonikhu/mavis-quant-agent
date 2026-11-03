@@ -315,9 +315,17 @@ def build_factor_matrix(
         # 缠论背驰字符串 (在 s5['chan'] 里按 weekly/daily/60min 排)
         chan_str = (s5.get('chan') or {}).get(level, '—')
 
-        # 威科夫: 周期对应键 (日线无后缀, 周/60分有)
-        wy_key = {'weekly': 'wyckoff_weekly', 'daily': 'wyckoff'}[level]
-        wyckoff = s5.get(wy_key) or s5.get('wyckoff') or {}
+        # 威科夫: 按周期取**真值**
+        # ⚠️ 2026-11-05 修 BUG (既有): 原来 weekly 取 s5.get("wyckoff_weekly"),
+        #   但 analysis dict 里**从来没有** wyckoff_weekly 这个顶层 key
+        #   (它只是 RawContext 上的字段, 没进 raw) → 永远 fallback 到
+        #   s5["wyckoff"] = **日线**结果 → 矩阵的周线列显示日线阶段/置信度。
+        #   真源: s5["wyckoff"]["3period"][level] (analysis_engine.py L236)。
+        _wy_root = s5.get('wyckoff') or {}
+        if level == 'daily':
+            wyckoff = _wy_root
+        else:
+            wyckoff = (_wy_root.get('3period') or {}).get(level) or {}
 
         matrix[level] = _period_detail(
             level=level,

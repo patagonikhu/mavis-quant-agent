@@ -128,6 +128,11 @@ class RenderData:
     kline: list[KLineBar] = field(default_factory=list)
     kline_status: Optional[DataStatus] = None
 
+    # 2026-11-05 加: 周线 K 线 (由 ctx.weekly 合成, 纯计算不联网)
+    #   用途: 报告「周线分析」段的威科夫判定要按**周线口径**取 bars —— 之前该段
+    #   的公式代入值用的是日线 bars (data.kline), 跟同段的周线因子值口径错配。
+    weekly_kline: list[KLineBar] = field(default_factory=list)
+
     ma_table: list[MaRow] = field(default_factory=list)
     ma_status: Optional[DataStatus] = None
 
@@ -319,6 +324,10 @@ class RenderData:
             kline=[KLineBar(**{k: bar.get(k, 0) for k in KLineBar.__dataclass_fields__})
                    for bar in kline_raw],
             kline_status=DataStatus(name="kline", status="OK" if kline_raw else "EMPTY"),
+            # 2026-11-05 加: 周线 bars 传给渲染层, 让「周线分析」段的威科夫
+            #   公式代入值用周线口径 (跟生产侧 ctx.weekly 同源)。
+            weekly_kline=[KLineBar(**{k: bar.get(k, 0) for k in KLineBar.__dataclass_fields__})
+                          for bar in (getattr(ctx, "weekly", None) or [])],
             ma_table=ma_table,
             ma_status=DataStatus(name="ma", status="OK" if ma_table else "EMPTY"),
             eps_table=eps_table,

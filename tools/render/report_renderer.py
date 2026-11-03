@@ -302,7 +302,8 @@ def _wy_sub_indicators_md(wy_signals: list, level: str) -> str:
 def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, scores: dict,
                     factor_values: dict = None, closes: list = None,
                     sub_events: list = None, stage_detail: str = "",
-                    channel: str = "", strength: str = "") -> str:
+                    channel: str = "", strength: str = "",
+                    period_unit: str = "日") -> str:
     """
     威科夫 阶段判定细节 - 展示为什么判这个阶段
 
@@ -317,9 +318,15 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                     (strict/weak/extra_only/fallback/none)。
                     解决「报告只写『判 Markup』, 不告诉读者走的是哪一层门」——
                     extra_only (仅加分线, 连 MA200 都不看) 必须显式暴露。
+    2026-11-05 加: period_unit 参数 —— 窗口单位的说法要跟周期一致。
+                    生产侧的 slope_60 / trend_30 是**按周期 bars** 算的
+                    (周线段 = 60 周 / 30 周), 表里写死「日」会误导读者。
     """
     # 判断每个条件
     def _yn(ok): return "✅" if ok else "❌"
+
+    # 窗口单位: 日线段 = 日, 周线段 = 周
+    _u = period_unit
 
     # 2026-11-03: 通道标签表 (生产侧 channel → 中文)。
     #   channel 可能是多值 ("main_weak+main_extra"), 因为 Markup/Distribution 的
@@ -330,7 +337,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         "main_weak": "主路径弱信号 (价格在 MA200 上方 + MA gap > 0.5% + 上升趋势)",
         "main_extra": "主路径加分线 (MA20 偏离 > 5% + 价格位置 > 60% + 上升趋势)",
         "fallback1": f"fallback1 (4 项软条件: slope_60>0 + dev_ma200>-15% + MA50 够到 MA200 + trend_30>{FB1_TREND30_MIN:g})",
-        "fallback2_markup": "fallback2 → Markup (sub-event + 60日斜率向上 + 30日趋势向上)",
+        "fallback2_markup": f"fallback2 → Markup (sub-event + 60{_u}斜率向上 + 30{_u}趋势向上)",
     }
 
     def _channel_label(ch: str) -> str:
@@ -350,7 +357,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         elif current_score > 0:
             # 2026-11-03: 用生产侧 channel 判定来源, 不再自己反推
             if channel == "fallback2_accum":
-                pass_method = "fallback2 → Accumulation (60日+30日双向下)"
+                pass_method = f"fallback2 → Accumulation (60{_u}+30{_u}双向下)"
             elif channel.startswith("main_weak_"):
                 _h = channel[len("main_weak_"):] or "?"
                 pass_method = f"弱信号路径 — 命中分支 {_h} (A OR B OR C, 任一成立即 +1)"
@@ -378,12 +385,17 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         # 2026-11-03: '?' 阶段原本 pass_method 留空 → 渲染成 "****" (空加粗)。
         #   none = 三阶段都没给出得分; fb2_base_unresolved = fallback2 基础命中但方向不明。
         if channel == "fb2_base_unresolved":
-            pass_method = "fallback2 基础命中但阶段未解 (有 sub-event + |slope_60|>5, 但 30 日方向不明确)"
+            pass_method = f"fallback2 基础命中但阶段未解 (有 sub-event + |slope_60|>5, 但 30 {_u}方向不明确)"
         else:
             pass_method = "未判定 — 三阶段均未给出得分"
 
     rows = []
     fv = factor_values or {}
+    # ⚠️ 2026-11-05 修 BUG (被周线口径改动暴露): 历史不足 200 根时,
+    #   生产侧的 ma200_prev / ma200 等字段是 **None** (取不到均线)。
+    #   渲染层直接 f"{None:.2f}" 或拿 None 做比较 → TypeError, **整份报告渲染失败**。
+    #   统一把 None 规整成 0: 只影响展示, 不影响判定 (判定读生产 bool 与数值)。
+    fv = {k: (0 if v is None else v) for k, v in fv.items()}
 
     # 2026-10-17 v4: 准备历史值代入, 让 Fallback 等"实际"列能展开完整计算过程
     # closes 是完整 K 线 close 列表, i = len(closes) - 1
@@ -445,8 +457,8 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     vol_recent_days  = fv.get("vol_recent_days", "?")
     vol_baseline_days = fv.get("vol_baseline_days", "?")
     vol_ratio_accum  = vol_recent_avg / vol_baseline_avg if vol_baseline_avg > 0 else 0
-    rows.append(f"| 量能萎缩 (近 {vol_recent_days}d < 基线 {vol_baseline_days}d) | vol_recent_avg / vol_baseline_avg < 0.75 | `{vol_recent_avg:.0f} / {vol_baseline_avg:.0f} = {vol_ratio_accum:.3f}` | {_yn(accum_d.get('volume_dry_ok', False))} |")
-    rows.append(f"| **子阶段** | 累积 A: 前置满足 / 累积 B: ≥3次测试底部 / 累积 C: 不破低 | `b_test_count={accum_d.get('b_test_count', 0)} (近 60 日 abs(low-period_low)/period_low ≤ 5% 的天数), c_stage_ok={accum_d.get('c_stage_ok', '—')}` | — |")
+    rows.append(f"| 量能萎缩 (近 {vol_recent_days}{_u} < 基线 {vol_baseline_days}{_u}) | vol_recent_avg / vol_baseline_avg < 0.75 | `{vol_recent_avg:.0f} / {vol_baseline_avg:.0f} = {vol_ratio_accum:.3f}` | {_yn(accum_d.get('volume_dry_ok', False))} |")
+    rows.append(f"| **子阶段** | 累积 A: 前置满足 / 累积 B: ≥3次测试底部 / 累积 C: 不破低 | `b_test_count={accum_d.get('b_test_count', 0)} (近 60 {_u} abs(low-period_low)/period_low ≤ 5% 的{_u}数), c_stage_ok={accum_d.get('c_stage_ok', '—')}` | — |")
     rows.append(f"| 综合通过 | 上面 +1 全满足 | `pass_all={accum_d.get('pass_all', '—')}` | {_yn(accum_d.get('pass_all', False))} |")
     rows.append("")
 
@@ -493,9 +505,9 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
             rows.append("")
             rows.append("| fallback2 → Accumulation | 阈值 | 实际 | 满足 |")
             rows.append("|---|---|---|---|")
-            rows.append(f"| 真跌势 (60日+30日双向下) | 有 sub_event 且 `slope_60 < -5` 且 `trend_30 < -5` | `slope_60={_sl60:+.2f}`, `trend_30={_tr30:+.2f}`, sub_event 数={len(_snames)} | ✅ |")
+            rows.append(f"| 真跌势 (60{_u}+30{_u}双向下) | 有 sub_event 且 `slope_60 < -5` 且 `trend_30 < -5` | `slope_60={_sl60:+.2f}`, `trend_30={_tr30:+.2f}`, sub_event 数={len(_snames)} | ✅ |")
             rows.append("")
-            rows.append(f"> **该分支语义**: 60 日与 30 日**双向下** → 判定为「真跌势中的底部累积区」, "
+            rows.append(f"> **该分支语义**: 60 {_u}与 30 {_u}**双向下** → 判定为「真跌势中的底部累积区」, "
                         f"而不是主升浪。注意它**不看 MA200 位置 / 不看量能 / 不要求近期事件**。")
             rows.append("")
         else:
@@ -538,13 +550,13 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     # ⚠️ 2026-11-03 修 BUG: 文案写 "近 5 日 ... (5 对)", 代码是
     #   `for j in range(max(1, i-9), i+1)` = 近 10 日 / 10 对。改成 10 日 / 10 对。
     #   (原来这下面还有一段 placeholder 死代码, 一并清掉)
-    rows.append(f"| MA50/MA200 金叉 | 近 10 日内任一天『ma50_prev ≤ ma200_prev AND ma50 > ma200』| `遍历 j ∈ [i-9..i] (10 对), 命中 = True; 当前对: ma50_prev={ma50_prev:.2f} ≤ ma200_prev={ma200_prev:.2f} AND ma50={ma50:.2f} > MA200={ma200_true:.2f} → {gc_result}` (注: 当前对可能 False, 但近 10 日内可能 True) | {_yn(markup_d.get('golden_cross_recent', False))} |")
+    rows.append(f"| MA50/MA200 金叉 | 近 10 {_u}内任一天『ma50_prev ≤ ma200_prev AND ma50 > ma200』| `遍历 j ∈ [i-9..i] (10 对), 命中 = True; 当前对: ma50_prev={ma50_prev:.2f} ≤ ma200_prev={ma200_prev:.2f} AND ma50={ma50:.2f} > MA200={ma200_true:.2f} → {gc_result}` (注: 当前对可能 False, 但近 10 {_u}内可能 True) | {_yn(markup_d.get('golden_cross_recent', False))} |")
     # 持续 MA200 上方
     # ⚠️ 2026-11-03 修 BUG: 说明文字写 "近 5 日 close > ma_long*0.98 全满足",
     #   但 stage_factor.py L195-199 实际判的是
     #   `all(arrs['ma50'][j] > arrs['ma200'][j] for j in 最近5日)` —— **MA50 vs 真 MA200**,
     #   不是 close 也不是 ma_long(=MA60)。说明文字跟代码对不上。
-    rows.append(f"| 持续 MA200 上方 | 近 5 日 MA50 均 > 真 MA200 | `above_ma200_sustained={markup_d.get('above_ma200_sustained', '—')} (MA50 > MA200, 连续 5 日)` | {_yn(markup_d.get('above_ma200_sustained', False))} |")
+    rows.append(f"| 持续 MA200 上方 | 近 5 {_u} MA50 均 > 真 MA200 | `above_ma200_sustained={markup_d.get('above_ma200_sustained', '—')} (MA50 > MA200, 连续 5 {_u})` | {_yn(markup_d.get('above_ma200_sustained', False))} |")
     # MA gap > 0.5%
     # ⚠️ 2026-11-03 修 BUG: 原来展示 (MA50-MA200)/MA200 并用它判满足与否,
     #   但 stage_factor.py L288 实际判定用的是 **ma_gap_pct_above = (p - ma200)/ma200**
@@ -569,9 +581,9 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         _angle_cell = (f"`(ma50[i]/ma50[i-5]-1)*100 = "
                        f"({ma50_i:.2f}/{ma50_i_5:.2f}-1)*100 = {_angle_now:+.2f}%`")
     else:
-        _angle_cell = "`(ma50[i]/ma50[i-5]-1)*100 = — (i<54, MA50 未满 50 日)`"
+        _angle_cell = f"`(ma50[i]/ma50[i-5]-1)*100 = — (i<54, MA50 未满 50 {_u})`"
     # 阈值用共享常量 MARKUP_ANGLE_MIN (helpers) —— 不写死 2.0。
-    rows.append(f"| MA50 角度 | ≥{MARKUP_ANGLE_MIN:g}%/5日 (markup_ma_angle_min) | {_angle_cell} | {_yn(ma50_angle_5d >= MARKUP_ANGLE_MIN)} |")
+    rows.append(f"| MA50 角度 | ≥{MARKUP_ANGLE_MIN:g}%/5{_u} (markup_ma_angle_min) | {_angle_cell} | {_yn(ma50_angle_5d >= MARKUP_ANGLE_MIN)} |")
     rows.append("")
 
     # ── Markup 三层门判定 (2026-11-05) ──
@@ -646,7 +658,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     trend_30 = fv.get("trend_30", 0)
     _ma50_ma200_ok = _ma50_reached_ma200(ma50, ma200)
     # 60 日斜率 — 3 步展开
-    rows.append(f"| 60 日斜率向上 | slope_60 > 0 | `(p/closes[i-60]-1)*100 = ({p:.2f}/{c_i_60:.2f}-1)*100 = {(p/c_i_60-1)*100:+.2f}%` | {_yn(slope_60 > 0)} |")
+    rows.append(f"| 60 {_u}斜率向上 | slope_60 > 0 | `(p/closes[i-60]-1)*100 = ({p:.2f}/{c_i_60:.2f}-1)*100 = {(p/c_i_60-1)*100:+.2f}%` | {_yn(slope_60 > 0)} |")
     # MA250 偏离 — fallback1 代码用的就是 window(250) 均线 (stage_factor.py L152),
     #   不是真 MA200 → 标签必须写 MA250, 否则跟 Markup 段的真 MA200 混淆。
     rows.append(f"| MA250 偏离不深 | dev_ma200 > -15% | `(p/ma250-1)*100 = ({p:.2f}/{ma200:.2f}-1)*100 = {dev_ma200:+.2f}%` | {_yn(dev_ma200 > -15)} |")
@@ -656,7 +668,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append(f"| MA50 接近 MA250 | MA50 ≥ MA250 × {MA50_MA200_TOLERANCE} | "
                 f"`{ma50:.2f} ≥ {ma200:.2f} × {MA50_MA200_TOLERANCE} = {_ma50_thr:.2f}` | {_yn(_ma50_ma200_ok)} |")
     # 30 日不崩 — 3 步展开
-    rows.append(f"| 30 日不崩 | trend_30 > {FB1_TREND30_MIN:g}% | `(p/closes[i-31]-1)*100 = ({p:.2f}/{c_i_31:.2f}-1)*100 = {(p/c_i_31-1)*100:+.2f}%` | {_yn(trend_30 > FB1_TREND30_MIN)} |")
+    rows.append(f"| 30 {_u}不崩 | trend_30 > {FB1_TREND30_MIN:g}% | `(p/closes[i-31]-1)*100 = ({p:.2f}/{c_i_31:.2f}-1)*100 = {(p/c_i_31-1)*100:+.2f}%` | {_yn(trend_30 > FB1_TREND30_MIN)} |")
     fb_pass = slope_60 > 0 and dev_ma200 > -15 and _ma50_ma200_ok and trend_30 > FB1_TREND30_MIN
     rows.append(f"| **Fallback 触发** | 4 项全满足 | — | {_yn(fb_pass)} |")
     rows.append("")
@@ -688,26 +700,26 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append("|---|---|---|---|")
     _sub_desc = f"{n_sub} 个 ({', '.join(_active[:6])}{'...' if len(_active) > 6 else ''})" if _active else f"{n_sub} 个"
     rows.append(f"| 有 sub-event | ≥ 1 个 | 当前 {_sub_desc} | {_yn(n_sub >= 1)} |")
-    rows.append(f"| 60 日斜率明显 (入口) | \\|slope_60\\| > 5 | `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_slope_ok)} |")
+    rows.append(f"| 60 {_u}斜率明显 (入口) | \\|slope_60\\| > 5 | `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_slope_ok)} |")
     # 2026-11-03 改渲染: 「30日趋势向上 / 向下」是 **互斥分支** (if/elif),
     #   原来两条都列出来, 未走的那条显示 ❌ 容易被读成「有条件没过」→
     #   误以为 fallback2 不成立。改成只渲染**实际走的那个分支**, 另一条注明「未走」。
     if fb2_trend_up:
-        rows.append(f"| **30 日趋势向上** (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
+        rows.append(f"| **30 {_u}趋势向上** (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ✅ |")
-        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
+        rows.append(f"| 30 {_u}趋势向下 (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
         fb2_result = "→ Markup"
     elif fb2_trend_dn:
-        rows.append(f"| 30 日趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
+        rows.append(f"| 30 {_u}趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
-        rows.append(f"| **30 日趋势向下** (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
+        rows.append(f"| **30 {_u}趋势向下** (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ✅ |")
         fb2_result = "→ Accumulation"
     else:
-        rows.append(f"| 30 日趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
+        rows.append(f"| 30 {_u}趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
-        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
+        rows.append(f"| 30 {_u}趋势向下 (→ Accumulation 分支) | trend_30 < -5 且 slope_60 < -5 | "
                     f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
         fb2_result = "→ ?"
     rows.append(f"| **Fallback2 判定** | 入口 + 趋势方向 | `{fb2_result}` | {_yn(fb2_entry)} |")
@@ -716,7 +728,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
                "**Fallback2 判定** 那行才是最终结论。")
     rows.append("")
     if fb2_entry and fb2_trend_up:
-        rows.append("> ✅ **本次阶段判定走的是 Fallback 2** (兜底路径): 有威科夫 sub-event + 60 日斜率向上 + 30 日趋势向上。")
+        rows.append(f"> ✅ **本次阶段判定走的是 Fallback 2** (兜底路径): 有威科夫 sub-event + 60 {_u}斜率向上 + 30 {_u}趋势向上。")
         rows.append("")
 
     # Distribution 派发条件
@@ -731,7 +743,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     vol_5 = fv.get("vol_5", 0)
     vol_60 = fv.get("vol_60", 0)
     vol_shrink = vol_5 < vol_60 * 0.5
-    rows.append(f"| 3 日连续缩量 | 3d 均量 < 60d × 0.5 | `vol_5={vol_5:.0f} vs vol_60 × 0.5 = {vol_60*0.5:.0f} → {vol_shrink}` | {_yn(dist_d.get('vol_dry_3d', False))} |")
+    rows.append(f"| 3 {_u}连续缩量 | 3{_u} 均量 < 60{_u} × 0.5 | `vol_5={vol_5:.0f} vs vol_60 × 0.5 = {vol_60*0.5:.0f} → {vol_shrink}` | {_yn(dist_d.get('vol_dry_3d', False))} |")
     # 派发起点
     dist_start = bias_200_val > 30 and vol_shrink
     rows.append(f"| 派发起点 | bias_200>30% AND vol_dry_3d | `{bias_200_val:+.2f}% > 30 AND {vol_shrink} → {dist_start}` | {_yn(dist_d.get('distribution_start', False))} |")
@@ -740,12 +752,16 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
 
 def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
                        c: list = None, h: list = None, l: list = None,
-                       v: list = None, o: list = None, pct: list = None) -> str:
+                       v: list = None, o: list = None, pct: list = None,
+                       period_unit: str = "日") -> str:
     """
     9 种 sub-event 触发情况 + 中文释义 + 所属阶段
     2026-10-17 加: 每个 sub-event 的关键 factor 实际值 + 公式 (用户可手算验证)
     2026-10-17 v2: 公式和值排在一行: A (2) > B (1) + C (0.5)
+    2026-11-05 加: period_unit —— 窗口单位跟周期一致 (周线段 = 周)。
+                    公式里的 60/30/5/10 都是**当前周期的 bar 数**, 不是固定天数。
     """
+    _u = period_unit
     ALL_EVENTS = ["Spring", "LPS", "EVR",
                   "SOS", "Compression", "TrendPullback", "MarkupEntry",
                   "DistributionStart", "UTAD"]
@@ -794,6 +810,11 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     from tools.factors.kline_arrays import build_kline_features
     n = len(c)
     if n < 220:
+        # 2026-11-05: 周线段 bars 改成周线口径后, 短历史标的 (上市 < 5 年)
+        #   周线根数可能不足 220 → 没有 MA200 基准, 手算表会给出假数值。
+        #   与其编数字, 不如说明为什么没有这张表。
+        rows.append("")
+        rows.append(f"> ℹ️ **factor 手算表略去**: 当前周期仅 {n} 根 K 线 (需 ≥220 根才有 MA200 基准), 不做不可靠的代入。")
         return "\n".join(rows)
     i_last = n - 1
     window = min(250, n)
@@ -889,9 +910,9 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     rows.append("")
     rows.append("| 事件 | 关键条件 | 公式 + 实际值 (满足=✅ / 不满足=❌) |")
     rows.append("|---|---|---|")
-    rows.append(f"| **Spring** | 60 日区间宽度 | `max(h[i-62..i-1]) - min(l[i-62..i-1]) = {zone_max_h:.2f} - {support_level:.2f} = {zone_max_h-support_level:.2f}` (≤ 4×ATR={4*atr_20:.2f}: {'✅' if (zone_max_h-support_level) <= 4*atr_20 else '❌'}) |")
+    rows.append(f"| **Spring** | 60 {_u}区间宽度 | `max(h[i-62..i-1]) - min(l[i-62..i-1]) = {zone_max_h:.2f} - {support_level:.2f} = {zone_max_h-support_level:.2f}` (≤ 4×ATR={4*atr_20:.2f}: {'✅' if (zone_max_h-support_level) <= 4*atr_20 else '❌'}) |")
     rows.append(f"| | bias_200 | `(c[i-1] / ma200 - 1) * 100 = ({c[i]:.2f} / {ma200_i:.2f} - 1) * 100 = {bias_200:+.2f}%` (≤ 15%: {'✅' if bias_200 <= 15 else '❌'}) |")
-    rows.append(f"| | 跌破+收回 | `l[i-1] = {l[i-1]:.2f} < support_level = {support_level:.2f}` (至少一日: {'✅' if (l[i-1] < support_level or l[i-2] < support_level) else '❌'}); `c[i-1] = {c[i-1]:.2f} > {support_level:.2f}` (收回: {'✅' if c[i-1] > support_level else '❌'}) |")
+    rows.append(f"| | 跌破+收回 | `l[i-1] = {l[i-1]:.2f} < support_level = {support_level:.2f}` (至少一{_u}: {'✅' if (l[i-1] < support_level or l[i-2] < support_level) else '❌'}); `c[i-1] = {c[i-1]:.2f} > {support_level:.2f}` (收回: {'✅' if c[i-1] > support_level else '❌'}) |")
     rows.append(f"| | vol_ratio / vol_ratio_prev | `v[i] / mean(v[i-5..i+1]) = {v[i]:.0f} / {vol_5_avg:.0f} = {vol_ratio_spring:.2f}` (≥ 1.3: {'✅' if vol_ratio_spring >= 1.3 else '❌'}); `v[i-1] / v[i] = {v[i-1]:.0f} / {v[i]:.0f} = {vol_ratio_prev:.2f}` (≥ 1.15: {'✅' if vol_ratio_prev >= 1.15 else '❌'}) |")
     rows.append(f"| **LPS** | close ≥ MA20 | `c[i] = {p:.2f} >= ma20 = {ma20_i:.2f}` (✅/❌) |")
     rows.append(f"| | bias_200 区间 | `(p / ma200 - 1) * 100 = {bias_200:+.2f}%` ∈ [-20%, +25%] ({'✅' if -20 <= bias_200 <= 25 else '❌'}) |")
@@ -902,20 +923,20 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     rows.append(f"| | vol_ratio ≥ 1.8 | `v[i] / mean(v[i-19..i+1]) = {v[i]:.0f} / {vol_20_avg:.0f} = {vol_ratio_evr:.2f}` ({'✅' if vol_ratio_evr >= 1.8 else '❌'}) |")
     rows.append(f"| | 涨跌幅 | `pct_chg[i] = {pct_chg:+.2f}%` ∈ [-2%, +2%] ({'✅' if -2 <= pct_chg <= 2 else '❌'}) |")
     rows.append(f"| **SOS** | bias_200 ≤ 25 | `{bias_200:+.2f}%` ({'✅' if bias_200 <= 25 else '❌'}) |")
-    rows.append(f"| | 单日涨幅 ≥ 6% | `pct_chg[i] = {pct_chg:+.2f}%` ({'✅' if pct_chg >= 6 else '❌'}) |")
+    rows.append(f"| | 单{_u}涨幅 ≥ 6% | `pct_chg[i] = {pct_chg:+.2f}%` ({'✅' if pct_chg >= 6 else '❌'}) |")
     rows.append(f"| | vol_ratio ≥ 3 | `v[i] / mean(v[i-59..i+1]) = {v[i]:.0f} / {vol_60_avg:.0f} = {vol_ratio_sos:.2f}` ({'✅' if vol_ratio_sos >= 3 else '❌'}) |")
-    rows.append(f"| | 突破 60 日高 | `h[i] = {h[i]:.2f} > max(h[i-60..i]) = {h_60max:.2f}` ({'✅' if h[i] > h_60max else '❌'}) |")
+    rows.append(f"| | 突破 60 {_u}高 | `h[i] = {h[i]:.2f} > max(h[i-60..i]) = {h_60max:.2f}` ({'✅' if h[i] > h_60max else '❌'}) |")
     rows.append(f"| **Compression** | MA 方向 | `ma_short = {ma50_i:.2f} >= ma_long = {ma60_i:.2f}` ({'✅' if ma50_i >= ma60_i else '❌'}) |")
     rows.append(f"| | bias_200 ≤ 25 | `{bias_200:+.2f}%` ({'✅' if bias_200 <= 25 else '❌'}) |")
     rows.append(f"| | 缩量 ≤ 0.6 | `mean(v[i-4..i+1]) / mean(v[i-24..i+1]) = {vol_5_25_avg:.0f} / {vol_25_5_avg:.0f} = {vol_decline:.3f}` ({'✅' if vol_decline <= 0.6 else '❌'}) |")
     rows.append(f"| **TrendPullback** | bias_200 ≤ 35 | `{bias_200:+.2f}%` ({'✅' if bias_200 <= 35 else '❌'}) |")
     rows.append(f"| | 回调幅度 | `(peak - c[i]) / peak = ({h_10max:.2f} - {p:.2f}) / {h_10max:.2f} = {pullback:.2f}%` ∈ [5%, 20%] ({'✅' if 5 <= pullback <= 20 else '❌'}) |")
     rows.append(f"| **MarkupEntry** | MA50 够到 MA200 (×{_tol}) | `ma50 = {ma50_i:.2f} ≥ ma200 × {_tol} = {ma200_true_i:.2f} × {_tol} = {_me_thr:.2f}` ({'✅' if me_reached else '❌'}) |")
-    rows.append(f"| | 金叉 (近 {_me['lookback']} 日内, {_me_pairs} 对) | 前一日不够到 → 当日够到, 遍历 j ∈ [i-{_me['lookback'] - 1}..i] ({'✅' if golden_cross else '❌'}) |")
-    rows.append(f"| | 连续 5 日够到 | 最近 5 根 (i-5..i-1) 全部够到 = {_above5}/5 ({'✅' if above_ma200_5d else '❌'}) |")
-    rows.append(f"| | MA50 5 日角度 | `(ma50[i] / ma50[i-5] - 1) * 100 = ({ma50_i:.2f} / {ma50_i_5:.2f} - 1) * 100 = {ma50_angle_5d:+.2f}%` (≥ 2%: {'✅' if _me['angle_ok'] else '❌'}) |")
+    rows.append(f"| | 金叉 (近 {_me['lookback']} {_u}内, {_me_pairs} 对) | 前一{_u}不够到 → 当{_u}够到, 遍历 j ∈ [i-{_me['lookback'] - 1}..i] ({'✅' if golden_cross else '❌'}) |")
+    rows.append(f"| | 连续 5 {_u}够到 | 最近 5 根 (i-5..i-1) 全部够到 = {_above5}/5 ({'✅' if above_ma200_5d else '❌'}) |")
+    rows.append(f"| | MA50 5 {_u}角度 | `(ma50[i] / ma50[i-5] - 1) * 100 = ({ma50_i:.2f} / {ma50_i_5:.2f} - 1) * 100 = {ma50_angle_5d:+.2f}%` (≥ 2%: {'✅' if _me['angle_ok'] else '❌'}) |")
     rows.append(f"| **DistributionStart** | bias_200 > 30 | `{bias_200:+.2f}%` ({'✅' if bias_200 > 30 else '❌'}) |")
-    rows.append(f"| | 3 日缩量 | `mean(v[i-2..i+1]) = {vol_3_avg:.0f} < 0.5 * mean(v[i-59..i+1]) = {0.5*vol_60_avg:.0f}` ({'✅' if vol_3_avg < 0.5 * vol_60_avg else '❌'}) |")
+    rows.append(f"| | 3 {_u}缩量 | `mean(v[i-2..i+1]) = {vol_3_avg:.0f} < 0.5 * mean(v[i-59..i+1]) = {0.5*vol_60_avg:.0f}` ({'✅' if vol_3_avg < 0.5 * vol_60_avg else '❌'}) |")
     rows.append(f"| **UTAD** | 突破 1% | `h[i] = {h[i]:.2f} > max(h[i-60..i]) * 1.01 = {h_60max*1.01:.2f}` ({'✅' if h[i] > h_60max * 1.01 else '❌'}) |")
     rows.append(f"| | 收回 0.3% | `c[i] = {p:.2f} < max(h[i-60..i]) * 0.997 = {h_60max*0.997:.2f}` ({'✅' if p < h_60max * 0.997 else '❌'}) |")
     rows.append(f"| | 上影线 ≥ 0.35 | `(h[i] - max(o, c)) / (h[i] - l[i]) = ({h[i]:.2f} - {max(o[i] if o else p, p):.2f}) / ({h[i]:.2f} - {l[i]:.2f}) = {upper_shadow:.3f}` ({'✅' if upper_shadow >= 0.35 else '❌'}) |")
@@ -986,15 +1007,24 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     wy_action = wy.get("action", "—")
     wy_signals = wy.get("signals", [])
     # 周期视角映射
-    # v5.10.42 改: 3 周期都从 s5.get("wyckoff") 拿 (新格式 sub_events_by_period[level])
+    # ⚠️ 2026-11-05 修 BUG (既有): 周线段原来取 `s5.get("wyckoff_weekly")`,
+    #   但 s5 (analysis dict) 里**从来没有** wyckoff_weekly 这个顶层 key
+    #   (它只是 RawContext 上的字段, 没进 raw) → 永远 fallback 到 s5["wyckoff"]
+    #   = **日线**结果。后果: 周线段的阶段/置信度/判定强度/基础指标/公式代入值
+    #   全部是日线数值, 跟同段的周线中枢、sub-event 自相矛盾。
+    #   实测 67 只样本: 31 只 stage 不一致、33 只 strength 不一致
+    #   (600763 日线 Markup/extra_only, 周线真值 Accumulation/weak_B)。
+    #   真源: raw["wyckoff"]["3period"][level] (analysis_engine.py L236)。
+    _wy_root = s5.get("wyckoff") or {}
+    _wy_3period = _wy_root.get("3period") or {}
     if level == "daily":
-        wy_data = s5.get("wyckoff") or {}
+        wy_data = _wy_root
         wy_focus_label = wy_data.get("action", "等待")
     elif level == "weekly":
-        wy_data = s5.get("wyckoff_weekly") or s5.get("wyckoff") or {}
+        wy_data = _wy_3period.get("weekly") or {}
         wy_focus_label = "长线趋势"
     else:
-        wy_data = s5.get("wyckoff") or {}
+        wy_data = _wy_root
         wy_focus_label = wy_data.get("action", "等待")
     wy_stage = wy_data.get("stage", "?")
     wy_name  = wy_data.get("stage_name", "未知")
@@ -1008,6 +1038,12 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     wy_progress = wy_data.get("phase_progress", 0)
     # v4: 阶段子标签
     wy_stage_detail_str = f"/{wy_stage_detail}" if wy_stage_detail else ""
+    # 2026-11-05: 周线判定不可用时的显式说明 (周线 bars < 30 → 生产侧不产出周线判定)。
+    #   旧逻辑会退回日线结果, 让人以为「周线也判 Markup」—— 现在明确说不可用。
+    _wy_unavail = ""
+    if level == "weekly" and not wy_data:
+        _wy_unavail = ("> ⚠️ **周线威科夫判定不可用**: 周线 K 线不足 30 根 (或无周线数据), "
+                       "生产侧不产出周线判定 → 本段阶段/强度留空, **不回填日线结果**。\n\n")
     # v4: 阶段判定细节 (3 大阶段各自的 AND 门条件)
     accum_d = wy_data.get("accum_detail", {})
     markup_d = wy_data.get("markup_detail", {})
@@ -1016,7 +1052,15 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     from tools.factors.wyckoff.detectors import SUB_EVENT_GLOSSARY
     # 2026-10-17: 传 c/h/l/v 让 sub_event 表能列 factor 实际值
     # KLineBar 是 dataclass, 用属性访问 (b.close) 而非 dict (b["close"])
-    _bars = data.kline or []
+    # ⚠️ 2026-11-05 修 BUG: bars 必须**按周期取** —— 周线段的威科夫公式
+    #   代入值要用周线 bars, 原来恒用日线 bars (data.kline),
+    #   跟同段已改成周线口径的 factor_values 对不上 (周线事件 idx 会被
+    #   当成日线 idx 用, 数值完全错位)。
+    #   周线 bars 缺失时**不退回日线** —— 宁可少渲染公式表, 也不能给错数值。
+    if level == "weekly":
+        _bars = data.weekly_kline or []
+    else:
+        _bars = data.kline or []
     def _attr(b, name, default=0):
         v = getattr(b, name, default)
         return v if v is not None else default
@@ -1031,9 +1075,11 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
                                       closes=_c, sub_events=sub_events,
                                       stage_detail=wy_data.get("stage_detail", ""),
                                       channel=wy_data.get("channel", ""),
-                                      strength=wy_data.get("strength", ""))
+                                      strength=wy_data.get("strength", ""),
+                                      period_unit=("周" if level == "weekly" else "日"))
     wy_sub_events_md = _wy_sub_events_md(sub_events, SUB_EVENT_GLOSSARY, wy_stage,
-                                          c=_c, h=_h, l=_l, v=_v, o=_o, pct=_pct)
+                                          c=_c, h=_h, l=_l, v=_v, o=_o, pct=_pct,
+                                          period_unit=("周" if level == "weekly" else "日"))
     scores_str = " / ".join(f"{k}:{v}" for k, v in scores.items() if v > 0) if scores else "无得分"
     if wy_stage == "?" or wy_conf == 0:
         wy_focus = f"K线不足（需≥30根）— {wy_focus_label}"
@@ -1094,7 +1140,7 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
 | 阶段进度 | {wy_progress}% |
 | 操作建议 | {wy_action if level=='daily' else wy_focus_label} |
 
-> ℹ️ **置信度 = 该阶段得分 / 三阶段得分总和** (stage_factor.py: `max_score / sum(scores)`)。
+{_wy_unavail}> ℹ️ **置信度 = 该阶段得分 / 三阶段得分总和** (stage_factor.py: `max_score / sum(scores)`)。
 > 只有单个阶段有分时必然是 100%, 含义是「**其它阶段都没意见**」, **不代表**「严格条件全通过」。
 > 严格门是否通过看下面的「综合通过 pass_all」行 —— 没过但仍判此阶段的, 说明是**弱信号路径**给的 1 分。
 
