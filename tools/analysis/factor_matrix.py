@@ -17,7 +17,7 @@
 }
 (2026-08-29: 删 scene/scene_name/resonance_count, 硬编码 if-else 不准)
 """
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 
 # ============================================================
@@ -113,7 +113,6 @@ def _period_detail(
     chan_data: dict,            # 中枢数据 (含 hub: {low, high, pos, valid})
     bsp: dict,                  # 买卖点 (含 0买/1买/1买⭐/2买/3买/1卖/1卖⭐/2卖/3卖/action)
     wyckoff: dict,              # 威科夫 (含 stage, stage_name, confidence)
-    smc: dict,                  # SMC (含 nearest_bull_ob, nearest_bear_ob, nearest_fvg_bull, nearest_fvg_bear, recent_sweeps)
     res: dict,                  # 多市场共振 (含 direction, stock_ret_5d, sector_ret_5d)
     current_price: float,
 ) -> dict:
@@ -150,18 +149,6 @@ def _period_detail(
         'action': wyckoff.get('action', '—') if wyckoff else '—',
     }
 
-    # === SMC (含 OB/FVG/Sweep 价格) ===
-    smc_detail = {
-        'summary': smc.get('summary', '—') if smc else '—',
-        'total_obs': smc.get('total_obs', 0) if smc else 0,
-        'total_fvgs': smc.get('total_fvgs', 0) if smc else 0,
-        'total_sweeps': len(smc.get('recent_sweeps', [])) if smc else 0,
-        'nearest_bull_ob': _format_ob(smc.get('nearest_bull_ob', {})) if smc else None,
-        'nearest_bear_ob': _format_ob(smc.get('nearest_bear_ob', {})) if smc else None,
-        'nearest_fvg_bull': _format_fvg(smc.get('nearest_fvg_bull', {})) if smc else None,
-        'nearest_fvg_bear': _format_fvg(smc.get('nearest_fvg_bear', {})) if smc else None,
-    }
-
     # === 多市场共振 ===
     # v5.10.2 改: 各周期读对应 stock_ret 字段 (5d 有 stock_ret_5d, 1d/20d 用 stock_ret)
     # 之前只读 stock_ret_5d, 1d/20d 周期永远 fallback 到 0 (bug 修)
@@ -172,14 +159,13 @@ def _period_detail(
     }
 
     # === 综合判定 ===
-    composite = _composite_verdict(chan_detail, wy_detail, smc_detail, res_detail, prices, current_price)
+    composite = _composite_verdict(chan_detail, wy_detail, res_detail, prices, current_price)
 
     return {
         'level': level,
         'weight': weight,
         'chan': chan_detail,
         'wyckoff': wy_detail,
-        'smc': smc_detail,
         'resonance': res_detail,
         'composite': composite,
     }
@@ -208,37 +194,12 @@ def _parse_chan_stage(chan_str: str, current_price: float, prices: dict) -> str:
     return '观望'
 
 
-def _format_ob(ob: dict) -> Optional[dict]:
-    """格式化 OB (含价格区间)"""
-    if not ob:
-        return None
-    return {
-        'low': ob.get('top', ob.get('low', 0)),  # 新字段 top, 兜底 low
-        'high': ob.get('top', ob.get('high', 0)),
-        'displacement_atr': ob.get('displacement_atr', ob.get('strength', 0)),
-        'date': ob.get('date', '—'),
-    }
-
-
-def _format_fvg(fvg: dict) -> Optional[dict]:
-    """格式化 FVG (含价格区间 + 回补进度)"""
-    if not fvg:
-        return None
-    return {
-        'low': fvg.get('bottom', fvg.get('low', 0)),
-        'high': fvg.get('top', fvg.get('high', 0)),
-        'mitigation_pct': fvg.get('mitigation_pct', 0),
-        'size_atr': fvg.get('size_atr', 0),
-        'date': fvg.get('date', '—'),
-    }
-
-
-def _composite_verdict(chan, wy, smc, res, prices, current_price) -> dict:
+def _composite_verdict(chan, wy, res, prices, current_price) -> dict:
     """
-    综合判定: 因子等权投票 (2026-09-09 改: 删 chan 隐式 3 票优势, 4 类各 1 票)
+    综合判定: 因子等权投票 (2026-09-09 改: 删 chan 隐式 3 票优势, 各 1 票)
 
-    原设计: chan 给 1buy_trend/1buy/2buy 3 票, wy/smc/vp/res 各 1 票 (chan 3/8 隐式权重)
-    改后: 4 类 (chan/wyckoff/smc/res) 各 1 票等权, 决策更分散
+    原设计: chan 给 1buy_trend/1buy/2buy 3 票, 其余各 1 票 (chan 3/8 隐式权重)
+    改后: 各因子 1 票等权, 决策更分散
 
     ⚠️ 2026-10-27 修 chan 票 bug (实测 38 只核心票发现):
       旧代码读 chan.get('1buy_trend') / chan.get('1buy'),
@@ -252,7 +213,14 @@ def _composite_verdict(chan, wy, smc, res, prices, current_price) -> dict:
       实测 14 只票 fflow 判出货, 其中 13 只被同时点 (K线派生, 数据新鲜) 的量价指标判为偏进货.
       方向完全相反 = 数据陈旧造成的系统性看空偏差, 不是市场信号.
       27 只核心票对照实验: 删 fflow 票后 3 只判定变化, 全部是 fflow 制造的假建仓/假减仓.
-      现为 4 类票 (chan/wyckoff/smc/res), 阈值同步下调一档 (>=3 / >=2).
+      阈值同步下调一档 (>=3 / >=2).
+
+    ⚠️ 2026-11-04 删 OB/FVG 那一票:
+      该票在 212 个周期行实测中只单独贡献过 2 行 (且都是 FVG 看涨), 12 个"底 2"全部来自
+      缠论买 + 威科夫 Accumulation → 删除对任何 action 零影响.
+      现为 3 类票 (chan/wyckoff/res), 阈值不变 (底>=2 / 顶>=2).
+      注意: res 票因 resonance_3period 网络调用删除恒为 0, 故实际最高票数为 2,
+      "🥇 强建仓" (>=3) / "🔴 强减仓" (>=3) 两档当前不可达, 保留分支只为将来恢复共振数据.
     """
     # === chan 票 (2026-10-27 修: 从 buy_sell_points 读, 兼容 emoji 前缀) ===
     bsp = chan.get('buy_sell_points') or {}
@@ -274,18 +242,16 @@ def _composite_verdict(chan, wy, smc, res, prices, current_price) -> dict:
         or chan.get('2sell', '—') != '—'
     )
 
-    # 底部信号计数 (4 类各 1 票)
+    # 底部信号计数 (3 类各 1 票)
     bottom_signals = sum([
         1 if chan_buy else 0,
         1 if wy.get('stage') == 'Accumulation' else 0,
-        1 if smc.get('nearest_bull_ob') or smc.get('nearest_fvg_bull') else 0,
         1 if '跑赢' in str(res.get('direction', '')) or '正' in str(res.get('direction', '')) else 0,
     ])
-    # 顶部信号计数 (4 类各 1 票)
+    # 顶部信号计数 (3 类各 1 票)
     top_signals = sum([
         1 if chan_sell else 0,
         1 if wy.get('stage') == 'Distribution' else 0,
-        1 if smc.get('nearest_bear_ob') or smc.get('nearest_fvg_bear') else 0,
         1 if '跑输' in str(res.get('direction', '')) or '负' in str(res.get('direction', '')) else 0,
     ])
 
@@ -333,7 +299,7 @@ def build_factor_matrix(
     """
     构建 因子 × 3 周期 综合矩阵 (2026-08-17 改名, 之前叫 build_5method_matrix)
 
-    "5 方法" 历史命名已过时: 实际是 4 因子 (wyckoff/smc/chan/resonance)
+    "5 方法" 历史命名已过时: 实际是 3 因子 (wyckoff/chan/resonance)
     现在统一叫 "因子矩阵", 跟 AnalysisEngine Strategy 命名对齐.
 
     Args:
@@ -367,10 +333,6 @@ def build_factor_matrix(
         wy_key = {'weekly': 'wyckoff_weekly', 'daily': 'wyckoff'}[level]
         wyckoff = s5.get(wy_key) or s5.get('wyckoff') or {}
 
-        # SMC: 同样
-        smc_key = {'weekly': 'smc_weekly', 'daily': 'smc'}[level]
-        smc = s5.get(smc_key) or s5.get('smc') or {}
-
         # 共振: weekly 有独立键
         res_key = {'weekly': 'resonance_weekly', 'daily': 'resonance'}[level]
         res = s5.get(res_key) or s5.get('resonance') or {}
@@ -382,7 +344,6 @@ def build_factor_matrix(
             chan_data=chan_period,
             bsp=bsp_period,
             wyckoff=wyckoff,
-            smc=smc,
             res=res,
             current_price=current_price,
         )
@@ -430,9 +391,6 @@ def render_factor_matrix_md(matrix_result: dict) -> str:
     md.append("| **威科夫 (3 大阶段)** | "
               f"{_md_wy(m['weekly']['wyckoff'])} | "
               f"{_md_wy(m['daily']['wyckoff'])} |")
-    md.append("| **SMC (OB/FVG/Sweep)** | "
-              f"{_md_smc(m['weekly']['smc'])} | "
-              f"{_md_smc(m['daily']['smc'])} |")
     md.append("| **多市场共振** | "
               f"{_md_res(m['weekly']['resonance'])} | "
               f"{_md_res(m['daily']['resonance'])} |")
@@ -498,20 +456,6 @@ def _md_chan(chan: dict) -> str:
 def _md_wy(wy: dict) -> str:
     """威科夫行 markdown"""
     return f"{wy.get('stage', '?')}/{wy.get('stage_detail', '') or '—'} ({wy.get('confidence', 0)}%)"
-
-
-def _md_smc(smc: dict) -> str:
-    """SMC 行 markdown (带价格)"""
-    parts = []
-    bull_ob = smc.get('nearest_bull_ob')
-    if bull_ob:
-        parts.append(f"多OB¥{bull_ob['low']:.0f}-¥{bull_ob['high']:.0f}")
-    bear_ob = smc.get('nearest_bear_ob')
-    if bear_ob:
-        parts.append(f"空OB¥{bear_ob['low']:.0f}-¥{bear_ob['high']:.0f}")
-    if smc.get('total_sweeps', 0) > 0:
-        parts.append(f"扫流×{smc['total_sweeps']}")
-    return ' / '.join(parts) if parts else '无'
 
 
 def _md_res(res: dict) -> str:

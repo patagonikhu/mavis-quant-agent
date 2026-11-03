@@ -56,7 +56,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 顺序 | 内容 | 优先级 |
 |---|---|---|
 | 1️⃣ | 缠论三要素 (中枢位置 + 背驰 + 止跌) | 🥇 |
-| 2️⃣ | 3 个缠论补充策略 (SMC-OB + 威科夫 + 多市场共振) | 🥇 |
+| 2️⃣ | 2 个缠论补充策略 (威科夫 + 多市场共振) | 🥇 |
 | 3️⃣ | 市场状态定量判断 + 方法优先级矩阵 | 🥈 |
 | 4️⃣ | 大盘 + 美股背景 | 🥈 |
 | 6️⃣ | 三层仓位 + 买卖点 (1买/2买/3买/1卖/2卖/3卖) | 必须 |
@@ -72,7 +72,9 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (18 �
 **已彻底删除, 禁止复活**: **OBV** (10-27) / **主力资金流 fflow** (10-28) / **PEG** (11-02) / **DCF L** (11-02)。
 详见 `docs/fflow-removal-assessment.md` / `docs/obv-removal-record.md`。
 
-删除后综合判定 = **4 类等权投票** (chan / wyckoff / smc / 多市场共振), 建仓阈值 `bottom_signals >= 2`, 减仓阈值 `top_signals >= 2`。
+删除后综合判定 = **3 类等权投票** (chan / wyckoff / 多市场共振), 建仓阈值 `bottom_signals >= 2`, 减仓阈值 `top_signals >= 2`。
+
+> 2026-11-04: SMC 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变)。生产计算层保留, 仅不进 md。
 
 ---
 

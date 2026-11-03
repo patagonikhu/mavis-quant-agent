@@ -62,7 +62,7 @@
   - ROC 资本回报率, EY 收益率 (Greenblatt 联合排名)
   - 总市值 / 净负债 / EV / 投入资本, 静态 PE
 
-**因子 × 2 周期 矩阵** (linter 必查, 4 因子等权投票: chan/wyckoff/smc/共振):
+**因子 × 2 周期 矩阵** (linter 必查, 3 因子等权投票: chan/wyckoff/共振):
   - 建仓阈值 bottom_signals >= 2, 减仓阈值 top_signals >= 2
 
 **综合:** 🥇 / 🥈 / 🥉 / ⚠️ / ❌

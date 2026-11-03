@@ -55,7 +55,7 @@
 - 投资四问 (卡点/TAM/龙头/估值) ← handbook/analysis-framework.md §2
 - T 框架 (T 位置计算) ← handbook/analysis-framework.md §3
 - 缠论 1买/2买/3买 + 估值 (PE + Magic ROC/EY) ← handbook/analysis-framework.md §2.4
-- 因子 × 2 周期 综合矩阵 (4 类等权投票: chan/wyckoff/smc/resonance, 仅作参考, 不进仓位/退出决策)
+- 因子 × 2 周期 综合矩阵 (3 类等权投票: chan/wyckoff/resonance, 仅作参考, 不进仓位/退出决策)
 
 ### 阶段 3: 落报告 (LLM 套 18 section 模板)
 - 工具: `tools/render/report_renderer.py`
