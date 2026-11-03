@@ -595,8 +595,11 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append(f"| 60 日斜率向上 | slope_60 > 0 | `(p/closes[i-60]-1)*100 = ({p:.2f}/{c_i_60:.2f}-1)*100 = {(p/c_i_60-1)*100:+.2f}%` | {_yn(slope_60 > 0)} |")
     # MA200 偏离
     rows.append(f"| MA200 偏离不深 | dev_ma200 > -15% | `(p/ma200-1)*100 = ({p:.2f}/{ma200:.2f}-1)*100 = {dev_ma200:+.2f}%` | {_yn(dev_ma200 > -15)} |")
-    # MA50 接近 MA200
-    rows.append(f"| MA50 接近 MA200 | MA50 ≥ MA200 × 0.95 | `{ma50:.2f} ≥ {ma200:.2f} × 0.95 = {ma200*0.95:.2f}` | {_yn(_ma50_ma200_ok)} |")
+    # MA50 接近 MA200 — 阈值必须用 MA50_MA200_TOLERANCE (代码实际用的值),
+    #   不能写死 0.95 (容差调参后展示会跟代码对不上)
+    _ma50_thr = ma200 * MA50_MA200_TOLERANCE
+    rows.append(f"| MA50 接近 MA200 | MA50 ≥ MA200 × {MA50_MA200_TOLERANCE} | "
+                f"`{ma50:.2f} ≥ {ma200:.2f} × {MA50_MA200_TOLERANCE} = {_ma50_thr:.2f}` | {_yn(_ma50_ma200_ok)} |")
     # 30 日不崩 — 3 步展开
     rows.append(f"| 30 日不崩 | trend_30 > -10% | `(p/closes[i-31]-1)*100 = ({p:.2f}/{c_i_31:.2f}-1)*100 = {(p/c_i_31-1)*100:+.2f}%` | {_yn(trend_30 > -10)} |")
     fb_pass = slope_60 > 0 and dev_ma200 > -15 and _ma50_ma200_ok and trend_30 > -10
@@ -629,12 +632,30 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     rows.append("|---|---|---|---|")
     _sub_desc = f"{n_sub} 个 ({', '.join(_active[:6])}{'...' if len(_active) > 6 else ''})" if _active else f"{n_sub} 个"
     rows.append(f"| 有 sub-event | ≥ 1 个 | 当前 {_sub_desc} | {_yn(n_sub >= 1)} |")
-    rows.append(f"| 60 日斜率明显 | slope_60 > 5 或 < -5 | `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_slope_ok)} |")
-    rows.append(f"| 30 日趋势向上 | trend_30 > 5 且 **slope_60 > 5** | `trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_trend_up)} |")
-    rows.append(f"| 30 日趋势向下 | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | {_yn(fb2_trend_dn)} |")
-    fb2_result = ("→ Markup" if fb2_trend_up else "→ Accumulation" if fb2_trend_dn else "→ ?")
+    rows.append(f"| 60 日斜率明显 (入口) | \\|slope_60\\| > 5 | `slope_60 = {slope_60:+.2f}%` | {_yn(fb2_slope_ok)} |")
+    # 2026-11-03 改渲染: 「30日趋势向上 / 向下」是 **互斥分支** (if/elif),
+    #   原来两条都列出来, 未走的那条显示 ❌ 容易被读成「有条件没过」→
+    #   误以为 fallback2 不成立。改成只渲染**实际走的那个分支**, 另一条注明「未走」。
+    if fb2_trend_up:
+        rows.append(f"| **30 日趋势向上** (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
+                    f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ✅ |")
+        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | ⬜ 未走 |")
+        fb2_result = "→ Markup"
+    elif fb2_trend_dn:
+        rows.append(f"| 30 日趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
+                    f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
+        rows.append(f"| **30 日趋势向下** (→ Accumulation 分支) | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | ✅ |")
+        fb2_result = "→ Accumulation"
+    else:
+        rows.append(f"| 30 日趋势向上 (→ Markup 分支) | trend_30 > 5 且 slope_60 > 5 | "
+                    f"`trend_30 = {trend_30:+.2f}%`, `slope_60 = {slope_60:+.2f}%` | ⬜ 未走 |")
+        rows.append(f"| 30 日趋势向下 (→ Accumulation 分支) | trend_30 < -5 | `trend_30 = {trend_30:+.2f}%` | ⬜ 未走 |")
+        fb2_result = "→ ?"
     rows.append(f"| **Fallback2 判定** | 入口 + 趋势方向 | `{fb2_result}` | {_yn(fb2_entry)} |")
     rows.append(f"| *(参考)* WTA Layer 2.5 | 4 条判据全满足 | `MA50够到MA200 + 金叉 + 连续5日上方 + 角度≥2%` | {_yn(_wta_gate)} |")
+    rows.append("")
+    rows.append("> ℹ️ 表中「⬜ 未走」= 该互斥分支不成立 (不是『条件没过』); "
+               "**Fallback2 判定** 那行才是最终结论。")
     rows.append("")
     if fb2_entry and fb2_trend_up:
         rows.append("> ✅ **本次阶段判定走的是 Fallback 2** (兜底路径): 有威科夫 sub-event + 60 日斜率向上 + 30 日趋势向上。")
