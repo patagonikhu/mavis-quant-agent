@@ -47,7 +47,7 @@ class RawContext:
     wyckoff_weekly: dict = field(default_factory=dict)
     structure_result: dict = field(default_factory=dict)
     technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
-    resonance_result: dict = field(default_factory=dict)
+    # 2026-11-05 删 resonance_result: resonance_3period 网络调用早已删除, 该字段从未被写入/读取
     _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
     kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写
     kline_arrs_weekly:  dict = field(default_factory=dict)   # 周线 arrs，WyckoffStrategy 写，factor_history 读 ma_dev_weekly

@@ -113,7 +113,6 @@ def _period_detail(
     chan_data: dict,            # 中枢数据 (含 hub: {low, high, pos, valid})
     bsp: dict,                  # 买卖点 (含 0买/1买/1买⭐/2买/3买/1卖/1卖⭐/2卖/3卖/action)
     wyckoff: dict,              # 威科夫 (含 stage, stage_name, confidence)
-    res: dict,                  # 多市场共振 (含 direction, stock_ret_5d, sector_ret_5d)
     current_price: float,
 ) -> dict:
     """
@@ -149,24 +148,14 @@ def _period_detail(
         'action': wyckoff.get('action', '—') if wyckoff else '—',
     }
 
-    # === 多市场共振 ===
-    # v5.10.2 改: 各周期读对应 stock_ret 字段 (5d 有 stock_ret_5d, 1d/20d 用 stock_ret)
-    # 之前只读 stock_ret_5d, 1d/20d 周期永远 fallback 到 0 (bug 修)
-    res_detail = {
-        'direction': res.get('direction', '—') if res else '—',
-        'stock_ret_5d': res.get('stock_ret_5d', res.get('stock_ret', 0)) if res else 0,
-        'sector_ret_5d': res.get('sector_ret_5d', res.get('sector_ret', 0)) if res else 0,
-    }
-
     # === 综合判定 ===
-    composite = _composite_verdict(chan_detail, wy_detail, res_detail, prices, current_price)
+    composite = _composite_verdict(chan_detail, wy_detail, prices, current_price)
 
     return {
         'level': level,
         'weight': weight,
         'chan': chan_detail,
         'wyckoff': wy_detail,
-        'resonance': res_detail,
         'composite': composite,
     }
 
@@ -194,7 +183,7 @@ def _parse_chan_stage(chan_str: str, current_price: float, prices: dict) -> str:
     return '观望'
 
 
-def _composite_verdict(chan, wy, res, prices, current_price) -> dict:
+def _composite_verdict(chan, wy, prices, current_price) -> dict:
     """
     综合判定: 因子等权投票 (2026-09-09 改: 删 chan 隐式 3 票优势, 各 1 票)
 
@@ -218,9 +207,13 @@ def _composite_verdict(chan, wy, res, prices, current_price) -> dict:
     ⚠️ 2026-11-04 删 OB/FVG 那一票:
       该票在 212 个周期行实测中只单独贡献过 2 行 (且都是 FVG 看涨), 12 个"底 2"全部来自
       缠论买 + 威科夫 Accumulation → 删除对任何 action 零影响.
-      现为 3 类票 (chan/wyckoff/res), 阈值不变 (底>=2 / 顶>=2).
-      注意: res 票因 resonance_3period 网络调用删除恒为 0, 故实际最高票数为 2,
-      "🥇 强建仓" (>=3) / "🔴 强减仓" (>=3) 两档当前不可达, 保留分支只为将来恢复共振数据.
+
+    ⚠️ 2026-11-05 删 res (多市场共振) 那一票:
+      resonance_3period 网络调用早已删除, res 恒为空 dict → 该票恒投 0, 对判定零影响.
+      既然恒 0, 报告里再展示「多市场共振: 已移除」占位也只是噪音 → 连展示层一起删.
+      现为 2 类票 (chan/wyckoff), 最高票数 = 2, 阈值不变 (底>=2 / 顶>=2).
+      原「🥇 强建仓」(>=3) / 「🔴 强减仓」(>=3) 两档随第三票一起删除 (本就不可达).
+      如将来恢复共振数据, 需重新加回 res 参数 + res 票 + >=3 分支.
     """
     # === chan 票 (2026-10-27 修: 从 buy_sell_points 读, 兼容 emoji 前缀) ===
     bsp = chan.get('buy_sell_points') or {}
@@ -242,28 +235,20 @@ def _composite_verdict(chan, wy, res, prices, current_price) -> dict:
         or chan.get('2sell', '—') != '—'
     )
 
-    # 底部信号计数 (3 类各 1 票)
+    # 底部信号计数 (2 类各 1 票)
     bottom_signals = sum([
         1 if chan_buy else 0,
         1 if wy.get('stage') == 'Accumulation' else 0,
-        1 if '跑赢' in str(res.get('direction', '')) or '正' in str(res.get('direction', '')) else 0,
     ])
-    # 顶部信号计数 (3 类各 1 票)
+    # 顶部信号计数 (2 类各 1 票)
     top_signals = sum([
         1 if chan_sell else 0,
         1 if wy.get('stage') == 'Distribution' else 0,
-        1 if '跑输' in str(res.get('direction', '')) or '负' in str(res.get('direction', '')) else 0,
     ])
 
-    if bottom_signals >= 3 and bottom_signals > top_signals:
-        action = '🥇 强建仓'
-        direction = 'long'
-    elif bottom_signals >= 2 and bottom_signals > top_signals:
+    if bottom_signals >= 2 and bottom_signals > top_signals:
         action = '🥈 标准建仓'
         direction = 'long'
-    elif top_signals >= 3 and top_signals > bottom_signals:
-        action = '🔴 强减仓'
-        direction = 'short'
     elif top_signals >= 2 and top_signals > bottom_signals:
         action = '🟠 标准减仓'
         direction = 'short'
@@ -299,7 +284,8 @@ def build_factor_matrix(
     """
     构建 因子 × 3 周期 综合矩阵 (2026-08-17 改名, 之前叫 build_5method_matrix)
 
-    "5 方法" 历史命名已过时: 实际是 3 因子 (wyckoff/chan/resonance)
+    "5 方法" 历史命名已过时: 实际是 2 因子 (wyckoff/chan)
+    (2026-11-05 删 res/多市场共振 — resonance_3period 网络调用早已删除, 该票恒为 0)
     现在统一叫 "因子矩阵", 跟 AnalysisEngine Strategy 命名对齐.
 
     Args:
@@ -333,10 +319,6 @@ def build_factor_matrix(
         wy_key = {'weekly': 'wyckoff_weekly', 'daily': 'wyckoff'}[level]
         wyckoff = s5.get(wy_key) or s5.get('wyckoff') or {}
 
-        # 共振: weekly 有独立键
-        res_key = {'weekly': 'resonance_weekly', 'daily': 'resonance'}[level]
-        res = s5.get(res_key) or s5.get('resonance') or {}
-
         matrix[level] = _period_detail(
             level=level,
             weight=weight,
@@ -344,7 +326,6 @@ def build_factor_matrix(
             chan_data=chan_period,
             bsp=bsp_period,
             wyckoff=wyckoff,
-            res=res,
             current_price=current_price,
         )
 
@@ -391,9 +372,6 @@ def render_factor_matrix_md(matrix_result: dict) -> str:
     md.append("| **威科夫 (3 大阶段)** | "
               f"{_md_wy(m['weekly']['wyckoff'])} | "
               f"{_md_wy(m['daily']['wyckoff'])} |")
-    md.append("| **多市场共振** | "
-              f"{_md_res(m['weekly']['resonance'])} | "
-              f"{_md_res(m['daily']['resonance'])} |")
     md.append("| **🎯 综合判定** | "
               f"{_md_composite(m['weekly']['composite'])} | "
               f"{_md_composite(m['daily']['composite'])} |")
@@ -456,11 +434,6 @@ def _md_chan(chan: dict) -> str:
 def _md_wy(wy: dict) -> str:
     """威科夫行 markdown"""
     return f"{wy.get('stage', '?')}/{wy.get('stage_detail', '') or '—'} ({wy.get('confidence', 0)}%)"
-
-
-def _md_res(res: dict) -> str:
-    """共振行 markdown"""
-    return f"{res.get('direction', '—')} 个股{res.get('stock_ret_5d', 0):+.1f}%/板块{res.get('sector_ret_5d', 0):+.1f}%"
 
 
 def _md_composite(comp: dict) -> str:

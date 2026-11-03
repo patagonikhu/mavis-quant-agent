@@ -77,7 +77,7 @@ def fetch_features(code: str = "300274") -> pd.DataFrame:
 
     # 9. 60m 60分 OB 距离 (placeholder, 用 close vs MA20 距离近似)
     df["ma20_dist"] = (df["close"] - df["close"].rolling(20).mean()) / df["close"].rolling(20).mean()
-    # 10. 多市场共振 (placeholder, 用 5d 涨幅 > 0 近似)
+    # 10. 5 日动量方向 (原「多市场共振」占位特征, 2026-11-05 共振数据源已删除)
     df["up_5d"] = (df["ret_5"] > 0).astype(int)
 
     # === Target: 未来 5d 涨幅 (fitness 用) ===

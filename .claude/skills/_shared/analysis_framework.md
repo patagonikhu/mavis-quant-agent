@@ -18,7 +18,7 @@
 - 威科夫 (wyckoff) — 3 阶段: Accumulation / Markup / Distribution (阶段判定)
 - 结构分析 (structure) — Order Block + FVG + Liquidity Sweep (周/日 双周期)
 - TechnicalStrategy (technical) — 8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比)
-- 多市场共振 (resonance) — 不参与 (v3.1 起 WAF 频发)
+- 多市场共振 (resonance) — 已移除 (2026-11-05, `resonance_3period` 网络调用早已删除, 该票恒为 0)
 
 **× 2 周期** (2 个时间周期, 2026-08-29 删 60m):
 - **周线** (1-3 个月) — 决定主升浪方向
@@ -82,7 +82,7 @@
 - ~~投资四问 (卡点/TAM/龙头/估值)~~ ← handbook/analysis-framework.md §2 (2026-11-03 起不在报告内, 仅方法论参考)
 - ~~T 框架 (T 位置计算)~~ ← handbook/analysis-framework.md §3 (2026-11-03 起不在报告内, 仅方法论参考)
 - 缠论 1买/2买/3买 + 估值 (PE + Magic ROC/EY) ← handbook/analysis-framework.md §2.4
-- 因子 × 2 周期 综合矩阵 (3 类等权投票: chan/wyckoff/resonance, 仅作参考, 不进仓位/退出决策)
+- 因子 × 2 周期 综合矩阵 (2 类等权投票: chan/wyckoff, 仅作参考, 不进仓位/退出决策)
 
 ### 阶段 3: 落报告 (LLM 套 7 section 模板)
 - 工具: `tools/render/report_renderer.py`

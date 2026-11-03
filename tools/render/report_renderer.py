@@ -967,9 +967,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     else:
         wy_focus = f"阶段 {wy_stage} ({wy_name}) {wy_conf}% — {wy_action if level=='daily' else wy_focus_label}"
 
-    # ── 3. 多市场共振 (已移除网络数据源，显示占位)
-    res_focus = "多市场共振: 已移除 (resonance_3period 网络调用删除)"
-
     # 止跌信号（仅日线计算，周线显示说明）
     if level == "weekly":
         stop_signal = "周线不适用 (看日线止跌)"
@@ -1047,10 +1044,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
 **🔍 9 种 sub-event 触发情况 (2026-07-28 跟 WyckoffTradingAgent L4 对齐):**
 
 {wy_sub_events_md}
-
-**【多市场共振】**
-
-{res_focus}
 """
 
 
