@@ -7,8 +7,11 @@ analysis_engine.py — analysis 层 (v5.10.35, 2026-08-26)
 - L3 render 层: render_report(analysis_data) → markdown
 
 策略模式 (v5.10.35 简化):
-- 6 个 Phase1 策略类: 返回 dict (含 score + 因子数据), 不再继承 AnalysisStrategy ABC
-- 8 个 Phase2 派生函数 (模块级): 纯数据提取, weight=0
+- 4 个 Phase1 策略类: 返回 dict (含 score + 因子数据), 不再继承 AnalysisStrategy ABC
+  (chan / wyckoff / technical / finance)
+- 2026-11-05 删: StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep)
+  → 报告层早已不消费, 只算不用; 因子库 tools/factors/structure/ 整目录删除
+- 2 个 Phase2 派生函数 (模块级): 纯数据提取, weight=0
 - AnalysisResult.raw: Dict[str, Any] 是唯一数据来源
 """
 from __future__ import annotations
@@ -45,7 +48,6 @@ class RawContext:
     chan_result:    dict = field(default_factory=dict)
     wyckoff_result: dict = field(default_factory=dict)   # 日线
     wyckoff_weekly: dict = field(default_factory=dict)
-    structure_result: dict = field(default_factory=dict)
     technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
     # 2026-11-05 删 resonance_result: resonance_3period 网络调用早已删除, 该字段从未被写入/读取
     _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
@@ -94,7 +96,6 @@ class AnalysisResult:
     raw 是唯一数据来源:
       raw["wyckoff"]  = {"score": ..., "stage": ..., "sub_events": ..., "3period": ...}
       raw["chan"]      = {"score": ..., "weekly": {...}, "daily": {...}}
-      raw["structure"] = {"score": ..., "ob": [...], "structure_weekly": {...}}
       raw["finance"]   = {"quarterly": [...], "roc": ..., "ey": ..., ...}
       raw["position"]  = {"close_pos_day": ..., ...}
       # Phase2 派生 (weight=0)
@@ -130,10 +131,6 @@ class AnalysisResult:
             "signals_active":  self.signals_active,
             "action":          self.action,
         })
-        # Backward compat: structure_weekly 作为独立顶层 key (render 可能直接读 analysis["structure_weekly"])
-        struct = self.raw.get("structure") or {}
-        if struct.get("structure_weekly"):
-            d.setdefault("structure_weekly", struct["structure_weekly"])
         return d
 
 
@@ -333,132 +330,6 @@ class WyckoffStrategy:
                 **daily_out,
                 "sub_events_by_period": sub_events_by_period,
                 "3period": wyckoff_3period,
-            }
-        return results
-
-
-class StructureStrategy:
-    """结构分析 (OB/FVG/Sweep) → 分数，日线 + 周线两周期"""
-    name = "structure"
-
-    def analyze(self, ctx: RawContext) -> dict:
-        from tools.factors.structure.analysis import structure_analysis as _struct
-
-        def _run(kline, label):
-            if not kline or len(kline) < 20:
-                return {}
-            try:
-                return _struct(
-                    opens=  [k.get("open", k["close"]) for k in kline],
-                    highs=  [k["high"]  for k in kline],
-                    lows=   [k["low"]   for k in kline],
-                    closes= [k["close"] for k in kline],
-                    dates=  [k.get("trade_date", k.get("date", "")) for k in kline],
-                    vols=   [k.get("volume", 0) for k in kline],
-                    current_price=ctx.current_price,
-                ) or {}
-            except Exception:
-                return {}
-
-        struct_d = _run(ctx.kline,  "daily")
-        struct_w = _run(ctx.weekly, "weekly")
-
-        # 合并存储（daily 向后兼容，双周期独立）
-        struct = {**struct_d, "structure_weekly": struct_w}
-        ctx.structure_result = struct
-
-        total_obs = (struct_d.get("total_obs", 0) or 0) + \
-                    (struct_w.get("total_obs", 0) or 0)
-        sweeps = len(struct_d.get("recent_sweeps") or [])
-        score = min(total_obs * 0.1, 0.5) if total_obs > 0 else 0.0
-        signals = []
-        if total_obs > 3:
-            signals.append(f"结构 OB {total_obs}个(日/周)")
-        if sweeps > 0:
-            signals.append(f"结构 扫流 ×{sweeps}")
-        return {
-            "score":   score,
-            "signals": signals,
-            "summary": f"结构 OB={total_obs} 扫流={sweeps}",
-            **struct,
-        }
-
-    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """O(n): OB/FVG/Sweep 预扫一次，per date O(小常数) 过滤。"""
-        from tools.factors.structure.order_blocks import find_order_blocks
-        from tools.factors.structure.fvg import find_fvg
-        from tools.factors.structure.swings_sweeps import find_liquidity_sweeps
-        from tools.factors.structure.atr import calc_atr
-
-        dates_clean = set(d.replace("-", "")[:8] for d in dates)
-        kline = ctx.kline or []
-        if len(kline) < 20:
-            return {d.replace("-","")[:8]: {"score":0,"signals":[],"summary":"结构数据不足"} for d in dates}
-
-        opens  = [k.get("open", k["close"]) for k in kline]
-        highs  = [k["high"]  for k in kline]
-        lows   = [k["low"]   for k in kline]
-        closes = [k["close"] for k in kline]
-        dates_list = [k.get("trade_date","").replace("-","")[:8] for k in kline]
-        vols   = [k.get("volume", 0) for k in kline]
-
-        # displacement_atr_mult 自适应（与 structure_analysis 逻辑一致）
-        atr = calc_atr(highs, lows, closes) or 0
-        n_pre = min(50, len(closes) - 1)
-        if atr > 0 and n_pre >= 5:
-            bar_amp = sorted(abs(closes[i] - opens[i]) / atr for i in range(-n_pre, 0) if atr > 0)
-            idx70 = int(len(bar_amp) * 0.7)
-            displacement_atr_mult = max(0.8, min(2.5, bar_amp[idx70]))
-        else:
-            displacement_atr_mult = 1.0
-
-        # 全量扫一次
-        obs_all  = find_order_blocks(opens, highs, lows, closes, dates_list, 120,
-                                     displacement_atr_mult=displacement_atr_mult)
-        fvgs_all = find_fvg(opens, highs, lows, closes, dates_list, 120)
-        swps_all = find_liquidity_sweeps(opens, highs, lows, closes, dates_list, lookback=30)
-
-        date_to_idx = {d: i for i, d in enumerate(dates_list)}
-        max_ob_age = 80
-
-        results = {}
-        for date in dates:
-            date_clean = date.replace("-","")[:8]
-            i = date_to_idx.get(date_clean, -1)
-            if i < 0:
-                results[date_clean] = {"score": 0, "signals": [], "summary": "—"}
-                continue
-
-            cp = closes[i]
-
-            def _age(ob): return i - ob.get("formed_at_index", i)
-            def _sweep_age(s): return i - s.get("sweep_candle_index", i)
-
-            bull_obs = [ob for ob in obs_all["bull"]
-                        if ob.get("formed_at_index", i) <= i and _age(ob) <= max_ob_age]
-            bear_obs = [ob for ob in obs_all["bear"]
-                        if ob.get("formed_at_index", i) <= i and _age(ob) <= max_ob_age]
-            fvgs = [f for f in fvgs_all if f.get("formed_at_index", i) <= i]
-            sweeps = [s for s in swps_all if s.get("sweep_candle_index", i) <= i]
-
-            nearest_bull = max((ob for ob in bull_obs if ob["bottom"] < cp), key=lambda ob: ob["bottom"], default=None)
-            nearest_bear = min((ob for ob in bear_obs if ob["top"] > cp), key=lambda ob: ob["top"], default=None)
-
-            total_obs  = len(bull_obs) + len(bear_obs)
-            total_fvgs = len(fvgs)
-            n_sweeps   = len([s for s in sweeps if _sweep_age(s) <= 30])
-
-            score   = min(total_obs * 0.1, 0.5) if total_obs > 0 else 0.0
-            signals = []
-            if total_obs > 3:  signals.append(f"结构 OB {total_obs}个")
-            if n_sweeps > 0:   signals.append(f"结构 扫流 ×{n_sweeps}")
-
-            results[date_clean] = {
-                "score": score, "signals": signals,
-                "summary": f"结构 OB={total_obs} 扫流={n_sweeps}",
-                "nearest_bull_ob": nearest_bull, "nearest_bear_ob": nearest_bear,
-                "total_obs": total_obs, "total_fvgs": total_fvgs,
-                "recent_sweeps": sweeps[-3:],
             }
         return results
 
@@ -1082,10 +953,10 @@ def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
 
 # Phase1 策略类列表 (顺序重要: ChanStrategy 先跑)
 # 2026-09-08: 删 ValuationStrategy (合并进 FinanceStrategy)
+# 2026-11-05: 删 StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep — 报告层早已不消费)
 PHASE1_STRATEGY_CLASSES = [
     ChanStrategy,
     WyckoffStrategy,
-    StructureStrategy,
     TechnicalStrategy,  # v6.2.8 加: 8 个技术指标
     FinanceStrategy,
 ]
@@ -1097,6 +968,7 @@ PHASE2_FUNCTIONS = [
 ]
 
 # 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / structure 0.10)
+#   (2026-11-05 structure 整个策略类已删)
 # 决策全部走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再加权汇总.
 # 保留空 dict 防止旧 import KeyError.
 _STRATEGY_WEIGHTS: dict[str, float] = {}

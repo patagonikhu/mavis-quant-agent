@@ -170,7 +170,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     chan_raw   = raw.get("chan",             {}) or {}
     bsp_raw    = raw.get("buy_sell_points", {}) or {}
     wy_raw     = raw.get("wyckoff",         {}) or {}
-    struct_raw = raw.get("structure",       {}) or {}
     val_raw    = raw.get("finance",           {}) or {}  # 2026-09-08 改: ValuationStrategy → FinanceStrategy
     tech_raw   = raw.get("technical",        {}) or {}  # v6.2.8 改: TechnicalStrategy 8 指标
     p3         = wy_raw.get("3period") or {}
@@ -204,18 +203,8 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "bsp_daily":  _active_bsp(bsp_raw, "daily"),
         "bsp_weekly": _active_bsp(bsp_raw, "weekly", date.replace("-", "")[:8]),
 
-        # 结构分析 日线/周线 OB/FVG/Sweep
-        "structure_bull_ob":       (struct_raw.get("nearest_bull_ob")  or {}).get("bottom"),
-        "structure_bear_ob":       (struct_raw.get("nearest_bear_ob")  or {}).get("top"),
-        "structure_fvg_bull":      (struct_raw.get("nearest_fvg_bull") or {}).get("bottom"),
-        "structure_fvg_bear":      (struct_raw.get("nearest_fvg_bear") or {}).get("top"),
-        "structure_sweeps_today":  _today_sweeps(struct_raw, date),
-        # 周线结构
-        "structure_w_bull_ob":     ((struct_raw.get("structure_weekly") or {}).get("nearest_bull_ob")  or {}).get("bottom"),
-        "structure_w_bear_ob":     ((struct_raw.get("structure_weekly") or {}).get("nearest_bear_ob")  or {}).get("top"),
-        "structure_w_fvg_bull":    ((struct_raw.get("structure_weekly") or {}).get("nearest_fvg_bull") or {}).get("bottom"),
-        "structure_w_fvg_bear":    ((struct_raw.get("structure_weekly") or {}).get("nearest_fvg_bear") or {}).get("top"),
-        "structure_w_sweeps_today": _today_sweeps(struct_raw.get("structure_weekly") or {}, date),
+        # 2026-11-05 删: 结构分析 日线/周线 OB/FVG/Sweep 共 10 个行字段
+        #   (structure_* — 报告层早已不消费, 随 StructureStrategy 整档删除)
 
         # 估值 (FinanceStrategy 季报粒度, 共享最新季值)
         # v6.2.8 删: 历史表里不再有 ROC%/EY% 列 (跨季才变, 跟"## 财务数据" section 重复)
@@ -234,21 +223,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         "atr_pct":    tech_raw.get("atr_pct"),
         "vol_ratio":  tech_raw.get("vol_ratio"),
     }
-
-
-def _today_sweeps(struct_raw: dict, date: str) -> list:
-    """返回当天新触发的 sweep（buy_side/sell_side）"""
-    sweeps = struct_raw.get("recent_sweeps") or []
-    date_clean = date.replace("-", "")[:8]
-    today = []
-    seen = set()
-    for s in sweeps:
-        if str(s.get("date", "")).replace("-", "")[:8] == date_clean:
-            key = (s["type"], s.get("swept_level"))
-            if key not in seen:
-                seen.add(key)
-                today.append(s)
-    return today
 
 
 def _today_sub_events(wy_raw: dict, level: str, date: str) -> str:

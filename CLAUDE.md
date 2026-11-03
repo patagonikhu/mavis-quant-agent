@@ -29,7 +29,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 |---|---|---|
 | L1 Sync | `tools/storage/sync.py` (8 数据段 flag, 默认 `--auto`) | — |
 | L1 Store | `tools/storage/store.py` | ❌ 网络 |
-| L2 Analysis | `tools/analysis/analysis_engine.py` (4 strategy: chan/wyckoff/structure/finance) | ❌ 网络, ❌ 直读 db |
+| L2 Analysis | `tools/analysis/analysis_engine.py` (4 strategy: chan/wyckoff/technical/finance) | ❌ 网络, ❌ 直读 db |
 | L2 容器 | `tools/analysis/render_data.py` | ❌ 网络 |
 | L3 Render | `tools/render/report_renderer.py` | ❌ 网络 |
 
@@ -74,6 +74,8 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 删除后综合判定 = **2 类等权投票** (chan / wyckoff), 建仓阈值 `bottom_signals >= 2`, 减仓阈值 `top_signals >= 2`。
 
 > 2026-11-04: 结构分析 (OB/FVG/Sweep) 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变); 同日生产层完成改名, 全仓统一用 `structure` / `结构` 命名。
+>
+> 2026-11-05: 结构分析 (structure / 原 SMC) **整个从 analysis 层删除** —— `StructureStrategy` 类、`RawContext.structure_result`、`raw["structure"]`、10 个 `structure_*` 行字段、`tools/factors/structure/` 因子库目录全部移除。报告层早已不消费, 只算不用。删除后 Phase1 strategy = **chan / wyckoff / technical / finance**。
 >
 > 2026-11-05: 多市场共振 (res) 那一票一并移除 —— `resonance_3period` 网络调用早已删除, 该票恒为 0, 报告里的「多市场共振: 已移除」占位块 + 因子矩阵表格行同步删掉。判定结果零变化。
 

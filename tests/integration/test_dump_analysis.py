@@ -113,11 +113,11 @@ class TestDataFlow:
 
 
 # =====================================================================
-# 2. AnalysisEngine: 7 个核心 strategy 都跑出来
+# 2. AnalysisEngine: 4 个核心 strategy 都跑出来
 # =====================================================================
 
 class TestAnalysisEngineStrategies:
-    """AnalysisEngine.analyze() 必须把 6 个 Phase1 strategy 全跑出来 (raw dict)"""
+    """AnalysisEngine.analyze() 必须把 4 个 Phase1 strategy 全跑出来 (raw dict)"""
 
     @pytest.mark.integration
     @pytest.mark.parametrize("strategy_class", PHASE1_STRATEGY_CLASSES)
@@ -125,7 +125,7 @@ class TestAnalysisEngineStrategies:
         self, analysis_data_per_code, strategy_class
     ):
         """每个 Phase1 strategy 都在 result.raw 里, score 范围合理"""
-        strategy_name = strategy_class.name  # chan/wyckoff/structure
+        strategy_name = strategy_class.name  # chan/wyckoff/technical/finance
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
             assert strategy_name in raw, (
@@ -135,7 +135,6 @@ class TestAnalysisEngineStrategies:
             # score 范围因 strategy 而异:
             score_ranges = {
                 "wyckoff":  (-1.5, 1.5),
-                "structure": (-1.5, 1.5),
                 "chan":     (-1.5, 1.5),
             }
             lo, hi = score_ranges.get(strategy_name, (-1.5, 1.5))
@@ -149,8 +148,8 @@ class TestAnalysisEngineStrategies:
             )
 
     @pytest.mark.integration
-    def test_all_six_strategies_present(self, analysis_data_per_code):
-        """一次检查 6 个 Phase1 strategy 全部在 raw"""
+    def test_all_four_strategies_present(self, analysis_data_per_code):
+        """一次检查 4 个 Phase1 strategy 全部在 raw"""
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
             for cls in PHASE1_STRATEGY_CLASSES:
@@ -166,7 +165,7 @@ class TestCtxResults:
 
     @pytest.mark.integration
     @pytest.mark.parametrize("strategy_name", [
-        "chan", "wyckoff", "structure",
+        "chan", "wyckoff",
     ])
     def test_raw_strategy_not_empty(self, analysis_data_per_code, strategy_name):
         """2026-08-29: ctx.*_result 字段已删, 改读 raw[strategy_name]"""

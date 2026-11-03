@@ -16,7 +16,6 @@
 
 **辅助维度 (仅供参考, 不汇总)**:
 - 威科夫 (wyckoff) — 3 阶段: Accumulation / Markup / Distribution (阶段判定)
-- 结构分析 (structure) — Order Block + FVG + Liquidity Sweep (周/日 双周期)
 - TechnicalStrategy (technical) — 8 个技术指标 (MACD/RSI/KDJ/BOLL/ATR/量比)
 - 多市场共振 (resonance) — 已移除 (2026-11-05, `resonance_3period` 网络调用早已删除, 该票恒为 0)
 
@@ -75,7 +74,7 @@
 
 ### 阶段 1: 拉数据 (Python 工具, 自动)
 - `tools/batch/t_analyze_all.py` (v6.2.5 起作为 watchlist 全刷入口)
-- 拉 parquet + 跑 4 个 strategy 类 (chan/wyckoff/structure/finance), 写 `docs/{portfolio,watchlist}/analyze-{code}-{name}.md`
+- 拉 parquet + 跑 4 个 strategy 类 (chan/wyckoff/technical/finance), 写 `docs/{portfolio,watchlist}/analyze-{code}-{name}.md`
 - 包含: 缠论三要素 (周/日 中枢+背驰) + 缠论补充 4 方法
 
 ### 阶段 2: 套框架 (LLM, 必读本文件)
@@ -101,7 +100,6 @@ data/history/daily/{YYYYQN}.parquet (duckdb 读)
         │
         ├── 缠论 (analysis['chan'].*) — **决策主入口**
         ├── 威科夫 (wyckoff_stage)
-        ├── 结构分析 (structure_ob)
         └── finance (MagicFormula / ROC / EY) — 合并
         │
         ▼
