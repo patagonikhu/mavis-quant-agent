@@ -393,6 +393,7 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
 
     signal_type: bsp_new / bsp_gone /
                  wyckoff_event_top / wyckoff_event_bot /
+                 wyckoff_stage_change /
                  hub_pos_change / ma_dev_cross
     direction:   "buy" | "sell"
 
@@ -411,6 +412,24 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
             if orig:
                 signals.append(("bsp_gone", f"{label}消失({period})",
                                  "sell" if orig == "buy" else "buy"))
+
+    # 威科夫阶段转变 (2026-11-03 加)
+    #   A→M (Accumulation→Markup) = 主升浪启动 = 买入信号
+    #   M→D (Markup→Distribution) = 派发开始 = 卖出信号
+    #   其他转变 (A→D / D→A / 进出 ?) 不算方向信号, 只在渲染层显示
+    # 改动前: 这里什么都不加, A→M 只在 format_signals_for_render 里显示成
+    #   被动文字 "🔄wydaily:A→M" → 进不了 buy/sell 汇总表, 用户看不到
+    for field in ("wyckoff_daily", "wyckoff_weekly"):
+        raw = changes.get(field)
+        if not raw or "→" not in raw:
+            continue
+        old, new = raw.split("→", 1)
+        old, new = old.strip(), new.strip()
+        period = field.split("_")[1]
+        if old == "Accumulation" and new == "Markup":
+            signals.append(("wyckoff_stage_change", f"A→M主升启动({period})", "buy"))
+        elif old == "Markup" and new == "Distribution":
+            signals.append(("wyckoff_stage_change", f"M→D派发开始({period})", "sell"))
 
     # 威科夫子事件
     for field in ("sub_event_daily", "sub_event_weekly"):
@@ -468,20 +487,32 @@ def format_signals_for_render(changes: dict) -> list[str]:
             parts.append(f"🔴{detail}")
         elif sig_type == "wyckoff_event_bot":
             parts.append(f"✅{detail}")
+        elif sig_type == "wyckoff_stage_change":
+            parts.append(f"🔄{detail}")
         elif sig_type == "hub_pos_change":
             parts.append(f"🔄中枢{detail}")
         elif sig_type == "ma_dev_cross":
             parts.append(f"📊{detail}")
-    # wyckoff stage 变化（不在 extract_signals 里，单独处理）
+    # wyckoff stage 变化
+    # 2026-11-03: A→M / M→D 已由 extract_signals 单独产出方向信号 (wyckoff_stage_change),
+    #   这里跳过它们, 避免同一转变在"变化"列出现两次。
+    #   其余转变 (A→D / D→A / 进出 ?) 仍走这里显示。
     for field in ("wyckoff_daily", "wyckoff_weekly"):
-        if field in changes:
-            v = changes[field]
-            # 2026-09-15 缩写: Accumulation=A / Markup=M / Distribution=D / TradingRange=TR
-            v = (v.replace("Accumulation", "A")
-                  .replace("Markup", "M")
-                  .replace("Distribution", "D")
-                  .replace("TradingRange", "TR"))
-            parts.append(f"🔄wy{field.split('_')[1]}:{v}")
+        if field not in changes:
+            continue
+        raw = changes[field]
+        if "→" in raw:
+            old, new = (x.strip() for x in raw.split("→", 1))
+            if (old == "Accumulation" and new == "Markup") or \
+               (old == "Markup" and new == "Distribution"):
+                continue  # 已作为方向信号输出
+        v = raw
+        # 2026-09-15 缩写: Accumulation=A / Markup=M / Distribution=D / TradingRange=TR
+        v = (v.replace("Accumulation", "A")
+              .replace("Markup", "M")
+              .replace("Distribution", "D")
+              .replace("TradingRange", "TR"))
+        parts.append(f"🔄wy{field.split('_')[1]}:{v}")
     return parts
 
 
