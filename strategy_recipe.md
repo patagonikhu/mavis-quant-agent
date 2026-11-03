@@ -82,7 +82,7 @@ def new_factor(self) -> dict:
 python -m tools.batch.guardrail --check parquet
 python -m tools.batch.guardrail --check network
 
-# 跑 1 单只 verify 22 section 报出来
+# 跑 1 单只 verify 12 section 报出来
 python -m tools.batch.t_analyze_one --code 300274
 
 # 跑回测 verify 信号可回放

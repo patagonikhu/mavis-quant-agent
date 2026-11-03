@@ -43,6 +43,11 @@
 > ⚠️ 2026-11-03 起: 「🎯 投资四问」「⏰ T 框架」「🚨 5 类 14 子信号」三个 section 已从 md 报告删除,
 > 数据管线一并删除。以下两套命名仍用于 **LLM 手动套框架** (不自动进报告);
 > 「🎯 T 框架事件」section 保留。
+>
+> ⚠️ 2026-11-03 起: 「🎯 止盈 3 层」「🛑 止损 4 档」两档已从 md 报告删除, 数据管线一并删除。
+> 理由: 两档都是「当前价 × 固定百分比」的机械外推 (止盈 +5/+10/+20%, 止损 -3/-5/-8/-10%),
+> 无标的特异性判断; 真实风控由「🟢 退场信号检查」(纯缠论) + 「📋 3 层仓位策略」(中枢位) 承担,
+> 两档属重复表达。
 
 **所有 skill description 必须用 "缠论 + 估值双指标" 命名**, 禁止用 "6 strategy" / "5方法" / "7 strategy 权重" 等弃用术语.
 
@@ -53,7 +58,7 @@
 ### 阶段 1: 拉数据 (Python 工具, 自动)
 - `tools/batch/t_analyze_all.py` (v6.2.5 起作为 watchlist 全刷入口)
 - 拉 parquet + 跑 4 个 strategy 类 (chan/wyckoff/structure/finance), 写 `docs/{portfolio,watchlist}/analyze-{code}-{name}.md`
-- 包含: 缠论三要素 (周/日 中枢+背驰) + 缠论补充 4 方法 + 退出判定 + 3 层仓位 + 止盈止损 4 档 (走缠论, 不走 strategy 权重)
+- 包含: 缠论三要素 (周/日 中枢+背驰) + 缠论补充 4 方法 + 退出判定 + 3 层仓位 (走缠论, 不走 strategy 权重)
 
 ### 阶段 2: 套框架 (LLM, 必读本文件)
 - ~~投资四问 (卡点/TAM/龙头/估值)~~ ← handbook/analysis-framework.md §2 (2026-11-03 起不在报告内, 仅方法论参考)
@@ -61,7 +66,7 @@
 - 缠论 1买/2买/3买 + 估值 (PE + Magic ROC/EY) ← handbook/analysis-framework.md §2.4
 - 因子 × 2 周期 综合矩阵 (3 类等权投票: chan/wyckoff/resonance, 仅作参考, 不进仓位/退出决策)
 
-### 阶段 3: 落报告 (LLM 套 14 section 模板)
+### 阶段 3: 落报告 (LLM 套 12 section 模板)
 - 工具: `tools/render/report_renderer.py`
 - 输出: `docs/analyze-{code}-{name}.md`
 - 强制项: 缠论三要素 (第一段) + 4 季财务大表 (中段) + 三层仓位 (末段)
@@ -85,10 +90,10 @@ data/history/daily/{YYYYQN}.parquet (duckdb 读)
 Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
         │
         ▼
-退出信号 (exit_signals) + 止盈止损 (stop_profit_loss) + 三层仓位 (three_layer_position) — 走纯缠论
+退出信号 (exit_signals) + 三层仓位 (three_layer_position) — 走纯缠论
         │
         ▼
-报告 (14 section) ← tools/render/report_renderer.py
+报告 (12 section) ← tools/render/report_renderer.py
 ```
 
 ---
@@ -126,4 +131,4 @@ Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
 
 - `handbook/analysis-framework.md` — 投资四问 + T 框架 + 龙头评分 详细定义 (1134 行, 方法论; 2026-11-03 起不再进报告)
 - `tools/factors/` — 22 个 factor 库 (缠论/威科夫/结构/量价/多市场 + 估值/风控/仓位)
-- `tools/render/report_renderer.py` — 14 section 报告模板
+- `tools/render/report_renderer.py` — 12 section 报告模板

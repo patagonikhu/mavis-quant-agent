@@ -102,7 +102,7 @@ class AnalysisResult:
       raw["sector_overheat"]     = {1周涨幅: ..., ...}
       raw["buy_sell_points"]     = {daily: {...}, weekly: {...}}
       raw["exit_signals"]        = {绿信号数: ..., 红信号数: ..., ...}
-      raw["stop_profit_loss"]    = {止盈3层: [...], 止损4档: [...]}
+      # 2026-11-03 删: raw["stop_profit_loss"] (止盈 3 层 + 止损 4 档整档已删)
       raw["three_layer_position"]= {位置: ..., 市况: ...}
       raw["monitor_triggers"]    = {触发N项: ...}
     """
@@ -1091,22 +1091,6 @@ def _derive_exit_signals(ctx: RawContext, raw: dict) -> dict:
         return {"error": str(e)}
 
 
-def _derive_stop_profit_loss(ctx: RawContext, raw: dict) -> dict:
-    """止盈 3 层 + 止损 4 档 (基于中枢上下沿)
-
-    2026-09-09 改: 直接 import 纯函数, 不用 FactorRegistry
-    """
-    from tools.factors.factor_risk import compute_stop_profit_loss
-    try:
-        out = compute_stop_profit_loss(
-            price=ctx.current_price,
-            chan_signals=ctx.chan_result,
-        )
-        return out if isinstance(out, dict) else {}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 def _derive_three_layer_position(ctx: RawContext, raw: dict) -> dict:
     """三层仓位 (日线中枢+缠论)
 
@@ -1166,7 +1150,6 @@ PHASE2_FUNCTIONS = [
     _derive_sector_overheat,
     _derive_buy_sell_points,
     _derive_exit_signals,
-    _derive_stop_profit_loss,
     _derive_three_layer_position,
     _derive_monitor_triggers,
 ]

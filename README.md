@@ -11,7 +11,7 @@
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报 (14 section: 因子矩阵 + 缠论 4 级别 + 仓位/买卖点) | `/t-analyze 688256 寒武纪` |
+| `/t-analyze <code> [name]` | 单只详报 (12 section: 因子矩阵 + 缠论 4 级别 + 仓位/买卖点) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
@@ -22,7 +22,7 @@
 ### 1.1 典型用法
 
 ```bash
-# 单只分析 (22 section 详报, 800+ 行)
+# 单只分析 (12 section 详报, 800+ 行)
 /t-analyze 688256 寒武纪
 
 # 批量 (后台跑 54 只约 50s)
@@ -45,7 +45,7 @@
 ```
 /t-wyckoff-a2m            ← 1. 全市场 A→M 扫描 (威科夫积累期→拉升期)
               ↓
-/t-analyze {code}                ← 2. 对候选标的做完整 22 section 详报
+/t-analyze {code}                ← 2. 对候选标的做完整 12 section 详报
               ↓
 /t-backtest --signal Accumulation  ← 3. 验证信号历史胜率 (signal_cache 加速)
               ↓
@@ -54,7 +54,7 @@
 
 ### 1.3 输出格式
 
-`/t-analyze` 报告关键字段（14 section）:
+`/t-analyze` 报告关键字段（12 section）:
 
 ```
 **4 季财务 + Magic 估值** (15 列大表, linter 必查):
@@ -127,7 +127,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── analysis_engine.py             # AnalysisEngine.analyze_history()
 │   │   ├── analysis_result_signals.py      # compute_factor_history() 批量信号
 │   │   ├── signal_cache.py                # SQLite 缓存 (wyckoff 9 bool + chan 5 bool + hub)
-│   │   └── render_data.py                 # RenderData (9 派生字段)
+│   │   └── render_data.py                 # RenderData (7 派生 property)
 │   │
 │   ├── factors/                           # 4 strategy 算子 (chan/wyckoff/structure/finance)
 │   │   ├── kline_arrays.py                # build_kline_features() O(n) 预算层
@@ -135,9 +135,9 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── chan/czsc_signals.py
 │   │   ├── structure/                     # OB/FVG/Sweep
 │   │   ├── valuation/factor_lib.py        # ROC + EY + Magic (纯函数)
-│   │   └── risk/                          # 退出信号/止盈止损/监控触发
+│   │   └── risk/                          # 退出信号/监控触发
 │   │
-│   ├── render/                            # 报告渲染 (22 section)
+│   ├── render/                            # 报告渲染 (12 section)
 │   │   └── report_renderer.py
 │   │
 │   └── batch/                             # 批量脚本

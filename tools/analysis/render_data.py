@@ -181,10 +181,6 @@ class RenderData:
         return (self.analysis or {}).get("exit_signals")
 
     @property
-    def stop_profit_loss(self) -> Optional[dict]:
-        return (self.analysis or {}).get("stop_profit_loss")
-
-    @property
     def three_layer_position(self) -> Optional[dict]:
         return (self.analysis or {}).get("three_layer_position")
 
@@ -219,8 +215,7 @@ class RenderData:
     valuation_data: Optional[dict] = None  # FinanceStrategy 输出 (Magic)
     xgboost_prob: Optional[float] = None
     supplement: Optional[dict] = None
-    take_profit: Optional[dict] = None
-    stop_loss: Optional[dict] = None
+    # 2026-11-03 删: take_profit / stop_loss 两个字段 (止盈 3 层 + 止损 4 档整档已删)
     # 2026-10-30 修: 删掉 exit_signals / position_layer / monitor_triggers 三个字段声明
     #   原因: 它们在 class body 里声明在 @property 之后 (356 行 vs 279/291 行),
     #   class body 自上而下执行 → 字段声明把 property 覆盖成 None, 导致
@@ -364,8 +359,9 @@ class RenderData:
             # 2026-09-02 改: 删 magic_formula_detail, 用 valuation_data 1 个字段
             valuation_data=cls._compute_valuation(ctx, result),
             # 2026-09-03 修 12 处 Phase2 降级: 7 个 schema 字段填值
-            # _compute_phase2 返 dict 包含: sector_overheat / supplement / take_profit
+            # _compute_phase2 返 dict 包含: sector_overheat / supplement
             #   2026-11-03 删: fundamental / signal_5cat / strategy 三个 key
+            #   2026-11-03 删: take_profit key (止盈/止损两档整档已删)
             **cls._compute_phase2(ctx, result, signals_5, ma_table),
         )
 
@@ -407,10 +403,10 @@ class RenderData:
         # 2026-09-09 删: 策略 (5 strategy 投票, 走缠论)
         # 4) 缠论补充 — 从 chan 取 (bsp + hub 已经算)
         out["supplement"] = cls._extract_chan_supplement(raw)
-        # 6) 止盈 3 层 + 止损 4 档 (合在 take_profit 里, render 拆开)
-        # v6.2.8 改: 业务规则抽到 tools/analysis/mech.py, render_data 0 计算
-        from tools.analysis.mech import compute_stop_pl
-        out["take_profit"] = compute_stop_pl(ctx.kline or [])
+        # 2026-11-03 删: 止盈 3 层 + 止损 4 档 (整档已删)
+        #   原: out["take_profit"] = compute_stop_pl(ctx.kline or [])
+        #   价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断;
+        #   真实风控由 exit_signals (纯缠论) + three_layer_position (中枢位) 承担
 
         return out
 
@@ -493,7 +489,7 @@ class RenderData:
         # 2026-11-02 修: 删重复的 report["5类信号"] 赋值
         #   (上面 line("5类信号", ...) 已经赋过, 这里再赋会覆盖掉子信号数详情)
         report["缠论补充"] = ("✅" if self.supplement else "❓", "OK" if self.supplement else "未计算")
-        report["止盈止损"] = ("✅" if self.take_profit else "❓", "OK" if self.take_profit else "未计算")
+        # 2026-11-03 删: report["止盈止损"] 行 (止盈 3 层 + 止损 4 档整档已删)
 
         return report
 

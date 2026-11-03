@@ -240,35 +240,6 @@ def _section_xgboost(data: RenderData) -> str:
 """
 
 
-def _section_take_profit(data: RenderData) -> str:
-    if data.take_profit:
-        tp = data.take_profit
-        return f"""| 涨幅 | 触发价 | 操作 | 卖多少 |
-|---|---|---|---|
-| 当前 → +20% | ¥{tp.get('t1_price', '—')} | 卖 1/3 | {tp.get('t1_pct', 33)}% |
-| +20% → +50% | ¥{tp.get('t2_price', '—')} | 再卖 1/3 | {tp.get('t2_pct', 33)}% |
-| +50% → +100% | ¥{tp.get('t3_price', '—')} | 全清 | {tp.get('t3_pct', 33)}% |
-"""
-    return """> **数据状态:** ⚠️ 止盈 3 层未计算 (需当前价 + 持仓成本)
-> **说明:** 由 mavis 套公式算
-"""
-
-
-def _section_stop_loss(data: RenderData) -> str:
-    # 2026-09-03 改: stop_loss 字段不存在, 读 take_profit 里的 s1_price/s2_price/...
-    sl = data.take_profit or {}
-    if sl and sl.get("s1_price"):
-        return f"""| 跌幅 | 触发价 | 操作 |
-|---|---|---|
-| -3% | ¥{sl.get('s1_price', '—')} | ⚠️ 检查基本面 |
-| -5% | ¥{sl.get('s2_price', '—')} | 卖 1/3 |
-| -8% | ¥{sl.get('s3_price', '—')} | 减半仓 |
-| -10% | ¥{sl.get('s4_price', '—')} | 🛑 清仓 |
-"""
-    return """> **数据状态:** ⚠️ 止损 4 档未计算
-"""
-
-
 def _section_exit_signals(data: RenderData) -> str:
     if data.exit_signals:
         es = data.exit_signals
@@ -1720,16 +1691,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🤖 XGBoost 校准
 {_section_xgboost(data)}
-
----
-
-## 🎯 止盈 3 层
-{_section_take_profit(data)}
-
----
-
-## 🛑 止损 4 档
-{_section_stop_loss(data)}
 
 ---
 

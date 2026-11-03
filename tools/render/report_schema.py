@@ -11,7 +11,16 @@ report_schema.py — 报告格式定义 (单一真源, 不可变)
 CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
   2️⃣ 2 个缠论补充策略 (威科夫+多市场共振) — 一等公民
-  6️⃣ 三层仓位+买卖点 — 综合 (止盈/止损/退场/仓位/监控)
+  6️⃣ 三层仓位+买卖点 — 综合 (退场/仓位/监控)
+
+2026-11-03 删: 🎯 止盈 3 层 + 🛑 止损 4 档 两档
+  → 止盈/止损价位是"当前价 × 固定百分比"的机械外推 (止盈 +5/+10/+20%,
+    止损 -3/-5/-8/-10%), 不含任何标的特异性判断
+  → 退场信号检查 (exit_signals, 纯缠论) + 3 层仓位策略 (中枢位) 已覆盖
+    真实的风控决策, 两档属于重复表达
+  → 数据管线一并删除: mech.compute_stop_pl (MA20/MA60 外推) +
+    factor_risk.compute_stop_profit_loss (中枢位外推) + analysis_engine
+    ._derive_stop_profit_loss + render_data.take_profit/stop_loss 字段
 
 2026-11-03 删: 🎯 投资四问 + ⏰ T 框架 + 🚨 5 类 14 子信号 三档
   → 四问/T框架 只输出机械占位 (LLM 从未填充), 5 类子信号 2026-11-02 起只剩
@@ -159,21 +168,29 @@ REPORT_SECTIONS = [
         "refresh": "REGEN",
     },
     # === 7️⃣ 三层仓位 + 买卖点 (数据驱动) ===
+    # 2026-11-03: 止盈 3 层 + 止损 4 档 两档整档从 md 报告里删除 (用户指令)
+    #   原因: 价位 = 当前价 × 固定百分比的机械外推, 无标的特异性判断;
+    #         真实风控决策由 exit_signals (纯缠论) + three_layer_position
+    #         (中枢位) 承担, 两档属于重复表达
     {
         "id": "stop_profit",
         "title": "🎯 止盈 3 层",
         "category": "7️⃣",
         "render": "render_stop_profit",
-        "required": True,
+        "required": False,
         "refresh": "REGEN",
+        # 2026-11-03: renderer 已不再输出该 section (函数 _section_take_profit 一并删除)
+        "_deprecated": True,
     },
     {
         "id": "stop_loss",
         "title": "🛑 止损 4 档",
         "category": "7️⃣",
         "render": "render_stop_loss",
-        "required": True,
+        "required": False,
         "refresh": "REGEN",
+        # 2026-11-03: renderer 已不再输出该 section (函数 _section_stop_loss 一并删除)
+        "_deprecated": True,
     },
     {
         "id": "exit_signals",
