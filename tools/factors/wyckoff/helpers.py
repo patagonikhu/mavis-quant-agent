@@ -235,6 +235,56 @@ STRENGTH_LABEL = {
 }
 
 
+# ============================================================
+# 强度简写记法 (2026-11-05)
+#
+# 用途: 因子历史走势表「威科夫强度」列 —— 用极简记法表达阶段 + 强弱档,
+#   避免每格塞一长串中文标签 (表会被撑爆, 也不便于扫读)。
+#
+# 记法:
+#   m    — Markup 严格门 (最强)
+#   m1   — Markup 弱信号门
+#   m2   — Markup 加分线 / fallback 兜底 (最弱, 两档合并)
+#   A    — Accumulation (不分强弱档, 一律 A)
+#   D    — Distribution (不分强弱档, 一律 D)
+#   —    — 未判定 (stage='?' 或 strength='none'/缺失)
+#
+# 单一事实源: 生产侧 helpers.strength_token, 渲染器只读不算。
+# ============================================================
+STRENGTH_TOKEN = {
+    "Markup": {
+        "strict":     "m",
+        "weak":       "m1",
+        "extra_only": "m2",
+        "fallback":   "m2",
+        "none":       "—",
+    },
+    "Accumulation": {
+        "strict":     "A",
+        "weak":       "A",
+        "fallback":   "A",
+        "none":       "—",
+    },
+    "Distribution": {
+        "strict":     "D",
+        "weak":       "D",
+        "extra_only": "D",
+        "none":       "—",
+    },
+}
+
+
+def strength_token(stage: str, strength: str) -> str:
+    """(stage, strength) → 简写记法 token (m / m1 / m2 / A / D / —)
+
+    ⚠️ 必须带 stage: 同一档位在不同 stage 语义不同 (Accumulation 的 weak 也显示 A)。
+    stage 未知 ('?') 或 strength 缺失/未知 → 返回 "—" (调用方直接渲染)。
+    """
+    if not stage or stage == "?":
+        return "—"
+    return STRENGTH_TOKEN.get(stage, {}).get(strength or "none", "—")
+
+
 def strength_label(stage: str, strength: str) -> str:
     """(stage, strength) → 中文强度标签。
 

@@ -40,7 +40,7 @@ from typing import Optional
 from tools.analysis.render_data import RenderData
 from tools.factors.wyckoff.helpers import (
     _ma50_reached_ma200, MA50_MA200_TOLERANCE, FB1_TREND30_MIN, MARKUP_ANGLE_MIN,
-    strength_label,
+    strength_label, strength_token,
 )
 
 
@@ -1273,25 +1273,28 @@ def _bsp_str(pts: dict) -> str:
     return result
 
 
-# 因子历史走势 — 22 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
+# 因子历史走势 — 24 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
 # 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | A天(日/周) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
+# 2026-11-05 改: 「A天(日/周)」列 → 「威科夫强度」列, 内容改为简写记法 (m/m1/m2/A/D/—),
+#   并从「变化」列右边移到「威科夫(日/周)」列右边 (列序: 威科夫(日/周) → 威科夫强度 → 子事件(日/周))。
+#   记法映射单一事实源 = tools.factors.wyckoff.helpers.strength_token, 渲染器只读不算。
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
-    """单行因子历史 markdown 表格行 (22 列, header 跟 _section_factor_history 完全一致)
+    """单行因子历史 markdown 表格行 (24 列, header 跟 _section_factor_history 完全一致)
 
     Args:
         rows: compute_factor_history 输出, 按日期升序 (含 ma20_slope 字段)
         idx:  当前行索引
 
     Returns:
-        "| date | ¥close | ... | 22 列" markdown 行 (无错位防护, 调用方负责)
+        "| date | ¥close | ... | 24 列" markdown 行 (无错位防护, 调用方负责)
         数据不足返 None
     """
     from tools.analysis.analysis_result_signals import diff_rows, format_signals_for_render
@@ -1301,6 +1304,14 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     changes = diff_rows(rows[idx - 1], row) if idx > 0 else {}
 
     wy  = f"{row['wyckoff_daily'][0]}/{row['wyckoff_weekly'][0]}"
+
+    # 威科夫强度列 (2026-11-05): 简写记法 m/m1/m2/A/D/—, 日/周两格。
+    #   记法映射下沉到 helpers.strength_token, 渲染器只读不算 (规则下沉范式)。
+    def _tok(stage, strength):
+        return strength_token(stage or "?", strength)
+    strength_s = (f"{_tok(row.get('wyckoff_daily'),  row.get('wyckoff_strength_daily'))}"
+                  f"/{_tok(row.get('wyckoff_weekly'), row.get('wyckoff_strength_weekly'))}")
+
     def se_short(s):
         if not s or s == "—":
             return "—"
@@ -1319,10 +1330,6 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     chg = format_signals_for_render(changes)
     chg = [c for c in chg if not c.startswith('📊MA')]
     chg_str = ' '.join(chg) or '—'
-
-    ad = row.get('accum_days_daily', 0)
-    aw = row.get('accum_days_weekly', 0)
-    accum_str = f"{ad}/{aw}" if any([ad, aw]) else "—"
 
     # MA 偏离 (MA5/20/60 三档日偏离) — v6.2.8 改: 标题"MA偏离(MA5/20/60)", cell 只显示 3 个分数
     ma5_dev  = row.get('ma5_dev')
@@ -1412,9 +1419,9 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
         f"| {row['date']} | ¥{close_fmt} "
         f"| {rsi6_s} | {macd_s} | {dif_str} | {dea_str} | {bar_d_s} | {vol_s} "
         f"| {slope_s} | {ma_s} "
-        f"| {wy} | {se} "
+        f"| {wy} | {strength_s} | {se} "
         f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
-        f"| {b3} | {chg_str} | {accum_str} "
+        f"| {b3} | {chg_str} "
     )
     bpct  = row.get('boll_pct')
     bwid  = row.get('boll_width')

@@ -125,19 +125,8 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         # 提取完立即释放，避免 AnalysisResult 大对象在循环结束前全部驻留内存
         del history[date_clean]
 
-    # post-process: 计算三周期连续 Accum 天数（升序扫，遇非Accum重置）
-    for field, out_key in [
-        ('wyckoff_daily',  'accum_days_daily'),
-        ('wyckoff_weekly', 'accum_days_weekly'),
-    ]:
-        count = 0
-        for row in rows:
-            val = row.get(field) or ''
-            if val.startswith('Accum') or val == 'Accumulation':
-                count += 1
-            else:
-                count = 0
-            row[out_key] = count
+    # 2026-11-05 删: post-process 计算连续 Accum 天数 (accum_days_daily/weekly)。
+    #   原「A天(日/周)」列已改为「威科夫强度」列 (m/m1/m2/A/D), 该字段无消费方。
 
     # post-process: MA20 5日斜率 (per-row, 行内字段 ma20_slope)
     # 斜率 = (MA20[i] - MA20[i-5]) / MA20[i-5] / 5 * 100
@@ -190,6 +179,11 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         # 威科夫二주期
         "wyckoff_daily":  (p3.get("daily")  or {}).get("stage", "?"),
         "wyckoff_weekly": (p3.get("weekly") or {}).get("stage", "?"),
+        # 2026-11-05 加: 判定强度档位 (strict/weak/extra_only/fallback/none)
+        #   生产侧 wyckoff_judge 直接给出, 报告层只读不算 (规则下沉范式)。
+        #   缺失 (旧缓存 / 无 strength 字段) → None, 渲染成 "—"。
+        "wyckoff_strength_daily":  (p3.get("daily")  or {}).get("strength"),
+        "wyckoff_strength_weekly": (p3.get("weekly") or {}).get("strength"),
 
         # 威科夫 sub_event 当天新触发（顶/底都显示）
         "sub_event_daily":  _today_sub_events(wy_raw, "daily",  date),
