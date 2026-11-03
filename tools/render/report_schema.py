@@ -11,8 +11,9 @@ report_schema.py — 报告格式定义 (单一真源, 不可变)
 CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
   2️⃣ 2 个缠论补充策略 (威科夫+多市场共振) — 一等公民
-  3️⃣ 大盘+美股背景 — 二等 (可跳过)
   6️⃣ 三层仓位+买卖点 — 综合 (止盈/止损/退场/仓位/监控)
+
+2026-11-03 删: 4️⃣ 大盘+美股背景整档 (本地指数数据常年缺失/滞后, 美股永远是占位符)
 
 2026-11-02 删: 5️⃣ PEG/DCF L 整档 (PEG 是假指标, DCF 依赖同一套 EPS 预测)
   → 估值只看 4 季财务大表里的 PE + 盈利质量 (ROC/EY/毛利率/杠杆)
@@ -73,7 +74,10 @@ REPORT_SECTIONS = [
         "required": True,
         "refresh": "REGEN",
     },
-    # === 3️⃣ 大盘+美股背景 (可跳过) ===
+    # === 3️⃣ 大盘+美股背景 ===
+    # 2026-11-03: 整档从 md 报告里删除 (用户指令)
+    #   原因: A 股指数本地 parquet 常年滞后/缺失, 美股永远是 "需 /t-sync-data" 占位,
+    #         这段常年输出无信息量的表格, 却占着 4️⃣ 整档位置
     {
         "id": "market_context",
         "title": "🌍 大盘 + 美股背景",
@@ -81,6 +85,8 @@ REPORT_SECTIONS = [
         "render": "render_market_context",
         "required": False,
         "refresh": "REGEN",
+        # 2026-11-03: renderer 已不再输出该 section (函数 _section_market_context 一并删除)
+        "_deprecated": True,
     },
     # === 基本面 + 策略 (数据驱动) ===
     # 2026-09-09 删: 基本面 (4 维) section (走 缠论 + ValuationStrategy PEG+DCF+Magic)

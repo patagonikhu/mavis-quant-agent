@@ -11,7 +11,7 @@
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
-| `/t-analyze <code> [name]` | 单只详报 (18 section: 投资四问 + T 框架 + 因子矩阵 + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
+| `/t-analyze <code> [name]` | 单只详报 (17 section: 投资四问 + T 框架 + 因子矩阵 + 缠论 4 级别) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
@@ -54,7 +54,7 @@
 
 ### 1.3 输出格式
 
-`/t-analyze` 报告关键字段（18 section）:
+`/t-analyze` 报告关键字段（17 section）:
 
 ```
 **4 季财务 + Magic 估值** (15 列大表, linter 必查):

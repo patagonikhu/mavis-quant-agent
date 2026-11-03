@@ -48,7 +48,7 @@ from tools.factors.wyckoff.helpers import _ma50_reached_ma200, MA50_MA200_TOLERA
 def _section_quarterly_table(data: RenderData) -> str:
     """4 季大表 (从 RenderData.quarterly_finance 读 14 列, 含 ROC/EY/季末市值/EV/投入资本)
 
-    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 18 section 第 1 张表保持一致
+    2026-09-11 拆出: 给外部摘要工具复用, 跟 /t-analyze 17 section 第 1 张表保持一致
     返回 markdown 字符串 (header + note + 表格 + 行业)
     """
     _val = data.valuation_data or {}
@@ -1636,43 +1636,6 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
 
     return "\n".join(lines) + "\n"
 
-def _section_market_context(data: RenderData) -> str:
-    """🌍 大盘 + 美股背景 (2026-09-03 v6.1.1 改: 读本地 parquet, 不直连 tushare)
-
-    之前: from tools.storage.sources.tushare import _safe_call; _safe_call("index_daily", ...)
-    现在: DataStore.get_kline(ts_code, limit=2) 走本地 parquet (2026-09-17 改: 统一接口)
-    """
-    try:
-        from tools.storage.store import DataStore
-    except Exception:
-        return "> **数据状态:** ⚠️ kline_store 不可用\n"
-    indices = [("000001.SH", "上证指数"), ("000300.SH", "沪深300"),
-               ("399006.SZ", "创业板指"), ("399001.SZ", "深证成指")]
-    rows = ["| 指数 | 价格 | 涨跌幅 | 状态 |", "|---|---|---|---|"]
-    for tc, iname in indices:
-        try:
-            # tc 是 ts_code 格式, DataStore.get_kline 接受 ts_code 字符串
-            # 但 sync 存的是 '000001.SH' 形式, 直接传 tc 即可
-            code_6 = tc[:6] if '.' in tc else tc
-            bars = DataStore.get_kline(code_6, limit=2)
-            if bars and len(bars) >= 1:
-                cur = bars[0]
-                prev = bars[1] if len(bars) > 1 else {}
-                cur_close = float(cur.get("close", 0) or 0)
-                prev_close = float(prev.get("close", 0) or cur.get("pre_close", 0) or 0)
-                pct = ((cur_close / prev_close - 1) * 100) if prev_close else 0
-                emoji = "🟢" if pct > 0 else "🔴" if pct < 0 else "⬜"
-                rows.append(f"| {iname} | {cur_close:.2f} | {pct:+.2f}% | {emoji} |")
-            else:
-                rows.append(f"| {iname} | — | — | ❌ EMPTY (本地无指数) |")
-        except Exception:
-            rows.append(f"| {iname} | — | — | ❌ EXC |")
-    rows += ["\n**美股:** | 指数 | 状态 |", "|---|---|",
-             "| 纳斯达克 | ⚠️ 需 /t-sync-data (未来加 us index sync) |",
-             "| 标普500 | ⚠️ 需 /t-sync-data (未来加 us index sync) |"]
-    return "\n".join(rows) + "\n"
-
-
 def _section_data_sources(data: RenderData) -> str:
     """📡 数据源矩阵 (2026-08-26: 内联 _load_config, 删 data_source 间接层)"""
     try:
@@ -1814,11 +1777,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
 {_section_ga_factor(data)}
-
----
-
-## 🌍 大盘 + 美股背景
-{_section_market_context(data)}
 
 ---
 

@@ -58,10 +58,9 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 1️⃣ | 缠论三要素 (中枢位置 + 背驰 + 止跌) | 🥇 |
 | 2️⃣ | 2 个缠论补充策略 (威科夫 + 多市场共振) | 🥇 |
 | 3️⃣ | 市场状态定量判断 + 方法优先级矩阵 | 🥈 |
-| 4️⃣ | 大盘 + 美股背景 | 🥈 |
 | 6️⃣ | 三层仓位 + 买卖点 (1买/2买/3买/1卖/2卖/3卖) | 必须 |
 
-section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (18 有效 section, 唯一事实源)。
+section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (17 有效 section, 唯一事实源)。
 
 ---
 
@@ -94,7 +93,7 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (18 �
 
 | 命令 | 用途 |
 |---|---|
-| `/t-analyze <code> [--all]` | 单只/批量, 18 section 详报 |
+| `/t-analyze <code> [--all]` | 单只/批量, 17 section 详报 |
 | `/t-backtest <signal>` | 信号回测 (5 年) |
 | `/t-sync-data [flags]` | 8 数据段 flag 正交 sync, 默认 `--auto` |
 | `/t-rsi6-tech` | RSI6<25 + RSI12<30 双指标超卖 + 科技板块 + 季报 yoy>0 (4 重, 0 网络) |
