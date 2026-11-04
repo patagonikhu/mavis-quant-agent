@@ -58,4 +58,4 @@ bash tools/with_venv.sh python -m tools.storage.sync --status | head -50
 
 ## 相关
 
-- 分析 skill (read-only): `/t-analyze` / `/t-rsi6-tech` / `/t-finance-earnings-blowout` / `/t-backtest` / `/t-guardrail`
+- 分析 skill (read-only): `/t-analyze` / `/t-finance-earnings-blowout` / `/t-backtest` / `/t-guardrail`

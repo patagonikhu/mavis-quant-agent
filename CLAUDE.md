@@ -77,7 +77,12 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 
 > 2026-11-04: **EPS 机构一致预期整档已删** —— 它是**预测值** (datacenter 拉机构 E0/E1/E2/E3), 11-02 删 PEG/DCF 后已无任何分析消费者, 只剩管道残骸 + 报告展示。删除范围: `tools/storage/caches/eps.py` (整个缓存层)、`eastmoney._build_eps_table` (唯一联网函数, 删完该文件变纯计算模块)、`sync.py --eps` flag、`DataStore.get_eps()`、`RawContext.eps_table`、`RenderData.EpsRow/eps_table/eps_status`、报告「EPS 一致预期」表、linter 的 EPS 检查、guardrail 的 `eps-scope` check。section id `eps_finance` → `finance_quarterly`。
 > **实测: 判定结果零变化** (7 只票缠论/Magic/ROC/EY/买卖点/因子矩阵逐字节一致)。副产物: 原本 EPS 常为 EMPTY 的票 (如 002371) 数据完整度 87% → **100%**。
-> ⚠️ 注意区分: **财报里的真实 EPS 仍在** (`fina_indicator` 已审计, `financials` parquet), 算 `np_yi` 和 rsi6 亏损过滤在用, **不要动**。
+> ⚠️ 注意区分: **财报里的真实 EPS 仍在** (`fina_indicator` 已审计, `financials` parquet), 算 `np_yi` 在用, **不要动** (rsi6 亏损过滤已于同日随 rsi6 家族下线)。
+
+> 2026-11-04: **RSI 双超卖扫描整族下线** —— `/t-rsi6-tech` + `rsi6_tech_scan.py` + `rsi6_backtest.py` + `rsi6_backtest_history.py` 全删 (3 个脚本互相 import, 拆开留孤儿代码), 回测产物 `docs/rsi6-*.md` 经 safe_fs 移回收站。
+> **下线原因 (实测, 非拍脑袋):** ① 判定用「最近 N 根任一跌破过 RSI 阈值」但表里显示**最新** RSI6 值 → 98 只命中里 **63 只显示 RSI6>35** (看着完全不超卖), 输出自相矛盾; ② 业绩过滤 09-23 就删了, 剩下「纯 RSI 双超卖」对 321 只 watchlist 命中 98 只 = **31% 命中率**, 无区分度; ③ `--check-news` / `--news-days` 是**占位 flag**, 代码层不实现。
+> **对生产链路零影响**: rsi6 只是独立扫描器, 不参与缠论/Magic/买卖点判定, 不被 `/t-analyze` 调用。财报 EPS 仅少一个消费端 (亏损过滤), `np_yi` 那处保留。
+> 技术超卖的替代路径: `/t-analyze` 单只详报 (含 RSI6/RSI12/KDJ 全套技术指标) 或 `/t-factor-5y` 长周期轨迹。
 
 > 2026-11-04: 结构分析 (OB/FVG/Sweep) 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变); 同日生产层完成改名, 全仓统一用 `structure` / `结构` 命名。
 >
@@ -108,13 +113,13 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 | `/t-analyze <code> [--all]` | 单只/批量, 7 section 详报 |
 | `/t-backtest <signal>` | 信号回测 (5 年) |
 | `/t-sync-data [flags]` | 7 数据段 flag 正交 sync, 默认 `--auto` |
-| `/t-rsi6-tech` | RSI6<25 + RSI12<30 双指标超卖 + 科技板块 + 季报 yoy>0 (4 重, 0 网络) |
 | `/t-earnings-blowout` | R3 启动期反转信号, 找 10x 票 |
 | `/t-factor-5y <code>` | 5 年因子历史轨迹 (120 日窗口) |
 | `/t-wyckoff-a2m` | 全市场 A→M (Accumulation→Markup) 三重确认扫描 |
 | `/t-guardrail [--check X]` | 静态守门员 (network/factor/parquet/safe-fs) |
 
 已删: `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking` `/t-near-low` `/t-roc-ey` (2026-11-02)。
+已删: `/t-rsi6-tech` (2026-11-04, RSI 双超卖扫描整族下线 —— 见下方说明)。
 
 ---
 

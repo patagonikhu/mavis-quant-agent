@@ -101,7 +101,6 @@ ZERO_NET_SKILLS = {
     "t-backtest": "0 网络, 走 DataStore",
     "t-factor-5y": "0 网络, 走 DataStore",
     "t-finance-earnings-blowout": "0 网络, 走 DataStore",
-    "t-rsi6-tech": "0 网络, 走 DataStore",
     "t-wyckoff-a2m": "0 网络, 走 DataStore",
     # t-sync-data 是唯一允许网络的
     "t-sync-data": "允许网络 (Tushare/datacenter API)",

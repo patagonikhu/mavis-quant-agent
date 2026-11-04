@@ -722,23 +722,23 @@ Type: rule
 
 **反例 (今天 2026-10-14):**
 - `quarter_data = {q: [] for q in ["2025Q3", ..., "2026Q3"]}` → Q4 首日 KeyError
-- rsi6_tech_scan 硬编码 `"2026Q2"` → Q3 财报落盘后用过时数据
+- rsi6_tech_scan 硬编码 `"2026Q2"` → Q3 财报落盘后用过时数据 (2026-11-04 该脚本已随 rsi6 家族下线, 教训保留: **任何"业务运行时"写死季度/日期都要动态算**)
 - argparse default "2021Q2"/"2026Q2" → 跨年失效
 - 手拼 `f"blowout-{latest_q[:4]}Q{...}"` → 跨年错位
 - 月份→季度字典 `{"03":"Q1"..."12":"Q4"}` → 重复实现 _quarter_of
 
 **已修 (11 处, 2026-10-14):**
 - sync.py (4 处 quarter_data/quarter_done)
-- rsi6_tech_scan (2 处 2026Q2 / glob pattern)
+- rsi6_tech_scan (2 处 2026Q2 / glob pattern) (2026-11-04 该脚本已下线)
 - finance_earnings_blowout / finance_roc_ey (2 处手拼)
 - btf/runner + __init__ + run_1year (3 处 start/end default)
 - backfill_roc_ey_cache / backtest_blowout / blowout_backtest_v630 (3 处 default)
-- rsi6_backtest_history (2 处 default)
+- rsi6_backtest_history (2 处 default) (2026-11-04 该脚本已下线)
 
 **P2 例外 (历史回测语料, 故意写死):**
 - `backtest_roc_ey.py:48` REBALANCE_DATES (9 个季调仓日)
 - `backtest_roc_ey_filters.py:31` 同
-- `rsi6_backtest.py:158` YOY_HISTORY_START = '20240101'
+- `rsi6_backtest.py:158` YOY_HISTORY_START = '20240101' (2026-11-04 该脚本已下线)
 - 这 3 处已加注释"故意写死, 别动", 新一轮回测需人工追加
 
 **apply when:** 任何"业务运行时"写死季度/日期, 立即改动态算. 历史回测语料不动, 加注释.
@@ -920,7 +920,7 @@ Type: rule
 **铁律:** `/t-wyckoff-a2m` 的 A→M 扫描命中后, 想要"PE 低估 + A→M" / "业绩暴增 + A→M" 之类的复合过滤, **复用现有 `/t-*` skill**, 不要在 wyckoff_a2m_scan.py 里新加 PE/估值/fflow 子模块.
 
 **为什么:**
-- 现有估值链路: `/t-finance-roc-ey` (PE 静态 + ROC/EY 盈利质量, ~~PEG/DCF L~~ 已于 2026-11-02 整档删除) + `/t-finance-earnings-blowout` (业绩) + `/t-rsi6-tech` (技术)
+- 现有估值链路: `/t-finance-roc-ey` (PE 静态 + ROC/EY 盈利质量, ~~PEG/DCF L~~ 已于 2026-11-02 整档删除) + `/t-finance-earnings-blowout` (业绩)
 - 复合过滤 = A→M 名单 + 上面 skill 的交集 (LLM 端用 watchlist 交集或 md grep 都行)
 - 重复造 = 8x 慢 + 数据一致性漂移 + 多维护点
 
@@ -936,7 +936,7 @@ Type: rule
 - A→M 命中 → 落 docs/wyckoff-a2m.md 名单
 - 跟 `/t-finance-roc-ey` 输出的 4 季财务大表 grep 交集
 - 跟 `/t-finance-earnings-blowout` 输出的暴增名单 grep 交集
-- 跟 `/t-rsi6-tech` 输出的技术超卖名单 grep 交集
+- ~~跟 `/t-rsi6-tech` 输出的技术超卖名单 grep 交集~~ (2026-11-04 该 skill 已下线, 技术超卖改走 `/t-analyze` 单只详报看 RSI)
 - 复合结果在 LLM agent 端拼, 不在 wyckoff_a2m_scan.py 里拼
 - /t-wyckoff-a2m 内部: 复用 AnalysisEngine + compute_factor_history, **不自己写 stage 判断器**
 
@@ -1243,3 +1243,27 @@ Type: decision
 
 **apply when:** 想删某个数据源前, 先分清「预测值」vs「已审计真实值」—— 同名不同物, 删错一个直接断生产链。
 删完必须做**改动前后报告 diff**, 而不是只看 "跑通了" —— 跑通 ≠ 判定没变。
+
+### RSI 双超卖扫描整族下线 (2026-11-04)
+Type: decision
+
+**下线范围:** `/t-rsi6-tech` skill + `rsi6_tech_scan.py` + `rsi6_backtest.py` + `rsi6_backtest_history.py` + 回测产物 `docs/rsi6-*.md` (safe_fs 移回收站)。
+
+**为什么下线 (实测, 不是拍脑袋):**
+1. **输出自相矛盾**: 判定用「最近 lookback 根任一跌破过 RSI 阈值」, 但表里显示的是**最新** RSI6 值 (`cur6`)。
+   实测 98 只命中里 **63 只显示 RSI6>35** —— 一张标题写着「RSI 超卖」的表, 2/3 的行看着完全不超卖。
+   → **判定口径和展示口径必须是同一个值**, 否则用户按数字看会得出反向结论。
+2. **无区分度**: 业绩过滤 09-23 就删了, 剩「纯 RSI 双超卖」对 321 只 watchlist 命中 98 只 = **31% 命中率**。
+3. **占位 flag**: `--check-news` / `--news-days` 代码层**不实现** (MCP connector 是 LLM 内置, bash subprocess 不可用)。
+
+**对生产链路零影响:** rsi6 是独立扫描器, 不参与缠论/Magic/买卖点判定, 不被 `/t-analyze` 调用。删掉后 7 section 详报逐字节一致。
+
+**技术超卖的替代路径:** `/t-analyze <code>` (单只详报含 RSI6/RSI12/KDJ 全套技术指标) 或 `/t-factor-5y` (长周期轨迹)。
+
+**顺带:** 财报 EPS (已审计) 的亏损过滤随 rsi6 下线, 只剩 `analysis_engine` 算 `np_yi` 一个消费端。
+评估过「换 n_income 直取」: **不划算** —— ① `financials` 表根本没有 `n_income` 列, 要新拉 income 表;
+② 等价口径是「营收 × profit_to_gr」(`netprofit_margin` 字段是脏值, 600061 上是 6743 不是 26.46), 与 eps×股本 中位差 3.4%;
+③ 但 **17% 的票差 >20%** (全是微利股, eps 精度不足), 4 季财务表的净利/PE/EY 三列都会动 —— 收益远小于风险, 不做。
+
+**apply when:** 任何「扫描器命中率 >20%」的信号, 先查是不是判定口径和展示口径脱节了。
+删 skill 时连带删互相 import 的同族脚本, 别留孤儿代码。

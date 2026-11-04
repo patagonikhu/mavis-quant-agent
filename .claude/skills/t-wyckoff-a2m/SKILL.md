@@ -165,6 +165,5 @@ bash tools/with_venv.sh python -m tools.render.report_linter docs/wyckoff-a2m/an
 ## 相关
 
 - `/t-analyze` (单只深挖, 9 子事件 + stage_detail)
-- `/t-rsi6-tech` (技术面超卖)
 - `/t-factor-5y` (5 年因子历史)
 - `/t-sync-data --kline` (跑前必跑, K 线每日增量)

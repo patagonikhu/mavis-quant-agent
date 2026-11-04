@@ -10,7 +10,7 @@
   3. 显式传 flag = 强跑那一项 (无论 stale 不 stale)
   4. 范围: --watchlist (watchlist 全部) / --all (全市场, 默认) / --codes 002371 300750 (指定)
   5. 2026-11-04 删: --eps 范围互斥 (EPS 一致预期整档已删, 只剩 Tushare 单一合法源)
-  6. 3 个 read-only skill (t-analyze/t-rsi6-tech/t-finance-earnings-blowout)
+  6. 3 个 read-only skill (t-analyze/t-finance-earnings-blowout/t-factor-5y)
      缺数据时直接报"请先 /t-sync-data", 不再偷偷调 sync
 
 正交 flag (10 个, 全部默认关):
