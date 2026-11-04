@@ -116,6 +116,7 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 | `/t-earnings-blowout` | R3 启动期反转信号, 找 10x 票 |
 | `/t-factor-5y <code>` | 5 年因子历史轨迹 (120 日窗口) |
 | `/t-wyckoff-a2m` | 全市场 A→M (Accumulation→Markup) 三重确认扫描 |
+| `/t-etf-wyckoff-a2m` | 全市场 ETF A→M (过滤 fund_type: 排债券/货币/REITs) |
 | `/t-guardrail [--check X]` | 静态守门员 (network/factor/parquet/safe-fs) |
 
 已删: `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking` `/t-near-low` `/t-roc-ey` (2026-11-02)。
