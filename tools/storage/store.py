@@ -1849,10 +1849,13 @@ class DataStore:
 
     @classmethod
     def add_to_watchlist(cls, code: str, name: str, sector: str = "",
-                          list_type: str = "自选", notes: str = "") -> bool:
+                          list_type: str = "自选") -> bool:
         """原子加股票到 watchlist (跳过已存在)
 
         替代 roc_ey_top20.py:353 _add_to_watchlist 散落实现 (原 magic_top20)
+
+        2026-11-04 改: 去掉 notes 参数/字段 (铁律: watchlist 不维护 notes,
+        只保留 code/name/sector/list_type/tags)
         """
         d = cls.load_watchlist()
         existing = {s["code"] for s in d.get("stocks", [])}
@@ -1863,7 +1866,6 @@ class DataStore:
             "name": name,
             "sector": sector,
             "list_type": list_type,
-            "notes": notes,
         })
         d["last_updated"] = datetime.now().strftime("%Y-%m-%d")
         return cls.save_watchlist(d)
@@ -1878,17 +1880,6 @@ class DataStore:
             return False
         d["last_updated"] = datetime.now().strftime("%Y-%m-%d")
         return cls.save_watchlist(d)
-
-    @classmethod
-    def update_watchlist_note(cls, code: str, note: str) -> bool:
-        """原子更新单只股票 note"""
-        d = cls.load_watchlist()
-        for s in d.get("stocks", []):
-            if s.get("code") == code:
-                s["notes"] = note
-                d["last_updated"] = datetime.now().strftime("%Y-%m-%d")
-                return cls.save_watchlist(d)
-        return False
 
 
 # ============================================================

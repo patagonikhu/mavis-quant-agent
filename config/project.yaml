@@ -92,7 +92,7 @@ paths:
   dump_dir: data/dump
   docs_dir: docs
   baseline: tests/baselines/v0_baseline.json
-  watchlist: data/watchlist.json
+  watchlist: config/watchlist.json
 
 # === 评分表 (analysis_evaluators) ===
 scores:

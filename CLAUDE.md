@@ -88,8 +88,8 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 | 文件 | 用途 | 维护者 |
 |---|---|---|
 | `data/events.json` | ~~关键事件库 (T 点)~~ v6.2 已删, T 事件由 LLM 写正文 | — |
-| `data/watchlist.json` | 关注清单 | **你手维护** |
-| `data/sectors.json` | 板块/ETF → 成分股 | LLM 首填, 你改 |
+| `config/watchlist.json` | 关注清单 | **你手维护** |
+| ~~`data/sectors.json`~~ | ~~板块/ETF → 成分股~~ 仓库无此文件, 板块走 THS 概念接口 | — |
 
 **git policy**: 默认直连, 失败才用 `proxy.sin.sap.corp:8080`。数据 API (`requests`/`curl`) 永不加 proxy, 拉代码 (`git pull`) 用 `git config http.proxy` 配。
 

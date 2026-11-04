@@ -608,6 +608,8 @@ def sync_watchlist_blowout(hits_df: pd.DataFrame, dry_run: bool = False) -> None
                 s["tags"] = tags
 
     # 加新命中
+    # 2026-11-04 改: 不再写 notes 字段 (铁律: watchlist 只留 code/name/sector/list_type/tags,
+    #   notes 是历史备忘, 会让后续分析引用过期判断). 季度信息已由 tags 的 blowout-XXXXQN 承载.
     for _, r in new_hits.iterrows():
         code = r["ts_code"].split(".")[0]
         name = r.get("name", "")
@@ -616,7 +618,6 @@ def sync_watchlist_blowout(hits_df: pd.DataFrame, dry_run: bool = False) -> None
             "name": name,
             "list_type": "blowout",
             "tags": [q_tag],
-            "notes": f"[{datetime.now().strftime('%Y-%m-%d')} auto-add from earnings-blowout {latest_q}] 净利 yoy {r.get('netprofit_yoy', 0):+.0f}% | 营收 yoy {r.get('or_yoy', 0):+.0f}%",
         })
 
     # 2026-11-02 改: 原子写 + 写前备份 (原来直接 open(...,'w'), 中途异常会写出半截 JSON)

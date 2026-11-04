@@ -26,7 +26,7 @@ from tools.analysis.analysis_result_signals import extract_signals as _extract_s
 
 logger = logging.getLogger(__name__)
 
-WATCHLIST_PATH = Path("data/watchlist.json")
+WATCHLIST_PATH = Path("config/watchlist.json")
 WITH_VENV = Path("tools/with_venv.sh")
 
 
@@ -148,7 +148,7 @@ class StockBacktestEngine:
     # ── 公开接口 ──────────────────────────────────────────────────────────
 
     def run(self, codes: Optional[list[str]] = None) -> list[StockSignalRecord]:
-        """运行回测。codes=None 时读 data/watchlist.json 全量。"""
+        """运行回测。codes=None 时读 config/watchlist.json 全量。"""
         if codes:
             stocks = [{"code": c, "name": c} for c in codes]
         else:

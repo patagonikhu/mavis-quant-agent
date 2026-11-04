@@ -76,6 +76,11 @@ logs/
 # Mavis plan 笔记 (2026-07-31)
 .zcode/
 
+# Obsidian (2026-11-04: 本仓库当 vault 用, 配置入库跨机同步;
+#   workspace.json 是 per-window 状态 + 个人最近打开文件, 不入库)
+.obsidian/workspace.json
+Untitled.canvas
+
 # 本地环境变量 (含 tushare token 等敏感信息)
 .env
 *.py.bak
