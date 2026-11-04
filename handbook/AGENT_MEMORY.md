@@ -89,16 +89,24 @@ caches/analysis) 都走 `AnalysisEngine.analyze_history()`。两者子事件扫�
 |---|---|
 | `m` | Markup 严格门 (strict) |
 | `m1` | Markup 弱信号门 (weak) |
-| `m2` | Markup 加分线 (extra_only) / fallback 兜底 (两档合并) |
+| `m2` | Markup 加分线 (extra_only) |
+| `mf1` | Markup **fallback1** 兜底 (4 项软条件) |
+| `mf2` | Markup **fallback2** 兜底 (sub-event + 60周期斜率向上 + 30周期趋势向上) |
 | `A` | Accumulation (不分强弱档, 一律 A) |
 | `D` | Distribution (不分强弱档, 一律 D) |
 | `—` | 未判定 (stage=`?` 或 strength=`none`/缺失) |
 
-**单一事实源**: `tools/factors/wyckoff/helpers.py::strength_token(stage, strength)`。
+**单一事实源**: `tools/factors/wyckoff/helpers.py::strength_token(stage, strength, channel)`。
 renderer **只读不算**, 不自己查表 —— 映射下沉生产侧是硬规则。
 
 **必须带 stage**: 同一 strength 档在不同 stage 语义不同 (Accumulation 的 weak 也显示 `A`)。
-**判定逻辑不动**: `stage_factor.py` 未改, strength 直接复用 commit `0f76fe8` 已加的字段。
+**必须带 channel**: `stage_strength` 把 `fallback1` / `fallback2_markup` 都塌成 `strength="fallback"`,
+光看 strength 分不出两档兜底 → 必须读生产侧 `channel` 字段 (`stage_factor.py` 直出) 才能分成 mf1 / mf2。
+**判定逻辑不动**: `stage_factor.py` 未改, strength / channel 复用 commit `0f76fe8` 已加的字段。
+
+**⚠️ main_weak ≠ fallback1** (实测易混): 两者是**串行链上互斥**的两端 ——
+`main_weak` 是主路径 (三阶段至少一个得分), `fallback1` 只在主路径**全 0 分**时才被评估 (`elif`)。
+AST 插桩实测 38 只样本: `main_weak` 26 只 / `fallback1` **0 只**, 交集 0 —— 结构上不可能重叠。
 
 **列序**: ... MA偏离 → 威科夫(日/周) → 威科夫强度 → 子事件(日/周) → ...
 `FACTOR_HISTORY_HEADER` 是 24 列的唯一真源, sep 按其自动算列数。

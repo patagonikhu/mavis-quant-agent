@@ -244,10 +244,16 @@ STRENGTH_LABEL = {
 # 记法:
 #   m    — Markup 严格门 (最强)
 #   m1   — Markup 弱信号门
-#   m2   — Markup 加分线 / fallback 兜底 (最弱, 两档合并)
+#   m2   — Markup 加分线
+#   mf1  — Markup fallback1 兜底 (4 项软条件)
+#   mf2  — Markup fallback2 兜底 (sub-event + 双向上)
 #   A    — Accumulation (不分强弱档, 一律 A)
 #   D    — Distribution (不分强弱档, 一律 D)
 #   —    — 未判定 (stage='?' 或 strength='none'/缺失)
+#
+# ⚠️ 两档兜底必须靠 **channel** 区分, 不能只看 strength:
+#   helpers.stage_strength 把 fallback1 / fallback2_markup 都塌成 "fallback",
+#   光看 strength 分不出是哪个兜底 → 必须带生产侧 channel。
 #
 # 单一事实源: 生产侧 helpers.strength_token, 渲染器只读不算。
 # ============================================================
@@ -256,7 +262,7 @@ STRENGTH_TOKEN = {
         "strict":     "m",
         "weak":       "m1",
         "extra_only": "m2",
-        "fallback":   "m2",
+        "fallback":   "mf2",   # 兜底默认取 mf2; 有 channel 时按 channel 精确分流
         "none":       "—",
     },
     "Accumulation": {
@@ -273,15 +279,30 @@ STRENGTH_TOKEN = {
     },
 }
 
+# Markup 兜底档: channel → token (2026-11-05 用户要求: fallback1 / fallback2 分开显示)
+#   fallback1       — 4 项软条件 (slope_60>0 + dev_ma200>-15% + MA50够到MA200 + trend_30>-5)
+#   fallback2_markup— sub-event + 60周期斜率向上 + 30周期趋势向上
+FALLBACK_TOKEN = {
+    "fallback1":        "mf1",
+    "fallback2_markup": "mf2",
+}
 
-def strength_token(stage: str, strength: str) -> str:
-    """(stage, strength) → 简写记法 token (m / m1 / m2 / A / D / —)
+
+def strength_token(stage: str, strength: str, channel: str = "") -> str:
+    """(stage, strength, channel) → 简写记法 token (m / m1 / m2 / mf1 / mf2 / A / D / —)
 
     ⚠️ 必须带 stage: 同一档位在不同 stage 语义不同 (Accumulation 的 weak 也显示 A)。
+    ⚠️ 兜底两档必须带 channel: strength 里 fallback1 / fallback2 都叫 "fallback",
+      靠 channel 才能分成 mf1 / mf2。channel 缺失时退回 strength 默认值。
     stage 未知 ('?') 或 strength 缺失/未知 → 返回 "—" (调用方直接渲染)。
     """
     if not stage or stage == "?":
         return "—"
+    if stage == "Markup" and (strength or "none") == "fallback":
+        parts = [p for p in (channel or "").split("+") if p]
+        for p in parts:
+            if p in FALLBACK_TOKEN:
+                return FALLBACK_TOKEN[p]
     return STRENGTH_TOKEN.get(stage, {}).get(strength or "none", "—")
 
 

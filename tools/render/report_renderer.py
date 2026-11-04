@@ -1305,12 +1305,14 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
 
     wy  = f"{row['wyckoff_daily'][0]}/{row['wyckoff_weekly'][0]}"
 
-    # 威科夫强度列 (2026-11-05): 简写记法 m/m1/m2/A/D/—, 日/周两格。
+    # 威科夫强度列 (2026-11-05): 简写记法 m/m1/m2/mf1/mf2/A/D/—, 日/周两格。
     #   记法映射下沉到 helpers.strength_token, 渲染器只读不算 (规则下沉范式)。
-    def _tok(stage, strength):
-        return strength_token(stage or "?", strength)
-    strength_s = (f"{_tok(row.get('wyckoff_daily'),  row.get('wyckoff_strength_daily'))}"
-                  f"/{_tok(row.get('wyckoff_weekly'), row.get('wyckoff_strength_weekly'))}")
+    #   channel 必传: strength 把 fallback1 / fallback2 都塌成 "fallback",
+    #   要分成 mf1 / mf2 只能靠生产侧 channel。
+    def _tok(stage, strength, channel):
+        return strength_token(stage or "?", strength, channel)
+    strength_s = (f"{_tok(row.get('wyckoff_daily'),  row.get('wyckoff_strength_daily'),  row.get('wyckoff_channel_daily'))}"
+                  f"/{_tok(row.get('wyckoff_weekly'), row.get('wyckoff_strength_weekly'), row.get('wyckoff_channel_weekly'))}")
 
     def se_short(s):
         if not s or s == "—":

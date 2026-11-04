@@ -184,6 +184,11 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
         #   缺失 (旧缓存 / 无 strength 字段) → None, 渲染成 "—"。
         "wyckoff_strength_daily":  (p3.get("daily")  or {}).get("strength"),
         "wyckoff_strength_weekly": (p3.get("weekly") or {}).get("strength"),
+        # 2026-11-05 加: 实际命中通道 (main_strict/main_weak/main_extra/fallback1/fallback2_*)
+        #   strength 把 fallback1 / fallback2 都塌成 "fallback", 要分成 mf1 / mf2
+        #   必须靠 channel → 生产侧 stage_factor.py 的 channel 字段直出。
+        "wyckoff_channel_daily":  (p3.get("daily")  or {}).get("channel"),
+        "wyckoff_channel_weekly": (p3.get("weekly") or {}).get("channel"),
 
         # 威科夫 sub_event 当天新触发（顶/底都显示）
         "sub_event_daily":  _today_sub_events(wy_raw, "daily",  date),
