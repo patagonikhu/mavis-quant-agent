@@ -1262,9 +1262,11 @@ def _bsp_str(pts: dict) -> str:
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
 # 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
 # 2026-11-05 改: 「A天(日/周)」列 → 「威科夫强度」列, 内容改为简写记法 (m/m1/m2/A/D/—),
-#   并从「变化」列右边移到「威科夫(日/周)」列右边 (列序: 威科夫(日/周) → 威科夫强度 → 子事件(日/周))。
 #   记法映射单一事实源 = tools.factors.wyckoff.helpers.strength_token, 渲染器只读不算。
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 日中枢 | 周中枢 | 买卖点 | 变化 | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
+# 2026-11-04 改列序: 威科夫 3 列 (威科夫(日/周) / 威科夫强度 / 子事件(日/周))
+#   从「MA偏离」右边移到「收盘」右边 —— 用户要求威科夫信息靠前, 紧跟价格看。
+#   列序: 日期 → 收盘 → 威科夫3列 → RSI6 → MACD... → PE
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 日中枢 | 周中枢 | 买卖点 | 变化 | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
@@ -1403,9 +1405,9 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     close_fmt = f"{close_v:.3f}" if close_v is not None and float(close_v) < 10 else f"{close_v:.1f}"
     line = (
         f"| {row['date']} | ¥{close_fmt} "
+        f"| {wy} | {strength_s} | {se} "
         f"| {rsi6_s} | {macd_s} | {dif_str} | {dea_str} | {bar_d_s} | {vol_s} "
         f"| {slope_s} | {ma_s} "
-        f"| {wy} | {strength_s} | {se} "
         f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
         f"| {b3} | {chg_str} "
     )
