@@ -1,7 +1,15 @@
 """factor_5y.py — 5 年因子历史批量跑批
 
 用途: 单只 / 批量跑 5 年因子历史 (30+ 列: 价格 / 缠论 / 威科夫 / 结构 / 技术指标),
-       落 1 个 md / 只, 默认 watchlist (持仓)。
+       默认 watchlist (持仓)。
+
+**输出分两种 (2026-11-06 改, 治"目录里堆几百份 md"):**
+  - **点名** (`--code` / `--codes`) → 逐只 1 个详细 md (要细看某只票, 就点它)
+  - **按范围批量** (默认 watchlist) → **只出 1 份汇总 md**
+    `docs/factor-5y/_summary-{scope}.md` (每只 1 行: 5 年累计 / 最大回撤 / RSI6 / 阶段 / 买卖点)
+    逐只 md 要显式加 `--write-md-all` 才出 (并同步清掉不在本次范围的旧 md)
+    —— 批量场景的用途是"多只对比找穿越牛熊的票", 对比看**汇总表**才有用,
+    一只一只翻 24 列长表没意义, 而且 164 只 × 290KB ≈ 49MB 把目录撑爆。
 
 复用链路 (跟 /t-analyze 完全同接口, 仅 lookback 改 1250 + 输出目录换):
   DataStore.get_ctx(code) → AnalysisEngine.analyze_history → compute_factor_history
@@ -14,7 +22,7 @@
   - `--step` 控制采样密度: step=1 默认(每天 1 行, 2026-10-12 改:用户要日度 PE 数据)
                                 step=5 紧凑视图(每 5 个交易日 1 行, 1250/5=250 行)
                                 step=N 推荐 >= 1 大表降采样
-  - 批量按 `--workers` 并发 (默认 4), 23 只持仓 ~20 秒
+  - 批量按 `--workers` 并发 (默认 4), 21 只持仓 ~20 秒
 
 复用基础:
   - tools/analysis/analysis_result_signals.py::compute_factor_history (跟 t_analyze_one 完全一致)
@@ -22,7 +30,11 @@
   - tools/render/factor_history_only.py (单只 stdout 版, 无 md 文件)
 
 输出:
-  - docs/factor-5y/analyze-{code}-{name}-5y.md (每只 1 个 md)
+  - 汇总 (按范围批量, 默认):
+    docs/factor-5y/_summary-{scope}.md
+    └─ 1 张表: 每只 1 行 (5 年累计% / 最大回撤% / 当前RSI6 / 5年最低RSI6 / 阶段(日/周) / 买卖点数 / 行数)
+  - 逐只 (点名, 或批量加 --write-md-all):
+    docs/factor-5y/analyze-{code}-{name}-5y.md (每只 1 个 md)
     └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样 step=N"
     └─ 📈 因子历史走势 (30+ 列 GFM 表)
     └─ 🗒 5 年阶段摘要 (5 年累计, MA20 偏离段)
@@ -34,11 +46,12 @@
 
 用法:
   bash tools/with_venv.sh python -m tools.batch.factor_5y --code 600089
-  bash tools/with_venv.sh python -m tools.batch.factor_5y                       # 默认 watchlist 持仓
+  bash tools/with_venv.sh python -m tools.batch.factor_5y                       # 默认 watchlist 持仓 → 只出汇总 md
+  bash tools/with_venv.sh python -m tools.batch.factor_5y --write-md-all        # 批量 + 逐只 md
   bash tools/with_venv.sh python -m tools.batch.factor_5y --watchlist-types 持仓,blowout
   bash tools/with_venv.sh python -m tools.batch.factor_5y --all-market
   bash tools/with_venv.sh python -m tools.batch.factor_5y --step 5              # 紧凑 250 行
-  bash tools/with_venv.sh python -m tools.batch.factor_5y --codes 600089 000792  # 多只
+  bash tools/with_venv.sh python -m tools.batch.factor_5y --codes 600089 000792  # 多只 (逐只出 md)
 """
 from __future__ import annotations
 import argparse
@@ -69,8 +82,12 @@ def load_codes_from_watchlist(types: list[str] | None) -> list[tuple[str, str]]:
 
 
 def process_one(code: str, name: str, step: int, output_dir: Path,
-                list_type_label: str = "持仓") -> dict:
-    """单只跑 5 年因子历史, 落盘 1 个 md"""
+                list_type_label: str = "持仓", write_md: bool = True) -> dict:
+    """单只跑 5 年因子历史
+
+    Args:
+        write_md: True = 落 1 份详细 md; False = 只算不落盘 (批量汇总模式)
+    """
     from tools.storage.store import DataStore
     from tools.analysis.analysis_engine import AnalysisEngine
     from tools.analysis.render_data import RenderData
@@ -134,17 +151,114 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
 
         md = header + "\n".join(summary_lines) + "## 📈 因子历史走势\n\n" + section
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out_path = output_dir / f"analyze-{code}-{ctx.name or name}-5y.md"
-        out_path.write_text(md, encoding="utf-8")
+        out_path = None
+        if write_md:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            out_path = output_dir / f"analyze-{code}-{ctx.name or name}-5y.md"
+            out_path.write_text(md, encoding="utf-8")
 
         return {
             "ok": True, "code": code, "name": ctx.name or name,
-            "rows": rows_n, "out": str(out_path), "msgs": len(dates),
-            "first": first_d, "last": last_d,
+            "rows": rows_n, "out": str(out_path) if out_path else "",
+            "msgs": len(dates), "first": first_d, "last": last_d,
+            "metrics": _summarize_metrics(data.factor_history_rows),
         }
     except Exception as e:
         return {"ok": False, "err": f"{type(e).__name__}: {e}", "code": code}
+
+
+
+# ============================================================
+# 批量汇总 (按范围跑时只出 1 份表, 不逐只落 md)
+# ============================================================
+
+def _summarize_metrics(rows: list[dict]) -> dict:
+    """从 5 年因子历史行算汇总指标 (批量汇总表用)"""
+    closes = [float(r["close"]) for r in rows if r.get("close")]
+    rsi_list = [float(r["rsi6"]) for r in rows if r.get("rsi6") is not None]
+
+    cum_pct = None
+    if len(closes) >= 2 and closes[0] > 0:
+        cum_pct = (closes[-1] / closes[0] - 1) * 100
+
+    max_drawdown = None
+    if closes:
+        peak = closes[0]
+        worst = 0.0
+        for c in closes:
+            peak = max(peak, c)
+            if peak > 0:
+                worst = min(worst, (c / peak - 1) * 100)
+        max_drawdown = worst
+
+    # 买卖点: 项目口径 (跟 diff_rows 的 new_bsp_daily 一致) = key **新出现**
+    # (bsp_daily 存的是"当前活跃的买卖点", 价格每天变; 只看 key 出现才算新事件)
+    buy_count = 0
+    sell_count = 0
+    last_buy_date = ""
+    last_sell_date = ""
+    prev_bsp: dict = {}
+    for r in rows:
+        cur = r.get("bsp_daily")
+        if not isinstance(cur, dict):
+            cur = {}
+        for k in cur:
+            if k in prev_bsp:
+                continue
+            if "买" in str(k):
+                buy_count += 1
+                last_buy_date = str(r.get("date", ""))
+            elif "卖" in str(k):
+                sell_count += 1
+                last_sell_date = str(r.get("date", ""))
+        prev_bsp = cur
+
+    latest = rows[-1] if rows else {}
+    return {
+        "cum_pct": cum_pct,
+        "max_drawdown": max_drawdown,
+        "rsi6_now": latest.get("rsi6"),
+        "rsi6_min": min(rsi_list) if rsi_list else None,
+        "stage_daily": latest.get("wyckoff_daily", "?"),
+        "stage_weekly": latest.get("wyckoff_weekly", "?"),
+        "buy_count": buy_count,
+        "sell_count": sell_count,
+        "last_buy_date": last_buy_date,
+        "last_sell_date": last_sell_date,
+    }
+
+
+def _write_summary_md(results: list[dict], output_dir: Path,
+                       scope_label: str, step: int) -> Path:
+    """写批量汇总 md (每只 1 行, 便于横向对比)"""
+    ok = [r for r in results if r.get("ok")]
+    lines = [
+        "# 5 年因子历史 — 批量汇总",
+        "",
+        f"> 范围: {scope_label} ({len(ok)} 只) | 窗口: 1250 个交易日 ≈ 5.0 年 | 采样 step={step}",
+        "> 数据源: DataStore (本地 K 线, 0 网络)",
+        "> 逐只详细表: `python -m tools.batch.factor_5y --code <代码>`",
+        "",
+        "| 代码 | 名称 | 5年累计% | 最大回撤% | 当前RSI6 | 5年最低RSI6 | 阶段(日/周) | 5年买卖点 | 最近买/卖 | 行数 |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for r in sorted(ok, key=lambda x: x.get("code", "")):
+        m = r.get("metrics") or {}
+        cum = f"{m['cum_pct']:+.1f}%" if m.get("cum_pct") is not None else "—"
+        mdd = f"{m['max_drawdown']:.1f}%" if m.get("max_drawdown") is not None else "—"
+        rsi_now = f"{m['rsi6_now']:.1f}" if m.get("rsi6_now") is not None else "—"
+        rsi_min = f"{m['rsi6_min']:.1f}" if m.get("rsi6_min") is not None else "—"
+        stage = f"{m.get('stage_daily', '?')}/{m.get('stage_weekly', '?')}"
+        bsp = f"{m.get('buy_count', 0)}买/{m.get('sell_count', 0)}卖"
+        last_bsp = f"{m.get('last_buy_date', '') or '—'}/{m.get('last_sell_date', '') or '—'}"
+        lines.append(f"| {r['code']} | {r.get('name', '')} | {cum} | {mdd} | {rsi_now} | "
+                     f"{rsi_min} | {stage} | {bsp} | {last_bsp} | {r.get('rows', 0)} |")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    scope = scope_label.replace(",", "-").replace("/", "-")
+    out_path = output_dir / f"_summary-{scope}.md"
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out_path
 
 
 def main():
@@ -156,6 +270,8 @@ def main():
                     help="watchlist 类型过滤, 逗号分隔 (默认 持仓)")
     ap.add_argument("--step", type=int, default=1, help="采样间隔, 每 N 个交易日采 1 行 (默认 1=每天 1 行, 推荐 step=5 看紧凑 250 行)")
     ap.add_argument("--output-dir", default="docs/factor-5y", help="md 输出目录 (默认 docs/factor-5y)")
+    ap.add_argument("--write-md-all", action="store_true",
+                    help="按范围批量时也逐只落 md (默认只出 1 份汇总 md)")
     ap.add_argument("--workers", type=int, default=4, help="批量并发数 (默认 4)")
     ap.add_argument("--no-summary", action="store_true", help="不输出 chat summary")
     args = ap.parse_args()
@@ -178,38 +294,68 @@ def main():
         sys.exit(1)
 
     output_dir = Path(args.output_dir)
-    types_label = args.watchlist_types if not args.code and not args.codes else "single"
+    scope_mode = not args.code and not args.codes
+    types_label = args.watchlist_types if scope_mode else "single"
+    # 点名 (--code/--codes) → 逐只出 md; 按范围批量 → 默认只出汇总 md
+    write_md = (not scope_mode) or args.write_md_all
 
     print(f"=== 5 年因子历史 (scope: {types_label}, step={args.step}) ===")
     print(f"  输出: {output_dir}/")
     print(f"  并发: {args.workers}")
-    print(f"  任务: {len(codes)} 只\n")
+    print(f"  任务: {len(codes)} 只")
+    print(f"  模式: {'逐只 md' if write_md else '只出 1 份汇总 md (逐只 md 要加 --write-md-all)'}\n")
 
     results = []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futs = {
-            pool.submit(process_one, code, name, args.step, output_dir, types_label): (code, name)
+            pool.submit(process_one, code, name, args.step, output_dir, types_label,
+                        write_md): (code, name)
             for code, name in codes
         }
         for fut in as_completed(futs):
             code, name = futs[fut]
             r = fut.result()
             tag = "✅" if r.get("ok") else "❌"
-            extra = f" rows={r['rows']} → {r['out']}" if r.get("ok") else f" err={r.get('err')}"
+            if r.get("ok"):
+                extra = f" rows={r['rows']}" + (f" → {r['out']}" if r.get("out") else "")
+            else:
+                extra = f" err={r.get('err')}"
             print(f"  {tag} {code} {name}: {extra}")
             results.append(r)
 
     ok_n = sum(1 for r in results if r.get("ok"))
     print(f"\n=== 完成 {ok_n}/{len(results)} ===")
 
+    summary_path = None
+    if scope_mode and ok_n:
+        summary_path = _write_summary_md(results, output_dir, types_label, args.step)
+        print(f"📊 汇总: {summary_path}")
+
+    if scope_mode and write_md:
+        # --write-md-all: 目录镜像本次范围 (清掉不在范围内的旧逐只 md)
+        keep = {Path(r["out"]).name for r in results if r.get("ok") and r.get("out")}
+        if ok_n >= max(1, len(codes) // 2):
+            from tools.storage.safe_fs import safe_delete
+            removed = 0
+            for f in sorted(output_dir.glob("analyze-*-5y.md")):
+                if f.name not in keep and safe_delete(f, reason="factor_5y: 不在本次范围内"):
+                    removed += 1
+            if removed:
+                print(f"🧹 清理 {removed} 个不在本次范围内的旧 md")
+
     if not args.no_summary and ok_n:
         print(f"\n############################################################")
         print(f"# /t-factor-5y chat summary ({ok_n} 只)")
         print(f"############################################################\n")
-        for r in results:
+        for r in sorted(results, key=lambda x: x.get("code", "")):
             if not r.get("ok"):
                 continue
-            print(f"📄 {r['code']} {r['name']}: {r['rows']} 行 ({r['first']} ~ {r['last']}) → {r['out']}")
+            m = r.get("metrics") or {}
+            cum = f"{m['cum_pct']:+.1f}%" if m.get("cum_pct") is not None else "—"
+            mdd = f"{m['max_drawdown']:.1f}%" if m.get("max_drawdown") is not None else "—"
+            rsi = f"{m['rsi6_now']:.1f}" if m.get("rsi6_now") is not None else "—"
+            target = r["out"] if r.get("out") else (str(summary_path) if summary_path else "")
+            print(f"📄 {r['code']} {r['name']}: {r['rows']} 行 | 5年{cum} | 回撤{mdd} | RSI6 {rsi} → {target}")
 
 
 if __name__ == "__main__":

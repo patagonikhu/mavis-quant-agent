@@ -20,13 +20,16 @@ allowed-tools:
 ## 跑
 
 ```bash
-# 单只
+# 单只 (点名 → 落 1 份详细 md)
 bash tools/with_venv.sh python -m tools.batch.factor_5y --code 600089
+bash tools/with_venv.sh python -m tools.batch.factor_5y --codes 600089 000792
 
-# 批量 (默认 watchlist 持仓)
-bash tools/with_venv.sh python -m tools.batch.factor_5y
+# 批量 (按范围 → 只落 1 份汇总 md, 每只 1 行)
+bash tools/with_venv.sh python -m tools.batch.factor_5y                      # 默认 watchlist 持仓
 bash tools/with_venv.sh python -m tools.batch.factor_5y --watchlist-types 持仓,blowout
-bash tools/with_venv.sh python -m tools.batch.factor_5y --all-market
+
+# 批量 + 逐只落 md (会清掉不在本次范围内的旧 md)
+bash tools/with_venv.sh python -m tools.batch.factor_5y --write-md-all
 
 # 紧凑视图 (1250/5=250 行)
 bash tools/with_venv.sh python -m tools.batch.factor_5y --step 5
@@ -35,18 +38,32 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --step 5
 bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 ```
 
+### 输出规则 (2026-11-06 改)
+
+| 场景 | 落盘 | 说明 |
+|---|---|---|
+| `--code` / `--codes` (点名) | 每只 1 份详细 md | 要细看某只票, 就点名跑它 |
+| 按范围批量 (默认) | **只出 1 份汇总 md** `_summary-{scope}.md` | 每只 1 行: 5年累计 / 最大回撤 / RSI6 / 阶段 / 买卖点 |
+| 按范围批量 + `--write-md-all` | 每只 1 份详细 md + 汇总 md | 会同步清掉不在本次范围的旧 md |
+
+> ⚠️ 批量**不要**逐只落 md: 21 只 × 约 290KB, 164 只 ≈ 49MB, 目录直接被撑爆,
+> 而且批量场景的用途是"多只横向对比找穿越牛熊的票" —— 对比看**汇总表**才有用。
+> 2026-11-06 事故: 验证列序时顺手 `--watchlist-types 持仓,自选` 跑了 164 只 → 目录堆了 168 份 md.
+
 ## 数据特性
 
 - **0 网络**, 走 DataStore parquet
 - 5 年窗口硬编码: `lookback=1250` (≈ 252 交易日 × 5 年)
-- 23 只持仓批量 ~20 秒 (`--workers 4`)
+- 21 只持仓批量 ~60 秒 (`--workers 4`)
 - **不替代 /t-analyze**:本 skill 只输出因子历史表(长周期 1-2-3-5 年节奏);`/t-analyze` 是 7 section 全要素详报
 
 ## 跑后验证
 
 ```bash
-# 看 5 年 + 数据范围 + 摘要
-ls docs/factor-5y/ | head
+# 批量汇总表 (每只 1 行, 横向对比用)
+cat "docs/factor-5y/_summary-持仓.md"
+
+# 单只详细表
 head -50 docs/factor-5y/analyze-600089-特变电工-5y.md
 ```
 
