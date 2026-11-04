@@ -1,5 +1,5 @@
 """
-eastmoney.py — datacenter.eastmoney.com 数据源 + 技术指标计算
+eastmoney.py — 技术指标计算 + 周线合成 (纯计算, 0 网络)
 
 ⚠️ 2026-11-02 大幅瘦身 (928 → 668 行):
   - 删 get_kline / fetch_all / status_emoji 三个 0 外部调用点的死函数
@@ -9,33 +9,30 @@ eastmoney.py — datacenter.eastmoney.com 数据源 + 技术指标计算
   - 历史 curl helper (_get_with_retry / _get_session / _secid / _secucode 等)
     2026-10-30 已删 (0 调用, 且 push2 属 WAF 拒接域)
 
-**现在只剩 3 个对外入口:**
-  1. _build_eps_table(code)    → datacenter EPS 一致预期 (唯一联网的函数)
-  2. _synthesize_weekly(kline) → 日线合成周线 (纯计算)
-  3. compute_indicators(kline) → 8 大技术指标 (纯计算, 无网络)
+⚠️ 2026-11-04 删 _build_eps_table (datacenter EPS 一致预期):
+  - EPS 预期是**预测值**, 11-02 删 PEG/DCF 后已无任何分析消费者
+  - 估值口径固化: 只看 PE (静态) + 盈利质量, 全部用已审计 TTM 财报算
+  - 本文件由此变成纯计算模块, 不再有任何联网函数
+
+**现在只剩 2 个对外入口:**
+  1. _synthesize_weekly(kline) → 日线合成周线 (纯计算)
+  2. compute_indicators(kline) → 8 大技术指标 (纯计算, 无网络)
 
 数据源矩阵:
   ┌──────────────┬─────────────────────────────────────────┐
   │ 数据         │  唯一源                                     │
   ├──────────────┼─────────────────────────────────────────┤
-  │ EPS 一致预期 │  datacenter.eastmoney.com (本文件唯一联网) │
   │ K 线         │  Tushare.daily (见 tools/storage/sources/tushare.py) │
   │ 财务         │  Tushare.fina_indicator (financials parquet) │
   │ 总股本/市值  │  Tushare.stock_basic.total_share + daily_basic.total_mv │
   └──────────────┴─────────────────────────────────────────┘
 
 调用方:
-  - sync.py / caches/eps.py   → _build_eps_table
   - store.py / etf_macd_scan.py → _synthesize_weekly
   - analysis_engine.py / render_data.py → compute_indicators
 """
 
 from __future__ import annotations
-
-import logging
-import time
-
-logger = logging.getLogger(__name__)
 
 # 加载 config/project.yaml (60分 K线 datalen 从这里读)
 import pathlib as _pl
@@ -51,70 +48,8 @@ except FileNotFoundError:
     )
 
 # ============================================================
-# 1. EPS 一致预期 (datacenter.eastmoney.com)
+# 1. 周线合成 (纯计算)
 # ============================================================
-
-def _build_eps_table(code: str) -> tuple[list[dict] | None, str]:
-    """
-    2026-07-22 修复: 优先 datacenter 机构一致预期, fallback tushare 自建 NTM
-    返回: (eps_table, source_label)
-      source_label ∈ {"datacenter_consensus", "tushare_built_ntm", "EMPTY"}
-
-    关键: 阳光电源例子
-      datacenter: E0=6.49 / E1=7.44 / E2=9.13 / E3=10.81 (真机构预测)
-      tushare 自建: E0=1.12 / E1=1.232 / ... (Q1 单季 EPS 推全年, 错 6 倍)
-      → 优先 datacenter!
-    """
-    from .tushare import _code_to_ts as _to_ts_code
-    try:
-        import urllib.request
-        import urllib.parse
-        secucode = _to_ts_code(code)
-        url = (
-            f"https://datacenter.eastmoney.com/securities/api/data/v1/get?"
-            f"reportName=RPT_HSF10_RESPREDICT_COUNTSTATISTICS"
-            f"&columns=SECUCODE,SECURITY_NAME_ABBR,YEAR,YEAR_MARK,EPS,EPS_LASTMONTHS,"
-            f"ROE,PARENT_NETPROFIT,TOTAL_OPERATE_INCOME"
-            f"&filter=(SECUCODE%3D%22{urllib.parse.quote(secucode)}%22)"
-            f"&pageNumber=1&pageSize=20&sortTypes=1&sortColumns=RANK"
-            f"&source=HSF10&client=PC"
-        )
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            import json as _json
-            d = _json.loads(r.read().decode())
-        rows = (d.get("result") or {}).get("data") or []
-        if rows:
-            result_table = []
-            for r in rows:
-                year = r.get("YEAR", "")
-                mark = r.get("YEAR_MARK", "")
-                eps = r.get("EPS")
-                if eps is None or eps == 0:
-                    continue
-                try:
-                    eps = float(eps)
-                except (TypeError, ValueError):
-                    continue
-                roe = r.get("ROE") or 0
-                np_yi = (r.get("PARENT_NETPROFIT") or 0) / 1e8
-                rev_yi = (r.get("TOTAL_OPERATE_INCOME") or 0) / 1e8
-                result_table.append({
-                    "year": f"{year}{mark}",
-                    "year_mark": mark,
-                    "eps": round(eps, 4),
-                    "net_profit_yi": round(np_yi, 2) if np_yi else 0.0,
-                    "revenue_yi": round(rev_yi, 2) if rev_yi else 0.0,
-                    "roe": round(float(roe), 2) if roe else 0.0,
-                })
-            result_table.sort(key=lambda x: x["year"])
-            result_table = result_table[-4:]
-            if result_table:
-                return result_table, "datacenter_consensus"
-    except Exception as e:
-        logger.warning("datacenter EPS 拉取失败 (%s), 返回 EMPTY", type(e).__name__)
-
-    return None, "EMPTY"
 
 def _synthesize_weekly(kline: list[dict]) -> list[dict]:
     """从日线合成周线（自然周，周一开盘~周五收盘）。"""
@@ -640,20 +575,17 @@ def _vol_ma_series(vols: list[float], window: int = 5) -> list:
 if __name__ == "__main__":
     import sys
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    from tools.storage.store import DataStore
 
     test_code = sys.argv[1] if len(sys.argv) > 1 else "002371"
-    print(f"\n=== Testing fetcher for {test_code} ===\n")
+    kline = DataStore.get_kline(test_code)
+    print(f"\n=== eastmoney 纯计算模块自检: {test_code} ===\n")
 
-    result = fetch_all(test_code)
-    print(f"代码: {result['code']}  名称: {result['name']}")
-    print(f"实时价: {result['close']}  PE_TTM: {result['pe_ttm']}")
-    print(f"数据状态:")
-    for k, v in result["statuses"].items():
-        print(f"  {k}: [{status_emoji(v)} {v}]")
-    if result["kline"]:
-        print(f"K线: {len(result['kline'])} 条, 最新 close={result['kline'][-1]['close']}")
-    if result["eps_table"]:
-        print(f"EPS: {len(result['eps_table'])} 条")
-        for e in result["eps_table"][:3]:
-            print(f"  {e['year']}: EPS={e['eps']:.2f}  净利={e['net_profit_yi']:.1f}亿")
+    weekly = _synthesize_weekly(kline)
+    print(f"周线合成: {len(kline)} 日 → {len(weekly)} 周")
+
+    ind = compute_indicators(kline)
+    if ind.get("error"):
+        print(f"技术指标: {ind['error']}")
+    else:
+        print(f"技术指标: RSI6={ind.get('rsi6')} / MA20={ind.get('ma20')} / KDJ-K={ind.get('k', ind.get('kdj_k'))}")

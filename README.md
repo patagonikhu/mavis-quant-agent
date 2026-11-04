@@ -13,7 +13,7 @@
 |---|---|---|
 | `/t-analyze <code> [name]` | 单只详报 (7 section: 因子矩阵 + 缠论 4 级别 + 买卖点) | `/t-analyze 688256 寒武纪` |
 | `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
-| `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--eps/--cache/--meta, 默认 --auto 智能检测 | `/t-sync-data --auto` |
+| `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--cache/--meta/--all-data, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
 | `/t-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-earnings-blowout --top-np-jump 30` |
 
@@ -116,7 +116,6 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── daily/                         # 日 K 线 parquet (DataStore, 5 季)
 │   │   ├── stk_factor/                    # 17 列估值 (DataStore, 5 季 290 天 × 5555 只 ≈ 160 万行)
 │   │   ├── financials/                    # 季报 13 季度 (DataStore, 72253 行)
-│   │   ├── eps/                           # EPS 机构预期 (单文件 eps_consensus.parquet, 117 只 × 4 期, 30 天 TTL)
 │   │   └── stock_basic/                   # 股票基础信息 (5555 只, DataStore)
 │   └── analysis_cache.db                  # signal_cache SQLite 缓存 (24 列因子)
 
@@ -263,7 +262,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 
 ## 5. 设计原则 (v6.2.3)
 
-1. **数据本地化优先** — 所有 K 线/EPS 走 parquet (`DataStore` 读), 避免运行时网络调用
+1. **数据本地化优先** — 所有 K 线走 parquet (`DataStore` 读), 避免运行时网络调用
 2. **三层分离** — `tools/storage/sync.py` (数据) → `tools/analysis/` (引擎) → `tools/render/` (报告)
 3. **O(n) 单次遍历** — strategy 共享 `ctx.chan_result / wyckoff_result / technical_result` 预算层, FinanceStrategy 不预写 ctx (历史切片独立算), 单次遍历出全历史
 4. **缓存优先** — `analysis_cache.db` SQLite 让回测/分析秒级返回; `/t-sync-data --cache` 增量预热
@@ -298,7 +297,7 @@ bash tools/with_venv.sh python tools/batch/t_analyze_all.py  # 全部 watchlist
 
 > 📌 详见 CLAUDE.md "🐍 Python 环境固化" 段 — `.venv` + `uv` 永久固化, 任何机器一气呵成
 
-**数据源**：Tushare 2000 积分档（日线 + EPS + 资金流 + 业绩预告），写入 `data/history/` parquet。
+**数据源**：Tushare 2000 积分档（日线 + 财报指标 + 资金流 + 业绩预告），写入 `data/history/` parquet。
 
 ---
 

@@ -5,7 +5,6 @@ backfill_roc_ey_cache.py — 给 analysis_cache.db 2 列估值 (roc / ey) backfi
 数据源 (全本地, 0 网络):
   - data/history/financials/{period}.parquet  (TTM EBIT / NWC / FA / netdebt)
   - data/history/daily_basic/*.parquet        (每天 PE / market_cap)
-  - data/cache/eps/{code}.json                 (datacenter 拉的 EPS 预期)
 
 窗口: 1 年 (2025-08-25 → 2026-09-01, 248 天)
 股票池: 1923 科技股 (跟 magic_top20 一致)
@@ -37,7 +36,6 @@ from tools.storage.store import (
 from tools.factors.valuation.factor_lib import (
     find_full_year_financials, compute_ey, compute_roc,
 )
-from tools.storage.caches.eps import EPS_DIR
 
 
 # ============================================================
@@ -109,27 +107,6 @@ def _load_financials_window(codes: list[str]) -> dict[str, list[dict]]:
     except Exception as e:
         print(f"  ⚠️ _load_financials_window 失败: {e}")
         return {}
-
-
-def _load_eps_window(codes: list[str]) -> dict[str, list[dict]]:
-    """读本地 EPS cache (走 datacenter 已拉的, 没就 None)
-
-    Returns: {code: eps_table (list[dict])}
-
-    ⚠️ 2026-11-02: 已无调用方 (EPS 预期只喂 PEG/DCF, 整档删除), 保留待后续需要再接。
-    """
-    out: dict[str, list[dict]] = {}
-    from tools.storage.caches.eps import _read_parquet
-    for c in codes:
-        path = EPS_DIR / f"{c}.parquet"
-        if path.exists() and path.stat().st_size > 100:
-            try:
-                out[c] = _read_parquet(path)
-            except Exception:
-                out[c] = []
-        else:
-            out[c] = []
-    return out
 
 
 # ============================================================

@@ -23,9 +23,9 @@ L3 Render  →  tools/render/                     # 报告渲染
 
 | 代码类型 | 唯一路径 | 入口 | 禁止 |
 |---|---|---|---|
-| **网络拉数据** | `tools/storage/sources/{tushare,eastmoney}.py` | `tools.storage.sync` 调 | 任何业务层 import 网络库 |
+| **网络拉数据** | `tools/storage/sources/tushare.py` | `tools.storage.sync` 调 | 任何业务层 import 网络库 |
 | **数据读** (DAO) | `tools/storage/store.py` (DataStore) | 25+ 公开方法, 7+ bulk | 直读 parquet / 直连 sqlite / 调 duckdb |
-| **数据落盘** | `tools/storage/caches/{eps,stk_factor_history}.py` | sync 调 | 业务层自己写 parquet |
+| **数据落盘** | `tools/storage/caches/stk_factor_history.py` | sync 调 | 业务层自己写 parquet |
 | **7 strategy 类** | `tools/analysis/analysis_engine.py` | `AnalysisEngine.analyze(ctx)` | 自己拉数据, 直读 dump |
 | **Phase2 派生** | `tools/analysis/analysis_result_signals.py` | `compute_factor_history` 等 | 复制 strategy 逻辑 |
 | **RenderData 容器** | `tools/analysis/render_data.py` | `RenderData.from_result(ctx, result)` | 拼 markdown 字符串 |

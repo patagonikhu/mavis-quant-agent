@@ -123,12 +123,14 @@ REPORT_SECTIONS = [
         "refresh": "REGEN",
     },
     {
-        "id": "eps_finance",
+        "id": "finance_quarterly",
         "title": "财务数据",
         "category": "📋",
-        "render": "render_eps_finance",
+        "render": "render_finance_quarterly",
         "required": True,
         "refresh": "REGEN",
+        # 2026-11-04: id 从 eps_finance 改为 finance_quarterly (EPS 一致预期整档已删,
+        #   section 现在只有「最近 4 季财务 + Magic 估值」1 张表)
     },
     {
         "id": "ma_indicators",

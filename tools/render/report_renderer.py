@@ -60,7 +60,7 @@ def _section_quarterly_table(data: RenderData) -> str:
     if not data.quarterly_finance:
         return "> **最近 4 季实际财务:** ❌ 缺失"
 
-    # period_label 复用 _section_eps 逻辑
+    # period_label 复用 _section_finance_quarterly 逻辑
     period_label = "—"
     industry = "—"
     if has_magic:
@@ -122,31 +122,15 @@ def _section_quarterly_table(data: RenderData) -> str:
     return "\n".join(rows)
 
 
-def _section_eps(data: RenderData) -> str:
-    """财务数据 section (v6.2.7 改名 + 改中文 + 加最近 4 季财务 + Magic 整合)
+def _section_finance_quarterly(data: RenderData) -> str:
+    """财务数据 section (最近 4 季财务 + Magic 整合)
 
-    内容 (1 张大表):
-    1. EPS 预测 (Tushare 一致预期) — 单独小表
-    2. 最近 4 季 财务 + Magic (合并 1 表) — 复用 _section_quarterly_table()
+    内容: 最近 4 季 财务 + Magic (1 张大表) — 复用 _section_quarterly_table()
 
     2026-09-11 改: 4 季大表拆到 _section_quarterly_table, 摘要也复用
+    2026-11-04 删: EPS 预测小表 (EPS 机构一致预期整档已删)
     """
-    parts = []
-
-    # 1) EPS 预测 (Tushare 一致预期)
-    if data.eps_table:
-        rows = ["| 年份 | EPS (¥) | 净利润 (亿) | 营收 (亿) | ROE (%) |",
-                "|---|---|---|---|---|"]
-        for r in data.eps_table:
-            rows.append(f"| {r.year} | {r.eps:.2f} | {r.net_profit_yi:.1f} | {r.revenue_yi:.1f} | {r.roe:.1f}% |")
-        parts.append("### EPS 一致预期 (Tushare)\n\n" + "\n".join(rows))
-    else:
-        parts.append("> EPS 一致预期: ❌ 缺失")
-
-    # 2) 4 季大表 (复用 helper)
-    parts.append(_section_quarterly_table(data))
-
-    return "\n".join(parts)
+    return _section_quarterly_table(data)
 
 
 def _section_ma(data: RenderData) -> str:
@@ -1631,7 +1615,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 ---
 
 ## 财务数据
-{_section_eps(data)}
+{_section_finance_quarterly(data)}
 
 ---
 

@@ -5,6 +5,9 @@
 >
 > **2026-11-02: 估值双指标 (PEG + DCF L) 已删** —— PEG 依赖 EPS 预测, 预测本身不准,
 > DCF 用同一套 EPS 预测。估值只看 **PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆)**。
+>
+> **2026-11-04: EPS 机构一致预期整档已删** —— 它是预测值, 删 PEG/DCF 后已无消费者。
+> 财报里的**真实 EPS** (已审计) 仍在用, 别混为一谈。
 
 ---
 
@@ -130,7 +133,7 @@ Magic ROC/EY (basic_data/magic_calc) — **决策第二维**
 | t-earnings-blowout | ✅ 是 (R3 反转) | 走 financials parquet |
 | t-backtest | ❌ 否 (5y 回测) | 不引用 |
 | t-sync-data | ❌ 否 (sync 入口) | 唯一允许网络 |
-| t-guardrail | ❌ 否 (静态扫描) | network + factor + eps-scope + parquet + safe-fs 5 check |
+| t-guardrail | ❌ 否 (静态扫描) | network + factor + parquet + safe-fs 4 check |
 
 ---
 

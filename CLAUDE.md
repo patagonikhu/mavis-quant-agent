@@ -10,10 +10,12 @@
 **唯一入口**: `tools/storage/sync.py`。所有数据/网络操作只在 `tools/storage/` 下:
 - 读 → `DataStore` (`tools.storage.store.DataStore`)
 - 写 → `tools.storage.sync`
-- 网络 → `sources/tushare` / `sources/eastmoney` (仅 sync 调)
+- 网络 → `sources/tushare` (仅 sync 调)
 
-**合法源只有 2 个**: `tushare.pro` / `datacenter.eastmoney.com` (EPS 预期)。
+**合法源只有 1 个**: `tushare.pro`。
 **WAF 拒接域 (严禁直连)**: `push2.eastmoney.com` / `push2his.eastmoney.com` / `push2delay.eastmoney.com` / `web.ifzq.gtimg.cn` / `qtimg`。
+
+> 2026-11-04: `datacenter.eastmoney.com` 退出合法源 — EPS 机构一致预期整档已删。
 
 ---
 
@@ -27,7 +29,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 
 | 层 | 文件 | 禁止 |
 |---|---|---|
-| L1 Sync | `tools/storage/sync.py` (8 数据段 flag, 默认 `--auto`) | — |
+| L1 Sync | `tools/storage/sync.py` (7 数据段 flag, 默认 `--auto`) | — |
 | L1 Store | `tools/storage/store.py` | ❌ 网络 |
 | L2 Analysis | `tools/analysis/analysis_engine.py` (4 strategy: chan/wyckoff/technical/finance) | ❌ 网络, ❌ 直读 db |
 | L2 容器 | `tools/analysis/render_data.py` | ❌ 网络 |
@@ -68,10 +70,14 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 
 **只看 PE (静态) + 盈利质量 (ROC / EY / 毛利率 / 杠杆)**, 全部用已审计 TTM 财报算, 不依赖任何预测值。
 
-**已彻底删除, 禁止复活**: **OBV** (10-27) / **主力资金流 fflow** (10-28) / **PEG** (11-02) / **DCF L** (11-02) / **多市场共振 res** (11-05)。
+**已彻底删除, 禁止复活**: **OBV** (10-27) / **主力资金流 fflow** (10-28) / **PEG** (11-02) / **DCF L** (11-02) / **多市场共振 res** (11-05) / **EPS 机构一致预期** (11-04)。
 详见 `docs/fflow-removal-assessment.md` / `docs/obv-removal-record.md`。
 
-删除后综合判定 = **2 类等权投票** (chan / wyckoff), 建仓阈值 `bottom_signals >= 2`, 减仓阈值 `top_signals >= 2`。
+删除后综合判定 = **2 类等权投票** (chan / wyckoff), 建仓阈值 `bottom_signals >= 2`, 减仓阈值 `top_signals >= 2`.
+
+> 2026-11-04: **EPS 机构一致预期整档已删** —— 它是**预测值** (datacenter 拉机构 E0/E1/E2/E3), 11-02 删 PEG/DCF 后已无任何分析消费者, 只剩管道残骸 + 报告展示。删除范围: `tools/storage/caches/eps.py` (整个缓存层)、`eastmoney._build_eps_table` (唯一联网函数, 删完该文件变纯计算模块)、`sync.py --eps` flag、`DataStore.get_eps()`、`RawContext.eps_table`、`RenderData.EpsRow/eps_table/eps_status`、报告「EPS 一致预期」表、linter 的 EPS 检查、guardrail 的 `eps-scope` check。section id `eps_finance` → `finance_quarterly`。
+> **实测: 判定结果零变化** (7 只票缠论/Magic/ROC/EY/买卖点/因子矩阵逐字节一致)。副产物: 原本 EPS 常为 EMPTY 的票 (如 002371) 数据完整度 87% → **100%**。
+> ⚠️ 注意区分: **财报里的真实 EPS 仍在** (`fina_indicator` 已审计, `financials` parquet), 算 `np_yi` 和 rsi6 亏损过滤在用, **不要动**。
 
 > 2026-11-04: 结构分析 (OB/FVG/Sweep) 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变); 同日生产层完成改名, 全仓统一用 `structure` / `结构` 命名。
 >
@@ -101,12 +107,12 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 |---|---|
 | `/t-analyze <code> [--all]` | 单只/批量, 7 section 详报 |
 | `/t-backtest <signal>` | 信号回测 (5 年) |
-| `/t-sync-data [flags]` | 8 数据段 flag 正交 sync, 默认 `--auto` |
+| `/t-sync-data [flags]` | 7 数据段 flag 正交 sync, 默认 `--auto` |
 | `/t-rsi6-tech` | RSI6<25 + RSI12<30 双指标超卖 + 科技板块 + 季报 yoy>0 (4 重, 0 网络) |
 | `/t-earnings-blowout` | R3 启动期反转信号, 找 10x 票 |
 | `/t-factor-5y <code>` | 5 年因子历史轨迹 (120 日窗口) |
 | `/t-wyckoff-a2m` | 全市场 A→M (Accumulation→Markup) 三重确认扫描 |
-| `/t-guardrail [--check X]` | 静态守门员 (network/factor/eps-scope/parquet/safe-fs) |
+| `/t-guardrail [--check X]` | 静态守门员 (network/factor/parquet/safe-fs) |
 
 已删: `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking` `/t-near-low` `/t-roc-ey` (2026-11-02)。
 

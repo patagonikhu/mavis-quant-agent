@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tools/storage/sync.py — Mavis 唯一 sync 入口 (2026-09-03 改造)
 
-用途: 同步 Tushare 数据 (K 线 / 估值因子 / 股票基础 / 财务 / EPS / 主力资金 / 概念板块 / ETF).
+用途: 同步 Tushare 数据 (K 线 / 估值因子 / 股票基础 / 财务 / 主力资金 / 概念板块 / ETF).
       写盘唯一路径, 业务层禁止直连 db/网络.
 
 设计原则:
@@ -9,7 +9,7 @@
   2. 默认行为 = --auto: 智能检测 stale flag, 只跑需跑的 (解决"忘记 sync"问题)
   3. 显式传 flag = 强跑那一项 (无论 stale 不 stale)
   4. 范围: --watchlist (watchlist 全部) / --all (全市场, 默认) / --codes 002371 300750 (指定)
-  5. --eps 范围互斥: 默认 watchlist; --eps --all 强制缩回 watchlist + warning (datacenter API 限频 + WAF)
+  5. 2026-11-04 删: --eps 范围互斥 (EPS 一致预期整档已删, 只剩 Tushare 单一合法源)
   6. 3 个 read-only skill (t-analyze/t-rsi6-tech/t-finance-earnings-blowout)
      缺数据时直接报"请先 /t-sync-data", 不再偷偷调 sync
 
@@ -18,7 +18,6 @@
   --stk-factor    stk_factor_pro 16 列估值因子 (5 季 1 次, 8 分钟)
   --stock-basic   股票基础信息 (行业/名称, 30 天 1 次)
   --financials    财务 5 季度 (fina_indicator_vip 全市场)
-  --eps           EPS 机构预期 (datacenter.consensus, 限 watchlist)
   --cache         signal_cache 缓存 (analysis_cache.db, 跑回测前)
   --ths           THS 同花顺概念板块 K 线 (按 ths_whitelist, 默认 3 年回填)
   --etf           ETF 场内基金 (fund_basic 月级 + fund_daily 日增量, 默认随 --auto 跑)
@@ -375,7 +374,7 @@ def action_stk_factor(force: bool = False) -> int:
         # 2026-11-03 改: sleep 2.0 → 0.3 (200/分)
         # 旧值 2.0s 是按 doc_id=328 的 "5000积分 30次/分" 设的, 但实测本账号跑 680 次
         # (峰值 196/分) 零限频 —— 账号实际在 doc_id=290 的 200/分 档。
-        # 0.3s = 200/分, 与项目其它 tushare 调用点 (store.py/eps.py) 一致, 留 1.5x 余量。
+        # 0.3s = 200/分, 与项目其它 tushare 调用点 (store.py) 一致, 留 1.5x 余量。
         # 注意: 限流表现为**抛异常** (msg 含 "每分钟最多"), 不是返空; 返空 = 非交易日。
         time.sleep(0.3)
 
@@ -481,34 +480,6 @@ def action_financials(codes: list[str], period: str | None = None) -> int:
     return total
 
 
-def action_eps(codes: list[str]) -> int:
-    """EPS 机构预期 (东方财富 datacenter RPT_HSF10_RESPREDICT_COUNTSTATISTICS)
-
-    真实接口: tools/fetch/data_fetcher.py::_build_eps_table
-    走 datacenter.eastmoney.com (主) → Tushare 自建 NTM (备) → EMPTY
-
-    v6.2.5 改造: 1 只票 = 1 parquet (4 期 A/E) → 117 票 = 117 文件 (浪费 schema)
-                  改成: 全表 = 1 个 parquet, 约 500 行 (117 票 × 4 期)
-                  caches.eps.write_eps(code, data) 内部 upsert (删旧 + 加新)
-    """
-    from .sources.eastmoney import _build_eps_table
-    from .caches.eps import write_eps
-    ok = 0
-    sources = {"datacenter_consensus": 0, "tushare_built_ntm": 0, "EMPTY": 0}
-    for c in codes:
-        try:
-            data, source = _build_eps_table(c)
-            sources[source] = sources.get(source, 0) + 1
-            if data:
-                write_eps(c, data)  # 内部 upsert 到 eps_consensus.parquet
-                ok += 1
-        except Exception as e:
-            print(f"  ⚠️ {c} EPS 拉取失败: {e}")
-    print(f"  ✅ EPS consensus: {ok}/{len(codes)} 只 (datacenter {sources['datacenter_consensus']} / "
-          f"tushare 自建 {sources.get('tushare_built_ntm', 0)} / EMPTY {sources['EMPTY']})")
-    return ok
-
-
 def action_cache(codes: list[str]) -> int:
     """signal_cache 缓存 (analysis_cache.db) — 分析结果缓存, 跑回测前必须先有
 
@@ -540,7 +511,6 @@ def print_data_freshness_summary() -> None:
     import duckdb
     from pathlib import Path
     from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR
-    from .caches.eps import EPS_DIR
 
     def _max_date(path: Path) -> str:
         if not path.exists():
@@ -561,7 +531,7 @@ def print_data_freshness_summary() -> None:
         except Exception as e:
             return f"❌ {type(e).__name__}"
 
-    # K 线 / daily_basic 走 parquet, EPS 走 parquet, financials 走 max end_date, stock_basic 走 mtime
+    # K 线 / daily_basic 走 parquet, financials 走 max end_date, stock_basic 走 mtime
     def _max_end_date(path: Path) -> str:
         if not path.exists():
             return "—"
@@ -587,20 +557,6 @@ def print_data_freshness_summary() -> None:
     print(f"  K线 (OHLCV)        : {_max_date(HISTORY_DIR)}")
     print(f"  stk_factor (估值)  : {_max_date(STK_FACTOR_DIR)}")
     print(f"  financials (季报)  : {_max_end_date(FIN_DIR)}")
-    # EPS parquet 特殊: 列名是 year/year_mark/eps/..., 没 trade_date
-    # 用 fetched_at (Tushare 写入时间) 代替 "最新"
-    try:
-        if EPS_DIR.exists() and list(EPS_DIR.glob("*.parquet")):
-            df = duckdb.execute(f"SELECT MAX(fetched_at) FROM read_parquet('{EPS_DIR}/*.parquet')").fetchone()
-            from datetime import datetime
-            ts = int(df[0]) if df and df[0] else 0
-            if ts > 1e12:  # ms → s
-                ts = ts / 1000
-            print(f"  EPS (机构预期)     : {datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')}")
-        else:
-            print(f"  EPS (机构预期)     : 空")
-    except Exception as e:
-        print(f"  EPS (机构预期)     : ❌ {type(e).__name__}")
     # stock_basic 特殊: 没有 trade_date, 看 mtime
     sb_path = Path("data/history/stock_basic/stock_basic.parquet")
     print(f"  stock_basic (静态) : mtime {_file_mtime(sb_path)}")
@@ -637,7 +593,7 @@ def detect_stale_flags() -> dict[str, bool]:
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
     # --auto 检测范围: 盯这 6 个 flag
-    # eps / cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
+    # cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
     # 2026-10-14 加 etf: 之前 SKILL.md 写"auto 含 etf"但实际没接, 导致 ETF 段天天需要手动 sync
     flags = {
         "kline": False,         # K线距今天 > 1 天
@@ -808,7 +764,7 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
     if force:
         flags = {k: True for k in flags}
         if not quiet:
-            print(f"  ⚠️  --force, 全部 {len(flags)} 个 flag 强刷 (eps/cache/meta 仍需手动)")
+            print(f"  ⚠️  --force, 全部 {len(flags)} 个 flag 强刷 (cache/meta 仍需手动)")
     if quiet:
         # dry-run 模式: 也要打印结果 (这是 dry 的全部意义)
         print("\n🔍 自动检测 (dry-run, 不真跑):")
@@ -869,7 +825,7 @@ def main():
 示例:
   python -m tools.sync                       # 默认 watchlist K 线
   python -m tools.sync --all --financials    # 全市场 K 线 + 5 季度财务
-  python -m tools.sync --codes 002371 --eps  # 单只 + EPS
+  python -m tools.sync --codes 002371        # 单只 K 线
   python -m tools.sync --status              # 看现状
         """,
     )
@@ -894,8 +850,6 @@ def main():
                          help="股票基础信息 (行业/名称)")
     actions.add_argument("--financials", action="store_true",
                          help="财务 5 季度 (fina_indicator_vip 全市场)")
-    actions.add_argument("--eps", action="store_true",
-                         help="EPS 机构预期 (datacenter.consensus)")
     actions.add_argument("--cache", action="store_true",
                          help="signal_cache 缓存 (analysis_cache.db)")
     actions.add_argument("--ths", action="store_true",
@@ -923,15 +877,6 @@ def main():
     # Status 短路
     if args.status:
         return action_status()
-
-    # v6.2.9 铁律: --eps 绝不允许全市场 (datacenter 5555 只限频, 拉一次 25 分钟且会撞 WAF)
-    # 任何 --eps 路径 (含 --auto 自动检测) 强制缩到 watchlist; --codes 显式指定放行
-    if args.eps and args.codes:
-        pass  # 显式 --codes 放行
-    elif args.eps:
-        if args.all:
-            print("⚠️  --eps 不允许全市场 (datacenter API 限频), 强制缩到 watchlist")
-        args.all = False
 
     # --auto / --auto-force 短路 (忽略其他 flag)
     if args.auto or args.auto_force:
@@ -976,7 +921,7 @@ def main():
     # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
     any_sync_flag = any([
         args.kline, args.stk_factor, args.stock_basic, args.financials,
-        args.eps, args.cache, args.all_data, args.ths, args.etf,
+        args.cache, args.all_data, args.ths, args.etf,
     ])
     if not any_sync_flag:
         print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")
@@ -992,7 +937,7 @@ def main():
         args.stock_basic = True
         args.financials = True
 
-    # 按 flag 调用 (顺序: kline → stock_basic → financials → eps → cache → meta)
+    # 按 flag 调用 (顺序: kline → stock_basic → financials → cache → meta)
     if args.kline:
         print("\n[1/7] --kline (增量 K 线)")
         action_kline(codes)
@@ -1009,9 +954,6 @@ def main():
         # 只有用户显式 --codes 时才用 codes (小批调试)
         fin_codes = codes if args.codes else None
         action_financials(fin_codes, period=args.period)
-    if args.eps:
-        print("\n[4/7] --eps (机构预期)")
-        action_eps(codes)
     if args.cache:
         print("\n[6/7] --cache (signal_cache)")
         action_cache(codes)
@@ -1030,7 +972,7 @@ def main():
 
     # 全部 flag 都没开 + 也不是 --status → 给个友好提示
     if not any([args.kline, args.stock_basic, args.financials,
-                args.eps, args.cache, args.ths, args.etf]):
+                args.cache, args.ths, args.etf]):
         print("\n💡 没指定任何行为, 看 --help 选 flag")
         print("   最常用: python -m tools.sync --all-data")
 

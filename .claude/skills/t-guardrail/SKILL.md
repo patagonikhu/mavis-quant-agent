@@ -1,6 +1,6 @@
 ---
 name: t-guardrail
-description: 守门员框架 (Mavis Guardrails). 5 个内置 check: network / factor / eps-scope / parquet / safe-fs. 0 网络, 纯静态扫描. 触发词: "检查守门员"、"guardrail 跑一下"、"CI 检查".
+description: 守门员框架 (Mavis Guardrails). 4 个内置 check: network / factor / parquet / safe-fs. 0 网络, 纯静态扫描. 触发词: "检查守门员"、"guardrail 跑一下"、"CI 检查".
 user-invocable: true
 allowed-tools:
   - Bash
@@ -9,11 +9,11 @@ allowed-tools:
 > 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
 > 📐 新 Strategy: [`strategy_recipe.md`](../../strategy_recipe.md)
 
-> **单一事实源:** 5 个 check / 0 网络 skill 列表 / 白名单入口 全部在 `tools/batch/guardrail.py` 模块顶部 docstring + `ZERO_NET_SKILLS` 字典 + `--help`。SKILL.md 只保留"啥时候跑 + 跑最小例子"。
+> **单一事实源:** 4 个 check / 0 网络 skill 列表 / 白名单入口 全部在 `tools/batch/guardrail.py` 模块顶部 docstring + `ZERO_NET_SKILLS` 字典 + `--help`。SKILL.md 只保留"啥时候跑 + 跑最小例子"。
 
 ## 啥时候跑
 
-- 提 PR / 改完代码后,保证不破坏 0 网络 / DataStore / EPS 范围 / Factor 规则 / 用户数据安全
+- 提 PR / 改完代码后,保证不破坏 0 网络 / DataStore / Factor 规则 / 用户数据安全
 - CI 检查 (--strict --write-md)
 - 想验证"这文件是不是违规使用网络"
 - **新增/修改任何批量脚本后,必跑 `--check safe-fs`** —— 防止脚本直接 `unlink`/`rmtree` 用户数据
@@ -24,10 +24,9 @@ allowed-tools:
 # 默认 (网络隔离检查)
 bash tools/with_venv.sh python -m tools.batch.guardrail
 
-# 5 个 check
+# 4 个 check
 bash tools/with_venv.sh python -m tools.batch.guardrail --check parquet
 bash tools/with_venv.sh python -m tools.batch.guardrail --check factor
-bash tools/with_venv.sh python -m tools.batch.guardrail --check eps-scope
 bash tools/with_venv.sh python -m tools.batch.guardrail --check safe-fs
 
 # CI 严格模式 + 写报告

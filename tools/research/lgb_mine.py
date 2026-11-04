@@ -75,8 +75,11 @@ def build_features(code: str) -> dict:
 
     2026-11-02 修 (3 个 bug):
       - 删 PEG 特征 (PEG 是假指标, 整档已删)
-      - ctx.valuation_data 不存在 → 改走 ctx.eps_table + ctx.market_cap_yi
+      - ctx.valuation_data 不存在 → 改走 daily_basic 的 pe_ttm/pb
       - raw 变量未定义 → 改走 ctx.name / K 线自身算量比换手率
+
+    2026-11-04 改: PE_TTM / PB 改走 daily_basic (Tushare 真实值)
+      原来从 ctx.eps_table 反推 (EPS 预期整档已删), 现在直接读 daily_basic 的 pe_ttm/pb 字段。
 
     数据源全部走 DataStore.get_ctx (不直连 eastmoney)
     """
@@ -89,23 +92,12 @@ def build_features(code: str) -> dict:
     closes = pd.Series([k["close"] for k in kline])
     vols = pd.Series([k.get("vol", k.get("volume", 0)) for k in kline])
 
-    # 1. PE_TTM (用 eps_table 最新一期的 eps + 现价算)
-    #    eps_table 样例: {'year': '2025A', 'eps': 6.493, ...}
-    eps_list = [r.get("eps") for r in (ctx.eps_table or []) if r.get("eps")]
-    price = closes.iloc[-1]
-    pe_ttm = (price / eps_list[-1]) if (eps_list and eps_list[-1]) else 0.0
+    # 1. PE_TTM (daily_basic 真实值, 不用 EPS 反推)
+    db = DataStore.get_daily_basic(code)
+    pe_ttm = float(db.get("pe_ttm") or 0.0)
 
-    # 2. PB (用 market_cap_yi + eps_table 的 net_profit_yi + roe 反推净资产)
-    #    净资产 = 净利 / ROE;  PB = 市值 / 净资产
-    pb = 0.0
-    if ctx.eps_table:
-        latest_fin = ctx.eps_table[-1]
-        np_yi = latest_fin.get("net_profit_yi") or 0
-        roe = latest_fin.get("roe") or 0
-        if np_yi and roe:
-            equity_yi = np_yi / (roe / 100.0)
-            if equity_yi > 0 and ctx.market_cap_yi:
-                pb = ctx.market_cap_yi / equity_yi
+    # 2. PB (daily_basic 真实值)
+    pb = float(db.get("pb") or 0.0)
 
     # 3. MA20 偏离
     ma20 = closes.rolling(20).mean().iloc[-1]

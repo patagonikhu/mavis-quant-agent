@@ -22,7 +22,6 @@ CLI:
     data/history/financials/YYYYQN.parquet    # 财务指标 (Magic Formula 用)
 
 内部依赖:
-    tools/eps_consensus_cache.py  — 低频缓存 (data/history/eps/, parquet)
     ..sources.tushare    — Tushare 接口
 """
 
@@ -1085,7 +1084,6 @@ def sync_financials(period: str, codes: list[str] = None, force: bool = False) -
         return len(existing)   # 全部 skip, 0 次 API
 
     # Phase 2: 1 次 VIP API 拿全市场 (5000 积分档, 不限流)
-    # EPS 走 datacenter.eastmoney.com (--eps flag, 独立渠道)
     all_needed = to_pull + to_check
     print(f"  📡 fina_indicator_vip period={period} ({len(to_pull)} 待补 + {len(to_check)} 对比更新)")
     data, status = _safe_call(
@@ -1446,16 +1444,10 @@ class DataStore:
         return read_stock_basic(code)
 
     @classmethod
-    def get_eps(cls, code: str) -> list[dict]:
-        """EPS 机构一致预期表（每月更新）。"""
-        from .caches.eps import get_eps
-        return get_eps(code)
-
-    @classmethod
     def get_ctx(cls, code: str, kline_only: bool = False, limit: int = 0):
         """返回 RawContext（L1 数据层唯一入口）。
 
-        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic/eps。
+        kline_only=True: 只读 K线，跳过 stock_basic/daily_basic。
         limit: K线条数上限，0=使用 config 默认值（kline_days）。
         """
         from tools.analysis.analysis_engine import RawContext
@@ -1468,14 +1460,12 @@ class DataStore:
         if kline_only:
             return RawContext(
                 kline=kline, weekly=weekly,
-                eps_table=[],
                 current_price=close, market_cap_yi=0.0,
                 industry="", code=code, name="",
             )
 
         sb  = cls.get_stock_basic(code)
         db  = cls.get_daily_basic(code)
-        eps = cls.get_eps(code)
 
         # total_mv 单位是"万元" (Tushare daily_basic), 转亿
         # 修复: 之前直接 db.get("total_mv") 拿"万" 当"亿" 存, 导致 EY 算成天文数字
@@ -1493,7 +1483,6 @@ class DataStore:
 
         return RawContext(
             kline=kline, weekly=weekly,
-            eps_table=eps,
             current_price=current_price,
             market_cap_yi=total_mv_yi,
             industry=sb.get("industry", ""),
@@ -1502,7 +1491,7 @@ class DataStore:
 
     @classmethod
     def get_financials(cls, code: str, lookback_quarters: int = 4) -> list[dict]:
-        """单只最近 N 季的财务数据, 按 end_date 升序 (跟 get_eps 同 pattern)
+        """单只最近 N 季的财务数据, 按 end_date 升序
 
         实际逻辑在本文件 read_financials, 这层只是 I/O 入口。
         只返 fetch_status='ok' 的行, 给分析层用 (RenderData / ROC / EY)。

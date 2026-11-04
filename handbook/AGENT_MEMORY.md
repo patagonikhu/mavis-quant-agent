@@ -7,8 +7,8 @@
 ## 入口 (grep 验证过)
 
 - **项目根**: `/Users/I514959/workspace/mavis-quant-agent/`
-- **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic,eps}/`
-- **同步**: `tools/storage/sync.py` (7 flag: kline/stk-factor/stock-basic/financials/eps/cache/meta, 默认 --auto)
+- **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic}/`
+- **同步**: `tools/storage/sync.py` (7 flag: kline/stk-factor/stock-basic/financials/cache/meta/all-data, 默认 --auto)
 - **分析引擎**: `tools/analysis/analysis_engine.py` 4 个 strategy 类 (chan/wyckoff/technical/finance)
 - **活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-rsi6-tech, t-backtest, t-finance-earnings-blowout, t-concept-macd, t-guardrail}/` (2026-11-02 删 t-near-low / t-finance-roc-ey)
 - **批量分析**: `tools/batch/t_analyze_all.py` (4 worker 并发)

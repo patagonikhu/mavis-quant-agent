@@ -74,7 +74,6 @@ def _scan_one_worker(args):
         ctx = RawContext(
             kline=kline,
             weekly=weekly,
-            eps_table=[],
             current_price=kline[-1]['close'],
             market_cap_yi=0,
             industry='ETF',

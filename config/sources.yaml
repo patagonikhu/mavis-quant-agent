@@ -30,11 +30,13 @@ kline_60min:
   unit: 元
   note: 2026-07-24 改单一 Sina 源, Tushare 限流实测不可用
 
-eps_finance:
+finance_quarterly:
   primary: Tushare.fina_indicator
   fallback: Tushare.income
   unit: 元/股
-  note: EPS/ROE/营收/净利
+  note: 已审计财报指标 (EPS/ROE/营收/净利), 不含任何预测值
+  # 2026-11-04: key 从 eps_finance 改为 finance_quarterly
+  #   (EPS 一致预期整档已删, 这条现在只描述已审计财报指标)
 
 shares_market_cap:
   primary: Tushare.stock_basic

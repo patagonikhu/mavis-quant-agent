@@ -57,9 +57,9 @@ REQUIRED_SECTIONS = get_section_titles()
 
 KEY_DATA_PATTERNS = {
     "价格": r"股价:\s*¥[\d.]+|当前价\s*[\|格]?\s*¥[\d.]+|¥[\d.]+\s*\|",  # 2026-07-24 改: 容忍"当前价格"和"价格"列
-    "EPS 表格": r"\|\s*20\d{2}[AE]\s*\|\s*[\d.]+\s*\|",
     "MA 表格": r"\|\s*MA(5|20|60|120)\s*\|",
     # 2026-11-02 删: "PEG 数值" / "DCF L 数值" / "L/可达利润" (PEG 是假指标, 整档已删)
+    # 2026-11-04 删: "EPS 表格" (EPS 机构一致预期整档已删)
     "板块 MA20 偏离": r"MA20\s*偏离.*[\+\-]?[\d.]+%",
     # 2026-11-03 删: "止盈价" / "止损价" (止盈 3 层 + 止损 4 档整档已删)
     "评级": r"(🥇|🥈|🥉|⚠️|❌).*[重仓|标准|轻仓|观察|不买]",
@@ -150,8 +150,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
         warnings.append(f"🔴 缺 {len(missing)} 个 section: {', '.join(missing)}")
     if not key_data["价格"]:
         warnings.append("⚠️ 未找到价格 (实时价可能没拉到)")
-    if not key_data["EPS 表格"]:
-        warnings.append("⚠️ 未找到 EPS 表格 (datacenter 可能没拉到)")
     if not key_data["MA 表格"]:
         warnings.append("⚠️ 未找到 MA 表 (K线可能不够)")
     # 2026-11-02 删: PEG / DCF 数值检查 (整档已删)
@@ -506,9 +504,8 @@ def lint_summary(results: list[dict]) -> str:
 def lint_finance_section(content: str) -> list[str]:
     """财务数据 section 格式检查 — 4 季数据行 + 15 列大表 (含 Magic 列 + ROC/EY 列)
 
-    期望格式 (2026-11-02 起, fwd_pe 列已删):
+    期望格式 (2026-11-02 起, fwd_pe 列已删; 2026-11-04 起 EPS 一致预期已删):
         ## 财务数据
-        > **EPS 一致预期 (Tushare):** ...
         ### 最近 4 季财务 + Magic 公式 (20260630)
         | 季 | 营收 yoy | 净利 yoy | 毛利率 | ROE | 营收 (亿) | 净利 (亿) | EBIT (亿) | ROC 资本回报率 | EY 收益率 | 总市值 (亿) | 净负债 (亿) | EV (亿) | 投入资本 (亿) | PE |  (15 列)
         | --- | ... |  (15 个 ---)
@@ -532,11 +529,8 @@ def lint_finance_section(content: str) -> list[str]:
         return warnings
     section = m.group(1)
 
-    # 3. EPS 一致预期 必填
-    if "EPS 一致预期" not in section:
-        warnings.append("🔴 财务数据: 缺 EPS 一致预期")
-
-    # 4. 4 季财务 + Magic 大表 必填 (12 列)
+    # 3. 4 季财务 + Magic 大表 必填 (12 列)
+    # 2026-11-04 删: EPS 一致预期 必填检查 (整档已删)
     expected_cols = ["营收 yoy", "净利 yoy", "毛利率", "ROE",
                      "营收 (亿)", "净利 (亿)", "EBIT (亿)",
                      "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)"]

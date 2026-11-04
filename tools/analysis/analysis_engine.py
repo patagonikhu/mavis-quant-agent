@@ -33,7 +33,10 @@ class RawContext:
     """
     kline:      list        # 日线 K 线 [{date, open, close, high, low, vol, ...}]
     weekly:     list        # 周线 K 线（由日线合成，_synthesize_weekly，不额外联网）
-    eps_table:  list        # EPS 历史预测（季报，不随 as_of_date 切片）
+    # 2026-11-04 删: eps_table (EPS 机构一致预期)
+    #   EPS 预期是**预测值**, 11-02 删 PEG/DCF 后已无任何分析消费者。
+    #   估值口径固化: 只看 PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆), 全部用已审计 TTM 财报算。
+    #   注: 财报里的真实 EPS 仍在 financials parquet 里 (analysis_engine 算 np_yi 在用), 跟这里无关。
     # 2026-10-28 删: fflow (主力资金流) / moneyflow (Tushare money_flow 原始列表)
     #   实测 27 只核心票: 删掉后判定更准 (剔掉 2 只假建仓 + 1 只假减仓)
     #   详见 docs/fflow-removal-assessment.md
@@ -74,7 +77,6 @@ class RawContext:
         price = k[-1]["close"] if k else self.current_price
         sliced = RawContext(
             kline=k, weekly=w,
-            eps_table=self.eps_table,
             current_price=price,
             market_cap_yi=self.market_cap_yi,
             code=self.code,

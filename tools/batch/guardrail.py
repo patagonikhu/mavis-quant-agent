@@ -1,11 +1,12 @@
 """tools/batch/guardrail.py — Mavis 守门员框架 (Guardrails)
 
-用途: 静态扫描 tools/ 下所有 .py 文件, 5 个内置 check 找出合规违规:
+用途: 静态扫描 tools/ 下所有 .py 文件, 4 个内置 check 找出合规违规:
        1) network     (默认) — 网络隔离检查 (跟每个 skill "0 网络"声明做对比)
        2) factor      — Factor class 包装违规 (通用 factor 必须纯函数 + 估值单文件)
-       3) eps-scope   --eps 不准全市场 (datacenter 限频 + WAF 风险)
-       4) parquet    — 业务层禁止直读 parquet/duckdb/sqlite (除 signal_cache)
-       5) safe-fs    — 禁止直接删用户数据 (unlink/rmtree) + 覆盖写配置 (AST 检测)
+       3) parquet    — 业务层禁止直读 parquet/duckdb/sqlite (除 signal_cache)
+       4) safe-fs    — 禁止直接删用户数据 (unlink/rmtree) + 覆盖写配置 (AST 检测)
+
+2026-11-04 删: eps-scope check (EPS 机构一致预期整档已删, 规则失去意义)
 
 输出:
   - 每个工具的"违规清单"
@@ -21,7 +22,6 @@
   bash tools/with_venv.sh python -m tools.batch.guardrail                       # 默认网络守门员
   bash tools/with_venv.sh python -m tools.batch.guardrail --check parquet       # 业务层直读 parquet/duckdb
   bash tools/with_venv.sh python -m tools.batch.guardrail --check factor        # Factor class 包装违规
-  bash tools/with_venv.sh python -m tools.batch.guardrail --check eps-scope     # --eps 范围白名单
   bash tools/with_venv.sh python -m tools.batch.guardrail --check safe-fs       # 删用户数据/覆盖写配置
   bash tools/with_venv.sh python -m tools.batch.guardrail --skill t-analyze     # 单 skill
   bash tools/with_venv.sh python -m tools.batch.guardrail --strict --write-md   # 严格 + 写 docs/guardrail-report.md
@@ -204,8 +204,8 @@ def scan_path(path: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Mavis 守门员 — 扫描工具里的合规问题")
-    parser.add_argument("--check", choices=["network", "factor", "eps-scope", "parquet", "safe-fs"], default="network",
-                        help="检查类型 (默认 network; factor 检查 Factor class 包装违规; eps-scope 检查 --eps 不准全市场; parquet 检查业务层直读 parquet/duckdb/sqlite; safe-fs 检查直接删用户数据/覆盖写配置)")
+    parser.add_argument("--check", choices=["network", "factor", "parquet", "safe-fs"], default="network",
+                        help="检查类型 (默认 network; factor 检查 Factor class 包装违规; parquet 检查业务层直读 parquet/duckdb/sqlite; safe-fs 检查直接删用户数据/覆盖写配置)")
     parser.add_argument("--skill", help="只检查指定 skill (例: t-analyze)")
     parser.add_argument("--strict", action="store_true", help="严格模式 (所有网络调用标红)")
     parser.add_argument("--write-md", action="store_true", help="写 docs/guardrail-report.md")
@@ -216,8 +216,6 @@ def main():
         check_network(args)
     elif args.check == "factor":
         check_factor(args)
-    elif args.check == "eps-scope":
-        check_eps_scope(args)
     elif args.check == "parquet":
         check_parquet(args)
     elif args.check == "safe-fs":
@@ -767,114 +765,6 @@ def _strip_comments_and_docstrings(content: str) -> str:
     return "".join(out)
 
 
-def check_eps_scope(args):
-    """EPS 范围守门员 (2026-09-09 加)
-
-    铁律: --eps 绝不允许全市场 (datacenter 5555 只限频, 拉一次 25 分钟 + WAF 风险)
-    任何 --eps 路径必须:
-      1. 默认 watchlist 49 只
-      2. 显式 --codes 放行
-      3. --all 必须被强制缩到 watchlist (sync.py 入口已加)
-
-    检查项:
-      1. sync.py main() 入口有 --eps + --all 互斥检查 (>= 1 处)
-      2. tools/batch/ 下没有别的脚本偷跑 sync --eps (grep "sync.*--eps" 找)
-      3. 没有任何 'pull_all_market_eps' / 'fetch_all_eps' 类似的便捷函数
-    """
-    import re
-
-    print("🛡️  守门员: eps-scope (--eps 范围白名单)")
-    print(f"   扫描范围: {args.path}/")
-    print()
-
-    violations = []
-    warnings = []
-
-    # 1. sync.py 必须有 --eps + --all 互斥
-    sync_py = ROOT / "tools" / "storage" / "sync.py"
-    if sync_py.exists():
-        content = sync_py.read_text(encoding="utf-8")
-        # 找入口互斥块 (args.eps + args.all 互斥, 强制缩 watchlist)
-        has_eps_mutex = bool(re.search(
-            r"if\s+args\.eps.*?args\.all\s*=\s*False",
-            content, re.DOTALL,
-        )) or bool(re.search(
-            r"--eps\s*不允许全市场",
-            content,
-        ))
-        if has_eps_mutex:
-            print(f"   ✅ {sync_py.relative_to(ROOT)}: 入口有 --eps + --all 互斥 (强制缩 watchlist)")
-        else:
-            violations.append(f"{sync_py.relative_to(ROOT)}: 缺 --eps + --all 互斥检查 (可能被全市场拉取)")
-
-    # 2. grep "sync.*--eps" 找偷跑路径 (排除 guardrail.py 自身, 它是规则说明)
-    pattern_eps_all = re.compile(r"sync.*--eps.*--all|--all.*--eps|--eps\s*--all")
-    scan_root = ROOT / args.path
-    for py_file in scan_root.rglob("*.py"):
-        # 自身是规则定义, 跳过
-        if py_file.name == "guardrail.py" and "batch" in str(py_file):
-            continue
-        try:
-            content = py_file.read_text(encoding="utf-8")
-        except Exception:
-            continue
-        # 2026-11-03: 只扫真实代码 (去掉注释 + docstring), 避免把规则说明当成偷跑
-        content = _strip_comments_and_docstrings(content)
-        for m in pattern_eps_all.finditer(content):
-            lineno = content[:m.start()].count("\n") + 1
-            rel = py_file.relative_to(ROOT)
-            # sync.py 自身那行 print("⚠️  --eps 不允许全市场") 是规则说明, 允许
-            if "不允许全市场" in m.group():
-                continue
-            violations.append(f"{rel}:{lineno}: 偷跑 --eps --all: {m.group()!r}")
-
-    # 3. 找便捷函数 (pull_all_market_eps / fetch_all_eps)
-    for pattern_name in ["pull_all_market_eps", "fetch_all_eps", "all_market_eps",
-                          "bulk_fetch_eps", "sync_all_eps"]:
-        for py_file in scan_root.rglob("*.py"):
-            # 自身是规则定义, 跳过
-            if py_file.name == "guardrail.py" and "batch" in str(py_file):
-                continue
-            try:
-                content = py_file.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            if pattern_name in content:
-                lineno = content[:content.index(pattern_name)].count("\n") + 1
-                rel = py_file.relative_to(ROOT)
-                violations.append(f"{rel}:{lineno}: 发现可疑函数 {pattern_name} (全市场 EPS 拉取)")
-
-    print()
-    if violations:
-        print(f"❌ 违规 {len(violations)} 处:")
-        for v in violations:
-            print(f"   {v}")
-    else:
-        print("✅ 没有违规 — --eps 范围被锁死在 watchlist / 显式 --codes")
-
-    if warnings:
-        print()
-        print(f"⚠️  警告 {len(warnings)} 处:")
-        for w in warnings:
-            print(f"   {w}")
-
-    # 写 md
-    if args.write_md:
-        md = ["# EPS Scope Guardrail Report", ""]
-        if violations:
-            md.append("## ❌ Violations")
-            for v in violations:
-                md.append(f"- {v}")
-        else:
-            md.append("## ✅ Pass")
-            md.append("`--eps` 范围被锁死在 watchlist / 显式 --codes, 没有任何全市场快捷入口。")
-        out = ROOT / "docs" / "eps-scope-guardrail.md"
-        out.write_text("\n".join(md), encoding="utf-8")
-        print(f"\n📝 报告: {out}")
-
-    sys.exit(1 if violations else 0)
-
-
 def check_parquet(args):
     """Parquet-direct-read 守门员 (2026-09-10 加)
 
@@ -921,7 +811,7 @@ def check_parquet(args):
     # sqlite3 直连 data/ 目录 (signal_cache 业务 db 不算违规, 是 OK)
     SQLITE_PATTERN = re.compile(r"sqlite3\.connect\s*\(\s*['\"](?:data/|['\"][^'\"]*signal_cache)")
     # sqlite3 直连但 key 是 signal_cache 走白名单 (业务缓存, OK)
-    SQLITE_OK = re.compile(r"signal_cache|eps_consensus|analysis_cache")
+    SQLITE_OK = re.compile(r"signal_cache|analysis_cache")
 
     scan_root = ROOT / args.path
     violations = []

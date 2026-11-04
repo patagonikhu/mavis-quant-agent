@@ -73,16 +73,6 @@ class DataStatus:
 # ============================================================
 
 @dataclass
-class EpsRow:
-    year: str
-    year_mark: str
-    eps: float
-    net_profit_yi: float
-    revenue_yi: float
-    roe: float
-
-
-@dataclass
 class KLineBar:
     trade_date: str
     open: float
@@ -121,9 +111,6 @@ class RenderData:
 
     # ===== 原始 K 线上下文（供历史回算/因子历史 section 用）=====
     ctx: Optional[object] = None   # RawContext，避免循环 import 用 object 类型标注
-
-    eps_table: list[EpsRow] = field(default_factory=list)
-    eps_status: Optional[DataStatus] = None
 
     kline: list[KLineBar] = field(default_factory=list)
     kline_status: Optional[DataStatus] = None
@@ -267,15 +254,6 @@ class RenderData:
                 except Exception as e:
                     technical = {"error": str(e)}
 
-        # EPS
-        eps_raw = ctx.eps_table or []
-        eps_table = []
-        for r in eps_raw:
-            try:
-                eps_table.append(EpsRow(**{k: r[k] for k in EpsRow.__dataclass_fields__ if k in r}))
-            except Exception:
-                pass
-
         # analysis dict（L2 结果）
         signals_5 = result.to_dict(ctx)
 
@@ -309,7 +287,6 @@ class RenderData:
         raw_for_mech = {
             "close":    ctx.current_price,
             "total_mv": ctx.market_cap_yi,
-            "eps_table": eps_raw,
             "industry": ctx.industry,
             "code":     ctx.code,
             "name":     ctx.name,
@@ -330,8 +307,6 @@ class RenderData:
                           for bar in (getattr(ctx, "weekly", None) or [])],
             ma_table=ma_table,
             ma_status=DataStatus(name="ma", status="OK" if ma_table else "EMPTY"),
-            eps_table=eps_table,
-            eps_status=DataStatus(name="eps", status="OK" if eps_table else "EMPTY"),
             # 季度财务 (最近 4 季) — 直接从 FinanceStrategy 结果取
             quarterly_finance=(result.raw.get("finance") or {}).get("quarterly") or [],
             technical=technical,
@@ -459,7 +434,7 @@ class RenderData:
         # 2026-11-03 删: 5类信号 status 行 (5 类 14 子信号整档已删)
         # 2026-09-09 删: 策略 status 行 (走缠论, 不再单独展示 5 strategy 投票)
         # 2026-08-31: 资金流 section 已停用 (CLAUDE.md 板块适用性限制), 不展示
-        line("EPS", self.eps_status, f"{len(self.eps_table)} 条")
+        # 2026-11-04 删: EPS status 行 (EPS 机构一致预期整档已删)
 
         report["缠论"] = ("✅" if self.chan_data else "❓", "OK" if self.chan_data else "未计算")
         # 2026-11-03 删: 四问 / T框架 两行 (两档整档已删)

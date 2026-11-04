@@ -1212,3 +1212,34 @@ Type: rule
 - stale 检测 (让 --auto 也能自动跑)
 
 **apply when:** 任何 "我在 SKILL.md 加了 X 功能" / "X 是默认行为" 的描述, 必须有对应代码. 没有就修, 不能留 SKILL.md 一边说"有" 代码一边没接. 静态扫描: `grep -n "add_argument\|auto 检测" tools/storage/sync.py` 跟 SKILL.md 的 9 个 flag 对照.
+
+### EPS 机构一致预期整档删除 (2026-11-04)
+Type: decision
+
+**背景:** 用户问 "eps 是啥, 我要把他干掉"。查清后确认仓库里有**两个同名不同物**:
+1. **EPS 机构一致预期** (eastmoney datacenter 拉机构 E0/E1/E2/E3 预测) — 要删的是这个
+2. **财报真实 EPS** (`fina_indicator` 已审计, 存 `financials` parquet) — 算 `np_yi` + rsi6 亏损过滤在用, **不能动**
+
+**为什么删 (决策依据):**
+- 它是**预测值**, 而项目估值口径早已固化: 只看 PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆), 全部用已审计 TTM 财报算, 不依赖任何预测值
+- 11-02 删 PEG/DCF 后, 它**已无任何分析消费者** — 只剩管道残骸 + 报告展示
+- 副产物收益: 很多票的 EPS 拉不到 (EMPTY), 却占着数据完整性表一格。删掉后 002371 完整度 87% → **100%**
+
+**删除范围 (11 处代码):**
+| 层 | 删了什么 |
+|---|---|
+| L1 数据 | `tools/storage/caches/eps.py` (整个缓存层) / `eastmoney._build_eps_table` (唯一联网函数) / `sync.py --eps` flag / `DataStore.get_eps()` / `RawContext.eps_table` |
+| L2 分析 | `RenderData.EpsRow` + `eps_table` + `eps_status` + 完整性表的 EPS 行 |
+| L3 渲染 | 报告「EPS 一致预期」表 / linter 的 "EPS 表格" + "缺 EPS 一致预期" 检查 / section id `eps_finance` → `finance_quarterly` |
+| 工具 | guardrail `eps-scope` check (整个) / `lgb_mine.py` PE_TTM+PB 改走 daily_basic / `backfill_roc_ey_cache._load_eps_window` (本就无调用方) |
+
+**实测影响: 判定结果零变化。** 7 只票 (002371/300274/688256/600089/002463/300308/000725) 改动前后报告 diff:
+缠论 / Magic ROC/EY / 买卖点 / 因子矩阵 **逐字节一致**, 差异只有 EPS 行 + EPS 表 + section id + 完整度分母。
+
+**连带效应:**
+- `eastmoney.py` 由此变成**纯计算模块** (周线合成 + 技术指标), guardrail network 白名单从 2 个入口缩到 1 个 (只剩 tushare)
+- `datacenter.eastmoney.com` 退出合法源 → CLAUDE.md「合法源只有 2 个」改成「只有 1 个」
+- 顺手修掉 `eastmoney.py` 的死 CLI 块 (引用 11-02 就删掉的 `fetch_all`/`status_emoji`, 一跑就 NameError)
+
+**apply when:** 想删某个数据源前, 先分清「预测值」vs「已审计真实值」—— 同名不同物, 删错一个直接断生产链。
+删完必须做**改动前后报告 diff**, 而不是只看 "跑通了" —— 跑通 ≠ 判定没变。
