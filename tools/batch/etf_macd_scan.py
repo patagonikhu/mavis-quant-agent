@@ -1,26 +1,41 @@
 """
-tools/batch/etf_macd_scan.py — ETF 场内基金 MACD 因子扫描 (2026-10-09)
+tools/batch/etf_macd_scan.py — ETF 场内基金 MACD 因子扫描 (v2, 2026-11-06)
 
 输出:
-  docs/etf-macd/<ts_code>-<name>.md  每只 ETF 1 个 md
+  docs/etf-macd/<ts_code>-<name>.md   命中且同指数合并后的代表, 每只 1 个 md
+
+v2 改动 (2026-11-06):
+  ① **删掉 config/etf_whitelist.json 依赖** (18 只手工维护名单, 早已过期)
+     → 默认候选池 = DataStore.get_etf_basic() 全市场 ETF + fund_type 过滤
+       (口径跟 /t-etf-wyckoff-a2m 同源, 单一真源见 tools/batch/etf_universe.py)
+  ② **两段式扫描** (全市场 1898 只可算; 逐只直接跑完整分析要 ~16 分钟):
+     - 段 1 预筛: 批量读 K 线 (1 次 SQL, 0.8s) + compute_indicators 算 RSI6/MACD
+       (0.0008s/只 → 全市场 1.5s) → 只留命中信号的
+     - 段 2 深扫: 只对命中的跑 AnalysisEngine.analyze_history + 因子历史表
+  ③ 因子历史回看数走真源 factor_history_lookback() (ETF 200 个交易日, 跟 /t-analyze 一致)
+  ④ **命中口径** (两条任一):
+       超卖     — RSI6 < 30
+       金叉多头 — DIF > DEA 且 DIF > 0
+     同一跟踪指数的 ETF **合并成一只** (口径跟 /t-etf-wyckoff-a2m 同源:
+     归一化 benchmark 相同 或 60 日收益率相关性 ≥ 0.95), 每组留流动性最好的代表。
+     实测: 200 只命中 → 60 个不同标的 (银行/红利/消费等同一指数各 4~6 只)。
 
 用法:
   bash tools/with_venv.sh python -m tools.batch.etf_macd_scan
-  ... --etfs 515790 159995 512480       # 指定代码 (6位)
-  ... --lookback 500                    # 回看天数 (默认 500≈2 年)
+  ... --etfs 515790 159995              # 指定代码 (6位), 全量出 md (不设命中门槛)
+  ... --lookback 200                    # 回看交易日数 (默认 0 = 用真源, ETF 200)
   ... --output-dir docs/etf-macd
   ... --no-summary
   ... --workers 4
 
-0 网络: 走 DataStore.get_etf_kline (读 data/history/etf/kline/<YYYYQN>.parquet)
-跑前必须 sync --etf 落盘
+0 网络: 走 DataStore (get_etf_basic / get_etf_klines)
+跑前必须先 sync --etf 落盘
 """
 import argparse
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-import json
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -34,22 +49,162 @@ def _flushing_print(*a, **kw):
 print = _flushing_print
 
 
-def _load_etf_whitelist() -> list[dict]:
-    p = Path("config/etf_whitelist.json")
-    if not p.exists():
-        return []
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return [item for item in data.get("etfs", []) if item.get("code")]
-    except Exception:
-        return []
+# ============================================================
+# 常量 (口径都写在这里, 别散落)
+# ============================================================
+
+# RSI6 < 30 = 超卖 (跟股票版 wyckoff_a2m_scan 的 rsi6_max=30 同档)
+OVERSOLD_RSI6 = 30
+
+# MACD(12,26,9) + RSI6 warmup: 26 + 9 = 35 根够算最新值
+MIN_BARS = 35
+
+
+# ============================================================
+# 候选池 + 命中判定
+# ============================================================
+
+def _classify_signal(rsi6, dif, dea) -> str:
+    """命中信号分类 (基于最新一根 K 线)
+
+    Returns:
+        '超卖'     — RSI6 < 30, 技术性低吸区
+        '金叉多头' — DIF > DEA 且 DIF > 0, 趋势转多
+        '—'        — 无命中
+    """
+    if rsi6 is None or dif is None or dea is None:
+        return "—"
+    if rsi6 < OVERSOLD_RSI6:
+        return "超卖"
+    if dif > dea and dif > 0:
+        return "金叉多头"
+    return "—"
+
+
+def _latest_indicators(rows: list[dict]) -> dict | None:
+    """最新一根 K 线的 RSI6 / DIF / DEA — 跟正式分析同一个 compute_indicators
+
+    预筛和深扫必须用同一个指标函数 + 同一个 K 线窗口, 否则会出现
+    "预筛说命中, 深扫算出来不是" 的口径漂移。
+    """
+    from tools.storage.sources.eastmoney import compute_indicators
+    bars = [{"close": r.get("close"), "high": r.get("high"), "low": r.get("low"),
+             "vol": r.get("vol"), "date": r.get("trade_date")} for r in rows]
+    ind = compute_indicators(bars)
+    if "error" in ind:
+        return None
+    return {"rsi6": ind["rsi"]["rsi6"],
+            "macd_dif": ind["macd"]["DIF"],
+            "macd_dea": ind["macd"]["DEA"]}
+
+
+def _prefilter_signals(universe: list[dict],
+                       history_days: int) -> tuple[list[dict], dict, dict]:
+    """段 1 预筛: 全市场 → 命中信号清单
+
+    Args:
+        universe:    [{code, ts_code, name, benchmark, fund_type}, ...]
+        history_days: 每只取最近多少根 K 线 (跟深扫同窗口)
+    Returns:
+        (hits, stats, klines) — klines 供段 1.5 同指数合并算流动性 / 相关性
+    """
+    from tools.batch.etf_universe import load_etf_klines
+
+    stats = {"candidates": len(universe), "scored": 0, "no_data": 0,
+             "oversold": 0, "golden_cross": 0}
+    if not universe:
+        return [], stats, {}
+
+    klines = load_etf_klines([u["code"] for u in universe], limit=history_days)
+    by_code = {u["code"]: u for u in universe}
+    hits: list[dict] = []
+
+    for ts_code, rows in klines.items():
+        code = ts_code.split(".")[0]
+        u = by_code.get(code)
+        if not u or len(rows) < MIN_BARS:
+            stats["no_data"] += 1
+            continue
+        stats["scored"] += 1
+        ind = _latest_indicators(rows)
+        if ind is None:
+            stats["no_data"] += 1
+            continue
+        signal = _classify_signal(ind["rsi6"], ind["macd_dif"], ind["macd_dea"])
+        if signal == "—":
+            continue
+        if signal == "超卖":
+            stats["oversold"] += 1
+        else:
+            stats["golden_cross"] += 1
+        hit = dict(u)
+        hit.update(ind)
+        hit["signal"] = signal
+        hits.append(hit)
+
+    # 排序: 超卖优先, 其次 RSI6 低的在前 (越超卖越值得先看)
+    hits.sort(key=lambda h: (0 if h["signal"] == "超卖" else 1,
+                              h["rsi6"] if h["rsi6"] is not None else 999))
+    return hits, stats, klines
+
+
+def _dedup_hits(hits: list[dict], klines: dict[str, list[dict]],
+                basic_by_ts: dict[str, dict]) -> tuple[list[dict], list[dict]]:
+    """同一跟踪指数的 ETF 合并成一只 → (代表列表, 合并明细)
+
+    分组口径在 tools/batch/etf_universe.py (跟 /t-etf-wyckoff-a2m 共用):
+      ① 归一化 benchmark 相同 → 同指数
+      ② 60 日收益率相关性 ≥ 0.95 → 同一指数的不同写法 / 不同基金类型
+
+    代表选择: 20 日日均成交额最大 (流动性最好, 最可投); 成交额相同 → K 线根数多者优先。
+    """
+    from tools.batch.etf_universe import (group_by_tracked_index, liquidity_score,
+                                          index_display, normalize_benchmark)
+
+    if not hits:
+        return [], []
+
+    by_code = {h["ts_code"]: h for h in hits}
+    code_groups, _pair_corr = group_by_tracked_index(
+        [h["ts_code"] for h in hits], klines, basic_by_ts)
+
+    reps: list[dict] = []
+    details: list[dict] = []
+    for members in code_groups.values():
+        members = [by_code[c] for c in members]
+
+        def _rank(h: dict) -> tuple:
+            return (liquidity_score(klines.get(h["ts_code"], [])),
+                    len(klines.get(h["ts_code"], [])))
+
+        rep = max(members, key=_rank)
+        row = basic_by_ts.get(rep["ts_code"], {})
+        index_name = index_display(row.get("benchmark"))
+        rep2 = dict(rep)
+        rep2["index_name"] = index_name
+        rep2["group_key"] = normalize_benchmark(row.get("benchmark")) or index_name
+        rep2["group_size"] = len(members)
+        rep2["group_peers"] = [m["code"] for m in members if m["code"] != rep["code"]]
+        rep2["liquidity"] = liquidity_score(klines.get(rep["ts_code"], []))
+        reps.append(rep2)
+
+        details.append({
+            "index_name": index_name,
+            "members": len(members),
+            "rep_code": rep["code"],
+            "rep_name": rep.get("name", ""),
+            "peers": [m["code"] for m in members if m["code"] != rep["code"]],
+        })
+
+    details.sort(key=lambda d: d["rep_code"])
+    return reps, details
 
 
 # ── ProcessPool worker ────────────────────────────────
 
 def _scan_one_worker(args):
     """Process-pool worker: 读 ETF K线 → analysis_engine → factor history."""
-    code, name, lookback = args
+    code, name, history_days = args
     try:
         from tools.storage.store import DataStore
         from tools.analysis.analysis_engine import AnalysisEngine, RawContext
@@ -59,8 +214,8 @@ def _scan_one_worker(args):
         if not kline or len(kline) < 30:
             return {'code': code, 'name': name, 'error': f'数据不足: {len(kline) if kline else 0} 根，请先 sync --etf'}
 
-        if lookback and len(kline) > lookback:
-            kline = kline[-lookback:]
+        if history_days and len(kline) > history_days:
+            kline = kline[-history_days:]
 
         ts_code = kline[0].get('ts_code', code)
 
@@ -83,7 +238,7 @@ def _scan_one_worker(args):
 
         dates = [k['trade_date'] for k in kline]
         history = AnalysisEngine().analyze_history(ctx, dates)
-        rows = compute_factor_history(ctx, step=1, lookback=lookback, history=history)
+        rows = compute_factor_history(ctx, step=1, lookback=history_days, history=history)
 
         for i in range(len(rows)):
             r = rows[i]
@@ -117,11 +272,19 @@ def _scan_one_worker(args):
             else:
                 r['change'] = {}
 
+        last = rows[-1] if rows else {}
         return {
             'code': code,
             'ts_code': ts_code,
             'name': display_name,
             'benchmark': benchmark,
+            'rsi6': last.get('rsi6'),
+            'macd_dif': last.get('macd_dif'),
+            'macd_dea': last.get('macd_dea'),
+            'macd_bar': last.get('macd_bar'),
+            'macd_bar_delta': last.get('macd_bar_delta'),
+            'signal': _classify_signal(last.get('rsi6'), last.get('macd_dif'),
+                                       last.get('macd_dea')),
             'rows': rows,
         }
     except Exception as e:
@@ -130,6 +293,15 @@ def _scan_one_worker(args):
 
 
 # ── md 渲染 ────────────────────────────────
+
+def _md_filename(result: dict) -> str:
+    """md 文件名 — 同一份结果在生成和清理时必须算出同一个名字"""
+    name = result['name']
+    safe_name = (name.replace("/", "-").replace("\\", "-").replace(":", "-")
+                 .replace("*", "").replace("?", "").replace('"', "")
+                 .replace("<", "").replace(">", "").replace("|", ""))
+    return f"{result['ts_code']}-{safe_name}.md"
+
 
 def _write_md(result: dict, output_dir: Path):
     from tools.render.report_renderer import FACTOR_HISTORY_HEADER, FACTOR_HISTORY_SEP, _format_factor_row
@@ -149,6 +321,9 @@ def _write_md(result: dict, output_dir: Path):
     md.append(f"- 名称: {name}\n")
     if benchmark:
         md.append(f"- 跟踪指数: {benchmark}\n")
+    md.append(f"- 命中信号: {result.get('signal', '—')}\n")
+    if result.get("group_size", 1) > 1:
+        md.append(f"- 同指数基金: {result['group_size']} 只 (本只为流动性最好的代表)\n")
     md.append(f"- K线覆盖: {rows[0]['date']} ~ {rows[-1]['date']} ({len(rows)} 天)\n\n")
 
     last = rows[-1]
@@ -187,7 +362,7 @@ def _write_md(result: dict, output_dir: Path):
     md.append(f"| DEA | {_f(dea_v)} |\n")
     md.append(f"| BAR | {_f(last.get('macd_bar'))} |\n")
     md.append(f"| BARΔ | {_f(last.get('macd_bar_delta'))} |\n")
-    md.append(f"| MA20 偏离 | {_f(last.get('ma_dev_daily'))}% |\n\n")
+    md.append(f"| MA20 偏离 | {_f(last.get('ma_dev_daily'))}%\n\n")
 
     md.append(f"## 历史因子走势 (ETF 日K, 共 {len(rows)} 天, 倒序)\n\n")
     md.append(FACTOR_HISTORY_HEADER + "\n")
@@ -197,8 +372,7 @@ def _write_md(result: dict, output_dir: Path):
         if row_str is not None:
             md.append(row_str + "\n")
 
-    safe_name = name.replace("/", "-").replace("\\", "-").replace(":", "-").replace("*", "").replace("?", "").replace('"', "").replace("<", "").replace(">", "").replace("|", "")
-    out_path = output_dir / f"{ts_code}-{safe_name}.md"
+    out_path = output_dir / _md_filename(result)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("".join(md), encoding='utf-8')
     return out_path
@@ -254,63 +428,166 @@ def _summarize_etf(result: dict) -> str:
     return '\n'.join(lines)
 
 
-# ── 主流程 ────────────────────────────────
+# ============================================================
+# 扫描主入口 (CLI 和 t_analyze_all 共用)
+# ============================================================
+
+def _resolve_history_days(code: str, override: int | None) -> int:
+    """因子历史回看交易日数 — 走真源 factor_history_lookback (ETF 200 / 股票 120)"""
+    if override:
+        return override
+    from tools.analysis.analysis_result_signals import factor_history_lookback
+    return factor_history_lookback(code)
+
+
+def scan_etf_signals(codes: list[str] | None = None,
+                     history_days: int | None = None,
+                     workers: int = 0) -> tuple[list[dict], dict]:
+    """扫 ETF → (命中结果列表, 统计)
+
+    Args:
+        codes:       指定代码 (6位); None = 全市场候选池
+        history_days: 回看交易日数; None = 用真源 factor_history_lookback
+        workers:     深扫进程数; 0 = 单线程 (t_analyze_all 用, 不能 spawn 子进程)
+    Returns:
+        (results, stats) — results 是深扫结果 list[dict] (含 rows)
+    """
+    from tools.batch.etf_universe import load_etf_basic, filter_by_fund_type
+
+    stats: dict = {"mode": "指定代码" if codes else "全市场",
+                   "hits": 0, "raw_hits": 0, "scored": 0, "candidates": 0,
+                   "oversold": 0, "golden_cross": 0,
+                   "merged_groups": 0, "merged_members": 0}
+    rep_by_code: dict[str, dict] = {}
+
+    if codes:
+        # 指定代码: 不设命中门槛, 全部深扫 (用户点名了)
+        basic = {str(r["ts_code"]): r for r in load_etf_basic()}
+        universe = []
+        for c in codes:
+            code6 = c.strip().split(".")[0].zfill(6)
+            row = basic.get(f"{code6}.SH") or basic.get(f"{code6}.SZ") or {}
+            universe.append({"code": code6,
+                             "ts_code": row.get("ts_code", f"{code6}.SH"),
+                             "name": row.get("name", code6),
+                             "benchmark": row.get("benchmark", ""),
+                             "fund_type": row.get("fund_type", "")})
+        stats["candidates"] = len(universe)
+        stats["raw_hits"] = len(universe)
+        stats["hits"] = len(universe)
+        work = [(u["code"], u["name"], _resolve_history_days(u["code"], history_days))
+                for u in universe]
+    else:
+        basic = load_etf_basic()
+        if not basic:
+            stats["error"] = "DataStore 读不到 ETF 基础信息, 先跑 sync --etf"
+            return [], stats
+        candidate_ts = filter_by_fund_type(basic)
+        by_ts = {str(r["ts_code"]): r for r in basic}
+        universe = [{"code": ts.split(".")[0], "ts_code": ts,
+                     "name": by_ts.get(ts, {}).get("name", ts.split(".")[0]),
+                     "benchmark": by_ts.get(ts, {}).get("benchmark", ""),
+                     "fund_type": by_ts.get(ts, {}).get("fund_type", "")}
+                    for ts in candidate_ts]
+        stats["candidates"] = len(universe)
+        window = history_days or _resolve_history_days(
+            universe[0]["code"] if universe else "", None)
+        hits, pre_stats, klines = _prefilter_signals(universe, window)
+        stats.update({k: pre_stats[k] for k in
+                      ("scored", "candidates", "oversold", "golden_cross")})
+        stats["raw_hits"] = len(hits)
+        # 同一跟踪指数合并 (口径跟 /t-etf-wyckoff-a2m 同源: 归一化 benchmark + 相关性 ≥0.95)
+        reps, merge_details = _dedup_hits(hits, klines, by_ts)
+        stats["hits"] = len(reps)
+        stats["merged_groups"] = sum(1 for d in merge_details if d["members"] > 1)
+        stats["merged_members"] = stats["raw_hits"] - len(reps)
+        if not reps:
+            return [], stats
+        rep_by_code = {r["code"]: r for r in reps}
+        work = [(r["code"], r["name"], _resolve_history_days(r["code"], history_days))
+                for r in reps]
+
+    if workers and workers > 1:
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(_scan_one_worker, item): item[0] for item in work}
+            results = []
+            for fut in as_completed(futs):
+                results.append(fut.result())
+    else:
+        results = [_scan_one_worker(item) for item in work]
+
+    # 合并组信息挂回结果 (汇总表显示 "同指数 N 只")
+    for r in results:
+        rep = rep_by_code.get(r.get("code"))
+        r["group_size"] = rep.get("group_size", 1) if rep else 1
+        r["group_peers"] = rep.get("group_peers", []) if rep else []
+        r["index_name"] = rep.get("index_name", "") if rep else ""
+    return results, stats
+
 
 def main():
     parser = argparse.ArgumentParser(description="ETF 场内基金 MACD 因子扫描 (0 网络)")
     parser.add_argument("--etfs",       type=str, nargs='+', default=None,
-                        help="ETF 代码列表 (6位, 空格分隔), 默认读 config/etf_whitelist.json")
-    parser.add_argument("--lookback",   type=int, default=500, help="回看天数 (默认 500≈2 年)")
+                        help="ETF 代码列表 (6位, 空格分隔), 全量出 md; 不传 = 扫全市场 (同指数合并后出 md)")
+    # CLI 字面值 --lookback 保留 (用户长期沿用), 内部属性名用业务名 history_days
+    parser.add_argument("--lookback",   dest="history_days", type=int, default=0,
+                        help="回看交易日数 (默认 0 = 用真源 factor_history_lookback, ETF 200)")
     parser.add_argument("--output-dir", type=str, default='docs/etf-macd', help="md 输出目录")
     parser.add_argument("--no-summary", action='store_true', help="不输出 chat summary")
-    parser.add_argument("--workers",    type=int, default=4, help="进程数")
+    parser.add_argument("--workers",    type=int, default=4, help="深扫进程数")
     args = parser.parse_args()
 
-    if args.etfs:
-        etf_list = [{'code': c.strip().zfill(6), 'name': c.strip()} for c in args.etfs if c.strip()]
-        source = "命令行指定"
-    else:
-        etf_list = _load_etf_whitelist()
-        source = "config/etf_whitelist.json"
-
-    if not etf_list:
-        print("⚠️ 没有 ETF 可扫. 检查 config/etf_whitelist.json 或 --etfs 参数")
+    t0 = time.time()
+    print(f"=== ETF MACD 扫描 (回看 {args.history_days or '真源(ETF 200)'}, "
+          f"workers {args.workers}) ===")
+    results, stats = scan_etf_signals(codes=args.etfs,
+                                       history_days=args.history_days or None,
+                                       workers=args.workers)
+    if stats.get("error"):
+        print(f"❌ {stats['error']}")
         return 1
 
+    if args.etfs:
+        print(f"  候选 {stats['candidates']} 只 (命令行指定), 全部深扫")
+    else:
+        print(f"  候选池 {stats['candidates']} 只 (fund_type 过滤后) → "
+              f"可算 {stats['scored']} 只")
+        print(f"  命中 {stats['raw_hits']} 只 (超卖 {stats['oversold']} / 金叉 {stats['golden_cross']}) "
+              f"→ 同指数合并后 {stats['hits']} 只 "
+              f"({stats['merged_groups']} 组重复, 合并掉 {stats['merged_members']} 只)")
+
+    ok = [r for r in results if 'error' not in r]
+    errs = [r for r in results if 'error' in r]
+    for r in errs:
+        print(f"  ⚠️ {r['name']} ({r['code']}): {r['error']}")
+
     output_dir = Path(args.output_dir)
-    print(f"=== ETF MACD 扫描 ({len(etf_list)} 只, lookback {args.lookback}, 源={source}) ===")
-    print(f"ETFs: {', '.join(e['code'] for e in etf_list)}")
-    print(f"输出: {output_dir}/")
-    print()
-
-    t0 = time.time()
-    work = [(e['code'], e.get('name', e['code']), args.lookback) for e in etf_list]
-    results = []
-    with ProcessPoolExecutor(max_workers=args.workers) as ex:
-        futs = {ex.submit(_scan_one_worker, item): item[0] for item in work}
-        for fut in as_completed(futs):
-            r = fut.result()
-            results.append(r)
-            if 'error' in r:
-                print(f"  ⚠️ {r['name']} ({r['code']}): {r['error']}")
-            else:
-                print(f"  ✅ {r['name']} ({r['ts_code']}): {len(r['rows'])} 天")
-
-    print(f"\n=== 全部完成 ({time.time()-t0:.1f}s) ===")
-
     written = 0
-    for r in results:
-        if 'error' not in r:
-            path = _write_md(r, output_dir)
-            written += 1
-            print(f"  📄 {path}")
-    print(f"\n共写入 {written} 个 md 文件")
+    current_names = set()
+    for r in ok:
+        path = _write_md(r, output_dir)
+        current_names.add(path.name)
+        written += 1
+        print(f"  📄 {path}")
+    print(f"\n共写入 {written} 个 md 文件 (耗时 {time.time() - t0:.1f}s)")
+
+    if not args.etfs and output_dir.exists():
+        # 清理上一轮留下、这轮不再命中的 md (跟 t_analyze_all 孤儿清理同口径)
+        from tools.storage.safe_fs import safe_delete
+        removed = 0
+        for p in sorted(output_dir.glob("*.md")):
+            if p.name not in current_names:
+                if safe_delete(p, reason="ETF MACD 扫描: 本轮不再命中, 清理旧 md"):
+                    removed += 1
+        if removed:
+            print(f"  🧹 清理 {removed} 个不再命中的旧 md")
 
     if not args.no_summary:
         print(f"\n\n{'#'*60}")
         print(f"# ETF MACD 扫描 chat summary")
         print(f"{'#'*60}")
-        for r in sorted(results, key=lambda x: x.get('code', '')):
+        for r in sorted(ok, key=lambda x: (0 if x.get('signal') == '超卖' else 1,
+                                           x.get('rsi6') or 999, x.get('code', ''))):
             print(_summarize_etf(r))
         print()
 

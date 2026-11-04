@@ -20,7 +20,8 @@ v2 改动 (2026-11-05):
              (源数据同一指数写法不统一: '中证酒指数' / '中证酒指数×95%+…×5%' /
               '中证白酒指数×95%+…×5%' 三种写法是同一指数的三只基金)
      - 每组只留**流动性最好**的代表 (最近 20 日日均成交额最大)
-  ③ **去掉 ETF whitelist 依赖** (v1 有 --whitelist-only flag + config/etf_whitelist.json)
+  ③ **去掉 ETF whitelist 依赖** (v1 有 --whitelist-only flag + config/etf_whitelist.json;
+     该文件已于 2026-11-06 整体删除, 候选池口径收敛到 tools/batch/etf_universe.py)
   ④ 命中后**逐只生成 md 详报**到 docs/etf-wyckoff-a2m/, 行为跟 /t-wyckoff-a2m 一致
      (A 刷新 / B 补充 / C 留档标 ⚠️, 幂等)
      被同指数合并掉的代码, 已有详报改标 `merged` (不重新生成, 数据一样)
@@ -36,10 +37,8 @@ v2 改动 (2026-11-05):
 from __future__ import annotations
 
 import argparse
-import itertools
 import multiprocessing as mp
 import os
-import re
 import sys
 import time
 from pathlib import Path
@@ -53,23 +52,28 @@ from tools.batch.a2m_report_common import (  # noqa: E402
     stamp_report_status,
     report_worker,
 )
+from tools.batch.etf_universe import (  # noqa: E402
+    EXCLUDE_FUND_TYPES,
+    DEDUP_CORR_THRESHOLD,
+    DEDUP_CORR_WINDOW,
+    load_etf_basic,
+    filter_by_fund_type,
+    load_etf_klines,
+    group_by_tracked_index,
+    normalize_benchmark,
+    index_display,
+    liquidity_score,
+)
 
 # ============================================================
 # 常量
 # ============================================================
-
-# 排除的 fund_type (不适用"吸筹→主升"语义)
-#   债券型 — 震荡上行, 没有主升浪
-#   货币型 — 收益单调, 无形态
-#   REITs  — 租金现金流驱动, 跟股票形态逻辑不同
-EXCLUDE_FUND_TYPES = {"债券型", "货币型", "REITs", "其他"}
 
 # V13 严判窗口 (跟股票版一致)
 N_TAIL = 40
 M_RATIO_MAX = 0.10
 MIN_KLINE = 220          # 够 MA200 warmup (199) + 40 根判定窗口
 MAX_DAILY_CHG = 0.20     # 单日涨跌 > 20% 跳过 (除权/复牌)
-KLINE_LIMIT = 300        # 每只取最近 N 根 (MA200 199 + 40 窗口 + 余量)
 
 # 输出
 DEFAULT_MD = ROOT / "docs" / "etf-wyckoff-a2m.md"
@@ -83,142 +87,17 @@ ETF_STALE_NOTE = ("可能已被 fund_type 过滤 (债券/货币/REITs/其他), "
 
 
 # ============================================================
-# 数据加载 (全部走 DataStore — 业务层 0 直读 parquet)
+# 数据加载 — 走 tools/batch/etf_universe.py (候选池单一真源)
+#   load_etf_basic()      ETF 基础信息全量
+#   filter_by_fund_type() fund_type 过滤 → ts_code 列表
+#   load_etf_klines()     批量读 K 线 (1 次 SQL)
 # ============================================================
-
-def _load_etf_basic() -> list[dict]:
-    """ETF 基础信息 (name / fund_type / benchmark) — 走 DataStore"""
-    from tools.storage.store import DataStore
-    rows = DataStore.get_etf_basic()
-    return rows if isinstance(rows, list) else []
-
-
-def _load_etf_klines(codes: list[str], limit: int = KLINE_LIMIT) -> dict[str, list[dict]]:
-    """批量读 ETF K 线 — 走 DataStore (1 次 SQL)
-
-    比逐只 get_etf_kline 快 ~30x (1992 只: 32s → 1.1s)
-    """
-    from tools.storage.store import DataStore
-    return DataStore.get_etf_klines(codes, limit=limit)
-
-
-def _filter_by_fund_type(basic: list[dict], allow_types: set[str] | None) -> list[str]:
-    """按 fund_type 过滤 → 保留的 ts_code 列表 (保持原始顺序)
-
-    ETF 没有 PE/ROE/毛利率, 唯一有意义的过滤就是 fund_type。
-    """
-    if allow_types:
-        return [str(r["ts_code"]) for r in basic if str(r.get("fund_type")) in allow_types]
-    return [str(r["ts_code"]) for r in basic
-            if str(r.get("fund_type")) not in EXCLUDE_FUND_TYPES]
 
 
 # ============================================================
 # 去重: 同一跟踪指数的 ETF 合并成一只
+#   分组口径在 tools/batch/etf_universe.py (跟 etf_macd_scan 共用)
 # ============================================================
-
-# 60 日收益率相关性 ≥ 此值 → 判定为"同一指数的不同基金", 合并
-# 2026-11-05 实测 (11 只命中全 55 对): ≥0.95 命中 4 对 (全是真重复),
-#   第 5 名掉到 0.885 (中证主要消费 ~ 中证酒, 不同指数), 阈值 0.95 分离干净。
-DEDUP_CORR_THRESHOLD = 0.95
-DEDUP_CORR_WINDOW = 60        # 相关性计算窗口 (根)
-
-
-def _clean_index_name(seg: str) -> str:
-    """把一个 benchmark 成分段清成纯指数名"""
-    s = re.sub(r"×\d+(?:\.\d+)?%", "", seg)       # 去权重 ×95%
-    s = s.replace("收益率", "")
-    s = re.sub(r"[（(][^）)]*[）)]", "", s)        # 去括号内容 (税后) / (使用估值汇率折算)
-    s = re.sub(r"^经.{0,12}调整后的", "", s)        # 去前缀 "经估值汇率调整后的"
-    s = re.sub(r"同期$", "", s)                    # 去尾部 "同期"
-    return s.strip()
-
-
-def _norm_benchmark(benchmark: str) -> str:
-    """benchmark 归一化 → 核心跟踪指数名 (展示名 + 去重 key 的一部分)
-
-    复合 benchmark 形如 '中证酒指数收益率×95%+商业银行活期存款利率(税后)×5%',
-    要拆出权重最大的**指数**成分, 否则同一指数的 ETF / LOF / 联接会被当成
-    不同指数漏合并 —— 实测 512690 鹏华中证酒ETF 的 benchmark 是
-    '中证酒指数收益率×100%', 而 160632 鹏华中证酒指数(LOF) 是
-    '中证酒指数收益率×95%+商业银行活期存款利率(税后)×5%', 同一指数两种写法。
-    """
-    s = re.sub(r"\s+", "", str(benchmark or ""))
-    if not s:
-        return ""
-    best, best_w = "", -1.0
-    for seg in s.split("+"):
-        m = re.search(r"×(\d+(?:\.\d+)?)%", seg)
-        w = float(m.group(1)) if m else 0.0
-        name = _clean_index_name(seg)
-        if "指数" not in name:
-            continue
-        if w > best_w:
-            best, best_w = name, w
-    return best or _clean_index_name(s)
-
-
-def _index_display(benchmark: str) -> str:
-    """展示用: 主指数名 (复合基准带权重)
-
-    纯指数     → '中证酒指数'
-    复合基准   → '沪深300指数×80%'  (别把 80/20 混合说成纯沪深300)
-    """
-    s = re.sub(r"\s+", "", str(benchmark or ""))
-    if not s:
-        return "—"
-    segs: list[tuple[float, str]] = []
-    for seg in s.split("+"):
-        m = re.search(r"×(\d+(?:\.\d+)?)%", seg)
-        w = float(m.group(1)) if m else 100.0
-        name = _clean_index_name(seg)
-        if "指数" in name:
-            segs.append((w, name))
-    if not segs:
-        return _clean_index_name(s) or "—"
-    segs.sort(key=lambda x: -x[0])
-    w, name = segs[0]
-    return f"{name}×{w:g}%" if len(segs) > 1 else name
-
-
-def _dedup_key(row: dict) -> str:
-    """某只 ETF 的 benchmark 去重键
-
-    benchmark 有效 → 用归一化 benchmark (同指数同组)
-    benchmark 空 / '本基金暂不设立业绩比较基准' → 用 ts_code (不合并, 避免误伤)
-    """
-    key = _norm_benchmark(row.get("benchmark"))
-    if not key or "业绩比较基准" in key or "暂不设立" in key:
-        return f"__solo__{row['ts_code']}"
-    return key
-
-
-def _liquidity(rows: list[dict], window: int = 20) -> float:
-    """最近 N 根日均成交额 (Tushare amount 单位: 千元) — 代表 ETF 的流动性"""
-    tail = rows[-window:] if rows else []
-    amts = [float(r.get("amount") or 0.0) for r in tail]
-    return sum(amts) / len(amts) if amts else 0.0
-
-
-def _daily_returns(rows: list[dict], window: int = DEDUP_CORR_WINDOW) -> list[float]:
-    """最近 N 根日收益率 (用于同指数判定)"""
-    tail = rows[-(window + 1):] if rows else []
-    closes = [float(r.get("close") or 0.0) for r in tail]
-    return [closes[i] / closes[i - 1] - 1
-            for i in range(1, len(closes)) if closes[i - 1] > 0]
-
-
-def _corr(a: list[float], b: list[float], min_n: int = 20) -> float:
-    """两组收益率的皮尔逊相关系数"""
-    n = min(len(a), len(b))
-    if n < min_n:
-        return 0.0
-    a, b = a[-n:], b[-n:]
-    ma, mb = sum(a) / n, sum(b) / n
-    num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
-    da = sum((x - ma) ** 2 for x in a) ** 0.5
-    db = sum((y - mb) ** 2 for y in b) ** 0.5
-    return num / (da * db) if da and db else 0.0
 
 
 def _dedup_hits(hits: list[dict], klines: dict[str, list[dict]],
@@ -247,61 +126,28 @@ def _dedup_hits(hits: list[dict], klines: dict[str, list[dict]],
                    group_peers / liquidity / corr_key
           groups — 合并明细 [{key, index_name, members, hit_members, rep_code, rep_name}]
     """
-    parent: dict[str, str] = {h["ts_code"]: h["ts_code"] for h in hits}
-
-    def find(x: str) -> str:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(a: str, b: str) -> None:
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    # ① benchmark 归一化 key 相同 → 合并
-    by_key: dict[str, str] = {}
-    for h in hits:
-        key = _dedup_key(basic_by_ts.get(h["ts_code"], {}))
-        if key in by_key:
-            union(h["ts_code"], by_key[key])
-        else:
-            by_key[key] = h["ts_code"]
-
-    # ② 收益率相关性 ≥ 阈值 → 合并 (抓 benchmark 写法不一致的情况)
-    #    注意: 相关度**全对都算** (包括已被 ① 合并的), 否则汇总表里的
-    #    "合并依据" 对 benchmark 相同的组会显示 0.000, 看不出凭什么合并的
-    rets = {h["ts_code"]: _daily_returns(klines.get(h["ts_code"], [])) for h in hits}
-    pair_corr: dict[tuple[str, str], float] = {}
-    for a, b in itertools.combinations(hits, 2):
-        c = _corr(rets[a["ts_code"]], rets[b["ts_code"]])
-        pair_corr[(a["ts_code"], b["ts_code"])] = c
-        if find(a["ts_code"]) == find(b["ts_code"]):
-            continue
-        if c >= DEDUP_CORR_THRESHOLD:
-            union(a["ts_code"], b["ts_code"])
-
-    # 分组
-    groups: dict[str, list[dict]] = {}
-    for h in hits:
-        groups.setdefault(find(h["ts_code"]), []).append(h)
+    # 分组 (口径在 etf_universe.group_by_tracked_index, 跟 etf_macd_scan 共用)
+    hit_codes = [h["ts_code"] for h in hits]
+    by_code = {h["ts_code"]: h for h in hits}
+    code_groups, pair_corr = group_by_tracked_index(hit_codes, klines, basic_by_ts)
 
     reps: list[dict] = []
     details: list[dict] = []
-    for members in groups.values():
+    for members in code_groups.values():
+        members = [by_code[c] for c in members]
+
         def _rank(h: dict) -> tuple:
-            liq = _liquidity(klines.get(h["ts_code"], []))
+            liq = liquidity_score(klines.get(h["ts_code"], []))
             bars = len(klines.get(h["ts_code"], []))
             return (liq, bars)
 
         rep = max(members, key=_rank)
-        liq = _liquidity(klines.get(rep["ts_code"], []))
+        liq = liquidity_score(klines.get(rep["ts_code"], []))
         row = basic_by_ts.get(rep["ts_code"], {})
-        index_name = _index_display(row.get("benchmark"))
+        index_name = index_display(row.get("benchmark"))
         rep2 = dict(rep)
         rep2["index_name"] = index_name
-        rep2["group_key"] = _norm_benchmark(row.get("benchmark")) or index_name
+        rep2["group_key"] = normalize_benchmark(row.get("benchmark")) or index_name
         rep2["group_size"] = len(members)
         rep2["group_peers"] = [m["code"] for m in members if m["code"] != rep["code"]]
         rep2["liquidity"] = liq
@@ -677,12 +523,12 @@ def main() -> int:
     t0 = time.time()
 
     # 1. 基础信息 + fund_type 过滤 (DataStore)
-    basic = _load_etf_basic()
+    basic = load_etf_basic()
     if not basic:
         print("❌ DataStore 读不到 ETF 基础信息, 先跑 /t-sync-data --etf")
         return 1
     basic_by_ts = {str(r["ts_code"]): r for r in basic}
-    candidate_ts = _filter_by_fund_type(basic, allow_types)
+    candidate_ts = filter_by_fund_type(basic, allow_types)
     print(f"  1) fund_type 过滤: {len(basic)} → {len(candidate_ts)} 只")
 
     # 2. 指定代码收窄
@@ -693,7 +539,7 @@ def main() -> int:
 
     # 3. 批量读 K 线 (DataStore, 1 次 SQL)
     codes6 = [ts.split(".")[0] for ts in candidate_ts]
-    klines = _load_etf_klines(codes6)
+    klines = load_etf_klines(codes6)
     print(f"  2) 加载 K 线 (DataStore 批量): {len(klines)} 只 ({time.time() - t0:.1f}s)")
 
     # 4. 逐只判定 (V13 严判, 同源 wyckoff_judge)
@@ -710,7 +556,7 @@ def main() -> int:
                 row = basic_by_ts.get(ts_code, {})
                 r["name"] = row.get("name", "")
                 r["fund_type"] = row.get("fund_type", "")
-                r["index_name"] = _index_display(row.get("benchmark"))
+                r["index_name"] = index_display(row.get("benchmark"))
                 hits.append(r)
         except Exception:
             errs += 1
@@ -724,7 +570,7 @@ def main() -> int:
         for h in reps:
             h.setdefault("group_size", 1)
             h.setdefault("group_peers", [])
-            h["liquidity"] = _liquidity(klines.get(h["ts_code"], []))
+            h["liquidity"] = liquidity_score(klines.get(h["ts_code"], []))
     else:
         reps, details = _dedup_hits(hits, klines, basic_by_ts)
     print(f"     去重后 {len(reps)} 只 (同一跟踪指数合并)")

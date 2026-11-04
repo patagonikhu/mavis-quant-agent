@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--write-md', action='store_true', help='写 docs/red-to-green-watchlist.md')
     args = parser.parse_args()
 
-    basic = pd.read_parquet('data/history/stock_basic/stock_basic.parquet')
+    basic = DataStore.load_stock_basic()   # 走 DataStore (不直读 parquet)
     name_map = dict(zip(basic['ts_code'].str[:6], basic['name']))
     all_codes = basic['ts_code'].str[:6].tolist()
     print(f'扫描 {len(all_codes)} 只 | 红柱 ≥ {args.min_red} 天 + 最近2 根翻绿')

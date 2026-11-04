@@ -30,7 +30,6 @@ from pathlib import Path
 # 这些是用户数据 / 核心配置, 任何批量脚本都不该删
 PROTECTED_PATHS = {
     "config/watchlist.json",
-    "config/etf_whitelist.json",
     "config/project.yaml",
     "config/sources.yaml",
     "data/analysis_cache.db",

@@ -36,7 +36,8 @@ ETF (2026-10-09 加, 2026-10-14 接入 auto):
   基金基本信息: fund_basic(market='E') 月级 (30 天缓存) → data/history/etf/etf_basic.parquet
   K 线增量:     fund_daily(trade_date=date) 日级 (1次/天) → data/history/etf/kline/<ts_code>.parquet
   首次 bootstrap (~2 年历史): ~517 次请求, 之后每天 1 次.
-  白名单: config/etf_whitelist.json (默认 15 只, 可自定义).
+  候选池:       全市场 ETF (etf_basic 全表, 2252 只) + fund_type 过滤 → 扫描器自行取用
+                (2026-11-06 删 config/etf_whitelist.json 手工白名单).
 
 2026-10-28 删 --fflow (主力资金流整体删除, 详见 docs/fflow-removal-assessment.md)
 

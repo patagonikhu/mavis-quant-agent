@@ -83,7 +83,7 @@ def main():
     parser.add_argument('--limit', type=int, default=0)
     args = parser.parse_args()
 
-    basic = pd.read_parquet('data/history/stock_basic/stock_basic.parquet')
+    basic = DataStore.load_stock_basic()   # 走 DataStore (不直读 parquet)
     all_codes = basic['ts_code'].str[:6].tolist()
     if args.limit:
         all_codes = all_codes[:args.limit]
