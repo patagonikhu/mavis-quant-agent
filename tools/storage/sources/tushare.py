@@ -170,10 +170,12 @@ def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
     """统一 tushare 调用, 永不 raise, 返回 (data_list, status)
 
     2026-07-22 升级: 加 1 小时内存缓存, 重接口 (4s/次) 复用后 0s
-    2026-07-23 升级: 加 3 次重试 (网络抖动兜底, Tushare 官方推荐)
-    2026-07-28 升级: EMPTY 时 retry (数据未到/网络抖动兜底, 2s/4s 退避)
+    2026-09-18 升级: **0 retry** — 1 次失败直接报 (5000 积分档不限流, retry 是浪费)
     2026-09-04 v6.2.4: 升级 5000 积分档, 白名单只剩真正限量接口
                   (forecast/top_list/north_flow/margin 100% 永远返空, 1 次失败直接 EMPTY 不 retry)
+
+    ⚠️ 需要"EMPTY 再试一次"的地方, 由**调用方**自己做 (例: sync.action_stk_factor
+    循环里 EMPTY → sleep 5s → 重试 1 次, 治"限流假阳导致该日永久缺失")。
     """
     if not _PRO:
         return None, "TOKEN_MISSING"
