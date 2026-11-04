@@ -237,6 +237,9 @@ Type: rule
 **落地 (t_analyze_one + t_analyze_all 两个入口):**
 - `list_type == 'blowout'` → `subdir = None` → **不写文件**, 报告走 stdout / 汇总表
 - `t_analyze_all` 的孤儿清理: `_expected_by_sub['blowout']` 恒为空 → `docs/blowout/` 全清
+- **`--include-blowout` flag 直接删掉** (2026-11-06) —— 批量跑永久只含持仓+自选,
+  没有开关能把候选池拉回批量详报; 要深挖就单只 `/t-analyze <code>`
+  (教训: "默认排除 + 一个开关能打开" 迟早被打开, 与其加开关不如把开关删了)
 - `_verify_weekly_period.LINT_SUBS` 去掉 blowout (目录已废弃)
 - 显式 `--output-subdir` (如 wyckoff-a2m) 仍然落 md —— 那是用户显式要求的目录
 

@@ -6,13 +6,11 @@ t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-wa
   - 缺数据时直接报"请先 /t-sync", 不再调单只兜底
   - 跑前用户先 `python -m tools.storage.sync --all-data`
 
-2026-09-23 改造: 加 --exclude-blowout (默认 True, 默认跳过 watchlist.json 里 list_type=blowout 的票)
-  - 默认只跑 持仓 + 自选 (快, 详报)
-  - 加 --include-blowout 才全跑 (blowout 段可单独 deep-dive)
-
-2026-11-06 改造: blowout 段**不生成 md** (候选池, 用来筛的)
-  - --include-blowout 跑出来的 blowout 票只进 signal-watchlist.md 汇总表, 不落 docs/blowout/
-  - docs/blowout/ 里的历史产物由孤儿清理逻辑整个清掉
+2026-11-06 改造: blowout 段**完全不参与**批量跑
+  - list_type=blowout 是"业绩暴增候选池", 用来筛的, 不是长期跟踪的票
+  - --include-blowout flag 已删 (它能打开全跑 → 一次出 157 份详报, 把 docs/blowout/ 撑爆)
+  - 要深挖某只 blowout 票: /t-analyze <code> 单只跑 (单只也不落 md, 报告走 stdout)
+  - docs/blowout/ 目录已废弃, 历史产物由孤儿清理逻辑整个清掉
 """
 import json, sys, datetime, time, os
 import argparse
@@ -32,25 +30,20 @@ from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report
 
 
-# === 2026-09-23 加: CLI 参数 — 默认跳过 blowout 段 ===
+# === CLI 参数 ===
 _arg_parser = argparse.ArgumentParser(description="t-analyze --all 批量分析")
-_arg_parser.add_argument("--include-blowout", action="store_true",
-                         help="包含 watchlist.json 里 list_type=blowout 的票 (默认排除, 防止一次跑几十个详报太慢)")
 _arg_parser.add_argument("--no-etf", action="store_true",
                          help="跳过 ETF 扫描 (默认同时跑 etf_macd_scan)")
 _args, _unknown = _arg_parser.parse_known_args()  # 兼容老调用 `python -m ... t_analyze_all --all`
 
 
 wl = DataStore.load_watchlist()['stocks']
-if _args.include_blowout:
-    stocks = wl
-    print(f'  ℹ️  --include-blowout: 全跑 ({len(stocks)} 只含 blowout)', flush=True)
-else:
-    # 默认排除 blowout, 只跑 持仓 + 自选
-    stocks = [s for s in wl if s.get('list_type', '自选') != 'blowout']
-    excluded = len(wl) - len(stocks)
-    if excluded:
-        print(f'  ℹ️  默认跳过 blowout 段 {excluded} 只 (加 --include-blowout 才跑)', flush=True)
+# 2026-11-06: blowout 段永久排除 (候选池, 用来筛的, 不参与批量详报)
+stocks = [s for s in wl if s.get('list_type', '自选') != 'blowout']
+excluded = len(wl) - len(stocks)
+if excluded:
+    print(f'  ℹ️  跳过 blowout 候选池 {excluded} 只 '
+          f'(候选池不参与批量详报; 单只深挖用 /t-analyze <code>)', flush=True)
 today = datetime.date.today().isoformat()
 output_path = Path('docs/signal-watchlist.md')
 
@@ -129,6 +122,8 @@ def process_one(s):
         subdir = 'portfolio'
         list_type_label = '持仓'
     elif lt == 'blowout':
+        # backstop: blowout 段已不参与批量跑 (上面的 stocks 已排除),
+        # 这里再兜一层 —— 万一以后有人把它加回 stocks, 也不该落 md
         subdir = None
         list_type_label = 'blowout'
     else:
