@@ -1,62 +1,62 @@
 """
-tools/batch/etf_wyckoff_a2m_scan.py — ETF 威科夫 A→M 扫描 (2026-11-04)
+tools/batch/etf_wyckoff_a2m_scan.py — ETF 威科夫 A→M 扫描 (v2, 2026-11-05)
 
-参考 /t-wyckoff-a2m (股票版), 但**过滤链完全不同**:
-  - 股票的 5 步过滤 (ST / PE / 质量 / 杠杆 / RSI) **对 ETF 全部不适用**:
-      ST      — ETF 无退市风险标记
-      PE      — ETF 无市盈率 (指数基金没有盈利)
-      质量     — 无营收/净利/毛利率/ROE (fund_type 只有股票型/债券型/REITs...)
-      杠杆     — 无资产负债表
-  - ETF 唯一需要的过滤 = **fund_type** (债券型/货币型/REITs 不适用"吸筹→主升"语义)
+跟 /t-wyckoff-a2m (股票版) 的关系:
+  - **判定逻辑完全同源**: 同一个 wyckoff_judge + 同一个 build_kline_features +
+    同一个 scan_sub_events, 同一个 V13 严判窗口 (40 根)。威科夫是纯技术形态
+    (MA 关系 + 价格位置 + 子事件), 不吃基本面 → ETF/股票/指数通用。
+  - **过滤链完全不同**: 股票的 5 步过滤 (ST / PE / 质量 / 杠杆 / RSI) 对 ETF
+    全不适用 (ETF 无退市标记 / 无市盈率 / 无财报 / 无资产负债表),
+    ETF 唯一有效的过滤 = **fund_type**。
 
-判定逻辑: **完全复用股票版的 V13 严判** (同源 wyckoff_judge + 同输入数据)
-  ① 当前 (最后) 根 stage == 'Markup'                    (必须)
-  ② 最近 40 根 K 线里 Markup 占比 < 10% (允许 ≤ 3 根)    (排除"反复 M"假突破)
-  ③ 单日涨跌 > 20% 跳过                                  (ETF 涨跌停 10%, 几乎不会触发)
-  ④ K 线长度 ≥ 11 根 (实际门槛 220, 见 _process_one)
-
-为什么 ETF 也能用威科夫:
-  威科夫判定是**纯技术形态** (MA 关系 + 价格位置 + 子事件), 不依赖任何基本面。
-  `stage_factor.wyckoff_judge` 只吃 arrs + sub_events, 所以 ETF/股票/指数通用。
-
-数据源:
-  - K 线: data/history/etf/kline/{YYYYQN}.parquet (跟 /t-sync-data --etf 同源)
-  - 基础: data/history/etf/etf_basic.parquet (name / fund_type / benchmark)
-
-性能 (2026-11-04 实测):
-  - 2348 只 ETF → 1908 只 (根数≥220) → 扫描 9.8s (单进程)
-  - 命中 14 只 (0.73%) —— 股票版是 2.6%, ETF 更严 (长期横盘, 难有干净启动)
+v2 改动 (2026-11-05):
+  ① 数据改走 DataStore (v1 用 duckdb 直读 parquet, 违反项目铁律)
+     - 基础信息: DataStore.get_etf_basic()
+     - K 线:     DataStore.get_etf_klines(codes, limit)  (新增批量接口, 1 次 SQL)
+  ② **ETF 重复去重** (两级并查集, 先全扫后去重, 保证不漏):
+     - 级 1: 归一化 benchmark 相同 → 同指数, 合并
+             (归一化要拆出复合基准里权重最大的指数成分)
+     - 级 2: 60 日收益率相关性 ≥ 0.95 → 合并
+             (源数据同一指数写法不统一: '中证酒指数' / '中证酒指数×95%+…×5%' /
+              '中证白酒指数×95%+…×5%' 三种写法是同一指数的三只基金)
+     - 每组只留**流动性最好**的代表 (最近 20 日日均成交额最大)
+  ③ **去掉 ETF whitelist 依赖** (v1 有 --whitelist-only flag + config/etf_whitelist.json)
+  ④ 命中后**逐只生成 md 详报**到 docs/etf-wyckoff-a2m/, 行为跟 /t-wyckoff-a2m 一致
+     (A 刷新 / B 补充 / C 留档标 ⚠️, 幂等)
+     被同指数合并掉的代码, 已有详报改标 `merged` (不重新生成, 数据一样)
 
 用法:
   bash tools/with_venv.sh python -m tools.batch.etf_wyckoff_a2m_scan
   ... --types 股票型                        # 只扫指定 fund_type
   ... --codes 512480 515790                # 指定 ETF 代码
-  ... --whitelist-only                      # 只扫 config/etf_whitelist.json 里的
-  ... --no-md                               # 不写 md
-  ... --top 20                              # 详报只跑前 N 只 (0=全部)
+  ... --no-dedup                           # 不去重 (看原始命中)
+  ... --no-full-report                     # 只出扫描汇总, 不跑详报
+  ... --report-top 0                       # 详报跑全部命中 (0=全部)
 """
 from __future__ import annotations
 
 import argparse
-import json
+import itertools
+import multiprocessing as mp
+import os
+import re
 import sys
 import time
 from pathlib import Path
-
-import duckdb
-import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.batch.a2m_report_common import (  # noqa: E402
+    scan_existing_reports,
+    stamp_report_status,
+    report_worker,
+)
+
 # ============================================================
 # 常量
 # ============================================================
-
-# ETF K 线 parquet glob (季度文件, 全部读)
-ETF_KLINE_GLOB = "data/history/etf/kline/*.parquet"
-ETF_BASIC_PATH = "data/history/etf/etf_basic.parquet"
 
 # 排除的 fund_type (不适用"吸筹→主升"语义)
 #   债券型 — 震荡上行, 没有主升浪
@@ -67,95 +67,290 @@ EXCLUDE_FUND_TYPES = {"债券型", "货币型", "REITs", "其他"}
 # V13 严判窗口 (跟股票版一致)
 N_TAIL = 40
 M_RATIO_MAX = 0.10
-MIN_KLINE = 220          # 够 MA200 warmup + 40 根判定窗口
+MIN_KLINE = 220          # 够 MA200 warmup (199) + 40 根判定窗口
 MAX_DAILY_CHG = 0.20     # 单日涨跌 > 20% 跳过 (除权/复牌)
+KLINE_LIMIT = 300        # 每只取最近 N 根 (MA200 199 + 40 窗口 + 余量)
 
 # 输出
 DEFAULT_MD = ROOT / "docs" / "etf-wyckoff-a2m.md"
-DEFAULT_REPORT_DIR = ROOT / "docs" / "etf-wyckoff-a2m"
+DEFAULT_REPORT_SUBDIR = "etf-wyckoff-a2m"
+
+# 详报状态标记 (跟股票版 A2M_STATUS 区分开, 免得两边互相覆盖)
+ETF_MARKER = "ETF_A2M_STATUS"
+ETF_SUBJECT = "本基金"
+ETF_STALE_NOTE = ("可能已被 fund_type 过滤 (债券/货币/REITs/其他), "
+                  "或威科夫阶段已离开 Markup。数据已刷新到最新交易日。")
 
 
 # ============================================================
-# 数据加载
+# 数据加载 (全部走 DataStore — 业务层 0 直读 parquet)
 # ============================================================
 
-def _load_etf_basic() -> pd.DataFrame:
-    """ETF 基础信息 (name / fund_type / benchmark)
+def _load_etf_basic() -> list[dict]:
+    """ETF 基础信息 (name / fund_type / benchmark) — 走 DataStore"""
+    from tools.storage.store import DataStore
+    rows = DataStore.get_etf_basic()
+    return rows if isinstance(rows, list) else []
 
-    走 duckdb (跟股票版 wyckoff_a2m_scan 同构, 不直接 pd.read_parquet)。
+
+def _load_etf_klines(codes: list[str], limit: int = KLINE_LIMIT) -> dict[str, list[dict]]:
+    """批量读 ETF K 线 — 走 DataStore (1 次 SQL)
+
+    比逐只 get_etf_kline 快 ~30x (1992 只: 32s → 1.1s)
     """
-    try:
-        return duckdb.execute(f"""
-            SELECT ts_code, name, fund_type, benchmark
-            FROM read_parquet('{ETF_BASIC_PATH}')
-        """).fetchdf()
-    except Exception:
-        return pd.DataFrame(columns=["ts_code", "name", "fund_type", "benchmark"])
+    from tools.storage.store import DataStore
+    return DataStore.get_etf_klines(codes, limit=limit)
 
 
-def _load_whitelist_codes() -> list[str]:
-    """config/etf_whitelist.json 里的 ETF 代码 (6 位)"""
-    p = ROOT / "config" / "etf_whitelist.json"
-    if not p.exists():
-        return []
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return [str(x.get("code")) for x in data.get("etfs", []) if x.get("code")]
-    except Exception:
-        return []
+def _filter_by_fund_type(basic: list[dict], allow_types: set[str] | None) -> list[str]:
+    """按 fund_type 过滤 → 保留的 ts_code 列表 (保持原始顺序)
 
-
-def _load_etf_klines(codes: list[str] | None = None, limit_per_code: int = 300) -> dict[str, pd.DataFrame]:
-    """1 次 SQL 拿 ETF K 线, 返回 {ts_code: DataFrame}
-
-    limit_per_code=300: 够 MA200 warmup (199) + V13 判定窗口 (40), 多留余量。
+    ETF 没有 PE/ROE/毛利率, 唯一有意义的过滤就是 fund_type。
     """
-    where = ""
-    if codes:
-        in_clause = ",".join(f"'{c}'" for c in codes)
-        where = f"WHERE ts_code IN ({in_clause})"
-    sql = f"""
-        WITH ranked AS (
-            SELECT ts_code, trade_date, open, high, low, close, pre_close, vol, pct_chg,
-                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
-            FROM read_parquet('{ETF_KLINE_GLOB}')
-            {where}
-        )
-        SELECT ts_code, trade_date, open, high, low, close, pre_close, vol, pct_chg
-        FROM ranked
-        WHERE rn <= {limit_per_code}
-        ORDER BY ts_code, trade_date
+    if allow_types:
+        return [str(r["ts_code"]) for r in basic if str(r.get("fund_type")) in allow_types]
+    return [str(r["ts_code"]) for r in basic
+            if str(r.get("fund_type")) not in EXCLUDE_FUND_TYPES]
+
+
+# ============================================================
+# 去重: 同一跟踪指数的 ETF 合并成一只
+# ============================================================
+
+# 60 日收益率相关性 ≥ 此值 → 判定为"同一指数的不同基金", 合并
+# 2026-11-05 实测 (11 只命中全 55 对): ≥0.95 命中 4 对 (全是真重复),
+#   第 5 名掉到 0.885 (中证主要消费 ~ 中证酒, 不同指数), 阈值 0.95 分离干净。
+DEDUP_CORR_THRESHOLD = 0.95
+DEDUP_CORR_WINDOW = 60        # 相关性计算窗口 (根)
+
+
+def _clean_index_name(seg: str) -> str:
+    """把一个 benchmark 成分段清成纯指数名"""
+    s = re.sub(r"×\d+(?:\.\d+)?%", "", seg)       # 去权重 ×95%
+    s = s.replace("收益率", "")
+    s = re.sub(r"[（(][^）)]*[）)]", "", s)        # 去括号内容 (税后) / (使用估值汇率折算)
+    s = re.sub(r"^经.{0,12}调整后的", "", s)        # 去前缀 "经估值汇率调整后的"
+    s = re.sub(r"同期$", "", s)                    # 去尾部 "同期"
+    return s.strip()
+
+
+def _norm_benchmark(benchmark: str) -> str:
+    """benchmark 归一化 → 核心跟踪指数名 (展示名 + 去重 key 的一部分)
+
+    复合 benchmark 形如 '中证酒指数收益率×95%+商业银行活期存款利率(税后)×5%',
+    要拆出权重最大的**指数**成分, 否则同一指数的 ETF / LOF / 联接会被当成
+    不同指数漏合并 —— 实测 512690 鹏华中证酒ETF 的 benchmark 是
+    '中证酒指数收益率×100%', 而 160632 鹏华中证酒指数(LOF) 是
+    '中证酒指数收益率×95%+商业银行活期存款利率(税后)×5%', 同一指数两种写法。
     """
-    df = duckdb.execute(sql).fetchdf()
-    df["trade_date"] = df["trade_date"].astype(str)
-    out: dict[str, pd.DataFrame] = {}
-    for ts_code, sub in df.groupby("ts_code"):
-        out[str(ts_code)] = sub.sort_values("trade_date").reset_index(drop=True)
-    return out
+    s = re.sub(r"\s+", "", str(benchmark or ""))
+    if not s:
+        return ""
+    best, best_w = "", -1.0
+    for seg in s.split("+"):
+        m = re.search(r"×(\d+(?:\.\d+)?)%", seg)
+        w = float(m.group(1)) if m else 0.0
+        name = _clean_index_name(seg)
+        if "指数" not in name:
+            continue
+        if w > best_w:
+            best, best_w = name, w
+    return best or _clean_index_name(s)
+
+
+def _index_display(benchmark: str) -> str:
+    """展示用: 主指数名 (复合基准带权重)
+
+    纯指数     → '中证酒指数'
+    复合基准   → '沪深300指数×80%'  (别把 80/20 混合说成纯沪深300)
+    """
+    s = re.sub(r"\s+", "", str(benchmark or ""))
+    if not s:
+        return "—"
+    segs: list[tuple[float, str]] = []
+    for seg in s.split("+"):
+        m = re.search(r"×(\d+(?:\.\d+)?)%", seg)
+        w = float(m.group(1)) if m else 100.0
+        name = _clean_index_name(seg)
+        if "指数" in name:
+            segs.append((w, name))
+    if not segs:
+        return _clean_index_name(s) or "—"
+    segs.sort(key=lambda x: -x[0])
+    w, name = segs[0]
+    return f"{name}×{w:g}%" if len(segs) > 1 else name
+
+
+def _dedup_key(row: dict) -> str:
+    """某只 ETF 的 benchmark 去重键
+
+    benchmark 有效 → 用归一化 benchmark (同指数同组)
+    benchmark 空 / '本基金暂不设立业绩比较基准' → 用 ts_code (不合并, 避免误伤)
+    """
+    key = _norm_benchmark(row.get("benchmark"))
+    if not key or "业绩比较基准" in key or "暂不设立" in key:
+        return f"__solo__{row['ts_code']}"
+    return key
+
+
+def _liquidity(rows: list[dict], window: int = 20) -> float:
+    """最近 N 根日均成交额 (Tushare amount 单位: 千元) — 代表 ETF 的流动性"""
+    tail = rows[-window:] if rows else []
+    amts = [float(r.get("amount") or 0.0) for r in tail]
+    return sum(amts) / len(amts) if amts else 0.0
+
+
+def _daily_returns(rows: list[dict], window: int = DEDUP_CORR_WINDOW) -> list[float]:
+    """最近 N 根日收益率 (用于同指数判定)"""
+    tail = rows[-(window + 1):] if rows else []
+    closes = [float(r.get("close") or 0.0) for r in tail]
+    return [closes[i] / closes[i - 1] - 1
+            for i in range(1, len(closes)) if closes[i - 1] > 0]
+
+
+def _corr(a: list[float], b: list[float], min_n: int = 20) -> float:
+    """两组收益率的皮尔逊相关系数"""
+    n = min(len(a), len(b))
+    if n < min_n:
+        return 0.0
+    a, b = a[-n:], b[-n:]
+    ma, mb = sum(a) / n, sum(b) / n
+    num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    da = sum((x - ma) ** 2 for x in a) ** 0.5
+    db = sum((y - mb) ** 2 for y in b) ** 0.5
+    return num / (da * db) if da and db else 0.0
+
+
+def _dedup_hits(hits: list[dict], klines: dict[str, list[dict]],
+                basic_by_ts: dict[str, dict]) -> tuple[list[dict], list[dict]]:
+    """按跟踪指数去重 → (代表命中列表, 合并明细列表)
+
+    两级合并 (并查集):
+      ① **benchmark 归一化 key 相同** → 同指数, 直接合并
+      ② **60 日收益率相关性 ≥ 0.95** → 同一指数的不同写法 / 不同基金类型, 合并
+         (源数据的 benchmark 写法不统一: '中证酒指数' vs '中证白酒指数',
+          纯字符串匹配抓不到 —— 实测 160632 / 161725 / 512690 三只相关度
+          0.970~0.982, 是同一指数的三只基金)
+
+    代表选择规则 (同组内):
+      1. 最近 20 日日均成交额大者优先 (流动性最好, 最可投)
+      2. 成交额相同 → K 线根数多者优先 (历史长, 形态判定更稳)
+
+    Args:
+        hits:       原始命中 list[dict] (每项含 ts_code)
+        klines:     {ts_code: rows} (算流动性 / 相关性用)
+        basic_by_ts:{ts_code: basic row} (取 benchmark 用)
+
+    Returns:
+        (reps, groups)
+          reps   — 每组一个代表, 保留命中项原字段 + 补 group_size / group_key /
+                   group_peers / liquidity / corr_key
+          groups — 合并明细 [{key, index_name, members, hit_members, rep_code, rep_name}]
+    """
+    parent: dict[str, str] = {h["ts_code"]: h["ts_code"] for h in hits}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    # ① benchmark 归一化 key 相同 → 合并
+    by_key: dict[str, str] = {}
+    for h in hits:
+        key = _dedup_key(basic_by_ts.get(h["ts_code"], {}))
+        if key in by_key:
+            union(h["ts_code"], by_key[key])
+        else:
+            by_key[key] = h["ts_code"]
+
+    # ② 收益率相关性 ≥ 阈值 → 合并 (抓 benchmark 写法不一致的情况)
+    #    注意: 相关度**全对都算** (包括已被 ① 合并的), 否则汇总表里的
+    #    "合并依据" 对 benchmark 相同的组会显示 0.000, 看不出凭什么合并的
+    rets = {h["ts_code"]: _daily_returns(klines.get(h["ts_code"], [])) for h in hits}
+    pair_corr: dict[tuple[str, str], float] = {}
+    for a, b in itertools.combinations(hits, 2):
+        c = _corr(rets[a["ts_code"]], rets[b["ts_code"]])
+        pair_corr[(a["ts_code"], b["ts_code"])] = c
+        if find(a["ts_code"]) == find(b["ts_code"]):
+            continue
+        if c >= DEDUP_CORR_THRESHOLD:
+            union(a["ts_code"], b["ts_code"])
+
+    # 分组
+    groups: dict[str, list[dict]] = {}
+    for h in hits:
+        groups.setdefault(find(h["ts_code"]), []).append(h)
+
+    reps: list[dict] = []
+    details: list[dict] = []
+    for members in groups.values():
+        def _rank(h: dict) -> tuple:
+            liq = _liquidity(klines.get(h["ts_code"], []))
+            bars = len(klines.get(h["ts_code"], []))
+            return (liq, bars)
+
+        rep = max(members, key=_rank)
+        liq = _liquidity(klines.get(rep["ts_code"], []))
+        row = basic_by_ts.get(rep["ts_code"], {})
+        index_name = _index_display(row.get("benchmark"))
+        rep2 = dict(rep)
+        rep2["index_name"] = index_name
+        rep2["group_key"] = _norm_benchmark(row.get("benchmark")) or index_name
+        rep2["group_size"] = len(members)
+        rep2["group_peers"] = [m["code"] for m in members if m["code"] != rep["code"]]
+        rep2["liquidity"] = liq
+        reps.append(rep2)
+
+        details.append({
+            "key": index_name,
+            "index_name": index_name,
+            "members": len(members),
+            "hit_members": len(members),
+            "rep_code": rep["code"],
+            "rep_name": row.get("name", ""),
+            "peers": [f"{m['code']}" for m in members if m["code"] != rep["code"]],
+            # 合并依据 (可审计): 每个同伴跟代表的相关度
+            "peer_corr": {
+                m["code"]: pair_corr.get((rep["ts_code"], m["ts_code"]),
+                                         pair_corr.get((m["ts_code"], rep["ts_code"]), 0.0))
+                for m in members if m["code"] != rep["code"]
+            },
+        })
+
+    # 代表按转变日新→旧排 (跟股票版一致: 越近的转变越优先看)
+    reps.sort(key=lambda x: (x["trans_idx"], x["code"]))
+    details.sort(key=lambda x: x["rep_code"])
+    return reps, details
 
 
 # ============================================================
 # 核心判定 (跟股票版 _process_one 同源, 只换数据源)
 # ============================================================
 
-def _process_one(ts_code: str, df: pd.DataFrame) -> dict | None:
+def _process_one(ts_code: str, rows: list[dict]) -> dict | None:
     """单只 ETF 威科夫 A→M 判定 (V13 严判)
 
-    跟 wyckoff_a2m_scan._process_one 逻辑完全一致, 只是数据源换成 ETF parquet。
+    跟 wyckoff_a2m_scan._process_one 逻辑完全一致, 只是数据源换成 DataStore 的 ETF K 线。
     判定用同源 wyckoff_judge + 同源 build_kline_features → 结果跟 /t-analyze 一致。
 
     Returns: 命中时返回 dict, 否则 None
     """
-    if df is None or len(df) < MIN_KLINE:
+    if not rows or len(rows) < MIN_KLINE:
         return None
 
-    closes = df["close"].tolist()
-    highs = df["high"].tolist()
-    lows = df["low"].tolist()
-    vols = df["vol"].tolist()
-    opens = df["open"].tolist() if "open" in df.columns else closes
-    pct_chgs = df["pct_chg"].tolist() if "pct_chg" in df.columns else None
-    dates_ = df["trade_date"].astype(str).str.replace("-", "").str[:8].tolist()
+    closes = [float(r["close"]) for r in rows]
+    highs = [float(r["high"]) for r in rows]
+    lows = [float(r["low"]) for r in rows]
+    vols = [float(r.get("vol") or 0.0) for r in rows]
+    opens = [float(r["open"]) if r.get("open") is not None else c for r, c in zip(rows, closes)]
+    pct_chgs = [float(r.get("pct_chg") or 0.0) for r in rows]
+    dates_ = [str(r.get("trade_date") or "").replace("-", "")[:8] for r in rows]
     n = len(closes)
     window = min(250, n)
 
@@ -189,7 +384,7 @@ def _process_one(ts_code: str, df: pd.DataFrame) -> dict | None:
         closes_tail.append(closes[i])
         dates_tail.append(dates_[i])
 
-    # ── V13 严判 ──
+    # ── V13 严判 (跟股票版逐条对齐) ──
     # ③ 单日涨跌幅 > 20% 跳过 (ETF 涨跌停 10%, 主要防折算/拆分)
     last_chg = abs(closes_tail[-1] / closes_tail[-2] - 1) if len(closes_tail) >= 2 and closes_tail[-2] > 0 else 0
     if last_chg > MAX_DAILY_CHG:
@@ -232,64 +427,206 @@ def _process_one(ts_code: str, df: pd.DataFrame) -> dict | None:
 
 
 # ============================================================
-# 过滤 (ETF 版: 只按 fund_type)
-# ============================================================
-
-def _filter_by_fund_type(basic: pd.DataFrame, allow_types: set[str] | None) -> set[str]:
-    """按 fund_type 过滤 → 保留的 ts_code 集合
-
-    ETF 没有 PE/ROE/毛利率, 唯一有意义的过滤就是 fund_type。
-    """
-    if basic.empty:
-        return set()
-    if allow_types:
-        ok = basic[basic["fund_type"].isin(allow_types)]
-    else:
-        ok = basic[~basic["fund_type"].isin(EXCLUDE_FUND_TYPES)]
-    return set(ok["ts_code"].astype(str))
-
-
-# ============================================================
 # 输出
 # ============================================================
 
-def _write_md(hits: list[dict], basic: pd.DataFrame, total_scanned: int,
-              out_path: Path, types_desc: str) -> Path:
+def _write_md(reps: list[dict], details: list[dict], raw_hits: list[dict],
+              scanned: int, candidates: int, elapsed: float,
+              out_path: Path, types_desc: str, dedup_on: bool,
+              last_date: str) -> Path:
     """写扫描汇总 md"""
-    name_map = {}
-    bench_map = {}
-    if not basic.empty:
-        for r in basic.to_dict("records"):
-            name_map[str(r["ts_code"])] = r.get("name", "")
-            bench_map[str(r["ts_code"])] = r.get("benchmark", "")
-
     lines = [
         "# ETF 威科夫 A→M 转变扫描",
         "",
-        f"> 数据日期: {hits[0]['last_date'] if hits else '—'} | 命中: {len(hits)} 只 / {total_scanned} "
-        f"({len(hits) * 100 // max(total_scanned, 1)}%)",
-        f"> 过滤: fund_type ∈ {{{types_desc}}} | 排除: {', '.join(sorted(EXCLUDE_FUND_TYPES))}",
-        "> 判定: **V13 严判** — 当前 M + 最近 40 根 K 线 M 占比 < 10% (排除\"反复 M 假突破\")",
-        "> 数据源: data/history/etf/kline/*.parquet (同 /t-sync-data --etf) + 同源 wyckoff_judge",
+        f"> 数据日期: {last_date} | 命中: {len(reps)} 只 (去重后) / {scanned} 只可扫 "
+        f"({len(reps) * 100 / max(scanned, 1):.1f}%)",
+        f"> 原始命中 {len(raw_hits)} 只 → 去重后 {len(reps)} 只 "
+        f"(同一跟踪指数合并, 留流动性最好的代表)",
+        f"> 扫描耗时: {elapsed:.1f}s | 候选池: {candidates} 只 (fund_type 过滤后)",
+        "",
+        "## 本次生效条件",
+        "",
+        "| 项 | 值 |",
+        "|---|---|",
+        f"| 候选池 | fund_type ∈ {{{types_desc}}} |",
+        f"| 排除 fund_type | {', '.join(sorted(EXCLUDE_FUND_TYPES))} |",
+        f"| K 线门槛 | ≥ {MIN_KLINE} 根 (MA200 warmup + 40 根判定窗口) |",
+        f"| ① 当前 stage | Markup (必须) |",
+        f"| ② M 占比 | 最近 {N_TAIL} 根 < {M_RATIO_MAX:.0%} (排除\"反复 M 假突破\") |",
+        f"| ③ 单日涨跌 | > {MAX_DAILY_CHG:.0%} 跳过 (除权/复牌) |",
+        f"| 去重 | {'ON (按跟踪指数合并, 代表=流动性最好)' if dedup_on else 'OFF (原始命中全列)'} |",
+        f"| 去重规则 | 归一化 benchmark 相同 **或** {DEDUP_CORR_WINDOW} 日收益率相关性 ≥ {DEDUP_CORR_THRESHOLD:.2f} |",
+        "| 数据源 | DataStore.get_etf_basic / get_etf_klines (0 网络) |",
+        "| 判定 | **V13 严判** — 同源 wyckoff_judge |",
         "",
         "## 命中清单",
         "",
-        "| 代码 | 名称 | 类型 | 跟踪指数 | 转变日 | 转变价 | 当前价 | 涨幅% | M占比 | 阶段序列 |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| 代码 | 名称 | 类型 | 跟踪指数 | 同指数只数 | 转变日 | 转变价 | 当前价 | 涨幅% | M占比 | 20日均额(万) | 阶段序列 |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
-    for h in sorted(hits, key=lambda x: -x["m_ratio"]):
-        ts = h["ts_code"]
+    for h in reps:
         seq = "/".join(h["trans_stages"][-8:])
+        peers = ", ".join(h.get("group_peers", []))
+        idx_name = h.get("index_name", "—")
         lines.append(
-            f"| `{h['code']}` | {name_map.get(ts, ts)} | "
-            f"{basic.loc[basic['ts_code'] == ts, 'fund_type'].iloc[0] if not basic.empty and (basic['ts_code'] == ts).any() else '—'} | "
-            f"{bench_map.get(ts, '—')} | {h['trans_date']} | ¥{h['trans_close']:.3f} | "
+            f"| `{h['code']}` | {h.get('name', '')} | {h.get('fund_type', '—')} | "
+            f"{idx_name} | {h.get('group_size', 1)} | {h['trans_date']} | ¥{h['trans_close']:.3f} | "
             f"¥{h['last_close']:.3f} | {h['chg_since_trans']:+.1f}% | "
-            f"{h['m_ratio'] * 100:.0f}% | {seq} |"
+            f"{h['m_ratio'] * 100:.0f}% | {h.get('liquidity', 0) / 10:.0f} | {seq} |"
         )
+        if peers:
+            lines.append(f"| | ↳ 同指数其它代码 | | | | | | | | | | {peers} |")
+
+    if details and dedup_on:
+        lines += [
+            "",
+            "## 同指数合并明细",
+            "",
+            "> 同一跟踪指数的 ETF 走势几乎一致, 只保留流动性最好的代表, 其余列在下面备选。",
+            "> `相关度` = 60 日日收益率相关系数 (≥ 0.95 判定为同一指数)。",
+            "",
+            "| 跟踪指数 | 组内只数 | 命中只数 | 代表 | 代表名称 | 同组其它命中代码 | 相关度 |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for d in details:
+            if d["members"] <= 1:
+                continue
+            corr_s = ", ".join(f"{c}: {v:.3f}" for c, v in d.get("peer_corr", {}).items()) or "—"
+            lines.append(
+                f"| {d['index_name']} | {d['members']} | {d['hit_members']} | "
+                f"`{d['rep_code']}` | {d['rep_name']} | {', '.join(d['peers']) or '—'} | {corr_s} |"
+            )
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out_path
+
+
+# ============================================================
+# 详报生成 (跟 /t-wyckoff-a2m 一致: A 刷新 / B 补充 / C 留档)
+# ============================================================
+
+def _run_reports(reps: list[dict], raw_hit_codes: set[str], subdir: str,
+                 existing: dict, refresh: bool, keep_stale: bool,
+                 stale_only: bool, report_top: int, workers: int) -> None:
+    """逐只生成 7 section 详报 → docs/<subdir>/
+
+    Args:
+        reps:          去重后的代表命中 (要出详报的)
+        raw_hit_codes: 原始命中代码集合 (判断某只是否"本次命中")
+        subdir:        输出子目录名
+        existing:      scan_existing_reports() 结果 (已有详报)
+        refresh:       刷新模式 (不清空目录)
+        keep_stale:    留档票是否也刷新数据 (False=刷新 + 标 ⚠️, True=只标 ⚠️)
+        stale_only:    只跑留档票
+        report_top:    详报只跑前 N 只 (0=全部)
+        workers:       多进程 worker 数 (0=os.cpu_count())
+    """
+    tasks: list[tuple[str, str, str, str, str, str]] = []   # code, name, subdir, status, note, sector
+
+    if not stale_only:
+        targets = reps[:report_top] if report_top > 0 else reps
+        for r in targets:
+            try:
+                chg = (r["last_close"] / r["trans_close"] - 1) * 100
+            except Exception:
+                chg = 0.0
+            try:
+                sg = "/".join(s[0] for s in r["trans_stages"][-6:])
+            except Exception:
+                sg = ""
+            note = f" — 转变日 {r.get('trans_date', '?')}, 涨幅 {chg:+.1f}%, 阶段 {sg}"
+            sector = r.get("index_name") or None
+            tasks.append((r["code"], r.get("name", ""), subdir, "hit", note, sector))
+
+    # C 类: 曾命中 (目录里有) 但本次没命中
+    for code, meta in existing.items():
+        if code in raw_hit_codes:
+            continue
+        tasks.append((code, meta["name"], subdir, "stale", "", None))
+
+    n_hit = len([t for t in tasks if t[3] == "hit"])
+    n_stale = len([t for t in tasks if t[3] == "stale"])
+    print(f"\n=== 详报生成 (→ docs/{subdir}/) ===")
+    print(f"  A. 本次命中 (刷新+生成): {n_hit} 只")
+    print(f"  C. 历史留档 (本次未命中): {n_stale} 只"
+          + ("  [已跳过刷新, 只标注]" if keep_stale else "  [会刷新数据]"))
+    if not tasks:
+        print("  无任务可跑")
+        return
+
+    n_workers = workers if workers > 0 else (os.cpu_count() or 4)
+    n_workers = max(1, min(n_workers, len(tasks)))
+    rt0 = time.time()
+    ok_n = 0
+    stamped_hit = 0
+    stamped_stale = 0
+    if n_workers == 1:
+        print(f"  1 worker (单进程)", flush=True)
+        for idx, t in enumerate(tasks, 1):
+            code, name, sub, st, note, sector = t
+            print(f"\n[{idx}/{len(tasks)}] {code} {name} ...", flush=True)
+            code_r, ok, path_or_err, elapsed = report_worker((code, name, sub, sector))
+            if ok:
+                ok_n += 1
+                if st == "hit":
+                    stamped_hit += stamp_report_status(
+                        Path(path_or_err), "hit", note,
+                        marker=ETF_MARKER, subject=ETF_SUBJECT)
+                else:
+                    stamped_stale += stamp_report_status(
+                        Path(path_or_err), "stale",
+                        marker=ETF_MARKER, subject=ETF_SUBJECT, stale_note=ETF_STALE_NOTE)
+                print(f"  ✅ {code_r} → {path_or_err} ({elapsed:.2f}s)", flush=True)
+            else:
+                print(f"  ⚠️  {code_r} 失败: {path_or_err} ({elapsed:.2f}s)", flush=True)
+    else:
+        print(f"  {n_workers} workers (multiprocessing spawn)", flush=True)
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            for idx, result in enumerate(pool.imap_unordered(
+                    report_worker, [(t[0], t[1], t[2], t[5]) for t in tasks]), 1):
+                code, ok, path_or_err, elapsed = result
+                mark = "✅" if ok else "⚠️ "
+                sys.stdout.write(f"\r  [{idx}/{len(tasks)}] {mark} {code} ({elapsed:.2f}s)")
+                sys.stdout.flush()
+                if ok:
+                    ok_n += 1
+                    t = next((x for x in tasks if x[0] == code), None)
+                    if t:
+                        if t[3] == "hit":
+                            stamped_hit += stamp_report_status(
+                                Path(path_or_err), "hit", t[4],
+                                marker=ETF_MARKER, subject=ETF_SUBJECT)
+                        else:
+                            stamped_stale += stamp_report_status(
+                                Path(path_or_err), "stale",
+                                marker=ETF_MARKER, subject=ETF_SUBJECT, stale_note=ETF_STALE_NOTE)
+        print()
+
+    print(f"\n=== 详报完成 {ok_n}/{len(tasks)} ({ok_n / max(len(tasks), 1) * 100:.0f}%), "
+          f"{time.time() - rt0:.0f}s (workers={n_workers}) ===")
+    print(f"  状态标记: 命中 {stamped_hit} 份 / 留档 {stamped_stale} 份")
+
+
+def _stamp_merged_peers(reps: list[dict], existing: dict) -> int:
+    """把"同指数被合并"的其它代码的已有详报改标 merged
+
+    这些基金本身也命中 A→M, 但被去重合并到代表基金名下 ——
+    详报文件头要如实说明, 不能留着"命中"标记误导。
+    只改标记, 不重新生成 (数据一样)。
+    """
+    n = 0
+    for r in reps:
+        for peer_code in r.get("group_peers", []):
+            meta = existing.get(peer_code)
+            if not meta:
+                continue
+            note = f" — 已合并到代表基金 `{r['code']}` ({r.get('index_name', '')})"
+            if stamp_report_status(meta["path"], "merged", note,
+                                   marker=ETF_MARKER, subject=ETF_SUBJECT):
+                n += 1
+    return n
 
 
 # ============================================================
@@ -297,85 +634,128 @@ def _write_md(hits: list[dict], basic: pd.DataFrame, total_scanned: int,
 # ============================================================
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="ETF 威科夫 A→M 扫描")
+    ap = argparse.ArgumentParser(description="ETF 威科夫 A→M 扫描 (0 网络, 走 DataStore)")
     ap.add_argument("--types", type=str, default="",
                     help="只扫指定 fund_type (逗号分隔, 默认=除债券/货币/REITs/其他外全扫)")
     ap.add_argument("--codes", type=str, nargs="*", default=None,
                     help="指定 ETF 代码 (6位, 空格分隔)")
-    ap.add_argument("--whitelist-only", action="store_true",
-                    help="只扫 config/etf_whitelist.json 里的 ETF")
-    ap.add_argument("--no-md", action="store_true", help="不写 md")
-    ap.add_argument("--top", type=int, default=20,
-                    help="详报只跑前 N 只 (0=全部, 默认 20)")
-    ap.add_argument("--output-dir", type=str, default=str(DEFAULT_REPORT_DIR),
-                    help="详报输出目录")
+    ap.add_argument("--no-dedup", action="store_true",
+                    help="不按跟踪指数去重 (原始命中全列, 用于对比)")
+    ap.add_argument("--no-md", action="store_true", help="不写汇总 md")
+    ap.add_argument("--no-full-report", action="store_true", help="不跑详报 (只输出扫描汇总)")
+    ap.add_argument("--report-top", type=int, default=100,
+                    help="详报只跑前 N 只 (0=全部, 默认 100)")
+    ap.add_argument("--report-subdir", default=DEFAULT_REPORT_SUBDIR,
+                    help=f"详报输出子目录 (默认 {DEFAULT_REPORT_SUBDIR})")
+    ap.add_argument("--refresh", action="store_true", default=True,
+                    help="刷新模式 (默认): 不清空目录, A 刷新 / B 补充 / C 留档")
+    ap.add_argument("--keep-stale", action="store_true",
+                    help="留档票不刷新数据, 只在文件头标状态")
+    ap.add_argument("--stale-only", action="store_true",
+                    help="只刷新留档票, 不跑本次命中")
+    ap.add_argument("--workers", type=int, default=0,
+                    help="详报多进程 worker 数 (0=os.cpu_count())")
+    ap.add_argument("--output", type=str, default=str(DEFAULT_MD), help="汇总 md 输出路径")
     args = ap.parse_args()
 
     allow_types: set[str] | None = None
     if args.types:
         allow_types = {t.strip() for t in args.types.split(",") if t.strip()}
 
-    print("=== ETF 威科夫 A→M 扫描 (0 网络) ===")
+    print("=== ETF 威科夫 A→M 扫描 (0 网络, 走 DataStore) ===")
     print(f"  fund_type 过滤: {', '.join(sorted(allow_types)) if allow_types else '排除 ' + ', '.join(sorted(EXCLUDE_FUND_TYPES))}")
-    print(f"  判定: V13 严判 (当前 M + 40 根内 M 占比 < {M_RATIO_MAX:.0%})")
+    print(f"  判定: V13 严判 (当前 M + {N_TAIL} 根内 M 占比 < {M_RATIO_MAX:.0%})")
+    print(f"  去重: {'OFF' if args.no_dedup else 'ON (按跟踪指数合并, 代表=流动性最好)'}")
     print()
 
     t0 = time.time()
 
-    # 1. 基础信息 + fund_type 过滤
+    # 1. 基础信息 + fund_type 过滤 (DataStore)
     basic = _load_etf_basic()
-    allowed = _filter_by_fund_type(basic, allow_types)
-    if basic.empty:
-        print("❌ 读不到 etf_basic.parquet, 先跑 /t-sync-data --etf")
+    if not basic:
+        print("❌ DataStore 读不到 ETF 基础信息, 先跑 /t-sync-data --etf")
         return 1
-    print(f"  fund_type 过滤: {len(basic)} → {len(allowed)} 只")
+    basic_by_ts = {str(r["ts_code"]): r for r in basic}
+    candidate_ts = _filter_by_fund_type(basic, allow_types)
+    print(f"  1) fund_type 过滤: {len(basic)} → {len(candidate_ts)} 只")
 
-    # 2. 指定代码 / whitelist 收窄
-    target_codes: list[str] | None = None
+    # 2. 指定代码收窄
     if args.codes:
-        target_codes = [str(c) for c in args.codes]
-    elif args.whitelist_only:
-        wl = _load_whitelist_codes()
-        target_codes = [f"{c}.SH" for c in wl] + [f"{c}.SZ" for c in wl]
+        want = {str(c) for c in args.codes}
+        candidate_ts = [ts for ts in candidate_ts if ts.split(".")[0] in want]
+        print(f"     --codes 收窄: → {len(candidate_ts)} 只")
 
-    # 3. 1 次 SQL 拿 K 线
-    klines = _load_etf_klines(target_codes)
-    print(f"  1) 加载 K 线 (1 次 SQL): {len(klines)} 只 ({time.time() - t0:.1f}s)")
+    # 3. 批量读 K 线 (DataStore, 1 次 SQL)
+    codes6 = [ts.split(".")[0] for ts in candidate_ts]
+    klines = _load_etf_klines(codes6)
+    print(f"  2) 加载 K 线 (DataStore 批量): {len(klines)} 只 ({time.time() - t0:.1f}s)")
 
-    # 4. 逐只判定
+    # 4. 逐只判定 (V13 严判, 同源 wyckoff_judge)
     scanned = 0
     hits: list[dict] = []
     errs = 0
-    for ts_code, df in klines.items():
-        if ts_code not in allowed:
-            continue
-        if len(df) < MIN_KLINE:
+    for ts_code, rows in klines.items():
+        if len(rows) < MIN_KLINE:
             continue
         scanned += 1
         try:
-            r = _process_one(ts_code, df)
+            r = _process_one(ts_code, rows)
             if r:
+                row = basic_by_ts.get(ts_code, {})
+                r["name"] = row.get("name", "")
+                r["fund_type"] = row.get("fund_type", "")
+                r["index_name"] = _index_display(row.get("benchmark"))
                 hits.append(r)
         except Exception:
             errs += 1
-
     elapsed = time.time() - t0
-    print(f"  2) 扫描 {scanned} 只 ({errs} errors), 耗时 {elapsed:.1f}s")
-    print(f"  ✅ A→M 命中 {len(hits)} 只")
+    print(f"  3) 扫描 {scanned} 只 ({errs} errors), 耗时 {elapsed:.1f}s")
+    print(f"     原始命中 {len(hits)} 只")
 
-    if not hits:
+    # 5. 去重 (同跟踪指数合并)
+    if args.no_dedup:
+        reps, details = hits, []
+        for h in reps:
+            h.setdefault("group_size", 1)
+            h.setdefault("group_peers", [])
+            h["liquidity"] = _liquidity(klines.get(h["ts_code"], []))
+    else:
+        reps, details = _dedup_hits(hits, klines, basic_by_ts)
+    print(f"     去重后 {len(reps)} 只 (同一跟踪指数合并)")
+
+    if not reps:
         print("\n  (无命中)")
         return 0
 
-    for h in sorted(hits, key=lambda x: x["trans_date"], reverse=True):
-        print(f"     {h['ts_code']}  {h['trans_date']}  ¥{h['last_close']:.3f}  "
-              f"M占比{h['m_ratio'] * 100:.0f}%  {'/'.join(h['trans_stages'][-8:])}")
+    for h in sorted(reps, key=lambda x: x["trans_date"], reverse=True):
+        print(f"     {h['ts_code']}  {h.get('name', '')}  {h['trans_date']}  "
+              f"¥{h['last_close']:.3f}  M占比{h['m_ratio'] * 100:.0f}%  "
+              f"{'/'.join(h['trans_stages'][-8:])}")
 
-    # 5. 写汇总 md
+    # 6. 汇总 md
+    last_date = max((h["last_date"] for h in reps), default="—")
     if not args.no_md:
-        types_desc = ",".join(sorted(allow_types)) if allow_types else "全部(除排除项)"
-        out = _write_md(hits, basic, scanned, DEFAULT_MD, types_desc)
+        out = _write_md(reps, details, hits, scanned, len(candidate_ts), elapsed,
+                        Path(args.output),
+                        ",".join(sorted(allow_types)) if allow_types else "全部(除排除项)",
+                        not args.no_dedup, last_date)
         print(f"\n📄 汇总: {out}")
+
+    # 7. 逐只详报 (跟 /t-wyckoff-a2m 一致)
+    if args.no_full_report:
+        return 0
+
+    sub_dir = ROOT / "docs" / args.report_subdir
+    existing = scan_existing_reports(sub_dir)
+    raw_hit_codes = {h["code"] for h in hits}
+    _run_reports(reps, raw_hit_codes, args.report_subdir, existing,
+                 args.refresh, args.keep_stale, args.stale_only,
+                 args.report_top, args.workers)
+
+    # 同指数被合并的其它代码: 已有详报改标 merged (如实说明, 别留"命中"误导)
+    merged_n = _stamp_merged_peers(reps, existing)
+    if merged_n:
+        print(f"  状态标记: 同指数合并 {merged_n} 份 (改标 merged)")
 
     return 0
 

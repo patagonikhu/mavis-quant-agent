@@ -102,6 +102,8 @@ ZERO_NET_SKILLS = {
     "t-factor-5y": "0 网络, 走 DataStore",
     "t-finance-earnings-blowout": "0 网络, 走 DataStore",
     "t-wyckoff-a2m": "0 网络, 走 DataStore",
+    # 2026-11-05 加: ETF 版 A→M (数据走 DataStore.get_etf_basic / get_etf_klines)
+    "t-etf-wyckoff-a2m": "0 网络, 走 DataStore",
     # t-sync-data 是唯一允许网络的
     "t-sync-data": "允许网络 (Tushare/datacenter API)",
 }
@@ -644,6 +646,10 @@ def infer_skill(file_path: str) -> str:
         "backtest_magic": "t-backtest",
         "quality_growth_scan": "t-earnings-blowout",  # 老名字
         "batch_matrix": "t-analyze",
+        # 2026-11-05 加: A→M 两个扫描器 (之前漏了, 0 网络声明没被强制)
+        "wyckoff_a2m_scan": "t-wyckoff-a2m",
+        "etf_wyckoff_a2m_scan": "t-etf-wyckoff-a2m",
+        "a2m_report_common": "t-wyckoff-a2m",  # 公共模块 (股票+ETF 共用)
     }
     return skill_map.get(name, "")
 

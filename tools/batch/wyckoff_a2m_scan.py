@@ -418,6 +418,13 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# 2026-11-05: 状态标记 / 已有详报扫描 / 详报 worker 抽到公共模块 (ETF 版共用), 别在这里再复制一份
+from tools.batch.a2m_report_common import (  # noqa: E402
+    scan_existing_reports as _scan_existing_reports,
+    stamp_report_status as _stamp_report_status,
+    report_worker as _report_worker,
+)
+
 
 def _worker(code: str, df: pd.DataFrame, lookback: int) -> dict | None:
     """单只票检测当前威科夫 M 阶段 (df 来自 _load_all_klines 一次 SQL 预加载)"""
@@ -425,109 +432,6 @@ def _worker(code: str, df: pd.DataFrame, lookback: int) -> dict | None:
         return _process_one(code, df, lookback)
     except Exception as e:
         return {"code": code, "error": f"{type(e).__name__}: {e}"}
-
-
-# 2026-10-17 加: multiprocessing worker for /t-analyze 详报
-# 用 forkserver 启动 (mac 比 fork 稳), GIL 跨进程解锁 4-8x 加速
-def _scan_existing_reports(sub_dir: Path) -> dict:
-    """扫 docs/<subdir>/ 已有的详报 md, 返回 {code: {"path": Path, "name": str}}
-
-    文件名格式: analyze-{code6}-{中文名}.md
-    code 从文件名第 2 段切 (兼容名字里有 '-' 的情况, 如 '双星-新材')
-
-    2026-10-29 加: 支撑 --refresh 模式 (不清空, 刷新已有 + 补充新增)
-    """
-    out: dict = {}
-    if not sub_dir.exists():
-        return out
-    for p in sorted(sub_dir.glob("analyze-*.md")):
-        stem = p.stem                     # analyze-001219-青岛食品
-        parts = stem.split("-", 2)        # ['analyze', '001219', '青岛食品']
-        if len(parts) < 3:
-            continue
-        code = parts[1]
-        if not (len(code) == 6 and code.isdigit()):
-            continue
-        out[code] = {"path": p, "name": parts[2]}
-    return out
-
-
-def _stamp_report_status(md_path: Path, status: str, hit_note: str = "") -> bool:
-    """在详报文件头插入本次 A→M 扫描状态标记 (2026-10-29 加)
-
-    status: 'hit' (本次命中) / 'stale' (曾命中, 本次未命中)
-    返回是否成功写入
-
-    做法: 在标题行 (第一行 '# ...') 后面插入一段引用块, 幂等 ——
-    已有标记时先删掉旧的再插新的, 避免重复跑越积越多
-    """
-    if not md_path or not Path(md_path).exists():
-        return False
-    p = Path(md_path)
-    try:
-        lines = p.read_text(encoding="utf-8").split("\n")
-    except Exception:
-        return False
-
-    # 1. 删掉旧的标记块 (幂等)
-    cleaned = []
-    skip_block = False
-    for ln in lines:
-        if ln.strip().startswith("<!-- A2M_STATUS"):
-            skip_block = True
-            continue
-        if skip_block:
-            if ln.strip() == "<!-- /A2M_STATUS -->":
-                skip_block = False
-            continue
-        cleaned.append(ln)
-
-    # 2. 插新的
-    if status == "hit":
-        block = [
-            "<!-- A2M_STATUS hit -->",
-            f"> 🟢 **本票为本次 A→M 扫描命中**{hit_note}",
-            "<!-- /A2M_STATUS -->",
-        ]
-    else:
-        block = [
-            "<!-- A2M_STATUS stale -->",
-            "> ⚠️ **本票本次 A→M 扫描未命中** (曾命中过, 现留档) — "
-            "可能已被 PE/质量/杠杆过滤, 或威科夫阶段已离开 Markup。数据已刷新到最新交易日。",
-            "<!-- /A2M_STATUS -->",
-        ]
-
-    # 3. 插到标题行之后 (第一行是 '# ...')
-    insert_at = 1 if cleaned and cleaned[0].startswith("#") else 0
-    out = cleaned[:insert_at] + [""] + block + cleaned[insert_at:]
-    try:
-        p.write_text("\n".join(out), encoding="utf-8")
-        return True
-    except Exception:
-        return False
-
-
-def _report_worker(task: tuple[str, str, str]) -> tuple[str, bool, str, float]:
-    """单只详报 worker (跑在子进程)
-
-    Args:
-        task: (code, name, output_subdir) 三元组
-
-    Returns:
-        (code, ok, md_path_or_err, elapsed)
-    """
-    code, name, output_subdir = task
-    import time
-    t0 = time.time()
-    try:
-        from tools.batch.t_analyze_one import process_one as t_analyze_process_one
-        r = t_analyze_process_one(code, name, output_subdir=output_subdir)
-        elapsed = time.time() - t0
-        ok = bool(r.get("ok"))
-        path_or_err = r.get("md_path") if ok else r.get("err", "unknown")
-        return (code, ok, path_or_err, elapsed)
-    except Exception as e:
-        return (code, False, f"{type(e).__name__}: {e}", time.time() - t0)
 
 
 def load_codes_all_market() -> list[str]:

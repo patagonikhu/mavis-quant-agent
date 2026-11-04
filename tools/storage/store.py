@@ -28,6 +28,7 @@ CLI:
 from __future__ import annotations
 import argparse
 import json
+import re
 import sys
 import time
 import threading
@@ -1418,20 +1419,87 @@ class DataStore:
         Args:
             code: '515790' 或 '515790.SH' → 返回单只 dict (无则 {})
                   '' → 返回全量 list[dict]
+
+        2026-11-05 改: 单只查询下沉到 SQL (原来先全量读 2252 行再 pandas 过滤,
+        0.33s/次 → 0.01s/次)。批量场景 (get_ctx 兜底) 反复调用, 这个开销不可接受。
         """
         path = ETF_HISTORY_DIR / "etf_basic.parquet"
         if not path.exists():
             return {} if code else []
         try:
+            if code:
+                ts_code = code if "." in code else _to_etf_ts_code(code)
+                df = _conn().execute(
+                    f"SELECT * FROM read_parquet('{path}') WHERE ts_code = '{ts_code}' LIMIT 1"
+                ).df()
+                if df.empty:
+                    return {}
+                return df.iloc[0].to_dict()
             df = _conn().execute(f"SELECT * FROM read_parquet('{path}')").df()
         except Exception as e:
             print(f"  ⚠️ get_etf_basic 失败: {e}", file=sys.stderr)
             return {} if code else []
-        if not code:
-            return df.to_dict("records")
-        ts_code = code if "." in code else _to_etf_ts_code(code)
-        rows = df[df["ts_code"] == ts_code].to_dict("records")
-        return rows[0] if rows else {}
+        return df.to_dict("records")
+
+    @classmethod
+    def get_etf_klines(cls, codes: list[str], limit: int = 0) -> dict[str, list[dict]]:
+        """批量读多只 ETF 日K (1 次 SQL), 返回 {ts_code: [row, ...]}
+
+        比逐只 get_etf_kline 快 ~30x (实测 1992 只:
+          - 逐只 1992 × 0.016s ≈ 32s
+          - 批量 1 次 SQL ≈ 1.1s)
+
+        Args:
+            codes: 6 位代码列表 ('515790' / '515790.SH' 都行)
+            limit: 每只取最近 N 根, 0 = 全量
+        Returns:
+            {ts_code: [row, ...]}, 升序 (trade_date 早→晚); 没有数据的 code 不出现。
+            row 字段跟 get_etf_kline 一致 (ts_code/trade_date/open/high/low/close/pre_close/vol/amount/pct_chg)。
+        """
+        if not codes:
+            return {}
+        ts_codes = sorted({c if "." in c else _to_etf_ts_code(c) for c in codes})
+        files = sorted(ETF_KLINE_DIR.glob("*.parquet"))
+        if not files:
+            return {}
+        in_clause = ",".join(f"'{c}'" for c in ts_codes)
+        glob_pat = "', '".join(str(f) for f in files)
+        try:
+            sql = f"""
+                WITH ranked AS (
+                    SELECT ts_code, trade_date, pre_close, open, high, low, close,
+                           change, pct_chg, vol, amount,
+                           ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+                    FROM read_parquet(['{glob_pat}'])
+                    WHERE ts_code IN ({in_clause})
+                )
+                SELECT ts_code, trade_date, pre_close, open, high, low, close,
+                       change, pct_chg, vol, amount
+                FROM ranked
+                WHERE rn <= {limit if limit > 0 else 100000000}
+                ORDER BY ts_code, trade_date
+            """
+            df = _conn().execute(sql).df()
+        except Exception as e:
+            print(f"  ⚠️ get_etf_klines 失败: {e}", file=sys.stderr)
+            return {}
+        if df.empty:
+            return {}
+        out: dict[str, list[dict]] = {}
+        for ts_code, sub in df.groupby("ts_code"):
+            rows = sub.to_dict("records")
+            for r in rows:
+                pc = r.get("pre_close")
+                if pc is None or (isinstance(pc, float) and pc != pc):
+                    r["pre_close"] = r.get("close") or 0
+                amt = r.get("amount")
+                if amt is None or (isinstance(amt, float) and amt != amt):
+                    r["amount"] = 0.0
+                pct = r.get("pct_chg")
+                if pct is None or (isinstance(pct, float) and pct != pct):
+                    r["pct_chg"] = 0.0
+            out[str(ts_code)] = rows
+        return out
 
     @classmethod
     def get_daily_basic(cls, code: str) -> dict:
@@ -1481,12 +1549,26 @@ class DataStore:
         #   daily_basic 只提供 PE/市值/换手率等 K线没有的估值字段。
         current_price = close or (db.get("close") or 0.0)
 
+        # 2026-11-05 加: ETF 兜底 (name / industry)
+        #   背景: ETF 不在 stock_basic 里 → sb 恒为 {} → ETF 详报标题是空的
+        #   ("# 512800 — | 2026-11-04"), 板块也是 "—"。
+        #   ETF 没有"行业"概念, 但有**跟踪指数** —— 拿它当"板块"显示最贴切
+        #   (e.g. "沪深300指数")。
+        name = _INDEX_NAMES.get(code) or sb.get("name", "")
+        industry = sb.get("industry", "")
+        if not name:
+            eb = cls.get_etf_basic(code)
+            if eb:
+                name = str(eb.get("name") or "")
+                bench = re.sub(r"×\s*100\s*%", "", str(eb.get("benchmark") or ""))
+                industry = bench.replace("收益率", "").strip()
+
         return RawContext(
             kline=kline, weekly=weekly,
             current_price=current_price,
             market_cap_yi=total_mv_yi,
-            industry=sb.get("industry", ""),
-            code=code, name=_INDEX_NAMES.get(code) or sb.get("name", ""),
+            industry=industry,
+            code=code, name=name,
         )
 
     @classmethod

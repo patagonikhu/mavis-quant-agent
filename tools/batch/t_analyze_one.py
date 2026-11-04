@@ -49,7 +49,8 @@ def load_watchlist_map() -> dict[str, dict]:
         return {}
 
 
-def process_one(code: str, name: str | None = None, output_subdir: str | None = None) -> dict:
+def process_one(code: str, name: str | None = None, output_subdir: str | None = None,
+                sector: str | None = None) -> dict:
     """单只分析 + 渲染. 复用 t_analyze_all.py 同款逻辑.
 
     Args:
@@ -58,6 +59,9 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         output_subdir: 强制指定输出子目录 (如 'wyckoff-a2m'),
             跳过 watchlist list_type 分流, 直接 docs/{output_subdir}/analyze-{code}-{name}.md
             默认 None = 按 watchlist list_type 分流 (持仓/自选/blowout)
+        sector: 板块名 (可选)。2026-11-05 加: 原本 render_report 的 sector 恒为 "—"
+            (没人传)。ETF 用"跟踪指数"当板块最有信息量, 所以这里开一个可选口;
+            默认 None = 保持原样 "—", 对存量股票报告零影响。
 
     Returns: {ok, md_path, elapsed, lines, current_price, list_type, signals}
     """
@@ -96,7 +100,7 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         data.factor_history_rows = compute_factor_history(
             ctx, step=1, lookback=120, history=history
         )
-        md = render_report(data)
+        md = render_report(data, sector=sector if sector else "—")
 
         # 文件名: code 用 6 位 (去掉 .SZ/.SH 后缀), name 中文
         code6 = code.split(".")[0] if "." in code else code
