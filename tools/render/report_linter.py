@@ -210,13 +210,27 @@ def lint_report(md_path: str) -> dict[str, Any]:
     placeholder_exempt = {
         "未完成": ("金叉未完成",),
     }
+    # 2026-11-05 修: 数据完整性表的「详情」行会**合法**出现 "未计算"
+    #   背景: 完整性表的词表就是 "OK (N 条)" / "未计算" / "ROC=x% EY=y%" 这类状态词
+    #   (render_data.completeness_report 里 `if not status_obj: ("❓", "未计算")` 是设计好的),
+    #   这张表本来就要如实报"哪个维度算不出来" —— 不是残留占位符。
+    #   实测误报: 指数/ETF 没财报 → Magic 维度 "未计算" → 每跑一次扫描刷 1 条假 warning
+    #   (portfolio 3 份指数 + ETF 全部 10 份, 共 13 份报告受影响)。
+    #   行头 "| 详情 |" 全仓库只有完整性表在用 (已 grep 确认), 精确豁免, 不影响正文检测。
+    _DETAIL_ROW_RE = re.compile(r"^\|\s*详情\s*\|")
+
+    def _is_placeholder_hit(line: str, pattern: str) -> bool:
+        """这一行算不算"残留占位符" (排除合法业务术语 + 完整性表详情行)"""
+        if pattern not in line:
+            return False
+        if any(e in line for e in placeholder_exempt.get(pattern, ())):
+            return False
+        if _DETAIL_ROW_RE.match(line.strip()):
+            return False
+        return True
+
     for pattern, desc in placeholder_patterns:
-        # 排除合法的"未触发"等业务术语
-        exempt = placeholder_exempt.get(pattern, ())
-        matches = [
-            line for line in content.split("\n")
-            if pattern in line and not any(e in line for e in exempt)
-        ]
+        matches = [ln for ln in content.split("\n") if _is_placeholder_hit(ln, pattern)]
         if matches:
             for line in matches[:3]:  # 只报前 3 个
                 warnings.append(f"⚠️ 占位符 [{desc}]: {line.strip()[:80]}")
@@ -401,7 +415,10 @@ def lint_report(md_path: str) -> dict[str, Any]:
         "completeness_pct": completeness,
         "key_data_found": key_data,
         "warnings": warnings,
-        "placeholder_count": sum(1 for p, _ in placeholder_patterns if p in content),
+        "placeholder_count": sum(
+            1 for p, _ in placeholder_patterns
+            if any(_is_placeholder_hit(ln, p) for ln in content.split("\n"))
+        ),
         "seg_idx_found": has_seg_idx if "## 📐 多周期走势数据" in content else None,
     }
 

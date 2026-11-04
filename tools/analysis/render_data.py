@@ -92,6 +92,39 @@ class MaRow:
 
 
 # ============================================================
+# Magic 未算出时的原因文案 (2026-11-05)
+# ============================================================
+
+# skip_reason 取值来自 tools/factors/valuation/factor_lib.py 的质量闸门
+_MAGIC_SKIP_TEXT = {
+    "revenue_profit_collapse": "营收+净利双暴跌, 跳过",
+    "non_operating_loss": "营业外巨亏, 跳过",
+    "no_data": "该季无财报数据",
+}
+
+
+def _magic_skip_text(val: dict) -> str:
+    """Magic (ROC/EY) 算不出来时, 给用户一句人话
+
+    背景: 报告里原来渲染成 "ROC/EY=20260930" —— 把 period_label (日期) 当成原因,
+    用户完全看不懂。现在改成说清真正的闸门原因。
+    """
+    reason = val.get("skip_reason")
+    industry = val.get("industry") or ""
+    period = val.get("period_label") or ""
+    if reason == "industry_excluded":
+        return f"行业 {industry} 已排除"
+    if reason in _MAGIC_SKIP_TEXT:
+        return _MAGIC_SKIP_TEXT[reason]
+    if reason:
+        # 未知 reason (含 capital_too_small (12.3亿 < 5亿) 这种带参数的)
+        return f"未计算 ({reason})"
+    if period and period != "no_data":
+        return f"最新季 {period} 未计算"
+    return "数据缺"
+
+
+# ============================================================
 # 主模型
 # ============================================================
 
@@ -445,15 +478,17 @@ class RenderData:
         if "roc" in _val or "ey" in _val:
             roc_v, ey_v = _val.get("roc"), _val.get("ey")
             if roc_v is not None or ey_v is not None:
-                report["Magic"] = ("✅", f"ROC={roc_v}% EY={ey_v}%")
+                # 2026-11-05 修: 一边 None 一边有值时, 别渲染成 "ROC=None% EY=76.2%"
+                #   (roc 走质量闸门被跳过时 ey 仍可能有值, 旧写法直接把 None 插值进 f-string)
+                _roc_s = f"{roc_v}%" if roc_v is not None else "—"
+                _ey_s = f"{ey_v}%" if ey_v is not None else "—"
+                report["Magic"] = ("✅", f"ROC={_roc_s} EY={_ey_s}")
             else:
-                # 字段在但 None: 区分 industry_excluded / no_data
-                reason = _val.get("skip_reason") or _val.get("period_label") or "数据缺"
-                industry = _val.get("industry") or ""
-                if reason == "industry_excluded":
-                    report["Magic"] = ("❌", f"行业 {industry} 已排除")
-                else:
-                    report["Magic"] = ("❌", f"ROC/EY={reason}")
+                # 字段在但 None: 说清**为什么**没算出来 (2026-11-05 修)
+                #   旧写法: reason = skip_reason or period_label or "数据缺"
+                #   → skip_reason 没透传时退化成 period_label, 渲染成
+                #     "ROC/EY=20260930" (把日期当原因, 用户看不懂为什么没算)。
+                report["Magic"] = ("❌", _magic_skip_text(_val))
         else:
             report["Magic"] = ("❓", "未计算")
         # 2026-11-02 修: 删重复的 report["5类信号"] 赋值

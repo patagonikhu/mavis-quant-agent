@@ -10,7 +10,8 @@
 - **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic}/`
 - **同步**: `tools/storage/sync.py` (7 flag: kline/stk-factor/stock-basic/financials/cache/meta/all-data, 默认 --auto)
 - **分析引擎**: `tools/analysis/analysis_engine.py` 4 个 strategy 类 (chan/wyckoff/technical/finance)
-- **活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-backtest, t-finance-earnings-blowout, t-concept-macd, t-guardrail, t-etf-wyckoff-a2m}/` (2026-11-02 删 t-near-low / t-finance-roc-ey; 2026-11-04 删 t-rsi6-tech)
+- **活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-backtest, t-factor-5y, t-finance-earnings-blowout, t-wyckoff-a2m, t-etf-wyckoff-a2m, t-guardrail}/` (2026-11-02 删 t-near-low / t-finance-roc-ey; 2026-11-04 删 t-rsi6-tech; 2026-11-05 更正: t-concept-macd 从未存在, 实际是 t-factor-5y / t-wyckoff-a2m)
+- **项目教训**: [`handbook/project-lessons.md`](project-lessons.md) = 索引页 → 5 个主题分册在 `handbook/lessons/` (一句话摘要在 `lessons/README.md`)
 - **批量分析**: `tools/batch/t_analyze_all.py` (4 worker 并发)
 - **单只分析**: `tools/batch/t_analyze_one.py --code <code>` (新加, 829 行详报)
 

@@ -133,7 +133,7 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 | 文件 | 内容 |
 |---|---|
 | `handbook/AGENT_MEMORY.md` | 极简 cheat sheet: 入口路径 / 纪律 / 周期口径真源 / 威科夫强度记法 |
-| `handbook/project-lessons.md` | **43 条项目专属教训存档** (5 大主题: 威科夫判定 / 数据同步 / 财务估值 / A→M 扫描 / 渲染 linter) |
+| `handbook/project-lessons.md` | **项目专属教训索引页** (47 条 → 5 个主题分册, `handbook/lessons/`; 一句话摘要在 `lessons/README.md`) |
 | `handbook/analysis-framework.md` | 决策框架 (PE + ROC/EY 双轴, §2.5 PEG 已删) |
 | `handbook/finance-glossary.md` | 财务术语表 |
 | `handbook/naming-convention.md` | 命名硬规则 (7 条 + 5 项 grep 验证) |

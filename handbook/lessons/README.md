@@ -1,0 +1,100 @@
+# 项目专属教训 — 索引
+
+> 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
+> 共 **49 条**教训 (拆 47 + 本轮新增 2)。
+> **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
+> 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
+
+## 主题分册
+
+| 分册 | 主题 | 条数 |
+|---|---|---|
+| [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 18 |
+| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 8 |
+| [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 5 |
+| [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 11 |
+| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 7 |
+
+## 威科夫 / Markup / fallback 判定体系
+
+→ 详细: [`01-wyckoff.md`](01-wyckoff.md)
+
+| # | 条目 | 一句话摘要 |
+|---|---|---|
+| 1 | WyckoffTradingAgent 参考实现的 MA 判定 | 参考实现里**没有** MA50≥MA200×0.95 这种容差; MA 判定是独立一层 (L2.5 趋势判定), 只在主路径漏斗后跑 |
+| 2 | 威科夫 Markup 判定对齐 WTA + fallback2 加严 | 生产 Markup 判定 = WTA L2.5 趋势判定 + fallback 加严, 已对齐 (0a16616), 别再自行推导 |
+| 3 | MA 容差口径统一到 helpers._ma50_reached_ma200 | MA50/MA200 容差只认 `helpers._ma50_reached_ma200` 一个函数, 到处自己算必然漂 |
+| 4 | MA50/MA200 容差调参: 命中数对容差**非单调** | 命中数对容差**非单调**, 调参必须实测扫描取值, 不能靠直觉 (最终 0.90, aebcb00) |
+| 5 | fallback2 加严方向搞反: 兜底路径不该带主路径级门槛 | 兜底路径不该带主路径级门槛 —— 又漏又慢, 方向反了 (c5cf58a) |
+| 6 | fallback1/fallback2 的真实出处 | 出处从 `.git/filter-repo` 挖出来的, 别猜也别凭印象 |
+| 7 | fallback2 语义之争实测: 对 A→M 命中集零影响 | 两种语义对 A→M 命中集**零影响**, 不用在这上面耗时间 (a743e1c) |
+| 8 | fallback2 的 Accumulation 分支是死代码 | 已删; 留着只会让人以为它在起作用 |
+| 9 | fallback1 的完整来源与条件演变 | 已考古定案, 改动前先读这条 |
+| 10 | Markup 判定准确度实测 | 443 只生产池实测 (0 回测), 结论以此为准 |
+| 11 | Markup 主路径只占 0.93% — 93% 的 Markup 判定靠 fallback 兜 | 93% 的 Markup 判定靠 fallback 兜 —— 优化主路径收益有限, 别在这上面使劲 |
+| 12 | fallback1 的 trend_30 门槛: 实测数据 + 已定案为 -5 | 门槛已定案为 -5 (d56c772), 别再改 |
+| 13 | ⚠️ 定案: fallback1/fallback2 实际命中 — AST 插桩 | 用 AST 插桩实测 fallback 命中, **取代下面被否掉的说法** (以本条为准) |
+| 14 | MA200 基准三分裂定案 | MA200 基准有 3 种口径, 已定案 (e6cbdbe), 别混用 |
+| 15 | 规则下沉: markup_entry_conditions() 是 4 条判据唯一事实源 | `markup_entry_conditions()` 是 4 条判据**唯一事实源**, 改判据只改这一处 |
+| 16 | 周期口径真源: 威科夫日线/周线 | 威科夫日线/周线的真实周期口径有固定真源, 别自己重算 (2026-11-05 修 BUG 固化) |
+| 17 | ⚠️ 陷阱: WyckoffStrategy.analyze() 是死代码, 口径跟生产不同 | 它的口径跟生产不同 —— **别用**, 生产走 AnalysisEngine |
+| 18 | 持仓威科夫事件是否"存在"先 grep 后回答 | 先 grep 再回答, 别凭印象说"有/没有" |
+
+## 数据同步 / tushare / parquet 落盘
+
+→ 详细: [`02-data-sync.md`](02-data-sync.md)
+
+| # | 条目 | 一句话摘要 |
+|---|---|---|
+| 1 | tushare 限频实测: 账号 ≥200/分, doc_id=328 的 "30/分" 对本账号不成立 | 本账号限频 ≥200/分, doc_id=328 写的 "30/分" 对本账号不成立 |
+| 2 | tushare 返空的第三种原因: 交易日盘前 | 交易日盘前返空 —— 返空不一定是限频, 先看是不是盘前 |
+| 3 | stk_factor_pro 比日线更晚: 盘后 1.5 小时仍返空 | 盘后 1.5 小时仍返空, 别急着判失败 |
+| 4 | stk_factor resume 按 trade_date 记进度 → 深市代码永久缺失 | 按 trade_date 记进度会让深市代码**永久缺失** (已修 51e48d5 + b6ade5b) |
+| 5 | stk_factor / fflow 写盘覆盖丢数据 bug | 写盘必须**合并**不能覆盖, 否则把没拉到的票数据抹掉 |
+| 6 | financials 季报拉不到数据的 3 个叠加 bug | 3 个 bug 叠加导致季报拉不到, 已修 (2026-11-02) |
+| 7 | EPS parquet 并发写损坏 bug | 并发写 parquet 会写坏 —— 串行写 + 原子替换 |
+| 8 | 季度切换的字典硬编码陷阱 | 季度文件名**别硬编码**, 动态取最近 N 个 (季度切换会静默失效) |
+
+## 财务 / 估值口径
+
+→ 详细: [`03-finance.md`](03-finance.md)
+
+| # | 条目 | 一句话摘要 |
+|---|---|---|
+| 1 | FinanceStrategy.quarterly 是降序, [0] 才是最新季 | `quarterly` 是降序, **[0] 才是最新季** (不是 [-1]) |
+| 2 | 批量导出财务数据必须用生产链路 + 逐行 diff 校验 | 走 AnalysisEngine + 逐行 diff 校验, 别自己重算 ROC/EY/PE |
+| 3 | 静态PE 年化 bug: q_str[5:10] 永远取不到 "06-30" | end_date 是 YYYYMMDD, `q_str[5:10]` **永远取不到 "06-30"** → PE 系统性虚高一倍 |
+| 4 | OBV / fflow / PEG / DCF 四个维度已彻底删除 | 已彻底删除禁止复活; 估值只看 PE(静态) + ROC/EY/毛利率/杠杆 |
+| 5 | stock_basic 股本兜底读已废弃的 daily_basic → 详报股本恒 0.00亿股 | 兜底不能读已废弃的 daily_basic, 否则详报股本恒 0.00 亿股 (已修 32d7d2b) |
+
+## A→M 扫描 / watchlist
+
+→ 详细: [`04-a2m-scan.md`](04-a2m-scan.md)
+
+| # | 条目 | 一句话摘要 |
+|---|---|---|
+| 1 | /t-wyckoff-a2m: compute_factor_history 只算威科夫, 不算其他因子 | 它只算威科夫, 别指望它给别的因子 |
+| 2 | /t-wyckoff-a2m: 不要自己写估值/PE/财务过滤策略 | 复合过滤复用现有 `/t-*` skill, 别在扫描器里新加子模块 (用户纠错) |
+| 3 | /t-wyckoff-a2m: 1 次 SQL 全市场 K 线 + 1 次 sub_events 全段扫 + 缓存 | 性能基线: 1 次 SQL + 全段扫 + 缓存 → 全市场 ~30s |
+| 4 | /t-wyckoff-a2m: 走 WyckoffStageFactor.compute() 直调会数据漂移, 必须用 AnalysisEngine | 必须用 AnalysisEngine, 直调 compute() 会数据漂移 |
+| 5 | /t-wyckoff-a2m v8: scan_sub_events 全段扫是物理下界瓶颈 | 再优化也快不过它, 优化前先看这条 |
+| 6 | /t-wyckoff-a2m 过滤链收紧 | ST/PE/质量/杠杆各档阈值 + 实测命中数 (调参时对着看) |
+| 7 | 详报里"当前买卖点"只能从 buy_sell_points 取, 因子历史表的买卖点列是"当天新出现" | 因子历史表的买卖点列是"当天新出现", 不是"当前持有" |
+| 8 | A→M 判定必须用生产函数跑, 不能信历史 md 里的 A2M_STATUS 标记 | 不能信历史 md 里的 A2M_STATUS 标记 —— 那是上次扫描时打的 |
+| 9 | ETF A→M: 去重必须用收益率相关性, 纯 benchmark 字符串匹配会漏 | 元数据 (benchmark/名称) 不可信 —— 用**价格序列相关性**判同指数, 阈值要有实测断层依据 |
+| 10 | ETF 详报: report 的 sector 参数要显式传 | `render_report` 的 sector 默认恒 "—", ETF 要显式传跟踪指数 |
+| 11 | watchlist note 决策铁律 | 持仓/加仓/清仓结论的写法铁律, 见对应章节 |
+
+## 报告渲染 / linter / 文档一致性
+
+→ 详细: [`05-render-lint.md`](05-render-lint.md)
+
+| # | 条目 | 一句话摘要 |
+|---|---|---|
+| 1 | markdown table header / sep 写死脱节 bug | 表格列数变了要**同步改表头 + 分隔行 + 行拼接**三处 |
+| 2 | linter warning 输出被截断 | 不要截断前 5 条 —— 真正的列数错位常在第 6+ 条 |
+| 3 | SKILL.md 描述 vs 代码实现的兑现铁律 | SKILL.md 写的每个 flag/口径都必须在代码里兑现, 否则文档漂移 |
+| 4 | EPS 机构一致预期整档删除 | 同名不同物 —— **预测值** (datacenter E0~E3) vs **已审计真实 EPS** (fina_indicator), 别删错 |
+| 5 | RSI 双超卖扫描整族下线 | 判定口径必须 == 展示口径, 否则表里显示的值会跟结论反向 |
+| 6 | 完整性表的「详情」行是设计词表, 别当残留占位符扫 | linter 占位符检测是纯子串匹配, 合法业务文案会误命中 —— 要加豁免 |
+| 7 | skip_reason 没透传 → 报告把日期当成了"没算出来的原因" | 上游有原因字段却没传下来, 下游就拿 `or period_label` 兜底 → 显示成 `ROC/EY=20260930` |

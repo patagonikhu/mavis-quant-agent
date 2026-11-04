@@ -55,6 +55,12 @@ def _section_quarterly_table(data: RenderData) -> str:
     返回 markdown 字符串 (header + note + 表格 + 行业)
     """
     _val = data.valuation_data or {}
+    # 2026-11-05 修: skip_reason 现在会真的透传进来 (之前 analysis_engine 没传,
+    #   这个分支从没被走到过)。拆成两个门控:
+    #   has_val   — 有估值数据 → 显示跟踪期 + 行业 (这两项即使 Magic 被跳过也有意义)
+    #   has_magic — Magic 真的算出来了 (没过质量闸门) → 才显示"判定"说明
+    #   之前一个 has_magic 把两件事一起卡, Magic 被跳过时连行业和期号都没了。
+    has_val = bool(_val)
     has_magic = bool(_val and not _val.get("skip_reason"))
 
     if not data.quarterly_finance:
@@ -63,7 +69,7 @@ def _section_quarterly_table(data: RenderData) -> str:
     # period_label 复用 _section_finance_quarterly 逻辑
     period_label = "—"
     industry = "—"
-    if has_magic:
+    if has_val:
         period_label = _val.get("period_label") or "—"
         industry = _val.get("industry") or "—"
         if period_label in ("—", "no_data", None, "") and data.quarterly_finance:
@@ -80,7 +86,7 @@ def _section_quarterly_table(data: RenderData) -> str:
              "EBIT (亿)", "ROC 资本回报率", "EY 收益率", "总市值 (亿)", "净负债 (亿)", "EV (亿)", "投入资本 (亿)",
              "PE"]
     sep1 = ["---"] * 15
-    rows = [f"### 最近 4 季财务 + Magic 公式 ({period_label if has_magic else 'TTM'})", "",
+    rows = [f"### 最近 4 季财务 + Magic 公式 ({period_label if has_val else 'TTM'})", "",
             "**4 季财务 + Magic 估值 (营收/净利 yoy=单季同比; 营收/净利 (亿)=YTD 累计; Magic=TTM 单期; PE=季末市值/YTD净利年化 (Q1×4 / Q2×2 / Q3×4/3 / Q4×1)):**", "",
             "| " + " | ".join(cols1) + " |",
             "| " + " | ".join(sep1) + " |"]
@@ -112,8 +118,9 @@ def _section_quarterly_table(data: RenderData) -> str:
             f"| {pe_s} |"
         )
 
-    if has_magic:
+    if has_val:
         rows.extend(["", f"**行业:** {industry}"])
+    if has_magic:
         rows.append(
             "\n**判定:** ROC 越高 = 资本效率越好, EY 越高 = EV 回报越好, "
             "联合排名 (Greenblatt 原版)"

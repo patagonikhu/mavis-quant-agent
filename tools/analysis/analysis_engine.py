@@ -887,6 +887,12 @@ class FinanceStrategy:
             "netdebt_yi":latest_magic.get("netdebt_yi"),
             "market_cap_yi": ctx.market_cap_yi,
             "period_label":     latest_magic.get("period_label", "no_data"),
+            # 2026-11-05 加: 把 Magic 没算出来的**原因**透传出去
+            #   之前 valuation_data 里没有 skip_reason → 报告层只能拿 period_label 兜底,
+            #   渲染成 "ROC/EY=20260930" (把日期当原因, 用户根本看不懂)。
+            #   实际原因在 compute_magic_one_day 里就有 (revenue_profit_collapse /
+            #   non_operating_loss / industry_excluded / no_data / capital_too_small)。
+            "skip_reason":      latest_magic.get("skip_reason"),
             "seasonal_warning": latest_magic.get("seasonal_warning", False),
         }
 
