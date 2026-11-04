@@ -109,3 +109,23 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 | `/t-guardrail [--check X]` | 静态守门员 (network/factor/eps-scope/parquet/safe-fs) |
 
 已删: `/t-watchlist` `/t-monitor` `/t-sector` `/t-etf` `/t-chain` `/t-checklist` `/t-bottleneck` `/t-trigger` `/t-rotation` `/t-ranking` `/t-near-low` `/t-roc-ey` (2026-11-02)。
+
+---
+
+## 📚 项目知识库 (`handbook/`, git 内, 0 注入成本)
+
+> 这些是**本项目专属**的踩坑存档 —— 威科夫 fallback 调参、tushare 限频、A→M 扫描口径、
+> PE 年化 bug、报告渲染 linter 铁律等。**提到具体话题先 grep 这里**, 别凭记忆。
+> 2026-11-04 从 agent memory 迁入 (原 76.9KB 每次会话强制注入 → 现按需读取)。
+
+| 文件 | 内容 |
+|---|---|
+| `handbook/AGENT_MEMORY.md` | 极简 cheat sheet: 入口路径 / 纪律 / 周期口径真源 / 威科夫强度记法 |
+| `handbook/project-lessons.md` | **43 条项目专属教训存档** (5 大主题: 威科夫判定 / 数据同步 / 财务估值 / A→M 扫描 / 渲染 linter) |
+| `handbook/analysis-framework.md` | 决策框架 (PE + ROC/EY 双轴, §2.5 PEG 已删) |
+| `handbook/finance-glossary.md` | 财务术语表 |
+| `handbook/naming-convention.md` | 命名硬规则 (7 条 + 5 项 grep 验证) |
+| `handbook/backtest-roc-ey-formula.md` | ROC/EY 回测公式 |
+
+**铁律:** 往 agent memory 写东西前先问「换个项目还成立吗」—— 不成立就写进本目录。
+项目专属知识进 agent memory 会撑爆注入预算, 让所有任务变慢。
