@@ -59,7 +59,8 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         name: 股票名称 (可选)
         output_subdir: 强制指定输出子目录 (如 'wyckoff-a2m'),
             跳过 watchlist list_type 分流, 直接 docs/{output_subdir}/analyze-{code}-{name}.md
-            默认 None = 按 watchlist list_type 分流 (持仓/自选/blowout)
+            默认 None = 按 watchlist list_type 分流 (持仓→portfolio / 自选→watchlist /
+            blowout→**不落 md**, 只 stdout; 2026-11-06 改)
         sector: 板块名 (可选)。2026-11-05 加: 原本 render_report 的 sector 恒为 "—"
             (没人传)。ETF 用"跟踪指数"当板块最有信息量, 所以这里开一个可选口;
             默认 None = 保持原样 "—", 对存量股票报告零影响。
@@ -76,10 +77,12 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         subdir, list_type_label = output_subdir, output_subdir
     else:
         # 2026-09-18 加: 3 路分流 — 持仓/自选/blowout
+        # 2026-11-06 改: blowout 段**不落 md** —— 它是"业绩暴增候选池",
+        #   用来筛的, 不是持仓/自选; 报告看 stdout / 汇总表就够, 别把目录撑成 157 份
         if list_type == "持仓":
             subdir, list_type_label = "portfolio", "持仓"
         elif list_type == "blowout":
-            subdir, list_type_label = "blowout", "blowout"
+            subdir, list_type_label = None, "blowout"
         else:
             subdir, list_type_label = "watchlist", "自选"
 
@@ -120,23 +123,25 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
                 pass
             if not name_for_file or name_for_file == "未知":
                 name_for_file = code6
-        out = Path(f"docs/{subdir}/analyze-{code6}-{name_for_file}.md")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(md, encoding="utf-8")
+        out = None
+        if subdir:
+            out = Path(f"docs/{subdir}/analyze-{code6}-{name_for_file}.md")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(md, encoding="utf-8")
 
-        # 自动 lint (2026-09-15 加: 防止 column mismatch 漏检)
-        try:
-            from tools.render.report_linter import lint_report
-            lint_result = lint_report(str(out))
-            if lint_result.get("warnings"):
-                # 2026-10-14 改: 不再截 [:5], 表格列数不匹配的 warning 经常在第 6+ 条
-                # (前几条都是 placeholder), 截断会让人看不到真正的列数错位 bug
-                warnings = lint_result["warnings"]
-                print(f"  ⚠️  Lint 报警 ({len(warnings)} 条):")
-                for warn in warnings:
-                    print(f"    {warn}")
-        except Exception as e:
-            print(f"  ⚠️  Lint 失败: {e}")
+            # 自动 lint (2026-09-15 加: 防止 column mismatch 漏检)
+            try:
+                from tools.render.report_linter import lint_report
+                lint_result = lint_report(str(out))
+                if lint_result.get("warnings"):
+                    # 2026-10-14 改: 不再截 [:5], 表格列数不匹配的 warning 经常在第 6+ 条
+                    # (前几条都是 placeholder), 截断会让人看不到真正的列数错位 bug
+                    warnings = lint_result["warnings"]
+                    print(f"  ⚠️  Lint 报警 ({len(warnings)} 条):")
+                    for warn in warnings:
+                        print(f"    {warn}")
+            except Exception as e:
+                print(f"  ⚠️  Lint 失败: {e}")
 
         # 今日信号 (stdout 输出)
         rows = data.factor_history_rows
@@ -199,7 +204,10 @@ def main() -> int:
             print(f"❌ {result['err']}")
             return 1
 
-        print(f"✅ REPORT: {result['md_path']}")
+        if result.get("md_path"):
+            print(f"✅ REPORT: {result['md_path']}")
+        else:
+            print(f"✅ REPORT: (不落盘 — {result['name']} 是 blowout 候选池)")
         print(f"   {result['name']}  ¥{result['current_price']:.2f}  "
               f"[{result['list_type']}]  {result['lines']} lines  {result['elapsed']:.1f}s")
         if result["signals"]:
@@ -262,7 +270,7 @@ def _process_one_mp(task: tuple[str, str | None, str | None]) -> tuple[str, bool
         r = process_one(code, name, output_subdir=output_subdir)
         elapsed = time.time() - t0
         ok = bool(r.get("ok"))
-        path_or_err = r.get("md_path") if ok else r.get("err", "unknown")
+        path_or_err = (r.get("md_path") or "(blowout 候选池, 不落盘)") if ok else r.get("err", "unknown")
         return (code, ok, path_or_err, elapsed, r.get("list_type", "?"))
     except Exception as e:
         return (code, False, f"{type(e).__name__}: {e}", time.time() - t0, "?")

@@ -55,6 +55,8 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_all --include-blowout
 
 - `docs/portfolio/analyze-{code}-{name}.md` (持仓票) / `docs/watchlist/...` (自选)
 - `docs/signal-watchlist.md` (批量模式汇总)
+- **blowout 段不落 md** (2026-11-06): `list_type=blowout` 是"业绩暴增候选池", 用来筛的 ——
+  筛完看汇总表 / stdout 就够, 不给 157 只各存一份详报 (`docs/blowout/` 已废弃并清空)
 
 ### 汇总里的信号类型 (2026-11-03)
 

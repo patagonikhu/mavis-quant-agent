@@ -157,7 +157,8 @@ bash tools/with_venv.sh python -m tools.storage.sync --stock-basic
 
 **验证:** 重建后补 5571/5577 只 (缺的 6 只 = 新股)。
 活跃目录 (portfolio 24 / watchlist 28 / wyckoff-a2m 24) 全部刷新, 0.00 归零。
-`docs/runA` / `docs/runB` / `docs/blowout` 是 10-30 的一次性归档, 没有任何脚本会再写, 保留原样。
+`docs/runA` / `docs/runB` 是 10-30 的一次性归档, 没有任何脚本会再写, 保留原样。
+`docs/blowout` 2026-11-06 起也不再生成 (blowout 段只进汇总表, 不落 md), 目录已清空。
 
 **apply when:** 任何"详报里某个字段恒为 0 / 恒为空"的排查。
 先查对应 parquet 的 **schema 列名**, 再查渲染器读的是不是同一个 key。

@@ -9,6 +9,10 @@ t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-wa
 2026-09-23 改造: 加 --exclude-blowout (默认 True, 默认跳过 watchlist.json 里 list_type=blowout 的票)
   - 默认只跑 持仓 + 自选 (快, 详报)
   - 加 --include-blowout 才全跑 (blowout 段可单独 deep-dive)
+
+2026-11-06 改造: blowout 段**不生成 md** (候选池, 用来筛的)
+  - --include-blowout 跑出来的 blowout 票只进 signal-watchlist.md 汇总表, 不落 docs/blowout/
+  - docs/blowout/ 里的历史产物由孤儿清理逻辑整个清掉
 """
 import json, sys, datetime, time, os
 import argparse
@@ -53,7 +57,9 @@ output_path = Path('docs/signal-watchlist.md')
 # === 2026-09-15 加: 清理 watchlist 之外的孤儿 md (残留旧详报, 让用户以为"没刷新") ===
 # 2026-11-02 修 (两个真 bug):
 #   ① 旧代码 stocks 已排除 blowout, 但清理循环却遍历 docs/blowout/ → 默认跑就把 blowout 全删了
-#      修: 按子目录分别构造期望文件名 (blowout 子目录用全 watchlist)
+#      修: 按子目录分别构造期望文件名
+#   ③ 2026-11-06: blowout 段改成**不生成 md** (候选池), 于是 docs/blowout/ 里的全是历史产物
+#      → _expected_by_sub['blowout'] 恒为空, 清理循环会把它整个清空 (符合预期)
 #   ② 旧代码文件名用 watchlist 原始 name, 但 t_analyze_one 写入时会用 stock_basic 回退名
 #      (name 为空/未知时) → 自己刚生成的报告下一轮就被当孤儿删掉
 #      修: 用跟 t_analyze_one 一样的 name_for_file 解析
@@ -84,7 +90,10 @@ _all_wl = DataStore.load_watchlist()['stocks']
 _expected_by_sub = {'portfolio': set(), 'watchlist': set(), 'blowout': set()}
 for _s in _all_wl:
     _lt = _s.get('list_type', '自选')
-    _sub = 'portfolio' if _lt == '持仓' else ('blowout' if _lt == 'blowout' else 'watchlist')
+    # 2026-11-06 改: blowout 段不再生成 md → docs/blowout/ 里全是历史产物, 全清
+    if _lt == 'blowout':
+        continue
+    _sub = 'portfolio' if _lt == '持仓' else 'watchlist'
     _expected_by_sub[_sub].add(_name_for_file(_s))
 
 for sub in ('portfolio', 'watchlist', 'blowout'):
@@ -114,12 +123,13 @@ def process_one(s):
     code = s['code']
     name = s['name']
     # 2026-09-18 加: 3 路分流 — 持仓→portfolio, 自选→watchlist, blowout→blowout
+    # 2026-11-06 改: blowout 段**不落 md** (候选池, 用来筛的) —— 只进汇总表
     lt = s.get('list_type', '自选')
     if lt == '持仓':
         subdir = 'portfolio'
         list_type_label = '持仓'
     elif lt == 'blowout':
-        subdir = 'blowout'
+        subdir = None
         list_type_label = 'blowout'
     else:
         subdir = 'watchlist'
@@ -148,9 +158,11 @@ def process_one(s):
             ctx, step=1, lookback=factor_history_lookback(code), history=history
         )
         md = render_report(data)
-        md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
-        md_path.parent.mkdir(parents=True, exist_ok=True)
-        md_path.write_text(md, encoding='utf-8')
+        md_path = None
+        if subdir:
+            md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(md, encoding='utf-8')
 
         # signal table
         rows = data.factor_history_rows
@@ -197,14 +209,16 @@ with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         status, code, payload = fut.result()
         if status == 'ok':
             results.append(payload)
-            print(f'  [{i}/{len(stocks)}] ✅ {code} -> {payload["md_path"].name} ({payload["elapsed"]:.1f}s, {payload["len"]:,}chars)', flush=True)
+            _md_name = payload["md_path"].name if payload.get("md_path") else "(blowout 候选池, 不落盘)"
+            print(f'  [{i}/{len(stocks)}] ✅ {code} -> {_md_name} ({payload["elapsed"]:.1f}s, {payload["len"]:,}chars)', flush=True)
         else:
             errs.append((code, payload))
             print(f'  [{i}/{len(stocks)}] ❌ {code}: {payload}', flush=True)
 
 # 汇总 signal-watchlist.md
 for r in results:
-    md_written += 1
+    if r.get('md_path'):
+        md_written += 1
     for direction, code, name, detail in r['signals']:
         if direction == 'buy':
             buy_rows.append((code, name, detail))

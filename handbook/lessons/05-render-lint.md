@@ -221,3 +221,24 @@ Type: rule
 不能用"bsp_daily 非空的行数" —— 那是"活跃买卖点"每天在, 会数出 200+ 这种假数字。
 
 **apply when:** 任何候选池 > 20 的批量脚本。默认落汇总表, 逐只 md 留给"点名"场景。
+
+### 候选池段 (list_type=blowout) 不落 md, 只进汇总表 (2026-11-06)
+Type: rule
+> **摘要:** blowout 是"业绩暴增候选池", 用来筛的 —— 筛完看汇总表就行, 别给 157 只各存一份详报
+
+**事故实录 (2026-11-06):** 我跑了 `t_analyze_all --include-blowout` → 157 份 blowout 详报
+(9.1MB) 落进 `docs/blowout/`。用户当场纠正: **"list_type=blowout 不生成 md 的呀"**。
+
+**为什么 blowout 段不该落 md:**
+- blowout 段 = 业绩暴增候选池, 是**筛选用**的输入, 不是持仓/自选那种"长期跟踪的票"
+- 筛选结论要的是**对比** (谁值得买), 对比看 `signal-watchlist.md` 汇总表就够
+- 157 份 × 58KB 详报, 没人会一只只翻, 但目录里就是 157 个"看起来很重要"的噪声文件
+
+**落地 (t_analyze_one + t_analyze_all 两个入口):**
+- `list_type == 'blowout'` → `subdir = None` → **不写文件**, 报告走 stdout / 汇总表
+- `t_analyze_all` 的孤儿清理: `_expected_by_sub['blowout']` 恒为空 → `docs/blowout/` 全清
+- `_verify_weekly_period.LINT_SUBS` 去掉 blowout (目录已废弃)
+- 显式 `--output-subdir` (如 wyckoff-a2m) 仍然落 md —— 那是用户显式要求的目录
+
+**apply when:** 任何 watchlist 分段。**先问这段是"要长期跟踪的"还是"一次性筛的"** ——
+后者只进汇总表, 不占目录。

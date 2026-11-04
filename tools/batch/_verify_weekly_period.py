@@ -52,7 +52,8 @@ STRENGTH_KEY = {
     "none": "",     # '?' 阶段不显示强度 → 不比对
 }
 
-LINT_SUBS = ["watchlist", "portfolio", "runA", "runB", "blowout", "wyckoff-a2m"]
+# 2026-11-06: blowout 段不再生成 md, 目录已废弃 → 不再扫
+LINT_SUBS = ["watchlist", "portfolio", "runA", "runB", "wyckoff-a2m"]
 
 
 def split_sections(md: str) -> dict:
