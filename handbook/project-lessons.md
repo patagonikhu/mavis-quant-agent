@@ -4,14 +4,14 @@
 > 只在本仓库有效, 迁移出 agent memory 层是为了不再每次会话强制注入 (76.9KB → 见 MEMORY.md)。
 >
 > **2026-11-05 重构:** 原单文件 1300+ 行 / 47 条教训, 拆成 **5 个主题分册**
-> (本轮又新增 2 条, 现共 **49 条**),
+> (本轮又新增 3 条, 现共 **50 条**),
 > 内容**一字未改** (已逐行 diff 验证 0 差异), 只加了「一句话摘要」+ 索引页。
 
 ## 怎么用
 
 **grep 查, 不用通读。** 提到具体话题时:
 
-1. 先开 [`handbook/lessons/README.md`](lessons/README.md) —— 索引页, 49 条一句话摘要, 一屏扫完
+1. 先开 [`handbook/lessons/README.md`](lessons/README.md) —— 索引页, 50 条一句话摘要, 一屏扫完
 2. 找到相关条目 → 进对应主题分册看细节 (带完整背景 / 实测数据 / commit 号)
 3. 每个分册内也可以直接 grep 关键词
 
@@ -23,7 +23,7 @@
 | [`lessons/02-data-sync.md`](lessons/02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 8 | 限频实测 / 写盘覆盖丢数据 / 季度切换陷阱 |
 | [`lessons/03-finance.md`](lessons/03-finance.md) | 财务 / 估值口径 | 5 | 降序陷阱 / PE 年化 bug / 已删维度清单 |
 | [`lessons/04-a2m-scan.md`](lessons/04-a2m-scan.md) | A→M 扫描 / watchlist | 11 | 性能基线 / 过滤链 / ETF 去重 / 买卖点口径 |
-| [`lessons/05-render-lint.md`](lessons/05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 7 | 表格列数 / linter 截断 / SKILL 兑现铁律 / 占位符豁免 / skip_reason 透传 |
+| [`lessons/05-render-lint.md`](lessons/05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 8 | 表格列数 / linter 截断 / SKILL 兑现铁律 / 占位符豁免 / skip_reason 透传 / 因子历史行数 |
 
 **索引页** (47 条一句话摘要): [`handbook/lessons/README.md`](lessons/README.md)
 

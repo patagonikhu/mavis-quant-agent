@@ -14,6 +14,39 @@ from __future__ import annotations
 from typing import Callable
 
 
+# ============================================================
+# 因子历史走势表的回看交易日数 (2026-11-05)
+# ============================================================
+
+# 股票: 120 个交易日 (≈6 个月), 沿用至今
+# ETF:  200 个交易日 —— 指数走势比个股慢, 120 根看不出一个完整波段;
+#       且 ETF 普遍上市较晚 (不少只有 300~500 根), 多给 80 根才够看阶段切换。
+FACTOR_HISTORY_LOOKBACK = 120
+FACTOR_HISTORY_LOOKBACK_ETF = 200
+
+
+def factor_history_lookback(code: str) -> int:
+    """按标的类型给「因子历史走势」表的回看交易日数
+
+    判定用 etf_basic 表 (**权威**: 代码在表里就是 ETF), 不用前缀猜 ——
+    前缀规则 (5/15/16/18) 在 store 里已有, 但那是"K线从 ETF 目录兜底"的判据,
+    与"这只票是不是 ETF"不完全等价。
+
+    Args:
+        code: 6 位代码 ('515790' / '515790.SH' 都行)
+
+    Returns:
+        ETF → 200, 股票 → 120
+    """
+    try:
+        from tools.storage.store import DataStore
+        if DataStore.get_etf_basic(code):
+            return FACTOR_HISTORY_LOOKBACK_ETF
+    except Exception:
+        pass
+    return FACTOR_HISTORY_LOOKBACK
+
+
 def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
                            strategies=None, history=None) -> list[dict]:
     """把 AnalysisResult 列表转成 flat dict 列表 (拼装, 不调 analyze_history)

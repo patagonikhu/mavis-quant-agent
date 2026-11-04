@@ -545,12 +545,29 @@ def _run_reports(reps: list[dict], raw_hit_codes: set[str], subdir: str,
             continue
         tasks.append((code, meta["name"], subdir, "stale", "", None))
 
+    # D 类: 同指数被合并的其它代码 —— **只对目录里已有的**做刷新
+    #   为什么刷新而不只改标记: 代表基金用 200 个交易日 (ETF), peer 文件若是旧的
+    #   120 行版本, 同一文件夹两套行数会让人以为数据有问题。
+    #   目录里没有的不新建 —— 保持"只出代表"的去重语义 (新跑一次目录里就 8 份)。
+    merged_tasks: list[tuple[str, str, str, str, str, str]] = []
+    for r in reps:
+        for peer_code in r.get("group_peers", []):
+            meta = existing.get(peer_code)
+            if not meta:
+                continue
+            note = f" — 已合并到代表基金 `{r['code']}` ({r.get('index_name', '')})"
+            merged_tasks.append((peer_code, meta["name"], subdir, "merged", note,
+                                 r.get("index_name") or None))
+    tasks.extend(merged_tasks)
+
     n_hit = len([t for t in tasks if t[3] == "hit"])
     n_stale = len([t for t in tasks if t[3] == "stale"])
+    n_merged = len([t for t in tasks if t[3] == "merged"])
     print(f"\n=== 详报生成 (→ docs/{subdir}/) ===")
     print(f"  A. 本次命中 (刷新+生成): {n_hit} 只")
     print(f"  C. 历史留档 (本次未命中): {n_stale} 只"
           + ("  [已跳过刷新, 只标注]" if keep_stale else "  [会刷新数据]"))
+    print(f"  D. 同指数被合并 (刷新已有): {n_merged} 只  [目录里没有的不新建]")
     if not tasks:
         print("  无任务可跑")
         return
@@ -561,6 +578,7 @@ def _run_reports(reps: list[dict], raw_hit_codes: set[str], subdir: str,
     ok_n = 0
     stamped_hit = 0
     stamped_stale = 0
+    stamped_merged = 0
     if n_workers == 1:
         print(f"  1 worker (单进程)", flush=True)
         for idx, t in enumerate(tasks, 1):
@@ -572,6 +590,10 @@ def _run_reports(reps: list[dict], raw_hit_codes: set[str], subdir: str,
                 if st == "hit":
                     stamped_hit += stamp_report_status(
                         Path(path_or_err), "hit", note,
+                        marker=ETF_MARKER, subject=ETF_SUBJECT)
+                elif st == "merged":
+                    stamped_merged += stamp_report_status(
+                        Path(path_or_err), "merged", note,
                         marker=ETF_MARKER, subject=ETF_SUBJECT)
                 else:
                     stamped_stale += stamp_report_status(
@@ -598,6 +620,10 @@ def _run_reports(reps: list[dict], raw_hit_codes: set[str], subdir: str,
                             stamped_hit += stamp_report_status(
                                 Path(path_or_err), "hit", t[4],
                                 marker=ETF_MARKER, subject=ETF_SUBJECT)
+                        elif t[3] == "merged":
+                            stamped_merged += stamp_report_status(
+                                Path(path_or_err), "merged", t[4],
+                                marker=ETF_MARKER, subject=ETF_SUBJECT)
                         else:
                             stamped_stale += stamp_report_status(
                                 Path(path_or_err), "stale",
@@ -606,27 +632,7 @@ def _run_reports(reps: list[dict], raw_hit_codes: set[str], subdir: str,
 
     print(f"\n=== 详报完成 {ok_n}/{len(tasks)} ({ok_n / max(len(tasks), 1) * 100:.0f}%), "
           f"{time.time() - rt0:.0f}s (workers={n_workers}) ===")
-    print(f"  状态标记: 命中 {stamped_hit} 份 / 留档 {stamped_stale} 份")
-
-
-def _stamp_merged_peers(reps: list[dict], existing: dict) -> int:
-    """把"同指数被合并"的其它代码的已有详报改标 merged
-
-    这些基金本身也命中 A→M, 但被去重合并到代表基金名下 ——
-    详报文件头要如实说明, 不能留着"命中"标记误导。
-    只改标记, 不重新生成 (数据一样)。
-    """
-    n = 0
-    for r in reps:
-        for peer_code in r.get("group_peers", []):
-            meta = existing.get(peer_code)
-            if not meta:
-                continue
-            note = f" — 已合并到代表基金 `{r['code']}` ({r.get('index_name', '')})"
-            if stamp_report_status(meta["path"], "merged", note,
-                                   marker=ETF_MARKER, subject=ETF_SUBJECT):
-                n += 1
-    return n
+    print(f"  状态标记: 命中 {stamped_hit} 份 / 同指数合并 {stamped_merged} 份 / 留档 {stamped_stale} 份")
 
 
 # ============================================================
@@ -748,14 +754,10 @@ def main() -> int:
     sub_dir = ROOT / "docs" / args.report_subdir
     existing = scan_existing_reports(sub_dir)
     raw_hit_codes = {h["code"] for h in hits}
+    # D 类 (同指数被合并的已有详报) 也在 _run_reports 里跑 (刷新 + 改标 merged)
     _run_reports(reps, raw_hit_codes, args.report_subdir, existing,
                  args.refresh, args.keep_stale, args.stale_only,
                  args.report_top, args.workers)
-
-    # 同指数被合并的其它代码: 已有详报改标 merged (如实说明, 别留"命中"误导)
-    merged_n = _stamp_merged_peers(reps, existing)
-    if merged_n:
-        print(f"  状态标记: 同指数合并 {merged_n} 份 (改标 merged)")
 
     return 0
 

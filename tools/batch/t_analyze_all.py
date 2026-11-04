@@ -17,7 +17,13 @@ sys.path.insert(0, '.')
 
 from tools.storage.store import DataStore
 from tools.analysis.analysis_engine import AnalysisEngine
-from tools.analysis.analysis_result_signals import compute_factor_history, diff_rows, extract_signals, format_signals_for_render
+from tools.analysis.analysis_result_signals import (
+    compute_factor_history,
+    diff_rows,
+    extract_signals,
+    factor_history_lookback,
+    format_signals_for_render,
+)
 from tools.analysis.render_data import RenderData
 from tools.render.report_renderer import render_report
 
@@ -126,14 +132,21 @@ def process_one(s):
             return ('err', code, '无K线, 请先跑 /t-sync')
 
         all_dates = [k['trade_date'].replace('-', '')[:8] for k in ctx.kline]
-        dates = all_dates[-120:]
+        # 2026-11-05: dates 必须**覆盖**因子历史表的回看天数, 否则 compute_factor_history
+        #   会因 history 里缺该日期而整行丢弃 (result is None → continue)。
+        #   ETF 回看 200 天 → dates 至少 200; 股票维持 120 (不变)。
+        _factor_lookback = factor_history_lookback(code)
+        dates = all_dates[-max(_factor_lookback, 120):]
         history = AnalysisEngine().analyze_history(ctx, dates)
         if len(history) < 2:
             return ('err', code, f'history 不足 ({len(history)} 根)')
 
         result = history[dates[-1]]
         data = RenderData.from_result(ctx, result)
-        data.factor_history_rows = compute_factor_history(ctx, step=1, lookback=120, history=history)
+        # 2026-11-05: lookback 按标的类型取 (ETF 200 / 股票 120)
+        data.factor_history_rows = compute_factor_history(
+            ctx, step=1, lookback=factor_history_lookback(code), history=history
+        )
         md = render_report(data)
         md_path = Path('docs') / subdir / f'analyze-{code}-{name}.md'
         md_path.parent.mkdir(parents=True, exist_ok=True)

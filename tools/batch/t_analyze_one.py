@@ -35,6 +35,7 @@ from tools.analysis.analysis_result_signals import (
     compute_factor_history,
     diff_rows,
     extract_signals,
+    factor_history_lookback,
     format_signals_for_render,
 )
 from tools.analysis.render_data import RenderData
@@ -97,8 +98,10 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         result = history[dates[-1]]
         data = RenderData.from_result(ctx, result)
         # 关键: 调 compute_factor_history (跟 t_analyze_all.py 一致, 不空置)
+        # 2026-11-05: lookback 按标的类型取 (ETF 200 / 股票 120) —— 真源在
+        #              analysis_result_signals.factor_history_lookback()
         data.factor_history_rows = compute_factor_history(
-            ctx, step=1, lookback=120, history=history
+            ctx, step=1, lookback=factor_history_lookback(code), history=history
         )
         md = render_report(data, sector=sector if sector else "—")
 

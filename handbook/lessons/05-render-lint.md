@@ -171,3 +171,25 @@ Type: bug
 
 **apply when:** 报告里任何"字段在但值是 None"的情况 —— 先查**上游有没有把原因字段传下来**。
 `or period_label` 这种"拿别的字段兜底"的写法, 会把"原因"变成噪声。
+
+### 因子历史表改行数: dates 必须覆盖 lookback, 否则整行被静默丢弃 (2026-11-05)
+Type: rule
+
+**症状:** 因子历史走势表要 200 行 (ETF), 改完 `compute_factor_history(lookback=200)` 后**表里还是 120 行**,
+不报错、不告警。
+
+**根因:** `compute_factor_history` 的行来自 `history[date]`; 那个日期不在 `history` 里 → `result is None`
+→ **`continue` 整行跳过** (不报错!)。而 `history` 是 `analyze_history(ctx, dates)` 算的,
+`dates` 传 120 天 → 就没有第 121~200 天的行。
+
+**修法:** `dates` 必须 ⊇ 回看天数。批量入口原本写死 `all_dates[-120:]`, 改成
+`all_dates[-max(factor_history_lookback(code), 120):]` (ETF 200 / 股票 120 不变)。
+
+**验证:** 同一只 ETF 走两个批量入口 (`t_analyze_one` dates=480 / `t_analyze_all` dates=200)
+→ 报告 **0 行差异** (两个入口必须一致, CLAUDE.md 硬规则)。
+
+**⚠️ 顺带发现:** `report_renderer._section_factor_history(data, lookback=120)` 的 `lookback` 参数
+**根本没被用到** (rows 全从 `data.factor_history_rows` 来) —— 是死参数, 别照着它去改行数。
+
+**apply when:** 任何"表格行数由 lookback 控制"的地方 —— 先确认**数据源覆盖范围 ≥ 展示范围**,
+否则多出来的部分会被静默吞掉, 看起来像是"参数没生效"。

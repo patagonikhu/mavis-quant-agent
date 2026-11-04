@@ -1,7 +1,7 @@
 # 项目专属教训 — 索引
 
 > 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
-> 共 **49 条**教训 (拆 47 + 本轮新增 2)。
+> 共 **50 条**教训 (拆 47 + 本轮新增 3)。
 > **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
 
@@ -13,7 +13,7 @@
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 8 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 5 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 11 |
-| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 7 |
+| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 8 |
 
 ## 威科夫 / Markup / fallback 判定体系
 
@@ -98,3 +98,4 @@
 | 5 | RSI 双超卖扫描整族下线 | 判定口径必须 == 展示口径, 否则表里显示的值会跟结论反向 |
 | 6 | 完整性表的「详情」行是设计词表, 别当残留占位符扫 | linter 占位符检测是纯子串匹配, 合法业务文案会误命中 —— 要加豁免 |
 | 7 | skip_reason 没透传 → 报告把日期当成了"没算出来的原因" | 上游有原因字段却没传下来, 下游就拿 `or period_label` 兜底 → 显示成 `ROC/EY=20260930` |
+| 8 | 因子历史表改行数: dates 必须覆盖 lookback | history 缺那个日期 → `result is None` → **整行静默丢弃**, 看起来像"参数没生效" |
