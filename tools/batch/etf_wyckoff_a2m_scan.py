@@ -96,7 +96,7 @@ ETF_STALE_NOTE = ("可能已被 fund_type 过滤 (债券/货币/REITs/其他), "
 
 # ============================================================
 # 去重: 同一跟踪指数的 ETF 合并成一只
-#   分组口径在 tools/batch/etf_universe.py (跟 etf_macd_scan 共用)
+#   分组口径在 tools/batch/etf_universe.py (ETF 扫描器唯一候选池真源)
 # ============================================================
 
 
@@ -126,7 +126,7 @@ def _dedup_hits(hits: list[dict], klines: dict[str, list[dict]],
                    group_peers / liquidity / corr_key
           groups — 合并明细 [{key, index_name, members, hit_members, rep_code, rep_name}]
     """
-    # 分组 (口径在 etf_universe.group_by_tracked_index, 跟 etf_macd_scan 共用)
+    # 分组 (口径在 etf_universe.group_by_tracked_index, ETF 候选池唯一真源)
     hit_codes = [h["ts_code"] for h in hits]
     by_code = {h["ts_code"]: h for h in hits}
     code_groups, pair_corr = group_by_tracked_index(hit_codes, klines, basic_by_ts)

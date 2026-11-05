@@ -28,13 +28,13 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 600177 --outp
 
 # 全 watchlist 批量 (复用 t_analyze_all, 4 worker 并发)
 T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
-
-# 跳过 ETF 段
-bash tools/with_venv.sh python -m tools.batch.t_analyze_all --no-etf
 ```
 
 > 批量跑**只含持仓 + 自选**。blowout 候选池不参与 (2026-11-06 删 `--include-blowout`:
 > 打开它一次会出 157 份详报把目录撑爆)。要深挖某只 blowout 票 → `/t-analyze <code>` 单只跑。
+>
+> 批量跑**不含 ETF**。ETF MACD 扫描段 2026-11-06 整段下线 (`--no-etf` flag 一并删),
+> ETF 扫描走独立的 `/t-etf-wyckoff-a2m`。
 
 ## `--codes` 性能对比 (2026-10-17 实测, 4 只详报)
 

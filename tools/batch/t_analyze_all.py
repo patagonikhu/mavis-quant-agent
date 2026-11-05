@@ -11,6 +11,10 @@ t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-wa
   - --include-blowout flag 已删 (它能打开全跑 → 一次出 157 份详报, 把 docs/blowout/ 撑爆)
   - 要深挖某只 blowout 票: /t-analyze <code> 单只跑 (单只也不落 md, 报告走 stdout)
   - docs/blowout/ 目录已废弃, 历史产物由孤儿清理逻辑整个清掉
+
+2026-11-06 改造: ETF MACD 扫描段整段下线
+  - tools/batch/etf_macd_scan.py 已删, --no-etf flag 一并删
+  - ETF 扫描由 /t-etf-wyckoff-a2m 单独承担, 本脚本只管持仓 + 自选
 """
 import json, sys, datetime, time, os
 import argparse
@@ -31,10 +35,10 @@ from tools.render.report_renderer import render_report
 
 
 # === CLI 参数 ===
+# 2026-11-06 删 --no-etf flag (ETF MACD 扫描整段下线, 见下方注释)
+#   保留 parse_known_args 兼容老调用 `python -m ... t_analyze_all --all` (未知参数一律忽略)
 _arg_parser = argparse.ArgumentParser(description="t-analyze --all 批量分析")
-_arg_parser.add_argument("--no-etf", action="store_true",
-                         help="跳过 ETF 扫描 (默认同时跑 etf_macd_scan)")
-_args, _unknown = _arg_parser.parse_known_args()  # 兼容老调用 `python -m ... t_analyze_all --all`
+_, _unknown = _arg_parser.parse_known_args()
 
 
 wl = DataStore.load_watchlist()['stocks']
@@ -274,58 +278,9 @@ if errs:
         for c, e in errs:
             f.write(f"| {c} | {e} |\n")
 
-# ── ETF 段 (默认跟 --all 一起跑) ────────────────────────────
-if not _args.no_etf:
-    print(f'\n=== ETF MACD 扫描 ===', flush=True)
-    from tools.batch.etf_macd_scan import scan_etf_signals, _write_md
-    t_etf = time.time()
-    # 2026-11-06: 候选池从 config/etf_whitelist.json (18 只手工名单, 已删)
-    #   换成 DataStore 全市场 ETF + fund_type 过滤 (跟 /t-etf-wyckoff-a2m 同口径)
-    # workers=0: 单线程 (t_analyze_all 顶层不在 __main__ 保护内, 不能 spawn 子进程)
-    etf_results, etf_stats = scan_etf_signals(workers=0)
-    if etf_stats.get('error'):
-        print(f"  ⚠️ {etf_stats['error']}, 跳过 ETF 扫描", flush=True)
-    else:
-        etf_ok = [r for r in etf_results if 'error' not in r]
-        print(f"  候选池 {etf_stats['candidates']} 只 (fund_type 过滤) → 可算 {etf_stats['scored']} 只 → "
-              f"命中 {etf_stats['raw_hits']} 只 (超卖 {etf_stats['oversold']} / 金叉 {etf_stats['golden_cross']}) "
-              f"→ 同指数合并后 {etf_stats['hits']} 只", flush=True)
-        for r in etf_results:
-            if 'error' in r:
-                print(f"  ⚠️ {r['name']} ({r['code']}): {r['error']}", flush=True)
-            else:
-                print(f"  ✅ {r['name']} ({r['ts_code']}): {len(r['rows'])} 天 | {r.get('signal', '—')}", flush=True)
 
-        # 每个代表出 1 份 md (同指数已合并, 不重复出)
-        etf_output_dir = Path('docs/etf-macd')
-        etf_written = 0
-        for r in etf_ok:
-            if _write_md(r, etf_output_dir) is not None:
-                etf_written += 1
-        print(f'\n  ETF 完成: {etf_written} 份 md / 命中 {len(etf_ok)} 只 ({time.time()-t_etf:.1f}s)', flush=True)
-
-        # 追加 ETF 状态到 signal-watchlist.md (合并后的代表, 不是全量命中)
-        with output_path.open('a', encoding='utf-8') as f:
-            f.write(f"\n\n## ETF 状态 ({len(etf_ok)} 只命中, 同指数已合并)\n\n")
-            f.write("| ETF | RSI6 | DIF | BAR | BARΔ | 状态 | 命中 | 同指数 |\n")
-            f.write("|---|---|---|---|---|---|---|---|\n")
-            for r in sorted(etf_ok, key=lambda x: (0 if x.get('signal') == '超卖' else 1,
-                                                   x.get('rsi6') or 999, x.get('code', ''))):
-                last = r['rows'][-1]
-                rsi6 = last.get('rsi6') or 0
-                dif  = last.get('macd_dif') or 0
-                bar  = last.get('macd_bar') or 0
-                bar_d = last.get('macd_bar_delta') or 0
-                dea  = last.get('macd_dea') or 0
-                if rsi6 < 20:   rsi_tag = '🔴'
-                elif rsi6 < 30: rsi_tag = '🟠'
-                elif rsi6 > 70: rsi_tag = '⚪'
-                else:           rsi_tag = ''
-                if dif > 0 and dea <= 0:   macd_tag = '🟢金叉'
-                elif dif > 0 and dea > 0:  macd_tag = '多头'
-                elif dif < 0 and dea >= 0: macd_tag = '🔴死叉'
-                else:                       macd_tag = '空头'
-                same = f"{r.get('group_size', 1)} 只" if r.get('group_size', 1) > 1 else "—"
-                f.write(f"| {r['name']} ({r['ts_code']}) | {rsi_tag}{rsi6:.1f} | {dif:.3f} | {bar:.3f} | {bar_d:.3f} | {macd_tag} | {r.get('signal', '—')} | {same} |\n")
-
-        print(f'  ETF 汇总已追加到 {output_path}', flush=True)
+# 2026-11-06 删 ETF MACD 扫描段 (整段下线)
+#   - tools/batch/etf_macd_scan.py 已删 (safe_delete → 回收站)
+#   - --no-etf flag 一并删 (没东西可跳了)
+#   - docs/etf-macd/ 产物目录已清空
+#   ETF 扫描能力由 /t-etf-wyckoff-a2m 承担 (候选池口径仍在 tools/batch/etf_universe.py)

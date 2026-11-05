@@ -28,7 +28,7 @@ eastmoney.py — 技术指标计算 + 周线合成 (纯计算, 0 网络)
   └──────────────┴─────────────────────────────────────────┘
 
 调用方:
-  - store.py / etf_macd_scan.py → _synthesize_weekly
+  - store.py → _synthesize_weekly
   - analysis_engine.py / render_data.py → compute_indicators
 """
 

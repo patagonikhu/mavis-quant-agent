@@ -6,6 +6,8 @@ tools/batch/etf_universe.py — ETF 候选池 单一真源 (2026-11-06)
   - `etf_macd_scan.py`:       读 `config/etf_whitelist.json` (18 只手工维护名单, 已删)
 两个扫描器都说"扫全市场 ETF", 口径却对不上号 → 候选池口径必须有单一真源。
 
+> 2026-11-06: `etf_macd_scan.py` 整族下线, 本模块现只剩 `etf_wyckoff_a2m_scan.py` 一个消费者。
+
 ETF 唯一有效的过滤 = **fund_type** (ETF 没有 PE / ROE / 毛利率 / 退市标记):
   - 债券型 — 震荡上行, 没有主升浪
   - 货币型 — 收益单调, 无形态

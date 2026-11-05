@@ -84,6 +84,11 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 > **对生产链路零影响**: rsi6 只是独立扫描器, 不参与缠论/Magic/买卖点判定, 不被 `/t-analyze` 调用。财报 EPS 仅少一个消费端 (亏损过滤), `np_yi` 那处保留。
 > 技术超卖的替代路径: `/t-analyze` 单只详报 (含 RSI6/RSI12/KDJ 全套技术指标) 或 `/t-factor-5y` 长周期轨迹。
 
+> 2026-11-06: **ETF MACD 扫描整段下线** (用户指令) —— `tools/batch/etf_macd_scan.py` + `docs/etf-macd/` (72 份产物) 全删 (safe_fs → 回收站), `t_analyze_all` 的 ETF 段 + `--no-etf` flag 一并删。
+> **它从来不是 slash skill** (无 SKILL.md), 只是被 `/t-analyze --all` 顺带调的一个独立扫描器 —— 命中逻辑 = RSI6<30 超卖 **或** MACD 金叉多头, 出逐只 md + 汇总表。
+> **不参与缠论/Magic/买卖点/因子矩阵任何判定**, 删掉对 `/t-analyze` 单只详报和批量股票段**零影响**。
+> ETF 扫描能力由 `/t-etf-wyckoff-a2m` 承担 (A→M 三重确认); ETF 候选池唯一真源仍是 `tools/batch/etf_universe.py` (fund_type 过滤 + 同指数两级并查集去重, 现只剩一个消费者)。
+
 > 2026-11-04: 结构分析 (OB/FVG/Sweep) 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变); 同日生产层完成改名, 全仓统一用 `structure` / `结构` 命名。
 >
 > 2026-11-05: 结构分析 (structure / 原 SMC) **整个从 analysis 层删除** —— `StructureStrategy` 类、`RawContext.structure_result`、`raw["structure"]`、10 个 `structure_*` 行字段、`tools/factors/structure/` 因子库目录全部移除。报告层早已不消费, 只算不用。删除后 Phase1 strategy = **chan / wyckoff / technical / finance**。

@@ -66,7 +66,7 @@
 `analysis_result_signals.py` 是**对的**样板 (用 `p3 = wy_raw.get("3period")`)。
 
 **死代码坑**: `WyckoffStrategy.analyze(ctx)` **没有任何生产调用** —— 全链路
-(report_renderer / t_analyze_one / t_analyze_all / factor_5y / batch_matrix / etf_macd_scan /
+(report_renderer / t_analyze_one / t_analyze_all / factor_5y / batch_matrix /
 caches/analysis) 都走 `AnalysisEngine.analyze_history()`。两者子事件扫描口径不同:
 `analyze_history` 传 `precomputed_arrs` → detector 里 ma200 取 `arrs['ma_window']` (250 均线);
 `analyze()` 不传 → detector 内部 `sum(c[i-200:i])/200` (真 MA200)。

@@ -508,7 +508,7 @@ Type: bug
 > **摘要:** 它的口径跟生产不同 —— **别用**, 生产走 AnalysisEngine
 
 `WyckoffStrategy.analyze(ctx)` **没有任何生产调用** —— 全链路 (report_renderer /
-t_analyze_one / t_analyze_all / factor_5y / batch_matrix / etf_macd_scan /
+t_analyze_one / t_analyze_all / factor_5y / batch_matrix /
 caches/analysis) 都走 `AnalysisEngine.analyze_history()`。
 
 两者子事件扫描口径不同:

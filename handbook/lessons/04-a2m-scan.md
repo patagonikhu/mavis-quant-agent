@@ -328,6 +328,9 @@ Type: rule
 - `etf_wyckoff_a2m_scan.py` 自己定义 `EXCLUDE_FUND_TYPES` + 自己过滤
 - `etf_macd_scan.py` 读那个白名单
 
+> 2026-11-06: `etf_macd_scan.py` 整族下线, 本条现在只剩 `etf_wyckoff_a2m_scan.py` 一个消费者,
+> 但"候选池口径要有单一真源"这条铁律不变 —— 以后再加 ETF 扫描器, 从 `etf_universe.py` 取。
+
 **铁律:** ETF 扫描器的候选池 = **DataStore.get_etf_basic() 全表 + fund_type 过滤**, 口径写在
 `tools/batch/etf_universe.py` 一个地方, 所有扫描器从那儿取。
 
@@ -348,7 +351,7 @@ Type: rule
 Type: rule
 > **摘要:** 别对 2000 只逐只跑完整分析 —— 先用批量指标预筛, 只对命中跑深扫
 
-**实测 (ETF MACD 扫描, 1992 只候选):**
+**实测 (ETF MACD 扫描, 1992 只候选; 该扫描器 2026-11-06 已下线, 数据留作基线):**
 
 | 做法 | 耗时 |
 |---|---|
@@ -364,12 +367,14 @@ Type: rule
 
 **apply when:** 任何候选池 > 500 的扫描器。先量一下"逐只深扫"的耗时, 超过 2 分钟就该拆两段。
 
-### ETF MACD 扫描: 命中后必须按跟踪指数去重 (2026-11-06)
+### ETF 扫描: 命中后必须按跟踪指数去重 (2026-11-06)
 Type: rule
 > **摘要:** 同一指数的 ETF 命中会重复 4~6 只, 不去重出的一堆 md 是同一份技术面
 
 **实测:** 200 只命中 → 同指数合并后 **72 个不同标的** (34 组重复, 合并掉 128 只)。
 典型: 中证银行 15 只、中证红利低波 6 只、800 自由现金流 6 只、中药 6 只、主要消费 5 只。
+
+> 2026-11-06: ETF MACD 扫描器已下线; 这条规则现在由 `etf_wyckoff_a2m_scan.py` 落地执行。
 
 **铁律:** 复用 A→M 那套两级并查集口径 (`tools/batch/etf_universe.group_by_tracked_index`):
 ① 归一化 benchmark 相同 ② 60 日收益率相关性 ≥ 0.95; 每组留流动性最好的代表。

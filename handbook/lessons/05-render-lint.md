@@ -245,3 +245,28 @@ Type: rule
 
 **apply when:** 任何 watchlist 分段。**先问这段是"要长期跟踪的"还是"一次性筛的"** ——
 后者只进汇总表, 不占目录。
+
+### 下线一个功能: 连带清理清单 (2026-11-06)
+Type: rule
+> **摘要:** 删一个功能至少要清 6 处, 漏一处就留下"看起来还在用"的死路径
+
+**触发场景 (2026-11-06 一天连踩 3 次):** blowout 落 md → 删 `--include-blowout` flag → 删 ETF MACD 扫描段。
+
+**连带清单 (逐条 grep 确认, 别凭印象):**
+1. **主脚本/模块本身** —— `safe_fs.safe_delete` (移 `~/.Trash`, 永不 unlink)
+2. **CLI flag** —— 功能没了 flag 就是死开关, 一起删 (`--no-etf` / `--include-blowout`)
+3. **产物目录** —— 跟着删, 别留空壳 (`docs/etf-macd/` 72 份 / `docs/blowout/`)
+4. **调用方的 import + 那一整段** —— 删 import 不删调用段 → ImportError; 删调用段不删 flag → 死 flag
+5. **汇总文件里的那段** —— 例: `signal-watchlist.md` 的「ETF 状态」段
+6. **跨文件引用** —— 注释 / docstring / SKILL.md / CLAUDE.md / handbook, 留着就误导后人
+
+**共享模块留不留, 看消费者数量:** `etf_universe.py` 被两个扫描器共用 → 删掉其中一个扫描器时
+**它保留** (另一个还在用), 只把 docstring 里"两个扫描器共用"的描述改掉;
+变成 **0 消费者** 的模块才删。删之前先数一遍消费者。
+
+**验证纪律:**
+- 改动前后**逐行 diff** (归一化掉耗时 / 时间戳 / 并发完成顺序), 别只看"跑通了"
+- 冒烟测**幸存的那个**功能 (ETF A→M: 2252→1992→1602 只可扫, 10.2s, 命中 11→去重 8, 与 SKILL.md 一致)
+- `guardrail --check {network|factor|parquet|safe-fs}` 4 项全绿
+
+**apply when:** 任何"下线 / 删除一个功能"的动作。
