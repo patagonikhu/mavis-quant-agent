@@ -65,17 +65,11 @@ def _result_to_row(r) -> dict:
         return r
     raw = getattr(r, "raw", None) or {}
     wy = raw.get("wyckoff", {}) or {}
-    chan = raw.get("chan", {}) or {}
+    # 2026-11-06 删: chan = raw.get("chan", {}) + bsp 派生的 6 个买卖点字段
+    #   (缠论整层下线)
 
     se = wy.get("sub_events", [])
     se_names = {e.get("name") for e in se} if isinstance(se, list) else set()
-
-    bsp = chan.get("buy_sell_points", {}) or {}
-    if not isinstance(bsp, dict):
-        bsp = {}
-
-    def _bsp_bool(key):
-        return 1 if bsp.get(key) else None
 
     return {
         "wy_stage":        wy.get("stage"),
@@ -88,12 +82,8 @@ def _result_to_row(r) -> dict:
         "wy_markup_entry": 1 if "MarkupEntry" in se_names else None,
         "wy_distributionstart": 1 if "DistributionStart" in se_names else None,
         "wy_utad":         1 if "UTAD" in se_names else None,
-        "chan_1buy":       _bsp_bool("🟢1买"),
-        "chan_2buy":       _bsp_bool("🟢2买"),
-        "chan_3buy":       _bsp_bool("🟢3买"),
-        "chan_1sell":      _bsp_bool("🔴1卖"),
-        "chan_2sell":      _bsp_bool("🔴2卖"),
-        "chan_3sell":      _bsp_bool("🔴3卖"),
+        # 2026-11-06 删: chan_1buy / chan_2buy / chan_3buy /
+        #   chan_1sell / chan_2sell / chan_3sell (缠论买卖点 — 缠论整层下线)
     }
 
 
@@ -120,8 +110,8 @@ def match_signal(row, signals: list[str]) -> bool:
             hit = bool(row.get(SE_COLS[sig]))
         elif sig in ("Accumulation", "Markup", "Distribution", "Markdown"):
             hit = row.get("wy_stage") == sig
-        elif sig in ("1买", "2买", "3买", "1卖", "2卖", "3卖"):
-            hit = bool(row.get(f"chan_{sig}"))
+        # 2026-11-06 删: "1买"/"2买"/"3买"/"1卖"/"2卖"/"3卖" 分支
+        #   (缠论买卖点 — 缠论整层下线)
         elif sig.startswith("boll:"):
             # boll:N  →  boll_bpct < N (位置 0-100，越低越接近下轨)
             try:

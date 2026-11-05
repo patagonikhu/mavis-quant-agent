@@ -7,11 +7,13 @@ analysis_engine.py — analysis 层 (v5.10.35, 2026-08-26)
 - L3 render 层: render_report(analysis_data) → markdown
 
 策略模式 (v5.10.35 简化):
-- 4 个 Phase1 策略类: 返回 dict (含 score + 因子数据), 不再继承 AnalysisStrategy ABC
-  (chan / wyckoff / technical / finance)
+- 3 个 Phase1 策略类: 返回 dict (含 score + 因子数据), 不再继承 AnalysisStrategy ABC
+  (wyckoff / technical / finance)
 - 2026-11-05 删: StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep)
   → 报告层早已不消费, 只算不用; 因子库 tools/factors/structure/ 整目录删除
-- 2 个 Phase2 派生函数 (模块级): 纯数据提取, weight=0
+- 2026-11-06 删: ChanStrategy (缠论整层下线 — 用户指令)
+  → czsc 依赖 + 中枢 + 买卖点 + 背驰 全部移除; 投票逻辑一并删
+- 1 个 Phase2 派生函数 (模块级): 纯数据提取, weight=0
 - AnalysisResult.raw: Dict[str, Any] 是唯一数据来源
 """
 from __future__ import annotations
@@ -48,12 +50,12 @@ class RawContext:
     name: str = ""
 
     # Phase1 Strategy 算完后写这里，Phase2 函数直接读，不重算
-    chan_result:    dict = field(default_factory=dict)
+    # 2026-11-06 删: chan_result (缠论整层下线)
     wyckoff_result: dict = field(default_factory=dict)   # 日线
     wyckoff_weekly: dict = field(default_factory=dict)
     technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
     # 2026-11-05 删 resonance_result: resonance_3period 网络调用早已删除, 该字段从未被写入/读取
-    _bsp_for_data:    dict = field(default_factory=dict)   # ChanStrategy 写入，_derive_buy_sell_points 读取
+    # 2026-11-06 删: _bsp_for_data (缠论买卖点 — 缠论整层下线)
     kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写
     kline_arrs_weekly:  dict = field(default_factory=dict)   # 周线 arrs，WyckoffStrategy 写，factor_history 读 ma_dev_weekly
 
@@ -83,9 +85,8 @@ class RawContext:
             name=self.name,
         )
         # 透传预计算缓存（factor_history 优化：全量信号预算一次，切片节点直接查表）
-        for _attr in ('_precomputed_signals', '_czsc_signals_obj',
-                      '_czsc_signals_bars', '_czsc_signals_pos',
-                      '_czsc_signals_start', '_czsc_sigs_window'):
+        # 2026-11-06 删: _czsc_* 4 个属性 (缠论 czsc 预计算缓存, 缠论整层下线)
+        for _attr in ('_precomputed_signals',):
             if hasattr(self, _attr):
                 setattr(sliced, _attr, getattr(self, _attr))
         return sliced
@@ -97,21 +98,19 @@ class AnalysisResult:
 
     raw 是唯一数据来源:
       raw["wyckoff"]  = {"score": ..., "stage": ..., "sub_events": ..., "3period": ...}
-      raw["chan"]      = {"score": ..., "weekly": {...}, "daily": {...}}
       raw["finance"]   = {"quarterly": [...], "roc": ..., "ey": ..., ...}
       raw["position"]  = {"close_pos_day": ..., ...}
       # Phase2 派生 (weight=0)
       # 2026-11-02 删: raw["peg"] / raw["dcf"] (PEG/DCF 整档已删)
       raw["sector_overheat"]     = {1周涨幅: ..., ...}
-      raw["buy_sell_points"]     = {daily: {...}, weekly: {...}}
+      # 2026-11-06 删: raw["chan"] / raw["buy_sell_points"] (缠论整层下线 — 用户指令)
       # 2026-11-03 删: raw["exit_signals"] (退场信号检查整档已删 —
-      #   与 监控触发点 重叠; 卖点仍由 buy_sell_points 提供)
+      #   与 监控触发点 重叠)
       # 2026-11-03 删: raw["stop_profit_loss"] (止盈 3 层 + 止损 4 档整档已删)
       # 2026-11-03 删: raw["three_layer_position"] (3 层仓位策略整档已删 —
       #   与 监控触发点 重叠; 止损/目标阶梯是当前价 × 固定百分比的机械外推)
       # 2026-11-03 删: raw["monitor_triggers"] (监控触发点整档已删 —
-      #   时间触发恒为空(events=[]/code=""), 中枢突破档"已触发"硬编码 False,
-      #   仓位比例与止损价是机械外推; 缠论买卖点仍由 buy_sell_points 提供)
+      #   时间触发恒为空(events=[]/code=""))
     """
     code: str
     name: str
@@ -566,153 +565,6 @@ class TechnicalStrategy:
         return results
 
 
-class ChanStrategy:
-    """缠论 (中枢+背驰+买卖点)，日线+周线统一用一个 CzscSignals 对象。"""
-    name = "chan"
-
-    # ── 共享工具 ──────────────────────────────────────────────
-
-    @staticmethod
-    def _build_cs(ctx: RawContext, warmup_to: int = 0):
-        """建含日线+周线的 CzscSignals，返回 (cs, bars_d)。"""
-        from tools.factors.chan.czsc_signals import build_incremental_signals
-        from tools.factors.chan.czsc_adapter import dates_closes_to_raw_bars
-        import czsc as _czsc
-
-        week = ctx.weekly if ctx.weekly else []
-        weekly_bars = None
-        if len(week) >= 30:
-            d_w = [w.get('trade_date', '') for w in week]
-            c_w = [w.get('close', 0)       for w in week]
-            h_w = [w.get('high', 0)         for w in week]
-            l_w = [w.get('low', 0)          for w in week]
-            weekly_bars = dates_closes_to_raw_bars(d_w, c_w, h_w, l_w, symbol=ctx.code)
-
-        ks = [{'date': k['trade_date'], 'open': k['open'], 'close': k['close'],
-               'high': k['high'], 'low': k['low'],
-               'vol': k.get('vol', 0), 'amount': k.get('amount', 0)}
-              for k in ctx.kline]
-        cs, bars, _, _ = build_incremental_signals(ks, ctx.code,
-                                                    warmup_to=warmup_to,
-                                                    weekly_bars=weekly_bars)
-        return cs, bars
-
-    @staticmethod
-    def _hub_result(czsc_obj, p_now, label, dates):
-        """从 CZSC/kas 对象提取中枢+段信息，统一格式。bis 不存储（render 不需要笔列表）。"""
-        from tools.factors.chan.czsc_adapter import bis_to_segs_format, czsc_zss_to_hub_format
-        from czsc import get_zs_seq
-        bis  = czsc_obj.bi_list
-        zss  = get_zs_seq(bis)
-        segs = bis_to_segs_format(bis, dates)
-        hubs = czsc_zss_to_hub_format(zss)
-        if hubs:
-            h = hubs[-1]
-            hl, hh = h['low'], h['high']
-            if p_now > hh:            h['pos'] = "上方✅"
-            elif p_now < hl * 0.95:   h['pos'] = "跌穿🔴"
-            elif p_now < hl:           h['pos'] = "下方⚠️"
-            else:                      h['pos'] = "内部⬜"
-        seg_status = '未知'
-        if segs:
-            last = segs[-1]
-            if last['sst'] == 'T' and p_now < last['ep']:
-                seg_status = f"下跌段延伸中（¥{last['sp']:.0f}→¥{p_now:.0f}，未结束）"
-            elif last['sst'] == 'B' and p_now > last['ep']:
-                seg_status = f"上涨段延伸中（¥{last['sp']:.0f}→¥{p_now:.0f}，未结束）"
-            else:
-                seg_status = f"最后段结束¥{last['ep']:.0f}，当前¥{p_now:.0f}震荡"
-        supports = sorted([s['lo'] for s in segs[-8:] if s['lo'] < p_now], reverse=True)[:3]
-        return {
-            'hub': hubs[-1] if hubs else {'valid': False},
-            'hubs': hubs, 'segs': segs,
-            'n_strokes': len(bis), 'n_segs': len(segs),
-            'seg_status': seg_status, 'supports': supports,
-            'p': p_now, 'label': label,
-        }
-
-    @staticmethod
-    def _snapshot_chan_state(cs, sigs_win, p_now, d_d, bar_dt):
-        """从当前 cs 状态快照日线+周线中枢和买卖点，返回 chan dict。"""
-        from tools.factors.chan.czsc_signals import extract_points_from_sigs
-        kas = cs.kas or {}
-        day_czsc = kas.get('日线')
-        wk_czsc  = kas.get('周线')
-        res_d = ChanStrategy._hub_result(day_czsc, p_now, '日线', d_d) if day_czsc else {}
-        res_w = ChanStrategy._hub_result(wk_czsc,  p_now, '周线', []) if wk_czsc else {}
-        bsp_d = extract_points_from_sigs(sigs_win, bar_dt, days=1)
-        return {
-            "daily":  {**res_d, "buy_sell_points": bsp_d.get('points', {})},
-            "weekly": {**res_w, "buy_sell_points": {}},
-            "buy_sell_points": {
-                "daily": bsp_d.get('points', {}), "weekly": {}, "60min": {}, "30min": {},
-            },
-        }
-
-    # ── 单次分析 ─────────────────────────────────────────────
-
-    def analyze(self, ctx: RawContext) -> dict:
-        chan = {}
-        try:
-            if ctx.kline and len(ctx.kline) >= 30:
-                last_date = ctx.kline[-1]['trade_date'].replace("-", "")[:8]
-                results = self.analyze_history(ctx, [last_date])
-                chan = results.get(last_date, {})
-                ctx._bsp_for_data = chan.get("buy_sell_points", {})
-        except Exception:
-            pass
-        ctx.chan_result = chan
-
-        score_total, cnt = 0.0, 0
-        for level in ["weekly", "daily"]:
-            pos = (chan.get(level, {}).get("hub") or {}).get("pos", "—")
-            if "下方" in str(pos):   score_total -= 0.3; cnt += 1
-            elif "上方" in str(pos): score_total += 0.3; cnt += 1
-
-        bsp = getattr(ctx, "_bsp_for_data", {})
-        return {
-            "score":   score_total / cnt if cnt > 0 else 0.0,
-            "signals": [],
-            "summary": f"缠论 {cnt}/2 级别",
-            **chan,
-            "buy_sell_points": bsp,
-        }
-
-    # ── 批量历史 ─────────────────────────────────────────────
-
-    def analyze_history(self, ctx: RawContext, dates: list) -> dict:
-        """一次遍历全量 bars，在每个 date 节点记录中枢+买卖点。"""
-        from tools.factors.chan.czsc_signals import extract_points_from_sigs  # noqa
-        dates_clean = [d.replace("-", "")[:8] for d in dates]
-        dates_set   = set(dates_clean)
-        if not ctx.kline or len(ctx.kline) < 30:
-            return {}
-
-        cs, bars = self._build_cs(ctx, warmup_to=0)
-        if cs is None:
-            return {}
-
-        d_d = [k.get('trade_date', '') for k in ctx.kline]
-        sigs_win = []
-        results  = {}
-
-        for bar in bars:
-            bar_dt = str(bar.dt)[:10].replace("-", "")[:8]
-            cs.update_signals(bar)
-            snap = dict(cs.s); snap['dt'] = bar_dt
-            sigs_win.append(snap)
-            if len(sigs_win) > 60: sigs_win.pop(0)
-
-            if bar_dt not in dates_set:
-                continue
-
-            p_now = float(snap.get('close') or 0) or ctx.current_price
-            node  = self._snapshot_chan_state(cs, sigs_win, p_now, d_d, bar_dt)
-            results[bar_dt] = {**node, "score": 0.0, "signals": [], "summary": "缠论历史"}
-
-        return results
-
-
 class FinanceStrategy:
     """季度财务 + 估值 factor (合并原 ValuationStrategy, 2026-09-08)
 
@@ -926,58 +778,30 @@ def _derive_sector_overheat(ctx: RawContext, raw: dict) -> dict:
 # 2026-11-03 删: _derive_five_categories (5 类 14 子信号整档已删; multi.py 已不存在, 该函数恒返回 {})
 
 
-def _derive_buy_sell_points(ctx: RawContext, raw: dict) -> dict:
-    """缠论 1买/1卖/2买/3买 + 双中枢/笔结束 (3 级别)
-
-    v3.0: 直接读 ChanStrategy 算的 ctx._bsp_for_data (czsc_signals 输出, 100% czsc)
-    """
-    bsp = getattr(ctx, "_bsp_for_data", None) or {}
-    if not bsp:
-        return {}
-    # 补一个 action 字段 (取最强信号), 保持 flat dict 格式 (跟 czsc_signals 一致)
-    def _action(points):
-        if not isinstance(points, dict):
-            return "—"
-        for k in ['🟢1买⭐', '🟢1买', '🟢3买', '🟢双中枢', '🟢笔结束',
-                  '🔴1卖⭐', '🔴1卖', '🔴2卖', '🔴3卖',
-                  '🟢吞没', '🔴三只乌鸦']:
-            if k in points and points[k] not in (None, '—', ''):
-                return k
-        return "—"
-    out = {}
-    for level in ['weekly', 'daily']:
-        pts = bsp.get(level, {})
-        if pts and isinstance(pts, dict):
-            out[level] = dict(pts)  # flat dict (跟 bsp 一样的 emoji keys)
-            out[level]['action'] = _action(pts)
-        else:
-            out[level] = {}
-    return out
-
-
 # ============================================================
 # 4. 调度器常量
 # ============================================================
 
-# Phase1 策略类列表 (顺序重要: ChanStrategy 先跑)
+# Phase1 策略类列表
 # 2026-09-08: 删 ValuationStrategy (合并进 FinanceStrategy)
 # 2026-11-05: 删 StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep — 报告层早已不消费)
+# 2026-11-06: 删 ChanStrategy (缠论整层下线 — 用户指令; 投票逻辑一并删)
 PHASE1_STRATEGY_CLASSES = [
-    ChanStrategy,
     WyckoffStrategy,
     TechnicalStrategy,  # v6.2.8 加: 8 个技术指标
     FinanceStrategy,
 ]
 
 # Phase2 派生函数列表
+# 2026-11-06 删: _derive_buy_sell_points (缠论买卖点 — 缠论整层下线)
 PHASE2_FUNCTIONS = [
     _derive_sector_overheat,
-    _derive_buy_sell_points,
 ]
 
 # 2026-09-09 删: strategy 权重 (chan 0.20 / wyckoff 0.20 / structure 0.10)
 #   (2026-11-05 structure 整个策略类已删)
-# 决策全部走 缠论 1买/2买/3买/1卖/2卖/3卖 + 风控, 不再加权汇总.
+#   (2026-11-06 chan 整个策略类已删)
+# 决策走 威科夫阶段判定, 不再加权汇总.
 # 保留空 dict 防止旧 import KeyError.
 _STRATEGY_WEIGHTS: dict[str, float] = {}
 
@@ -1003,7 +827,7 @@ class AnalysisEngine:
         Args:
             strategies: Phase1 策略类列表 (可选, 用于按需加速)。
                         None = 跑全部 Phase1 + Phase2。
-                        传入子集 (如 [WyckoffStrategy, ChanStrategy]) 只跑那几个 Phase1。
+                        传入子集 (如 [WyckoffStrategy]) 只跑那几个 Phase1。
         """
         if strategies is None:
             self._phase1 = [s() for s in PHASE1_STRATEGY_CLASSES]
@@ -1028,7 +852,7 @@ class AnalysisEngine:
     def analyze_history(self, ctx: "RawContext", dates: list) -> "dict[str, AnalysisResult]":
         """批量历史计算：每个 strategy 用自己最优方式遍历，合并结果。
 
-        Phase 2 (sector_overheat/buy_sell_points) 不在此处运行 — 由
+        Phase 2 (sector_overheat) 不在此处运行 — 由
         RenderData.from_result() 在 render 路径按需执行一次。
 
         Args:
@@ -1053,9 +877,8 @@ class AnalysisEngine:
             raw: Dict[str, Any] = {}
             for inst in self._phase1:
                 raw[inst.name] = (strategy_results.get(inst.name) or {}).get(date, {})
-            chan_bsp = (raw.get('chan') or {}).get('buy_sell_points') or {}
-            ctx._bsp_for_data = chan_bsp
-            raw["buy_sell_points"] = _derive_buy_sell_points(ctx, raw)
+            # 2026-11-06 删: chan_bsp / ctx._bsp_for_data / raw["buy_sell_points"]
+            #   (缠论买卖点 — 缠论整层下线)
             # 2026-08-29: 删 A/B/C/D/E scene 分类 (硬编码 if-else 不准)
             # 改: signals_active 直接从 raw 聚合 (LLM 自己判)
             signals_active = []

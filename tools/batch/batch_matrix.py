@@ -79,8 +79,7 @@ def render_one_matrix(code: str) -> str:
     _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
     result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
     s5 = result.to_dict(ctx)
-    chan_data = s5.get("chan") or {}
-    buy_sell_points = s5.get("buy_sell_points") or {}
+    # 2026-11-06 删: chan_data / buy_sell_points (缠论 — 缠论整层下线)
 
     if s5.get("error"):
         return f"## {code} 跳过 (AnalysisEngine 失败)\n\n> ❌ {s5['error']}\n\n---\n\n"
@@ -96,8 +95,6 @@ def render_one_matrix(code: str) -> str:
             name=name,
             current_price=current_price,
             signals_5method=s5,  # build_factor_matrix 内部读 scene/signals_active/score 等
-            chan_data=chan_data,
-            buy_sell_points=buy_sell_points,
         )
         md = render_factor_matrix_md(matrix)
         return f"## 🎯 {code} {name} (¥{current_price})\n\n{md}\n\n---\n\n"

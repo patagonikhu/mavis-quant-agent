@@ -177,16 +177,15 @@ def process_one(s):
             changes = diff_rows(rows[-2], rows[-1])
             sigs = extract_signals(changes)
             sig_fmtd = format_signals_for_render(changes)
-            hub_d = r.get('hub_daily') or {}
-            hub_str = f"¥{hub_d.get('low',0):.0f}~{hub_d.get('high',0):.0f}{(hub_d.get('pos') or '')[:2]}" if hub_d.get('valid') else '—'
+            # 2026-11-06 删: hub_d / hub_str (缠论中枢列 — 缠论整层下线)
             has_sig = '⭐' if sig_fmtd else ''
             for _, detail, direction in sigs:
                 signals.append((direction, code_tagged, name, detail))
             table_row = (code_tagged, name, (r.get('wyckoff_daily') or '?')[:10],
-                         f"{r.get('ma_dev_daily') or 0:+.1f}%", hub_str,
+                         f"{r.get('ma_dev_daily') or 0:+.1f}%",
                          ' '.join(sig_fmtd) if sig_fmtd else '—', has_sig)
         else:
-            table_row = (code_tagged, name, '?', '0.0%', '—', '—', '')
+            table_row = (code_tagged, name, '?', '0.0%', '—', '')
 
         elapsed = time.time() - t0
         return ('ok', code, {'md_path': md_path, 'elapsed': elapsed, 'len': len(md),
@@ -243,17 +242,17 @@ for code, name, detail in sell_rows:
     lines.append(f"| {code} | {name} | {detail} |\n")
 if not sell_rows:
     lines.append("| — | 无 | — |\n")
-lines.append("\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 日中枢 | 今日信号 |\n|------|------|------|---------|-------|--------|----------|\n")
-all_table_rows.sort(key=lambda x: (0 if x[6] == '⭐' else 1, x[0]))
-for code, name, wy, ma, hub_str, sig_str, has_sig in all_table_rows:
-    lines.append(f"| {code} | {name} | {has_sig} | {wy} | {ma} | {hub_str} | {sig_str} |\n")
+lines.append("\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 今日信号 |\n|------|------|------|---------|-------|----------|\n")
+all_table_rows.sort(key=lambda x: (0 if x[5] == '⭐' else 1, x[0]))
+for code, name, wy, ma, sig_str, has_sig in all_table_rows:
+    lines.append(f"| {code} | {name} | {has_sig} | {wy} | {ma} | {sig_str} |\n")
 output_path.parent.mkdir(exist_ok=True)
 output_path.write_text(''.join(lines), encoding='utf-8')
 
 print(f'\n=== 完成 ===')
 print(f'FILE: {output_path}')
 print(f'MD生成: {md_written}/{len(stocks)}')
-print(f'有今日信号: {sum(1 for r in all_table_rows if r[6]=="⭐")}只')
+print(f'有今日信号: {sum(1 for r in all_table_rows if r[5]=="⭐")}只')
 print(f'总耗时: {total_elapsed:.0f}s')
 
 # 2026-09-09 加: stdout 直接输出信号明细 (buy_rows + sell_rows), 不需要打开 md 文件看

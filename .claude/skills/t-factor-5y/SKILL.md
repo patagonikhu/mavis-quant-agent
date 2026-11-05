@@ -1,6 +1,6 @@
 ---
 name: t-factor-5y
-description: 单只 / 批量跑 5 年因子历史走势, 输出 md (30+ 列: 价格 / 缠论 / 威科夫 / 结构 / 技术指标). 0 网络, 复用 AnalysisEngine.analyze_history + compute_factor_history. 触发词: "5年因子"、"长势"、"5年走势"、"factor-5y".
+description: 单只 / 批量跑 5 年因子历史走势, 输出 md (21 列: 价格 / 威科夫 / 技术指标). 0 网络, 复用 AnalysisEngine.analyze_history + compute_factor_history. 触发词: "5年因子"、"长势"、"5年走势"、"factor-5y".
 user-invocable: true
 allowed-tools:
   - Bash
@@ -12,9 +12,9 @@ allowed-tools:
 
 ## 啥时候用
 
-- 单只看 5 年长周期(找中枢切换、5 年最大回撤、5 年最低 RSI)
+- 单只看 5 年长周期(找阶段切换、5 年最大回撤、5 年最低 RSI)
 - 多只并行扫描找"穿越牛熊"的票
-- 教学:回看 2021-2024 完整牛熊周期,看缠论 1 买 / 1 卖 / 3 卖 在长周期里的位置
+- 教学:回看 2021-2024 完整牛熊周期,看威科夫阶段在长周期里的位置
 - 想看**长周期结构复盘**,**不替代** `/t-analyze` (7 section 短周期)
 
 ## 跑
@@ -43,7 +43,7 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 | 场景 | 落盘 | 说明 |
 |---|---|---|
 | `--code` / `--codes` (点名) | 每只 1 份详细 md | 要细看某只票, 就点名跑它 |
-| 按范围批量 (默认) | **只出 1 份汇总 md** `_summary-{scope}.md` | 每只 1 行: 5年累计 / 最大回撤 / RSI6 / 阶段 / 买卖点 |
+| 按范围批量 (默认) | **只出 1 份汇总 md** `_summary-{scope}.md` | 每只 1 行: 5年累计 / 最大回撤 / RSI6 / 阶段 |
 | 按范围批量 + `--write-md-all` | 每只 1 份详细 md + 汇总 md | 会同步清掉不在本次范围的旧 md |
 
 > ⚠️ 批量**不要**逐只落 md: 21 只 × 约 290KB, 164 只 ≈ 49MB, 目录直接被撑爆,

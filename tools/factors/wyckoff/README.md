@@ -479,7 +479,7 @@ tools/factors/wyckoff/
 ## 8. 相关代码
 
 - **阶段判定** (AnalysisEngine): `tools/analysis/analysis_engine.py:200-264`
-- **3 周期缠论因子** (背驰/中枢/买卖点): `tools/factors/chan/`
+- **3 周期缠论因子** (背驰/中枢/买卖点): ~~`tools/factors/chan/`~~ — 2026-11-06 缠论整层下线, 该目录已删除
 - **Stage 调用方**: `tools/analysis/factor_matrix.py` (因子 × 3 周期矩阵, 2026-08-17 改名前 `five_method_matrix.py`)
 
 ---

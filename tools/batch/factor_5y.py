@@ -1,12 +1,12 @@
 """factor_5y.py — 5 年因子历史批量跑批
 
-用途: 单只 / 批量跑 5 年因子历史 (30+ 列: 价格 / 缠论 / 威科夫 / 结构 / 技术指标),
+用途: 单只 / 批量跑 5 年因子历史 (21 列: 价格 / 威科夫 / 技术指标),
        默认 watchlist (持仓)。
 
 **输出分两种 (2026-11-06 改, 治"目录里堆几百份 md"):**
   - **点名** (`--code` / `--codes`) → 逐只 1 个详细 md (要细看某只票, 就点它)
   - **按范围批量** (默认 watchlist) → **只出 1 份汇总 md**
-    `docs/factor-5y/_summary-{scope}.md` (每只 1 行: 5 年累计 / 最大回撤 / RSI6 / 阶段 / 买卖点)
+    `docs/factor-5y/_summary-{scope}.md` (每只 1 行: 5 年累计 / 最大回撤 / RSI6 / 阶段 / 阶段转变)
     逐只 md 要显式加 `--write-md-all` 才出 (并同步清掉不在本次范围的旧 md)
     —— 批量场景的用途是"多只对比找穿越牛熊的票", 对比看**汇总表**才有用,
     一只一只翻 24 列长表没意义, 而且 164 只 × 290KB ≈ 49MB 把目录撑爆。
@@ -32,11 +32,11 @@
 输出:
   - 汇总 (按范围批量, 默认):
     docs/factor-5y/_summary-{scope}.md
-    └─ 1 张表: 每只 1 行 (5 年累计% / 最大回撤% / 当前RSI6 / 5年最低RSI6 / 阶段(日/周) / 买卖点数 / 行数)
+    └─ 1 张表: 每只 1 行 (5 年累计% / 最大回撤% / 当前RSI6 / 5年最低RSI6 / 阶段(日/周) / 阶段转变数 / 行数)
   - 逐只 (点名, 或批量加 --write-md-all):
     docs/factor-5y/analyze-{code}-{name}-5y.md (每只 1 个 md)
     └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样 step=N"
-    └─ 📈 因子历史走势 (30+ 列 GFM 表)
+    └─ 📈 因子历史走势 (21 列 GFM 表)
     └─ 🗒 5 年阶段摘要 (5 年累计, MA20 偏离段)
 
 不替代 /t-analyze:
@@ -127,7 +127,7 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
             f"> 数据源: DataStore (本地 K 线, 0 网络)\n\n"
         )
 
-        # 加一段"5 年阶段"摘要 (缠论三要素 + RSI / 威科夫 1 句话)
+        # 加一段"5 年阶段"摘要 (RSI / 威科夫 1 句话)
         latest = data.factor_history_rows[-1] if data.factor_history_rows else {}
         first_row = data.factor_history_rows[0] if data.factor_history_rows else {}
         summary_lines = ["## 🗒 5 年阶段摘要\n"]
@@ -136,7 +136,6 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
             p_close = latest.get("close")
             rsi6_now = latest.get("rsi6")
             wy_d = latest.get("wyckoff_daily", "?")
-            bsp_d = latest.get("bsp_daily", "")
             if p_open and p_close:
                 cum = (p_close / p_open - 1) * 100
                 summary_lines.append(
@@ -145,8 +144,6 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
             if rsi6_now is not None:
                 summary_lines.append(f"- **当日 RSI6**: {rsi6_now:.1f}")
             summary_lines.append(f"- **当日 Wyckoff 阶段**: {wy_d}")
-            if bsp_d:
-                summary_lines.append(f"- **当日 缠论买卖点**: {bsp_d}")
             summary_lines.append("")
 
         md = header + "\n".join(summary_lines) + "## 📈 因子历史走势\n\n" + section
@@ -191,27 +188,24 @@ def _summarize_metrics(rows: list[dict]) -> dict:
                 worst = min(worst, (c / peak - 1) * 100)
         max_drawdown = worst
 
-    # 买卖点: 项目口径 (跟 diff_rows 的 new_bsp_daily 一致) = key **新出现**
-    # (bsp_daily 存的是"当前活跃的买卖点", 价格每天变; 只看 key 出现才算新事件)
+    # 阶段转变: 项目口径 (跟 diff_rows 的 wyckoff_daily 一致)
+    # 2026-11-06 改: 缠论买卖点整档删 → 统计威科夫阶段转变
+    #   A→M (Accumulation→Markup) = 买信号, M→D (Markup→Distribution) = 卖信号
     buy_count = 0
     sell_count = 0
     last_buy_date = ""
     last_sell_date = ""
-    prev_bsp: dict = {}
+    prev_stage = None
     for r in rows:
-        cur = r.get("bsp_daily")
-        if not isinstance(cur, dict):
-            cur = {}
-        for k in cur:
-            if k in prev_bsp:
-                continue
-            if "买" in str(k):
+        cur = str(r.get("wyckoff_daily") or "")
+        if prev_stage is not None and cur and cur != prev_stage:
+            if prev_stage == "Accumulation" and cur == "Markup":
                 buy_count += 1
                 last_buy_date = str(r.get("date", ""))
-            elif "卖" in str(k):
+            elif prev_stage == "Markup" and cur == "Distribution":
                 sell_count += 1
                 last_sell_date = str(r.get("date", ""))
-        prev_bsp = cur
+        prev_stage = cur
 
     latest = rows[-1] if rows else {}
     return {
@@ -239,7 +233,7 @@ def _write_summary_md(results: list[dict], output_dir: Path,
         "> 数据源: DataStore (本地 K 线, 0 网络)",
         "> 逐只详细表: `python -m tools.batch.factor_5y --code <代码>`",
         "",
-        "| 代码 | 名称 | 5年累计% | 最大回撤% | 当前RSI6 | 5年最低RSI6 | 阶段(日/周) | 5年买卖点 | 最近买/卖 | 行数 |",
+        "| 代码 | 名称 | 5年累计% | 最大回撤% | 当前RSI6 | 5年最低RSI6 | 阶段(日/周) | 5年阶段转变 | 最近A→M/M→D | 行数 |",
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in sorted(ok, key=lambda x: x.get("code", "")):
@@ -249,10 +243,10 @@ def _write_summary_md(results: list[dict], output_dir: Path,
         rsi_now = f"{m['rsi6_now']:.1f}" if m.get("rsi6_now") is not None else "—"
         rsi_min = f"{m['rsi6_min']:.1f}" if m.get("rsi6_min") is not None else "—"
         stage = f"{m.get('stage_daily', '?')}/{m.get('stage_weekly', '?')}"
-        bsp = f"{m.get('buy_count', 0)}买/{m.get('sell_count', 0)}卖"
-        last_bsp = f"{m.get('last_buy_date', '') or '—'}/{m.get('last_sell_date', '') or '—'}"
+        turns = f"{m.get('buy_count', 0)}A→M/{m.get('sell_count', 0)}M→D"
+        last_turns = f"{m.get('last_buy_date', '') or '—'}/{m.get('last_sell_date', '') or '—'}"
         lines.append(f"| {r['code']} | {r.get('name', '')} | {cum} | {mdd} | {rsi_now} | "
-                     f"{rsi_min} | {stage} | {bsp} | {last_bsp} | {r.get('rows', 0)} |")
+                     f"{rsi_min} | {stage} | {turns} | {last_turns} | {r.get('rows', 0)} |")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     scope = scope_label.replace(",", "-").replace("/", "-")

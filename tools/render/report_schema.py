@@ -12,6 +12,30 @@ CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
   2️⃣ 1 个缠论补充策略 (威科夫) — 一等公民
   6️⃣ 买卖点 (1买/2买/3买/1卖/2卖/3卖) — 综合 (买点/卖点)
+  → ⚠️ 2026-11-06: 缠论整层下线, 这 3 条铁律**全部作废**
+    (缠论三要素 / 缠论补充 / 买卖点 都是 czsc 产物)
+
+2026-11-06 删: 缠论整层 (中枢+背驰+止跌+买卖点) + 综合判定投票 (用户指令)
+  → 缠论是 czsc 产物 (分型/笔/中枢/段/背驰/买卖点 全部靠 czsc 算)
+  → 删的东西:
+    - tools/factors/chan/ 整目录 (czsc_adapter / czsc_signals / czsc_wrapper)
+    - requirements.txt 的 czsc>=1.0.1
+    - tools/batch/czsc_history_signals.py (czsc 17 信号历史触发验证脚本)
+    - analysis_engine.ChanStrategy + _derive_buy_sell_points (Phase1 4→3 个策略类)
+    - analysis_result_signals 的 中枢/买卖点 提取 + 变化检测 + 信号产出
+    - render_data 的 chan_data / chan_status / buy_sell_points / supplement
+    - report_renderer 的 【缠论详情】块 + 止跌信号 + _hub_str / _bsp_str
+    - report_linter 的 中枢位置一致性校验 + 段列表/中枢列表检测
+  → 报告变化:
+    - 「🎯 因子 × 3 周期 综合矩阵」→ 「🎯 因子 × 2 周期 矩阵 (威科夫)」
+      (原 3 行: 缠论 / 威科夫 / 综合判定 → 现 1 行: 威科夫)
+    - 数据完整性表少 2 列 (缠论 / 缠论补充)
+    - 因子历史表少 3 列 (日中枢 / 周中枢 / 买卖点) → 24 列变 21 列
+    - 「综合判定」(🥈标准建仓/🟠标准减仓/🟡观察) 整档消失
+  → 方向信号来源改为: 威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离
+    (analysis_result_signals.extract_signals 仍在, 产出 buy/sell 方向)
+  → ⚠️ 投票逻辑是**整块删除**, 不是把阈值从 2 降到 1 ——
+    降阈值会让「任何威科夫 Accumulation 都算建仓建议」, 属另一次决策, 不在本次范围
 
 2026-11-03 删: 📊 基础信息 (Tushare) 一档 (ts_basic)
   → 本档内容: 代码/名称/行业/上市日期/总股本/流通股本/市场, 一行文本
@@ -155,11 +179,13 @@ REPORT_SECTIONS = [
     # 注: chan_signals / chan_supplement 已于 7-29 合并入 factor_history + method_matrix, 废弃删除
     {
         "id": "method_matrix",
-        "title": "🎯 因子 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警, 2026-09-09 改)",
+        "title": "🎯 因子 × 2 周期 矩阵 (威科夫)",
         "category": "2️⃣",
         "render": "render_method_matrix",
         "required": True,
         "refresh": "REGEN",
+        # 2026-11-06: 缠论整层下线 → 3 周期综合矩阵降为 2 周期威科夫对照
+        #   (原 3 行: 缠论 / 威科夫 / 综合判定投票 → 现 1 行: 威科夫)
     },
     # === 3️⃣ 大盘+美股背景 ===
     # 2026-11-03: 整档从 md 报告里删除 (用户指令)
@@ -242,8 +268,8 @@ REPORT_SECTIONS = [
     #   五档风控全部从 md 报告里删除 (用户指令)
     #   原因: 价位/仓位比例 = 当前价 × 固定百分比的机械外推, 无标的特异性判断;
     #         且五档彼此重复表达
-    #   缠论三要素 (中枢+背驰+止跌) 仍在报告最前, 买卖点仍由缠论买卖点 section
-    #   + 因子矩阵提供 → 报告不再有独立风控 section
+    #   缠论三要素 (中枢+背驰+止跌) 曾在报告最前, 买卖点由缠论买卖点 section
+    #   + 因子矩阵提供 → 2026-11-06 随缠论整层下线一并删除
     {
         "id": "stop_profit",
         "title": "🎯 止盈 3 层",

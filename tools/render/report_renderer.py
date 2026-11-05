@@ -240,34 +240,6 @@ def _fmt_date(d: str) -> str:
     return f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) >= 8 else d
 
 
-def _chan_level_detail(chan_data: dict, level: str) -> dict:
-    """从 chan_data 提取单个周期的缠论详细数据"""
-    lv = chan_data.get(level) or {}
-    hub = lv.get("hub") or {}
-    segs = lv.get("segs") or []
-    seg_idx = hub.get("seg_idx", [])
-    # 中枢构成段：用 seg_idx 找到对应段的价格范围
-    hub_segs = [segs[i] for i in seg_idx if 0 <= i < len(segs)]
-    return {
-        "hub_low": hub.get("low", 0),
-        "hub_high": hub.get("high", 0),
-        "hub_valid": hub.get("valid", False),
-        "hub_pos": hub.get("pos", "—"),
-        "seg_count": len(segs),
-        "all_segs": segs,
-        "hub_segs": hub_segs,
-        "seg_idx": seg_idx,
-    }
-
-
-def _pos_emoji(pos: str) -> str:
-    if "上方" in pos: return "✅"
-    if "内部" in pos: return "⬜"
-    if "跌穿" in pos: return "🔴"
-    if "下方" in pos: return "⚠️"
-    return "⬜"
-
-
 def _wy_sub_indicators_md(wy_signals: list, level: str) -> str:
     """
     威科夫 5 子指标 → markdown 表格行
@@ -939,58 +911,22 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
 
 def _section_period(data: RenderData, level: str, label: str, weight: str) -> str:
     """
-    单周期 section：缠论详细数据 + 其余方法在该周期视角的数据
+    单周期 section：威科夫在该周期视角的数据
     level: 'weekly' | 'daily' | '60min'
     label: '周线' | '日线' | '60分'
     weight: '1.0x' (2026-09-09 改: 3 周期等权, 不再区分 1.5x/1.0x/0.5x)
 
     2026-10-28: 删 vp_windows 参数 (量价/fflow 维度整体删除)
+    2026-11-06: 删缠论整块 (中枢 / 段表 / 买卖点 — 缠论整层下线)
     """
     s5 = data.analysis or {}
-    chan = data.chan_data or {}
-    cd = _chan_level_detail(chan, level)
     # v5.10.42: 3 周期 sub_events 都从 s5.get("wyckoff").sub_events_by_period[level] 拿
     _wy_data_for_sub = s5.get("wyckoff") or {}
     _sub_by_period = _wy_data_for_sub.get("sub_events_by_period", {}) or {}
     _level_key_map = {"weekly": "weekly", "daily": "daily"}
     _level_sub_events = _sub_by_period.get(_level_key_map.get(level, level), []) or []
 
-    # ── 1. 缠论 ─────────────────────────────────────────────
-    hub_str = (f"¥{cd['hub_low']:.2f}~¥{cd['hub_high']:.2f}"
-               if cd["hub_valid"] else "未形成中枢")
-    pos_e = _pos_emoji(cd["hub_pos"]) if cd["hub_valid"] else ""
-    hub_pos_str = cd["hub_pos"] if cd["hub_valid"] else f"无中枢({cd['seg_count']}段，段数不足3)"
-    price = data.current_price or 0
-    if cd["hub_valid"] and cd["hub_low"] > 0:
-        dist = (price - cd["hub_low"]) / cd["hub_low"] * 100
-        hub_dist = f"{dist:+.1f}% vs 下沿"
-    else:
-        hub_dist = "需形成中枢后判断"
-
-    # 中枢构成段（展开价格）
-    # 2026-07-25 修复: 标题与表格间空行 (让所有 markdown viewer 都能识别表格)
-    # 不加表格前空行 — 上方已有 {hub_str} (位置说明) 自然隔开
-    hub_segs_md = ""
-    if cd["hub_segs"]:
-        hub_segs_md = "\n**中枢构成段 (seg_idx={}):**\n\n| 方向 | 起价 | 止价 | 笔数 | 起日 | 止日 |\n|---|---|---|---|---|---|\n".format(cd["seg_idx"])
-        for seg in cd["hub_segs"]:
-            hub_segs_md += (f"| {seg.get('dir','—')} | ¥{seg.get('sp',0):.2f} | "
-                            f"¥{seg.get('ep',0):.2f} | {seg.get('nb',0)} | "
-                            f"{_fmt_date(seg.get('sdt','—'))} | {_fmt_date(seg.get('edt','—'))} |\n")
-
-    # 最近走段（最多 6 段）
-    # 2026-07-25 修复: 标题与表格间空行 (让所有 markdown viewer 都能识别)
-    recent_segs = cd["all_segs"][-6:] if cd["all_segs"] else []
-    segs_md = ""
-    if recent_segs:
-        segs_md = "\n**最近走段 (最近 {} 段/共 {} 段):**\n\n| 方向 | 起价 | 止价 | 笔数 | 起日 | 止日 |\n|---|---|---|---|---|---|\n".format(
-            len(recent_segs), cd["seg_count"])
-        for seg in recent_segs:
-            segs_md += (f"| {seg.get('dir','—')} | ¥{seg.get('sp',0):.2f} | "
-                        f"¥{seg.get('ep',0):.2f} | {seg.get('nb',0)} | "
-                        f"{_fmt_date(seg.get('sdt','—'))} | {_fmt_date(seg.get('edt','—'))} |\n")
-
-    # ── 2. 威科夫 ────────────────────────────────────────────
+    # ── 威科夫 ────────────────────────────────────────────
     wy = s5.get("wyckoff") or {}
     wy_stage = wy.get("stage", "?")
     wy_name = wy.get("stage_name", "—")
@@ -1002,7 +938,7 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     #   但 s5 (analysis dict) 里**从来没有** wyckoff_weekly 这个顶层 key
     #   (它只是 RawContext 上的字段, 没进 raw) → 永远 fallback 到 s5["wyckoff"]
     #   = **日线**结果。后果: 周线段的阶段/置信度/判定强度/基础指标/公式代入值
-    #   全部是日线数值, 跟同段的周线中枢、sub-event 自相矛盾。
+    #   全部是日线数值, 跟同段的周线 sub-event 自相矛盾。
     #   实测 67 只样本: 31 只 stage 不一致、33 只 strength 不一致
     #   (600763 日线 Markup/extra_only, 周线真值 Accumulation/weak_B)。
     #   真源: raw["wyckoff"]["3period"][level] (analysis_engine.py L236)。
@@ -1077,52 +1013,11 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     else:
         wy_focus = f"阶段 {wy_stage} ({wy_name}) {wy_conf}% — {wy_action if level=='daily' else wy_focus_label}"
 
-    # 止跌信号（仅日线计算，周线显示说明）
-    if level == "weekly":
-        stop_signal = "周线不适用 (看日线止跌)"
-    else:  # daily
-        stop_signal = "❓ K线不足"
-        if data.kline and len(data.kline) >= 2:
-            kl = data.kline
-            bar = kl[-1]
-            try:
-                rng = bar.high - bar.low
-                lower_shadow = (min(bar.open, bar.close) - bar.low) / rng if rng > 0 else 0
-                # 2026-09-03 修: KLineBar 字段是 volume 不是 vol
-                vol_attr = getattr(bar, 'volume', None) or getattr(bar, 'vol', 0)
-                vol_ma20 = sum(getattr(k, 'volume', None) or getattr(k, 'vol', 0) for k in kl[-21:-1]) / 20 if len(kl) >= 21 else 0
-                shrink = vol_attr < vol_ma20 * 0.85 if vol_ma20 > 0 else False
-                long_lower = lower_shadow > 0.40
-                sigs = []
-                if shrink: sigs.append("✅缩量")
-                else: sigs.append("❌量未缩")
-                if long_lower: sigs.append(f"✅长下影({lower_shadow:.0%})")
-                else: sigs.append(f"❌下影短({lower_shadow:.0%})")
-                sigs.append("⏳次日待确认")
-                stop_signal = " ".join(sigs)
-            except Exception:
-                stop_signal = "❓ 计算异常"
+    # 2026-11-06 删: 止跌信号 (缠论三要素之「止跌」— 缠论整层下线)
+    # 2026-11-06 删: 买卖点 (缠论买卖点 — 缠论整层下线)
 
-    # 买卖点 (从 buy_sell_points 取对应周期)
-    bsp_level_key = {"weekly": "weekly", "daily": "daily"}.get(level, "daily")
-    bsp = (data.buy_sell_points or {}).get(bsp_level_key, {})
-    bsp_action = bsp.get("action", "观察")
-    bsp_active = [(k, v) for k, v in bsp.items()
-                  if k != "action" and v and v != "无" and v != "—"]
-    bsp_str = " / ".join(f"{k}={v}" for k, v in bsp_active) if bsp_active else "无有效买卖点"
+    return f"""> 周期 **{label}** (3 周期等权, 2026-09-09 删权重展示)
 
-    return f"""> 周期 **{label}** (3 周期等权, 2026-09-09 删权重展示) | 中枢: {hub_str} ({pos_e}{hub_pos_str}, {hub_dist}) | 段数: {cd['seg_count']}
-
-**【缠论详情】**
-
-| 项目 | 内容 |
-|---|---|
-| 中枢区间 | {hub_str} |
-| 价格位置 | {pos_e} {hub_pos_str} ({hub_dist}) |
-| 止跌信号 | {stop_signal} |
-| 总段数 | {cd['seg_count']} 段 |
-| **买卖点** | **{bsp_action}** — {bsp_str} |
-{hub_segs_md}{segs_md}
 **【威科夫详情】** (对齐 WyckoffTradingAgent 3 大阶段: Accumulation / Markup / Distribution)
 
 | 项目 | 内容 |
@@ -1159,27 +1054,23 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
 
 def _section_weekly(data: RenderData) -> str:
     """📋 周线分析 (因子)"""
-    if not data.chan_data and not data.analysis:
-        return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
+    if not data.analysis:
+        return "> **数据状态:** ⚠️ 因子数据未生成\n"
     return _section_period(data, "weekly", "周线", "1.0x")
 
 
 def _section_daily(data: RenderData) -> str:
     """📋 日线分析 (因子)"""
-    if not data.chan_data and not data.analysis:
-        return "> **数据状态:** ⚠️ 缠论/5方法数据未生成\n"
+    if not data.analysis:
+        return "> **数据状态:** ⚠️ 因子数据未生成\n"
     return _section_period(data, "daily", "日线", "1.0x")
 
 
 def _section_factor_matrix(data: RenderData) -> str:
     """
-    🎯 因子 × 3周期 综合矩阵 (2026-07-25 重构: 用 factor_matrix 模块, 2026-08-17 改名)
+    🎯 因子 × 2 周期 矩阵 (2026-11-06 缠论整层下线后简化: 只剩威科夫)
 
-    1 个 section 包含:
-      - 因子 × 3 周期 矩阵 (含中枢 + 123 买卖点 + 建议买入/卖出价)
-      - 实战建议 (中枢下沿买入 / 上沿卖出)
-
-    跨 4 批 38 只 388 样本验证 (2026-07-24)
+    2026-11-06 删: 缠论行 (中枢 + 买卖点) / 综合判定行 (投票) / 实战建议 (中枢上下沿建议价)
 
     注意: 复用 analysis 已算好的数据, render 阶段 0 重复计算
     """
@@ -1196,8 +1087,6 @@ def _section_factor_matrix(data: RenderData) -> str:
             name=data.name,
             current_price=data.current_price or 0,
             signals_5method=data.analysis,  # 参数名暂保留, v5.10.26+ 内部就是 analysis dict
-            chan_data=data.chan_data or {},
-            buy_sell_points=data.buy_sell_points or {},
         )
         return render_factor_matrix_md(matrix)
     except Exception as e:
@@ -1206,65 +1095,10 @@ def _section_factor_matrix(data: RenderData) -> str:
 
 
 # ============================================================
-# Tushare 补充段 + 缠论三要素
+# 因子历史走势 (24 → 21 列)
 # ============================================================
 
-def _hub_str(h: dict) -> str:
-    """中枢字符串: ¥low~high{✅/⚠️/🔴/⬜}, 上方✅/下方⚠️/跌穿🔴/内部⬜
-    2026-08-26 改: 加 "跌穿🔴" 映射, 之前落 "⬜" 是 bug
-    """
-    if h and h.get("valid") and h.get("low") and h.get("high"):
-        pos = h.get("pos", "")
-        if "上方" in pos:
-            icon = "✅"
-        elif "跌穿" in pos:
-            icon = "🔴"
-        elif "下方" in pos:
-            icon = "⚠️"
-        else:
-            icon = "⬜"
-        return f"¥{h['low']:.0f}~{h['high']:.0f}{icon}"
-    return "—"
-
-
-def _bsp_str(pts: dict) -> str:
-    """买卖点字符串: "0买 1买⭐ 2买" (按级别排, 不带 timeframe label)
-    2026-07-31 提到模块级
-    2026-08-26 改: 加上其他 czsc BSP 类型 (吞没/MACD底背/双中枢/笔结束 等)
-
-    2026-08-01: 硬 assert 禁 '|' — markdown 表格里 | 是 cell 分隔符, 用 | join 必错位
-    """
-    if not pts: return "—"
-    out = []
-    seen = set()
-    def _add(label):
-        if label not in seen:
-            seen.add(label)
-            out.append(label)
-    for k in pts:
-        # 1买/2买/3买/1卖/2卖/3卖 (123 买卖点, 优先识别)
-        if "1买⭐" in k:   _add("1买⭐")
-        elif "1买" in k:   _add("1买")
-        elif "2买" in k:   _add("2买")
-        elif "3买" in k:   _add("3买")
-        elif "0买" in k:   _add("0买")
-        elif "1卖⭐" in k:  _add("1卖⭐")
-        elif "1卖" in k:   _add("1卖")
-        elif "2卖" in k:   _add("2卖")
-        elif "3卖" in k:   _add("3卖")
-        # 2026-08-26 改: 其他 czsc BSP 类型 (抄底/逃顶/形态/笔信号)
-        # DIF走平/MACD开仓 是连续状态信号，不在买卖点列显示（在"变化"列显示）
-        elif "MACD底背" in k:    _add("底背")
-        elif "MACD顶背" in k:    _add("顶背")
-        elif "笔结束" in k:      _add("笔结束")
-        elif "双中枢" in k:      _add("双中枢")
-        elif "吞没" in k:        _add("吞没")
-    result = " ".join(out) if out else "—"
-    assert "|" not in result, f"_bsp_str 禁 '|' 字符 (markdown cell 分隔符), got: {result!r}"
-    return result
-
-
-# 因子历史走势 — 24 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
+# 因子历史走势 — 21 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
 # 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
@@ -1272,8 +1106,9 @@ def _bsp_str(pts: dict) -> str:
 #   记法映射单一事实源 = tools.factors.wyckoff.helpers.strength_token, 渲染器只读不算。
 # 2026-11-04 改列序: 威科夫 3 列 (威科夫(日/周) / 威科夫强度 / 子事件(日/周))
 #   从「MA偏离」右边移到「收盘」右边 —— 用户要求威科夫信息靠前, 紧跟价格看。
+# 2026-11-06 删 3 列: 日中枢 / 周中枢 / 买卖点 (缠论 — 缠论整层下线) → 24 列变 21 列
 #   列序: 日期 → 收盘 → 威科夫3列 → RSI6 → MACD... → PE
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 日中枢 | 周中枢 | 买卖点 | 变化 | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 变化 | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
@@ -1313,14 +1148,7 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
         return s.split(" (")[0]
     se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
 
-    # 买卖点列只显示当天首次出现的信号 (new_bsp_daily/weekly = diff 新出现)
-    bsp_parts = []
-    for k, lbl in (("new_bsp_daily", "日"), ("new_bsp_weekly", "周")):
-        new_pts = changes.get(k, {})
-        for l in _bsp_str(new_pts).split():
-            if l and l != "—":
-                bsp_parts.append(f"{l}({lbl})")
-    b3 = " ".join(bsp_parts) if bsp_parts else "—"
+    # 2026-11-06 删: 买卖点列 (bsp_parts / b3) — 缠论整层下线
 
     chg = format_signals_for_render(changes)
     chg = [c for c in chg if not c.startswith('📊MA')]
@@ -1415,8 +1243,7 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
         f"| {wy} | {strength_s} | {se} "
         f"| {rsi6_s} | {macd_s} | {dif_str} | {dea_str} | {bar_d_s} | {vol_s} "
         f"| {slope_s} | {ma_s} "
-        f"| {_hub_str(row['hub_daily'])} | {_hub_str(row['hub_weekly'])} "
-        f"| {b3} | {chg_str} "
+        f"| {chg_str} "
     )
     bpct  = row.get('boll_pct')
     bwid  = row.get('boll_width')
@@ -1608,7 +1435,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
     details = [comp[k][1] for k in keys]
     comp_table += "| 详情 | " + " | ".join(details) + " |\n"
 
-    # 报告主体 (按 CLAUDE.md 铁律顺序: 1️⃣缠论 → 2️⃣补充 → 3️⃣板块 → 4️⃣大盘 → 6️⃣仓位)
+    # 报告主体 (2026-11-06 缠论整层下线后: 缠论三要素段 + 缠论补充段已消失)
     # 2026-11-02: 5️⃣ PEG/DCF 整档已删
     # 2026-10-28: 主力 fflow 维度整体删除, 6️⃣ 位取消
     report = f"""# {code} {name} | {today}
@@ -1638,14 +1465,14 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ---
 
-## 🎯 因子 × 3 周期 综合矩阵 (2026-07-25 合并: 整合原 5 合 1 顶部预警, 2026-09-09 改)
+## 🎯 因子 × 2 周期 矩阵 (威科夫)
 {_section_factor_matrix(data)}
 
 ---
 
 ## 🔍 因子详情 — 周期独立展开 (2026-07-29 简版: 矩阵 + 详情并存, 矩阵简版/详情展开)
 
-> 📌 **结构说明**: 上面矩阵是 1 眼总览 (因子 × 3 周期各 1 行概要), 下面是每个周期的详情 (段表 / 9 子事件等矩阵没包含的独有信息)
+> 📌 **结构说明**: 上面矩阵是 1 眼总览 (威科夫 × 2 周期各 1 行概要), 下面是每个周期的详情 (9 子事件等矩阵没包含的独有信息)
 > 不重复: 矩阵已包含的概要不在详情里再写
 
 ### 📋 日线分析 (因子 × 日线视角)

@@ -59,19 +59,20 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
   用来筛的 —— 筛完看汇总表 / stdout 就够, 不给 157 只各存一份详报
   (`--include-blowout` flag 已删, `docs/blowout/` 已废弃并清空)
 
-### 汇总里的信号类型 (2026-11-03)
+### 汇总里的信号类型 (2026-11-03, 2026-11-06 缠论下线后调整)
 
-`signal-watchlist.md` 的 buy / sell 两张表来自 `extract_signals()` 的 direction 字段, 8 类信号:
+`signal-watchlist.md` 的 buy / sell 两张表来自 `extract_signals()` 的 direction 字段:
 
 | 信号 | 方向 | 含义 |
 |---|---|---|
-| `🟢1买/2买/3买` 新出现 | buy | 缠论买卖点 |
 | `A→M主升启动(daily/weekly)` | buy | **威科夫阶段转变** (Accumulation→Markup) |
 | 威科夫子事件 (Spring/LPS/SOS/EVR...) | buy/sell | 按事件性质分 |
-| 中枢位置变化 | buy/sell | 内部→上方=买 |
 | MA 超跌 ≤-10% | buy | |
 | MA 过热 ≥+10% | sell | |
 | `M→D派发开始` | sell | 威科夫 Markup→Distribution |
+
+> ⚠️ 2026-11-06: **缠论整层下线**, `🟢1买/2买/3买` (缠论买卖点) 与「中枢位置变化」两类信号**已删除**。
+> 方向信号现在全部来自威科夫阶段转变 + 子事件 + MA 偏离。
 
 > ⚠️ 威科夫 **A→M 是 daily 和 weekly 分开算的** —— 日线 A→M 但周线还是 A, 是两个不同的信号, 报表里会分别列出。
 > 「变化」列不会重复显示同一转变 (A→M 只出现一次)。

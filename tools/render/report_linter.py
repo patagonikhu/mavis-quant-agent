@@ -63,10 +63,9 @@ KEY_DATA_PATTERNS = {
     "板块 MA20 偏离": r"MA20\s*偏离.*[\+\-]?[\d.]+%",
     # 2026-11-03 删: "止盈价" / "止损价" (止盈 3 层 + 止损 4 档整档已删)
     "评级": r"(🥇|🥈|🥉|⚠️|❌).*[重仓|标准|轻仓|观察|不买]",
-    # ===== 因子 × 3 周期 矩阵 必填 (2026-09-09 改: 原 5 方法 → 因子, 走 缠论 等权投票) =====
-    "因子矩阵标题": r"##\s*🎯\s*因子\s*×\s*3\s*周期",
-    # 删: "5方法场景/共振数/行动/总分" 4 个 pattern (2026-09-09 删: 决策走 缠论 1买/2买/3买/1卖/2卖/3卖)
-    # 矩阵内容由 factor_matrix._composite_verdict 5 类等权投票生成 (action: 🥇/🥈/🥉/🟠/🟡)
+    # ===== 因子 × 2 周期 矩阵 必填 (2026-11-06 缠论整层下线 → 2 周期) =====
+    "因子矩阵标题": r"##\s*🎯\s*因子\s*×\s*2\s*周期",
+    # 2026-11-06 删: 缠论行 / 综合判定(投票)行 — 缠论整层下线
 }
 
 
@@ -154,42 +153,11 @@ def lint_report(md_path: str) -> dict[str, Any]:
         warnings.append("⚠️ 未找到 MA 表 (K线可能不够)")
     # 2026-11-02 删: PEG / DCF 数值检查 (整档已删)
 
-    # 2026-07-24: 逻辑校验 (升级, 之前只查"存在"不查"合理")
-    # 检查"价格 vs 中枢"距离, 防止"位置: 下方⚠️" 但实际是"跌穿" 的语义模糊
-    m_hub = re.search(r"中枢区间:\*\*\s*¥([\d.]+)\s*~\s*¥([\d.]+)", content)
-    m_price = re.search(r"当前价格:\*\*\s*¥([\d.]+)", content)
-    # 精确化: 抓 "(位置: XXX)" 里的 XXX, ** 可选
-    m_pos = re.search(r"\(位置:\s*(?:\*\*)?\s*(.+?)(?:\s|\))", content)
-    if m_hub and m_price and m_pos:
-        try:
-            p = float(m_price.group(1))
-            hl = float(m_hub.group(1))
-            hh = float(m_hub.group(2))
-            stated_pos = m_pos.group(1).strip()
-            # 计算距中枢下沿的偏离度
-            dev_low = (p - hl) / hl * 100  # 负数=下方, 正数=上方
-            # 校验位置表述和真实距离是否一致
-            if p < hl * 0.95 and "跌穿" not in stated_pos:
-                # 价格跌穿中枢下沿 5%+, 但报告没标"跌穿"
-                warnings.append(
-                    f"🔴 中枢位置表述模糊: 价格 ¥{p:.2f} 跌穿下沿 ¥{hl:.2f} ({dev_low:.1f}%), "
-                    f"但报告写 '{stated_pos}' (应是'跌穿🔴')"
-                )
-            elif hl * 0.95 <= p < hl and "跌穿" in stated_pos:
-                # 价格只破 <5%, 但报告标"跌穿" (过严)
-                warnings.append(
-                    f"🔴 位置术语过严: 实际距中枢下沿 {dev_low:.1f}% (未到 5% 阈值), 报告写'跌穿'过严, 应是'下方⚠️'"
-                )
-            elif hl <= p <= hh and ("下方" in stated_pos or "上方" in stated_pos):
-                warnings.append(
-                    f"🔴 位置术语不一致: 价格在中枢内, 但报告写'{stated_pos}' (应是'内部⬜')"
-                )
-        except Exception:
-            pass
-    # ===== 2026-09-09 改: 因子 × 3 周期 矩阵 必填校验 (原 5 方法 → 因子, 删 4 个 weight/total_score warning) =====
+    # 2026-11-06 删: 中枢位置一致性逻辑校验 (缠论中枢 — 缠论整层下线)
+    # ===== 因子 × 2 周期 矩阵 必填校验 (2026-11-06: 3 周期 → 2 周期) =====
     if not key_data["因子矩阵标题"]:
-        warnings.append("🔴 缺 '因子 × 3 周期 矩阵' section 标题 (硬保证失败)")
-    # 删: 4 个 '5方法场景/共振数/行动/总分' warning (2026-09-09 删: 决策走 缠论, 不再按 5 方法加权)
+        warnings.append("🔴 缺 '因子 × 2 周期 矩阵' section 标题 (硬保证失败)")
+    # 2026-11-06 删: '5方法场景/共振数/行动/总分' warning (投票逻辑整档已删)
 
     # === 升级: 占位符检测 (2026-07-22 加, 防止"数据丢"漏检) ===
     # 2026-07-23 加: 3 个特定占位符 (sync_watchlist_fresh 之前埋的坑, 实算后必须消失)
@@ -235,20 +203,7 @@ def lint_report(md_path: str) -> dict[str, Any]:
             for line in matches[:3]:  # 只报前 3 个
                 warnings.append(f"⚠️ 占位符 [{desc}]: {line.strip()[:80]}")
 
-    # === 升级: 段列表检测 (缠论完整数据 段必须有 seg_idx + 子段) ===
-    if "## 📊 多周期信号汇总" in content:
-        has_seg_idx = "seg_idx" in content
-        has_seg_table = "起价" in content and "止价" in content and "笔数" in content
-        if not has_seg_idx:
-            warnings.append("⚠️ 多周期信号汇总缺 `seg_idx` 字段")
-        if not has_seg_table:
-            warnings.append("⚠️ 多周期信号汇总缺段列表")
-
-    # === 升级: 中枢列表检测 (必须展开中枢构成 seg_idx) ===
-    if "中枢" in content:
-        # 检查是否有"中枢构成"段 (新格式特征)
-        if "中枢构成" not in content and "中枢区间" not in content:
-            warnings.append("⚠️ 缠论中枢只有总览, 缺详细子段列表")
+    # 2026-11-06 删: 段列表检测 (缠论 seg_idx) + 中枢列表检测 (缠论中枢构成)
 
     # === 2026-07-25 新增: markdown 格式检测 (抓"标题紧接表格"bug) ===
     # 抓"粗体标题行末直接换行表格行"的情况 (中间无空行)
@@ -269,8 +224,8 @@ def lint_report(md_path: str) -> dict[str, Any]:
                 f"表格会被 python-markdown 吞掉 (改成 `**{title}**\\n\\n| ...`)"
             )
 
-    # === 2026-09-09 改: 因子详情 section 必须有表格 (原 5 方法分析 → 因子详情) ===
-    # 因子详情的 3 个子 section (周线/日线/60分) 各应有缠论详情表 + 走段表
+    # === 因子详情 section 必须有表格 =====
+    # 因子详情的 2 个子 section (周线/日线) 各含 威科夫详情表 + 阶段评分表 + 基础指标表 + sub-event 表
     m_5method = re.search(r"## 🔍 因子详情(.*?)(?=\n## |\Z)", content, re.DOTALL)
     if m_5method:
         section_5m = m_5method.group(1)
@@ -279,19 +234,19 @@ def lint_report(md_path: str) -> dict[str, Any]:
         # 数表格行 (| ... | 模式, 连续 2 行以上)
         tables = re.findall(r"(?:^\|[^\n]*\|\n){2,}", section_5m, re.MULTILINE)
         if sub_count > 0:
-            expected = sub_count * 2  # 至少缠论详情 + 最近走段
+            expected = sub_count * 2  # 每子 section 至少 2 个表 (详情表 + 指标表)
             if len(tables) < expected:
                 warnings.append(
                     f"🔴 因子详情 {sub_count} 子 section, "
                     f"但只有 {len(tables)} 个表格 (期望 ≥ {expected} 个: "
-                    f"每子 section 至少缠论详情 + 最近走段)"
+                    f"每子 section 至少 威科夫详情 + 阶段评分)"
                 )
 
     # === 新增: section 顺序检测 (基于 report_schema.REPORT_SECTIONS) ===
     try:
         from tools.render.report_schema import get_ordered_titles
         ordered_titles = get_ordered_titles()
-        # 只检查 CLAUDE.md 红字铁律: 缠论 1️⃣2️⃣ 必须最先
+        # 2026-11-06: 缠论 1️⃣2️⃣ 铁律已随缠论整层下线移除
         # 2026-07-25: 优先用 id 注释 (按 REPORT_SECTIONS 顺序), fallback 标题文案
         section_titles_in_doc = re.findall(r"^##\s+(.+)$", content, re.MULTILINE)
         # 构建 id → 标题的索引顺序

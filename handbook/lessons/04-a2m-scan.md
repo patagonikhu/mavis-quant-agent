@@ -218,6 +218,7 @@ financials 表**没有**毛利率 yoy 字段. 现已在 `_filter_by_quality` doc
 ### 详报里"当前买卖点"只能从 buy_sell_points 取, 因子历史表的买卖点列是"当天新出现" (2026-11-02 踩坑)
 Type: rule
 > **摘要:** 因子历史表的买卖点列是"当天新出现", 不是"当前持有"
+> **⚠️ 2026-11-06 本条作废** —— 缠论整层下线, 买卖点整档删除, 无对象可取。保留作历史存档。
 
 **铁律:** 汇总"当前有效买卖点"用 `result.raw['buy_sell_points'][tf]` (tf = daily/weekly),
 经 `tools/render/report_renderer.py::_bsp_str()` 转字符串。**不要**从因子历史表的「买卖点」列取。

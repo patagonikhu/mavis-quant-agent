@@ -1,7 +1,7 @@
 """
 ga_mine.py - GA 挖掘 demo (Day 9, 2026-07-27)
 
-目标: 在 300274 (阳光电源) 上跑 gplearn, 挖掘"缠论/结构增强因子"
+目标: 在 300274 (阳光电源) 上跑 gplearn, 挖掘 K 线派生的增强因子
 输入: 7 个 factor 输出 (dict/Series) + 基础 OHLCV
 输出: docs/ga_results_{code}_{date}.md + data/ga_pool.json
 

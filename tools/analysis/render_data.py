@@ -181,19 +181,7 @@ class RenderData:
     # render 改读 data.analysis.<字段> 太散, 加 property 兼容老代码
     # 2026-11-02 删: peg / dcf 两个 property (PEG/DCF 整档已删, 0 调用)
     # 2026-11-03 删: five_categories property (5 类 14 子信号整档已删, 0 调用)
-    @property
-    def buy_sell_points(self) -> Optional[dict]:
-        # 多源合并: 1) analysis.buy_sell_points, 2) factor_scores.buy_sell_points.raw
-        bsp = (self.analysis or {}).get("buy_sell_points")
-        if bsp:
-            return bsp
-        # 兜底: 从 factor_scores.buy_sell_points 拿
-        fs = (self.analysis or {}).get("factor_scores") or {}
-        bsp_fc = fs.get("buy_sell_points") or {}
-        raw = bsp_fc.get("raw") if isinstance(bsp_fc, dict) else None
-        if raw and isinstance(raw, dict):
-            return raw
-        return None
+    # 2026-11-06 删: buy_sell_points property (缠论买卖点 — 缠论整层下线)
 
     # 移植因子 (WyckoffTradingAgent → mavis, 2026-08)
     # 走 factor_scores 路径, to_dict() 已自动提升 raw 到顶层
@@ -211,15 +199,14 @@ class RenderData:
     # strategy_status: Optional[DataStatus] = None
 
     # ===== 扩展 (mavis LLM 算) =====
-    chan_data: Optional[dict] = None
-    chan_status: Optional[DataStatus] = None
+    # 2026-11-06 删: chan_data / chan_status (缠论 — 缠论整层下线)
     # 2026-11-03 删: four_questions / t_frame / signal_5cat 三个字段
     #   (投资四问 / T 框架 / 5 类 14 子信号三档整档已删)
     # 2026-09-02 合并: peg_detail / dcf_detail / magic_formula_detail → valuation_data 1 个
     # 2026-11-02: PEG/DCF 已删, valuation_data 现在只剩 Magic (ROC/EY)
     valuation_data: Optional[dict] = None  # FinanceStrategy 输出 (Magic)
     xgboost_prob: Optional[float] = None
-    supplement: Optional[dict] = None
+    # 2026-11-06 删: supplement 字段 (缠论补充 — 缠论整层下线)
     # 2026-11-03 删: take_profit / stop_loss 两个字段 (止盈 3 层 + 止损 4 档整档已删)
     # 2026-11-03 删: exit_signals property (退场信号检查整档已删)
     # 2026-10-30 修: 删掉 position_layer / monitor_triggers 两个字段声明
@@ -292,29 +279,13 @@ class RenderData:
 
         # Phase 2 派生字段 (render 路径一次性运行，engine 不再负责)
         from tools.analysis.analysis_engine import PHASE2_FUNCTIONS
-        _chan_bsp = (signals_5.get("chan") or {}).get("buy_sell_points") or {}
-        ctx._bsp_for_data = _chan_bsp  # _derive_buy_sell_points 需要
+        # 2026-11-06 删: _chan_bsp / ctx._bsp_for_data (缠论买卖点 — 缠论整层下线)
         for _fn in PHASE2_FUNCTIONS:
             _key = _fn.__name__.replace("_derive_", "")
             try:
                 signals_5[_key] = _fn(ctx, signals_5)
             except Exception:
                 pass
-
-        # chan_data
-        chan_raw = signals_5.get("chan", {})
-        chan_data = None
-        if chan_raw:
-            chan_data = {
-                "weekly": chan_raw.get("weekly", {}),
-                "daily":  chan_raw.get("daily", {}),
-                "beichi": {
-                    "weekly": (lambda b: b.get("display", "") if isinstance(b, dict) else b)(
-                        (chan_raw.get("weekly") or {}).get("beichi", "")),
-                    "daily":  (lambda b: b.get("display", "") if isinstance(b, dict) else b)(
-                        (chan_raw.get("daily")  or {}).get("beichi", "")),
-                },
-            }
 
         # 机械推导字段
         raw_for_mech = {
@@ -346,7 +317,6 @@ class RenderData:
             technical_status=DataStatus(name="technical",
                                         status="OK" if technical and "error" not in technical else "EMPTY"),
             analysis=signals_5,
-            chan_data=chan_data,
             ctx=ctx,
             # 2026-10-30 修: 删掉 position_layer / monitor_triggers 两个传参
             #   它们走 _mech_* stub (永远返回 None), 且会把上面删掉的字段重新加回来,
@@ -359,7 +329,7 @@ class RenderData:
             # 2026-09-02 改: 删 magic_formula_detail, 用 valuation_data 1 个字段
             valuation_data=cls._compute_valuation(ctx, result),
             # 2026-09-03 修 12 处 Phase2 降级: 7 个 schema 字段填值
-            # _compute_phase2 返 dict 包含: sector_overheat / supplement
+            # _compute_phase2 返 dict 包含: sector_overheat
             #   2026-11-03 删: fundamental / signal_5cat / strategy 三个 key
             #   2026-11-03 删: take_profit key (止盈/止损两档整档已删)
             **cls._compute_phase2(ctx, result, signals_5, ma_table),
@@ -398,18 +368,17 @@ class RenderData:
             return DataStatus(name=name, status="OK")
 
         # 2026-09-09 删: 基本面 (4 维) — 估值/盈利/增长/安全 评分
-        # 走 缠论 + Magic (ROC/EY), 报告 section 整个删掉
+        # 走 Magic (ROC/EY), 报告 section 整个删掉
         # 2026-11-03 删: 5 类信号 (整档已删, 只剩"暂未接入"占位, 零有效信息)
         # 2026-09-09 删: 策略 (5 strategy 投票, 走缠论)
-        # 4) 缠论补充 — 从 chan 取 (bsp + hub 已经算)
-        out["supplement"] = cls._extract_chan_supplement(raw)
+        # 2026-11-06 删: 缠论补充 (supplement) — 缠论整层下线
         # 2026-11-03 删: 止盈 3 层 + 止损 4 档 (整档已删)
         #   原: out["take_profit"] = compute_stop_pl(ctx.kline or [])
         #   价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断;
         #   (原注释说"真实风控由 monitor_triggers 承担" — 该档本轮也已删, 见下)
         # 2026-11-03 删: 退场信号检查 (exit_signals) — 与上面两档重叠
         # 2026-11-03 删: 3 层仓位策略 + 监控触发点 (整档已删)
-        #   → 报告已无独立风控 section; 仓位/止损需自行从 缠论买卖点 推导
+        #   → 报告已无独立风控 section; 仓位/止损需自行从 威科夫阶段/子事件 推导
 
         return out
 
@@ -420,29 +389,6 @@ class RenderData:
     # 2026-11-03 删: _agg_5_categories (5 类 14 子信号整档已删)
     #   演进: 2026-10-28 删量价+资金 → 2026-11-02 删 PEG → 只剩 龙头/政策/情绪
     #         3 项"暂未接入"占位 (score=5, triggered=False) → 零有效子信号
-
-    @staticmethod
-    @staticmethod
-    def _extract_chan_supplement(raw: dict) -> dict:
-        """缠论补充: 2 买 / 3 买 / 类二买 / 中枢突破"""
-        bsp = (raw.get("buy_sell_points", {}) or {})
-        out = {"daily": {}, "weekly": {}}
-        for level in ("daily", "weekly"):
-            pts = bsp.get(level, {}) or {}
-            if not isinstance(pts, dict):
-                continue
-            for k, v in pts.items():
-                if k == "action":
-                    continue
-                if "🟢2买" in str(k):
-                    out[level]["2买"] = v
-                elif "🟢3买" in str(k):
-                    out[level]["3买"] = v
-                elif "🟢双中枢" in str(k):
-                    out[level]["双中枢"] = v
-                elif "🟢笔结束" in str(k):
-                    out[level]["笔结束"] = v
-        return out
 
     # ============================================================
     # 完整性
@@ -468,8 +414,8 @@ class RenderData:
         # 2026-09-09 删: 策略 status 行 (走缠论, 不再单独展示 5 strategy 投票)
         # 2026-08-31: 资金流 section 已停用 (CLAUDE.md 板块适用性限制), 不展示
         # 2026-11-04 删: EPS status 行 (EPS 机构一致预期整档已删)
+        # 2026-11-06 删: 缠论 status 行 (缠论整层下线)
 
-        report["缠论"] = ("✅" if self.chan_data else "❓", "OK" if self.chan_data else "未计算")
         # 2026-11-03 删: 四问 / T框架 两行 (两档整档已删)
         # 2026-09-02 改: 合并 valuation_data 1 个
         # 2026-11-02 删: PEG / DCF L 两行 (整档已删)
@@ -493,7 +439,7 @@ class RenderData:
             report["Magic"] = ("❓", "未计算")
         # 2026-11-02 修: 删重复的 report["5类信号"] 赋值
         #   (上面 line("5类信号", ...) 已经赋过, 这里再赋会覆盖掉子信号数详情)
-        report["缠论补充"] = ("✅" if self.supplement else "❓", "OK" if self.supplement else "未计算")
+        # 2026-11-06 删: report["缠论补充"] 行 (缠论整层下线)
         # 2026-11-03 删: report["止盈止损"] 行 (止盈 3 层 + 止损 4 档整档已删)
 
         return report
@@ -504,6 +450,4 @@ class RenderData:
         return int(ok / len(report) * 100)
 
     # 2026-11-02 删: can_calc_peg / can_calc_dcf (0 调用; PEG/DCF 整档已删)
-
-    def can_calc_supplement(self) -> bool:
-        return len(self.kline) >= 30
+    # 2026-11-06 删: can_calc_supplement (缠论补充 — 缠论整层下线)

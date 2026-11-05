@@ -270,3 +270,54 @@ Type: rule
 - `guardrail --check {network|factor|parquet|safe-fs}` 4 项全绿
 
 **apply when:** 任何"下线 / 删除一个功能"的动作。
+
+
+### 缠论整层下线: 一个分析维度横跨 12 处, 投票逻辑要「整块删」不是「降阈值」 (2026-11-06)
+Type: rule
+> **摘要:** 缠论 (中枢/背驰/止跌/买卖点) 全部是 czsc 产物 → 连 czsc 依赖一起删;
+> 投票是 2 类票 (chan/wyckoff), 删掉 chan 后剩 1 票 → 阈值恒不可达 → **整块删投票**, 不是把阈值从 2 降到 1
+
+**背景:** 用户指令「缠论我感觉没啥用, 你帮我删掉吧」+「投票 这块逻辑全删掉」。
+
+**⚠️ 关键决策: 投票是「整块删除」, 不是「把阈值 bottom_signals >= 2 降到 1」**
+两者结果天差地别:
+- 整块删 → 报告里不再有「🥈标准建仓 / 🟠标准减仓 / 🟡观察」三档综合判定,
+  方向信号改由 **威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离** 提供
+- 降阈值到 1 → 「任何威科夫 Accumulation 都算建仓建议」, 判定门槛断崖式放松,
+  属**另一次决策**, 不该顺手做 (要降阈值必须先回测 + 跟用户确认)
+
+**连带清理 12 处 (比 lesson 11 的 6 处多一倍, 因为缠论横跨全栈):**
+1. `tools/factors/chan/` 整目录 (czsc_adapter / czsc_signals / czsc_wrapper)
+2. `requirements.txt` 的 `czsc>=1.0.1` (第三方依赖也要删, 别留个装不上的库)
+3. `tools/batch/czsc_history_signals.py` (czsc 17 信号历史验证脚本)
+4. `analysis_engine.ChanStrategy` + `_derive_buy_sell_points` + `PHASE2_FUNCTIONS` (Phase1 **4→3** 个策略类)
+5. `analysis_result_signals` 的 中枢/买卖点 提取 + diff 变化检测 + 信号产出 (bsp_new/bsp_gone/hub_pos_change)
+6. `render_data` 的 `chan_data` / `chan_status` / `buy_sell_points` property / `supplement` + `_extract_chan_supplement`
+7. `report_renderer` 的【缠论详情】整块 + 止跌信号 + `_chan_level_detail` / `_pos_emoji` / `_hub_str` / `_bsp_str`
+8. `report_linter` 的 中枢位置一致性校验 + 段列表/中枢列表检测 + 因子矩阵标题 pattern (3 周期 → 2 周期)
+9. `factor_matrix` 整文件重写 (缠论列 + 投票 composite + 基于中枢的建议价全删)
+10. `batch_backtest` 的 6 个缠论买卖点回测列 + `match_signal` 的 1买~3卖分支
+11. 死脚本: `tools/backtest/double_touch_30d.py` (查 `analysis_cache.chan_1buy`, 该列 2026-09-22 已删 → SQL 必报错) + `tools/batch/_eval_vote.py`
+12. 文档: CLAUDE.md (报告顺序铁律 1️⃣2️⃣6️⃣ 全作废) / analysis_framework.md 整篇重写 / 4 个 SKILL.md / README 第 8 章整章 + 9.2 节 / architecture.md / handbook/AGENT_MEMORY.md / project.yaml 的 `hub_window`
+
+**报告侧的可见变化 (改前先跟用户对齐预期):**
+- 「🎯 因子 × 3 周期 综合矩阵」→「🎯 因子 × 2 周期 矩阵 (威科夫)」(3 行 → 1 行)
+- 数据完整性表少 2 列 (缠论 / 缠论补充)
+- 因子历史表少 3 列 (日中枢 / 周中枢 / 买卖点) → **24 列变 21 列** (`FACTOR_HISTORY_HEADER` 是唯一真源, 改列数必须同步改 sep —— 它是自动算的, 但行拼接 `line` 也要同步)
+- 汇总表 (`signal-watchlist.md` / `factor-5y` 汇总) 少中枢列, 买卖点计数改成威科夫阶段转变计数
+
+**陷阱:**
+- **因子历史表删列要三处同步**: header / sep (自动算, 但仍要确认) / `_format_factor_row` 的 `line` 拼接 — 漏一处就表格错位
+- **`factor_5y` 汇总表的「买卖点数」不能留空**: 它原来统计 `bsp_daily` 的 key 新出现, 字段删了会恒为 0 → 改统计威科夫 A→M / M→D 转变次数
+- **`analysis_cache` 表早于 2026-09-22 就删了 chan 列** → 查 chan_* 的脚本是**死代码**, 删功能时顺手清掉
+- **死代码别留 stub**: 我一度把 `_extract_hub` / `_active_bsp` 留成 `raise NotImplementedError` ——
+  项目惯例是**整段删除** (见 lesson 01 第 8 条「fallback2 的 Accumulation 分支是死代码」), 留 stub 只会让人以为它在起作用
+- **signal_tracker 的 MODEL_INFERENCE 保留**: 它是**历史归档分类器** (给老信号分类用), 不是生产链路 —— 跟 `('结构', ...)` 那档一样, 结构 11-05 就删了但分类档一直留着
+
+**验证纪律:**
+- 改动前后**逐字节 diff** (归一化耗时 / 时间戳 / 并发顺序) —— 这次基线是 164 只全量跑 (200s+), 冻结到 `/tmp/baseline_docs`
+- diff 时**重点看非缠论 section 是否逐字节一致** (财务表 / MA 表 / 技术指标 / 威科夫详情), 变了就是误伤
+- `guardrail --check {network|factor|parquet|safe-fs}` 4 项全绿
+
+**apply when:** 任何"下线一个横跨多层/多文件的分析维度"的动作 —— 尤其当它参与**投票/打分/阈值**判定时,
+先问清楚是「删掉判定」还是「改判定参数」, 这两个结果完全不同, 别顺手做。
