@@ -82,6 +82,25 @@ def _stk_factor_glob() -> str:
     return "[" + ", ".join(f"'{f}'" for f in recent) + "]"
 
 
+def _financials_quarters(n: int = 2) -> list[str]:
+    """最近 N 个已落盘的财务季 parquet 路径 (动态, **不硬编码季度**)
+
+    ⚠️ 铁律 (tools/storage/caches/quarter_utils.py): 业务运行时永远不要硬编码
+       "2026Q2" / "20250630" 这类季度/日期字符串, 用工具函数动态算。
+
+    2026-11-05 修: 本文件原来把 financials 季写死成 2026Q2 + 2025Q4 兜底 ——
+    等 2026Q3 季报落盘后, 过滤链仍在用**落后一季**的数据 (quality / leverage 两个闸)。
+
+    Returns:
+        按时间升序的路径 list (最后一个 = 最新季); 不足 n 个就返回现有的
+    """
+    from tools.storage.store import FIN_DIR
+    if not FIN_DIR.exists():
+        return []
+    files = sorted(FIN_DIR.glob("*.parquet"))
+    return [str(f) for f in files[-n:]]
+
+
 def _filter_by_pe(codes: list[str], pe_max: float) -> list[str]:
     """1 次 SQL 按 stk_factor 里**每只票自己的最新 PE** 过滤 PE > pe_max 的票 (高估值剔除)
 
@@ -136,8 +155,12 @@ def _filter_by_quality(codes: list[str], or_yoy_min: float, gm_min: float,
     or_yoy > or_yoy_min AND grossprofit_margin > gm_min AND (np_yoy_min)
     AND (roe > roe_min) AND (grossprofit_margin > gm_abs_min)
 
-    2026-10-17 改: 优先用最新季报 (2026Q2), 拿不到 fallback 2025Q4 累计
+    2026-10-17 改: 优先用最新季报, 拿不到 fallback 上一季累计
     (旧版本只用 2025Q4 累计 netprofit_yoy 滞后 1 年, 漏判 2026 已亏损的票)
+
+    ⚠️ 2026-11-05 改: 季份**动态取** (原来写死 2026Q2 + 2025Q4, 等 2026Q3 落盘后
+       过滤链还在用落后一季的数据)。现在 = 最新已落盘季 + 上一季兜底,
+       季度切换时自动跟上 (符合 quarter_utils.py 的"别硬编码季度"铁律)。
 
     2026-10-28 加 roe_min / gm_abs_min (绝对值下限, 跟 yoy 门槛互补):
     之前的 quality 只看 yoy (同比增速), 漏掉两类票 ——
@@ -171,18 +194,30 @@ def _filter_by_quality(codes: list[str], or_yoy_min: float, gm_min: float,
     # gm_min 与 gm_abs_min 都作用在 grossprofit_margin 上, 取更严的
     gm_eff = max(gm_min, gm_abs_min) if gm_abs_min is not None else gm_min
     gm_abs_clause = f"AND grossprofit_margin > {gm_eff}" if gm_eff > 0 else ""
-    # 优先 2026Q2 (最新季报), 拿不到 fallback 2025Q4 累计
+    # 最新已落盘季优先, 上一季兜底 (季份动态取, 不硬编码)
+    quarters = _financials_quarters(2)
+    if not quarters:
+        return []
+    q1 = quarters[-1]
+    q1_label = Path(q1).stem
+    fallback_sql = ""
+    if len(quarters) > 1:
+        q2 = quarters[-2]
+        q2_label = Path(q2).stem
+        fallback_sql = f"""
+            UNION ALL
+            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, '{q2_label}' AS source
+            FROM read_parquet('{q2}')
+            WHERE ts_code IN ({in_clause})
+              AND ts_code NOT IN (SELECT ts_code FROM read_parquet('{q1}') WHERE fetch_status = 'ok')
+        """
     df = duckdb.execute(f"""
         SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, source
         FROM (
-            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, '2026Q2' AS source
-            FROM read_parquet('data/history/financials/2026Q2.parquet')
+            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, '{q1_label}' AS source
+            FROM read_parquet('{q1}')
             WHERE ts_code IN ({in_clause}) AND fetch_status = 'ok'
-            UNION ALL
-            SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, '2025Q4' AS source
-            FROM read_parquet('data/history/financials/2025Q4.parquet')
-            WHERE ts_code IN ({in_clause})
-              AND ts_code NOT IN (SELECT ts_code FROM read_parquet('data/history/financials/2026Q2.parquet') WHERE fetch_status = 'ok')
+            {fallback_sql}
         )
         WHERE grossprofit_margin > {gm_min}
           AND or_yoy > {or_yoy_min}
@@ -203,6 +238,16 @@ def _filter_by_leverage(codes: list[str], max_nd_ratio: float) -> list[str]:
     口径: 净负债/总市值 (不是资产负债率)。净现金票 (netdebt < 0) 的比值是负数, 一律放行。
     财务数据缺失的票也放行 (跟其他 filter 一致, 不因缺数据误杀)。
 
+    ⚠️ 2026-11-05 修 (静默漏过滤, 跟 _filter_by_pe 2026-11-03 同一个 bug):
+      1) total_mv 原来取 `WHERE trade_date = (SELECT MAX(trade_date) ...)`, 只查**全局最新那一天**。
+         但 Tushare 的估值数据是**当天陆续发布**的 —— 2026-11-05 实测:
+         MAX=20261105 只有 2387 只 (基准 5572), 3185 只缺当天数据。
+         → 这 3185 只 JOIN 不上 sf → **杠杆闸完全没检查它们**,
+           其中 306 只净负债/市值 > 0.5 全部漏过 (全市场口径: 判出 219 只 vs 应判 525 只)。
+      2) financials 季份写死 2026Q2 + 2025Q4, 等 2026Q3 落盘后落后一季。
+      修法: stk_factor 用 ROW_NUMBER() 取**每只票自己最新**(per-code latest),
+            跟 _filter_by_pe 对齐; financials 季份动态取 (最新季 + 上一季兜底)。
+
     Args:
         codes: 候选 code 列表 (6 位纯数字)
         max_nd_ratio: 净负债/市值 上限 (如 0.5 = 净负债不能超过市值的一半)
@@ -213,20 +258,34 @@ def _filter_by_leverage(codes: list[str], max_nd_ratio: float) -> list[str]:
     if not codes or max_nd_ratio <= 0:
         return codes
     in_clause = ",".join(f"'{c}.SZ', '{c}.SH'" for c in codes)
+    quarters = _financials_quarters(2)
+    if not quarters:
+        return codes
+    q1 = quarters[-1]
+    glob_expr = _stk_factor_glob()
+    fin_sql = f"""
+            SELECT ts_code, netdebt FROM read_parquet('{q1}', union_by_name=true)
+            WHERE ts_code IN ({in_clause}) AND fetch_status = 'ok'
+    """
+    if len(quarters) > 1:
+        q2 = quarters[-2]
+        fin_sql += f"""
+            UNION ALL
+            SELECT ts_code, netdebt FROM read_parquet('{q2}', union_by_name=true)
+            WHERE ts_code IN ({in_clause})
+              AND ts_code NOT IN (SELECT ts_code FROM read_parquet('{q1}', union_by_name=true)
+                                  WHERE fetch_status = 'ok')
+        """
     # 净负债/市值 = (netdebt/1e8) / (total_mv/1e4), total_mv 来自 stk_factor
     df = duckdb.execute(f"""
         WITH sf AS (
-            SELECT ts_code, total_mv FROM read_parquet('data/history/stk_factor/2026Q4.parquet')
-            WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('data/history/stk_factor/2026Q4.parquet'))
+            SELECT ts_code, total_mv FROM (
+                SELECT ts_code, total_mv,
+                       ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) rn
+                FROM read_parquet({glob_expr})
+            ) WHERE rn = 1
         ),
-        fin AS (
-            SELECT ts_code, netdebt FROM read_parquet('data/history/financials/2026Q2.parquet', union_by_name=true)
-            WHERE ts_code IN ({in_clause}) AND fetch_status = 'ok'
-            UNION ALL
-            SELECT ts_code, netdebt FROM read_parquet('data/history/financials/2025Q4.parquet', union_by_name=true)
-            WHERE ts_code IN ({in_clause})
-              AND ts_code NOT IN (SELECT ts_code FROM read_parquet('data/history/financials/2026Q2.parquet', union_by_name=true)
-                                  WHERE fetch_status = 'ok')
+        fin AS ({fin_sql}
         )
         SELECT fin.ts_code
         FROM fin JOIN sf ON sf.ts_code = fin.ts_code
@@ -685,7 +744,9 @@ def main():
     ap.add_argument("--max-net-debt-ratio", type=float, default=0.5,
                     help="净负债/总市值 上限, 0 = 不限 (2026-10-28 加, 默认 0.5)\n"
                          "净现金票 (netdebt<0) 放行; 财务数据缺失也放行\n"
-                         "全市场 P90 0.48, 所以 0.5 大约砍掉 10%%\n"
+                         "全市场 P90 0.48, 所以 0.5 大约砍掉 9.4%% (2026-11-05 实测 525/5581)\n"
+                         "⚠️ 2026-11-05 修: total_mv 改用每股最新 (per-code latest), 修前全局 MAX(trade_date)\n"
+                         "  在 Tushare 当天陆续发布时会漏检 (全市场只判出 219 只, 漏 306 只极端重债票)\n"
                          "实测 22 只命中票: 砍掉瀚蓝环境(净负债 320 亿 > 市值 224 亿, 比值 1.26)\n"
                          "  和立中集团(101 亿 / 125 亿 = 0.74) —— PE 低但重债, 不算便宜")
     ap.add_argument("--workers", type=int, default=0,
@@ -864,11 +925,16 @@ def main():
 
     # 2026-10-16 加: --with-finance 过滤亏损股 (PE <= 0)
     if args.with_finance and hits:
-        # 1 次 SQL 拿最近 stk_factor (PE 当日)
-        sf_df = duckdb.execute("""
-            SELECT ts_code, pe, pe_ttm, pb
-            FROM read_parquet('data/history/stk_factor/2026Q4.parquet')
-            WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('data/history/stk_factor/2026Q4.parquet'))
+        # 1 次 SQL 拿每只票自己最新的 stk_factor (per-code latest)
+        # ⚠️ 2026-11-05 修: 原来用 `WHERE trade_date = (SELECT MAX(trade_date) ...)`,
+        #    只查全局最新那一天 —— Tushare 当天陆续发布 (20261105 实测只有 2387/5572 只),
+        #    缺数据的票会走"默认放行"分支, 亏损股混进命中集。改用 per-code latest。
+        sf_df = duckdb.execute(f"""
+            SELECT ts_code, pe, pe_ttm, pb FROM (
+                SELECT ts_code, pe, pe_ttm, pb,
+                       ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) rn
+                FROM read_parquet({_stk_factor_glob()})
+            ) WHERE rn = 1
         """).fetchdf()
         sf_map = {row['ts_code'].split('.')[0]: row.to_dict() for _, row in sf_df.iterrows()}
 
@@ -1009,7 +1075,13 @@ def main():
     #   A. 刷新 = 目录里已有 且 本次仍命中 → 重新生成
     #   B. 补充 = 目录里没有 且 本次命中   → 新生成
     #   C. 留档 = 目录里已有 但本次未命中 → 也刷新数据, 文件头标 "⚠️ 本次未命中"
-    if args.refresh:
+    #
+    # ⚠️ 2026-11-05 修 (flag 兑现 bug): 原来这里只判 `args.refresh`, **不看 full_report**
+    #   → `--no-full-report` (默认 --refresh 模式下) 完全失效:
+    #     上面打印"详报 ❌ 不跑 (--no-full-report)", 实际照跑 A/B/C 三类详报 (20 只 × ~2s)。
+    #   跟本文件 print 的"生效条件"自相矛盾, 也违反 SKILL.md「flag 必须兑现」铁律。
+    #   修法: refresh 分支也要求 args.full_report (--no-full-report 时跳过整个 step 2)。
+    if args.refresh and args.full_report:
         # 构造任务表: (code, name, subdir, status, hit_note)
         tasks: list = []
         if not args.stale_only:

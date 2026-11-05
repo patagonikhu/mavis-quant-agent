@@ -17,6 +17,14 @@
 
 用法:
     bash tools/with_venv.sh python -m tools.batch.analyze_a2m_filters
+
+⚠️ 2026-11-05 修 (跟 wyckoff_a2m_scan.py 同源 bug, 不修会让调参结论失真):
+  - stk_factor 原来取 `WHERE trade_date = (SELECT MAX(trade_date) ...)` (全局最新那一天)
+    → Tushare 当天陆续发布 (20261105 实测只有 2387/5572 只) → 缺数据的票 JOIN 不上,
+      **杠杆/PE 分布直接少 3185 只**, 算出来的 P90/P50 门槛是错的。
+    改成 per-code latest (ROW_NUMBER PARTITION BY ts_code)。
+  - financials 季份原来写死 2026Q2 + 2025Q4 → 等 2026Q3 落盘后落后一季, 跟生产过滤链不一致。
+    改成动态取 (最新季 + 上一季兜底), 跟 wyckoff_a2m_scan._financials_quarters 同口径。
 """
 from __future__ import annotations
 
@@ -31,12 +39,27 @@ import pandas as pd  # noqa: E402
 pd.set_option("display.width", 250)
 pd.set_option("display.max_columns", 60)
 
-STK = "data/history/stk_factor/2026Q4.parquet"
-FIN_Q2 = "data/history/financials/2026Q2.parquet"
-FIN_Q4 = "data/history/financials/2025Q4.parquet"
 BASIC = "data/history/stock_basic/stock_basic.parquet"
 
-# 22 只 A→M 命中 (2026-10-28 扫描结果), 用来看新门槛会砍掉谁
+
+def _stk_glob() -> str:
+    """stk_factor 最近 2 个季度 parquet 的 glob 表达式 (不硬编码季度)"""
+    from tools.storage.store import STK_FACTOR_DIR
+    files = sorted(STK_FACTOR_DIR.glob("*.parquet"))
+    if not files:
+        return str(STK_FACTOR_DIR / "*.parquet")
+    return "[" + ", ".join(f"'{f}'" for f in files[-2:]) + "]"
+
+
+def _fin_quarters(n: int = 2) -> list[str]:
+    """最近 N 个已落盘财务季 parquet (不硬编码季度, 跟 wyckoff_a2m_scan 同口径)"""
+    from tools.storage.store import FIN_DIR
+    files = sorted(FIN_DIR.glob("*.parquet")) if FIN_DIR.exists() else []
+    return [str(f) for f in files[-n:]]
+
+
+# 22 只 A→M 命中 (2026-10-28 扫描结果, **历史快照**), 用来看新门槛会砍掉谁
+# ⚠️ 这不是当前命中集 (2026-11-05 实测 19 只, 成员已变) —— 当"历史对照"用, 别当现状
 HITS_22 = {
     "300519", "300832", "301101", "000538", "000810", "002380", "600323", "601766",
     "601808", "603337", "603387", "603901", "603967", "688410", "688469", "001219",
@@ -46,27 +69,41 @@ HITS_22 = {
 
 def load() -> pd.DataFrame:
     """1 次 SQL 拿全市场: code + name + industry + PE + PB + 市值 + 财务指标。"""
+    quarters = _fin_quarters(2)
+    if not quarters:
+        raise RuntimeError("本地没有 financials parquet, 先跑 /t-sync-data --financials")
+    q1 = quarters[-1]
+    fin_sql = f"""
+        SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, netdebt,
+               debt_to_assets, ebit, fixed_assets, networking_capital
+        FROM read_parquet('{q1}', union_by_name=true)
+        WHERE fetch_status = 'ok'
+    """
+    if len(quarters) > 1:
+        q2 = quarters[-2]
+        fin_sql += f"""
+        UNION ALL
+        SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, netdebt,
+               debt_to_assets, ebit, fixed_assets, networking_capital
+        FROM read_parquet('{q2}', union_by_name=true)
+        WHERE fetch_status = 'ok'
+          AND ts_code NOT IN (SELECT ts_code FROM read_parquet('{q1}', union_by_name=true)
+                              WHERE fetch_status = 'ok')
+        """
     df = duckdb.execute(f"""
     WITH sf AS (
+        -- per-code latest: 每只票自己最新那天的估值 (不是全局 MAX(trade_date))
         SELECT ts_code, pe, pe_ttm, pb, total_mv
-        FROM read_parquet('{STK}')
-        WHERE trade_date = (SELECT MAX(trade_date) FROM read_parquet('{STK}'))
+        FROM (
+            SELECT ts_code, pe, pe_ttm, pb, total_mv, trade_date,
+                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) rn
+            FROM read_parquet({_stk_glob()})
+        ) WHERE rn = 1
     ),
     sb AS (
         SELECT ts_code, name, industry FROM read_parquet('{BASIC}')
     ),
-    fin AS (
-        SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, netdebt,
-               debt_to_assets, ebit, fixed_assets, networking_capital
-        FROM read_parquet('{FIN_Q2}', union_by_name=true)
-        WHERE fetch_status = 'ok'
-        UNION ALL
-        SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe, netdebt,
-               debt_to_assets, ebit, fixed_assets, networking_capital
-        FROM read_parquet('{FIN_Q4}', union_by_name=true)
-        WHERE fetch_status = 'ok'
-          AND ts_code NOT IN (SELECT ts_code FROM read_parquet('{FIN_Q2}', union_by_name=true)
-                              WHERE fetch_status = 'ok')
+    fin AS ({fin_sql}
     )
     SELECT
         split_part(sf.ts_code, '.', 1) AS code,
