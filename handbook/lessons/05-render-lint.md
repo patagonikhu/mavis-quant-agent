@@ -1,7 +1,7 @@
 # 报告渲染 / linter / 文档一致性
 
 > 本文件是 `handbook/project-lessons.md` 的主题分册 (05-render-lint.md)。
-> 索引 (全 58 条一句话摘要) 见 [`handbook/lessons/README.md`](README.md)。
+> 索引 (全 59 条一句话摘要) 见 [`handbook/lessons/README.md`](README.md)。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在这里搜关键词。
 
 ---
@@ -282,3 +282,40 @@ Type: rule
 - `guardrail --check {network|factor|parquet|safe-fs}` 4 项全绿
 
 **apply when:** 任何"下线 / 删除一个功能"的动作。
+
+### 配置/文档声称的数据源 ≠ 代码实际调用 (2026-11-06)
+Type: rule
+> **摘要:** 报告里「数据源矩阵」这类声明型配置, 每一行都要 grep 回代码核实 —— 删功能后没人回来改它
+
+**触发场景:** 用户发现报告「📡 数据源矩阵」内容是错的。逐条 grep 回
+`tools/storage/sources/tushare.py` + `tools/storage/store.py` 核实, 发现
+`config/sources.yaml` (2026-07-24 固化, 一年没动) 有 **4 处与代码不符**:
+
+| 声称 | 实际 |
+|---|---|
+| kline_60min → Sina | 代码 0 处 Sina 调用 (60min 随 czsc/缠论 下线) |
+| kline_weekly → Tushare.weekly | 日线**合成** (`_synthesize_weekly`), weekly 只在死代码里 |
+| real_time → daily_basic 实时价 | 实时价 = 日 K 线最新收盘, daily_basic 只给 PE/市值/换手率 |
+| industry_sector → 行业 + 概念板块 | stock_basic 只有 industry, 概念板块走 THS |
+
+**反模式: "配置即真相"。** `config/sources.yaml` 顶部写着
+「所有数据 fetch 必须按本表声明的源拉取, 不在表里的数据 = 未支持」——
+听着像权威, 实际是**一年前的手工快照**, 没有任何机制保证它跟代码同步。
+
+**核实方法 (每行都要做):**
+```bash
+# 1. 这个源在代码里还有调用吗?
+grep -rn "<源关键字>" tools/ --include="*.py" | grep -v __pycache__
+# 2. 文件还在吗? (白名单/配置里的路径可能早就没了)
+[ -f <path> ] || echo "死引用"
+# 3. 真的被读吗? (加载了 ≠ 用了 —— eastmoney.py 加载 project.yaml 但一次没用)
+grep -rn "<变量名>" tools/ --include="*.py" | grep -v __pycache__
+```
+
+**顺带会查出来的同类漂移 (本次一起修的):**
+- section 标题承诺「状态」列, 表里根本没有 → 标题改成实际列名
+- `config/project.yaml` 里的死配置 (`kline_60m_count` / `daily_basic_days`, 0 处引用)
+- `guardrail.py` 的 `NETWORK_ALLOWED` 里 3 条**文件已不存在**的路径 + 1 条已纯计算的模块
+
+**apply when:** 任何"声明型配置" (数据源表 / 白名单 / 标题文案 / 口径说明) 呈现给用户之前,
+或者下线一个功能之后 —— 声明不会自己跟着代码走, 只能靠 grep 回去核实。
