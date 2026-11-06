@@ -51,6 +51,20 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
 - **缺数据**: 报"请先 /t-sync-data", 不兜底拉
 - **报告 7 section**: schema 在 `tools/render/report_schema.py`, 改这里不要散到 batch/*.py
 
+## 🚫 本 skill 不做什么 (越界 = 违规)
+
+> **用户说 `/t-analyze <code>` = 只出这一只的详报。** 跑完就停, 汇报结论, 结束。
+> "SKILL.md 没禁止" ≠ "可以做" —— 详见 CLAUDE.md「Skill 越界铁律」。
+
+| ❌ 别做 | 为什么 |
+|---|---|
+| **不自己跑 sync 补数据** | 缺数据 → 报"请先 /t-sync-data" (本 skill 已有的约定), **别自己去拉**。让用户决定什么时候同步 |
+| **不扩到 `--all` / 批量** | 用户给了一只就只跑一只。想批量 → 报告里问一句, 等用户答 |
+| **不跑别的扫描器** | `blowout` / `a2m` / `factor_5y` / `backtest` 都不属于"分析一只票" |
+| **不改 watchlist.json** | 自选/持仓增删是用户配置, 本 skill 只读不写 |
+| **不改代码 / schema / 阈值** | 报告里看出问题 (数据缺失 / 指标反常 / 段落报错) → **报告给用户**, 不自己动代码 |
+| **不因为"数据旧了"就自己重跑别的票** | 发现上游数据更新导致某份旧报告过期 → 报告给用户并等答复 |
+
 ## 输出
 
 - `docs/portfolio/analyze-{code}-{name}.md` (持仓票) / `docs/watchlist/...` (自选)

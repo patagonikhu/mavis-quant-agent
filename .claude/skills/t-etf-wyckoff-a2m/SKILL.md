@@ -109,6 +109,19 @@ bash tools/with_venv.sh python -m tools.batch.etf_wyckoff_a2m_scan --report-top 
 - **交叉验证**: 同一只 ETF 走股票版 `_process_one` vs ETF 版, 转变日/M占比/40根stage序列 **8/8 逐项全等**
 - **v1→v2 回归**: 换 DataStore 取数后, 原始命中仍是同样 11 只 (逐只转变日/涨幅/M占比/阶段序列全等)
 
+## 🚫 本 skill 不做什么 (越界 = 违规)
+
+> **用户说 `/t-etf-wyckoff-a2m` = 只扫 ETF A→M。** 跑完就停, 汇报命中, 结束。
+> "SKILL.md 没禁止" ≠ "可以做" —— 详见 CLAUDE.md「Skill 越界铁律」。
+
+| ❌ 别做 | 为什么 |
+|---|---|
+| **不跑股票版** | 股票 A→M 走 `/t-wyckoff-a2m`, 过滤链完全不同, 别混 |
+| **不改候选池口径** | 唯一真源 = `tools/batch/etf_universe.py` (fund_type 过滤 + 同指数两级并查集去重)。**不新增手工白名单** (手工名单必然过期) |
+| **不跑 `/t-analyze --all`** | 只对命中 ETF 出详报 |
+| **不改代码 / 去重逻辑** | 去重漏判 → 报告给用户, 不自己调 |
+| **不自己跑 sync** | 缺 ETF 数据 → 报"请先 /t-sync-data", 不自己拉 |
+
 ## 跑后验证
 
 ```bash

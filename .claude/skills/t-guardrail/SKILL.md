@@ -56,6 +56,19 @@ AST 检测,抓**直接删用户数据**和**覆盖写配置**:
 - 网络入口白名单:`tools/storage/sync.py` + `tools/storage/sources/{tushare,eastmoney}.py` 等 11 个允许
 - **用户数据不可删** —— `config/watchlist.json` 等 5 个在 `safe_fs.PROTECTED_PATHS`, `safe_delete` 直接拒绝
 
+## 🚫 本 skill 不做什么 (越界 = 违规)
+
+> **用户说 `/t-guardrail` = 只体检并报告。** 跑完就停, 报告违规项, 结束。
+> "SKILL.md 没禁止" ≠ "可以做" —— 详见 CLAUDE.md「Skill 越界铁律」。
+
+| ❌ 别做 | 为什么 |
+|---|---|
+| **发现问题不直接改代码** ⚠️ | 本 skill 是**体检**, 不是修复。扫出违规 → 列出清单 + 建议, **改不改、怎么改由用户定**。这是最容易越界的一个 (看到问题就想动手) |
+| **不跑 `/t-analyze` / 别的 skill** | 体检 ≠ 修数据 ≠ 出报告 |
+| **不改 guardrail 规则本身** | 觉得某条规则误报 → 报告给用户, 不自己放宽标准 (放宽 = 自己给自己发通行证) |
+| **不跑 sync / 不联网** | 本 skill 纯静态扫描, 保持 0 网络 |
+| **不删任何文件** | `safe_delete` 只在用户明确要求删某个东西时才用 |
+
 ## 跑后验证
 
 ```bash

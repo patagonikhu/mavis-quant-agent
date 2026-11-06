@@ -57,6 +57,19 @@ bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --dry-run
 - **必设 -15% 止损 / +50% 止盈** (R3 抓启动期, 票波动大)
 - 缺数据报错 "请先 `/t-sync-data --financials`"
 
+## 🚫 本 skill 不做什么 (越界 = 违规)
+
+> **用户说 `/t-finance-earnings-blowout` = 只做财季炸裂扫描。** 跑完就停, 汇报命中, 结束。
+> "SKILL.md 没禁止" ≠ "可以做" —— 详见 CLAUDE.md「Skill 越界铁律」。
+
+| ❌ 别做 | 为什么 |
+|---|---|
+| **不跑分析 / 逐只详报** | 命中名单看 stdout 或 `docs/earnings-blowout-watchlist.md` 就行, 别顺手给命中票各跑一份 `/t-analyze` |
+| **不自己跑 sync** | 缺财报 → 报"请先 `/t-sync-data --financials`", 不自己拉 |
+| **不改阈值 / prefilter / 代码** | 5 闸 + 3 rule 是 v6.3.0 固化的, 想调 → 报告给用户 |
+| **不额外改 watchlist 的其他段** | 本 skill 只动 `list_type=blowout` 段 (增新命中 / 删退场)。`持仓`/`自选` 段是用户配置, **不碰** |
+| **不重扫刚退场又符合条件的票** | 退场 = 当季不再满足条件。重新命中是**下季**的事, 不是本轮该做的 |
+
 ## 跑后验证
 
 ```bash

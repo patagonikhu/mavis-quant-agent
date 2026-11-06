@@ -57,6 +57,19 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 - 21 只持仓批量 ~60 秒 (`--workers 4`)
 - **不替代 /t-analyze**:本 skill 只输出因子历史表(长周期 1-2-3-5 年节奏);`/t-analyze` 是 7 section 全要素详报
 
+## 🚫 本 skill 不做什么 (越界 = 违规)
+
+> **用户说 `/t-factor-5y` = 只出因子历史表。** 跑完就停, 汇报结果, 结束。
+> "SKILL.md 没禁止" ≠ "可以做" —— 详见 CLAUDE.md「Skill 越界铁律」。
+
+| ❌ 别做 | 为什么 |
+|---|---|
+| **不落逐只 md** | 默认只出 1 份汇总表 (`_summary-{scope}.md`)。逐只 md 要显式 `--write-md-all` —— 用户没要就不加 |
+| **不跑 `/t-analyze`** | 因子历史表 ≠ 7 section 详报。用户想看详报 → 让用户自己调 `/t-analyze` |
+| **不改 lookback / 窗口 / 代码** | 5 年窗口是硬编码 `lookback=1250`, 别为了让结果好看去动 |
+| **不自己跑 sync** | 缺数据 → 报"请先 /t-sync-data", 不自己拉 |
+| **不因为"结果有异常"就调参重跑** | 异常 → 报告给用户, 等判断 |
+
 ## 跑后验证
 
 ```bash
