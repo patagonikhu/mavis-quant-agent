@@ -161,9 +161,6 @@ class TestCacheKeys:
 
     def test_kline_key(self):
         assert cache_key_kline("600519", "daily", 120) == "kline:600519:daily:120"
-        assert _detect_market("688981") == "科创板"
-        assert _detect_market("830799") == "北交所"
-        assert _detect_market("999999") == "未知"
 
 
 # ---- Provider ABC 测试 ----

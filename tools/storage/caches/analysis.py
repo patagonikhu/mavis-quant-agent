@@ -9,6 +9,7 @@ Schema (2026-10-19 v3 改: 加 13 列威科夫字段, 回测威科夫 A→M 胜�
     量能 (1: vol_ratio 当日量/MA5)
     估值 (2 ALTER, 2026-09-02 加): roc / ey
           2026-11-02 删 peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
+          2026-11-06 再删物理列 (代码早不写不读, 275 万行 db 里白占空间)
     威科夫 (13 ALTER, 2026-10-19 加, A→M 胜率回测用):
       wy_stage (Accumulation/Markup/Distribution/?)
       wy_score (1.0/0.6/-0.6/0.0)
@@ -18,6 +19,9 @@ Schema (2026-10-19 v3 改: 加 13 列威科夫字段, 回测威科夫 A→M 胜�
       (9 个 0/1, 近 5 根 K 线内有触发 = 1)
   历史: 2026-09-22 删 26 列 (10 wy_* + 11 信号列 + 3 ma_dev + 2 boll_*)
         2026-10-19 用户做威科夫胜率回测, 加回 13 列 (sub_event 9 + 主 stage/score/count/30d)
+        2026-11-06 DROP 5 个死列: obv / obv5 / obv_trend (10-27 删 OBV) +
+          peg / dcf_l (11-02 删 PEG/DCF) —— 代码早已不写不读, 物理列留在
+          275 万行的 db 里纯占空间 + 给未来 query 挖坑
 """
 from __future__ import annotations
 
@@ -31,9 +35,9 @@ from typing import Any
 _ROOT = Path(__file__).parent.parent.parent.parent
 _DB = _ROOT / "data" / "analysis_cache.db"
 # 2026-09-22 修复 path bug: 之前 .parent.parent.parent 是 3 层 (= tools/), 正确应为 4 层 (项目根 mavis-quant-agent/)
-#   影响: 9-03 v6.2 大迁移后所有 warmup_cache 写到 tools/data/analysis_cache.db (sandbox)
-#   主 db data/analysis_cache.db (461MB) 从未被回填过
-#   修复后下次 /t-sync-data --cache 会写项目根 data/analysis_cache.db
+# 2026-11-06: 唯一 db 就是项目根 data/analysis_cache.db (275 万行 / 442MB / 25 列)
+#   注: tools/data/analysis_cache.db 是 500 行 sandbox 残留 (带已下线的缠论 chan_* 列), 0 引用,
+#     但 safe_delete 的 PROTECTED_PATHS.endswith 规则把任意层级的 data/analysis_cache.db 都护住了 → 清不掉
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS analysis_cache (
@@ -139,6 +143,13 @@ def _init():
                              ]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
+
+        # 自动迁移: 删死列 (若还在)
+        # 2026-11-06: OBV (10-27 删) / PEG·DCF (11-02 删) —— 代码早已不写不读,
+        #   物理列却还留在 275 万行的 db 里: 白占空间 + 给未来 query 挖坑
+        for col in ("obv", "obv5", "obv_trend", "peg", "dcf_l"):
+            if col in existing:
+                c.execute(f"ALTER TABLE analysis_cache DROP COLUMN {col}")
 
 
 def _kline_hash(kline: list[dict]) -> str:

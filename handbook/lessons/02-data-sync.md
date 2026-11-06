@@ -221,3 +221,32 @@ Type: rule
 - 这 3 处已加注释"故意写死, 别动", 新一轮回测需人工追加
 
 **apply when:** 任何"业务运行时"写死季度/日期, 立即改动态算. 历史回测语料不动, 加注释.
+
+### 删物理列: 做成幂等自动迁移, 别写一次性脚本 (2026-11-06)
+Type: rule
+> **摘要:** DROP COLUMN 这类 schema 变更要写在**拥有 schema 的模块**的 `_init()` 里当幂等迁移, 一次性脚本跑完就没了
+
+**触发场景:** `data/analysis_cache.db` 30 列里躺着 5 个死列 (`obv`/`obv5`/`obv_trend`
+10-27 删 OBV 时留的 + `peg`/`dcf_l` 11-02 删 PEG/DCF 时留的), 275 万行全是死重量。
+代码早已不写不读, 物理列还在 → 白占空间 + 给未来某个 query 挖坑。
+
+**为什么写进 `_init()` 而不是一次性脚本:**
+- `tools/storage/caches/analysis.py` 已经在用 `_init()` 做 ADD COLUMN 迁移 —— 同一个地方
+- 幂等 (`PRAGMA table_info` 查了才 DROP) → 新库/老库/别的机器的库跑一遍就对
+- 一次性脚本跑完就没人再跑, 新 clone 的库还是 30 列
+- 项目规矩「写盘唯一路径走 storage」: schema 变更属于 storage 层的活, 不该散在别处
+
+**关键: DROP 前先对账, 别凭印象**
+```
+live db 30 列 vs 代码声明 25 列 → 差集精确 = ['obv','obv5','obv_trend','peg','dcf_l']
+```
+`CREATE TABLE` 里早就没这 5 列了 (它们是 ALTER 加上去又被代码遗忘的历史遗留),
+**光看 schema 代码发现不了** —— 必须拿 live db 的 `PRAGMA table_info` 做差集。
+
+**ALTER TABLE DROP COLUMN 会把文件撑大** (重写整表): 实测 494MB → 524MB,
+DROP 完**必须再 VACUUM** 才收回 (最终 442MB)。SQLite ≥ 3.35 才支持 DROP COLUMN
+(本机 3.50.4 ✅)。
+
+**动用户库前先备份:** `VACUUM INTO '备份路径'` (3s 出 447MB 紧凑副本, 比 cp 快且不留碎片)。
+
+**apply when:** 任何"代码早就不写不读的列还留在 db 里"。先对账 → 备份 → 幂等迁移 → VACUUM → 验行数不变。

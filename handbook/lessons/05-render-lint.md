@@ -284,6 +284,18 @@ Type: rule
    → 下线前必须 `grep -rn <符号> app/ btf/ tests/`, **不只看 `tools/`**
    (附: `app/` 还长期缺 pydantic/langchain_core 跑不起来, 且 `tushare_provider.py`
    有 4 个 `cache_key_*` 根本不存在 —— 它本身就是死代码, 别拿它当"还有人在用"的证据)
+8. **依赖声明** —— 加了包就得加依赖。`pyproject.toml` 的 `packages.find include = ["app*"]`
+   把 `app/` 打进发行包, 但 `dependencies` 里一个 app/ 的库都没有 (fastapi / pydantic /
+   langchain / apscheduler / sse-starlette / uvicorn / httpx / pydantic-settings /
+   langchain-litellm / scikit-learn / xgboost) → 装出来的包 import 就炸,
+   `pytest` 收集直接挂 7 个 error。2026-11-06 实测: 补声明 + 装上 + 补齐
+   `app/data/cache.py` 缺的模块级 `cache` 单例 / 3 个 `cache_key_*` / 5 个 `TTL_*` 常量,
+   pytest **37 passed + 7 errors → 192 passed + 0 errors**
+   (附: `pytest.ini` 的 `asyncio_mode = auto` 需要 `pytest-asyncio` —— **测试插件也是依赖**)
+9. **测试指向已删模块** —— 孤儿测试文件会一直挂在收集阶段。`tests/unit/test_factors_position.py`
+   测的 `tools/factors/price/` 早在 `1b9d245` 就删了, 测试没同步 → 收集 error。
+   → 删模块时同步删测试; 测试里的 `NameError: name 'xxx' is not defined` 也是同一类
+   (断言引用了不存在的 helper, 如 `_detect_market` —— 真实 API 在 `app/market/rules.py`)
 
 **共享模块留不留, 看消费者数量:** `etf_universe.py` 被两个扫描器共用 → 删掉其中一个扫描器时
 **它保留** (另一个还在用), 只把 docstring 里"两个扫描器共用"的描述改掉;

@@ -1,5 +1,5 @@
 """Agent 核心模块"""
 
-from app.agent.graph import chat, get_graph as get_agent
+from app.agent.graph import chat, reset_agent
 
-__all__ = ["chat", "get_agent"]
+__all__ = ["chat", "reset_agent"]

@@ -21,6 +21,13 @@ class _Entry:
 class DataCache:
     """异步内存缓存（带 TTL + LRU 淘汰）"""
 
+    # 各数据类别的缓存时长 (秒)
+    TTL_REALTIME = 60        # 实时行情 — 1 分钟
+    TTL_KLINE = 3600         # K 线 — 1 小时 (跟 tushare 侧内存缓存同量级)
+    TTL_FINANCIAL = 86400    # 财务 — 1 天
+    TTL_INDEX = 3600         # 指数 — 1 小时
+    TTL_SEARCH = 3600        # 搜索结果 — 1 小时
+
     def __init__(self, max_size: int = 1000):
         self._store: dict[str, _Entry] = {}
         self._max_size = max_size
@@ -73,9 +80,25 @@ def cache_key_kline(symbol: str, period: str, count: int) -> str:
     return f"kline:{symbol}:{period}:{count}"
 
 
+def cache_key_financial(symbol: str) -> str:
+    return f"financial:{symbol}"
+
+
+def cache_key_index(symbol: str) -> str:
+    return f"index:{symbol}"
+
+
+def cache_key_search(keyword: str) -> str:
+    return f"search:{keyword}"
+
+
 def cache_key_sector_kline(sector_name: str, count: int) -> str:
     return f"sector_kline:{sector_name}:{count}"
 
 
 def cache_key_sector_constituents(sector_name: str) -> str:
     return f"sector_cons:{sector_name}"
+
+
+# 模块级单例 (provider 与 tests 共用同一个缓存实例)
+cache = DataCache()
