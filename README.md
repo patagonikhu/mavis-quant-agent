@@ -292,7 +292,7 @@ bash tools/with_venv.sh python tools/batch/t_analyze_all.py  # 全部 watchlist
 
 > 📌 详见 CLAUDE.md "🐍 Python 环境固化" 段 — `.venv` + `uv` 永久固化, 任何机器一气呵成
 
-**数据源**：Tushare 2000 积分档（日线 + 财报指标 + 资金流 + 业绩预告），写入 `data/history/` parquet。
+**数据源**：Tushare 2000 积分档（日线 + 估值因子 + 股票基础 + 财务 + 概念板块 + ETF），写入 `data/history/` parquet。
 
 ---
 

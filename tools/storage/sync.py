@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tools/storage/sync.py — Mavis 唯一 sync 入口 (2026-09-03 改造)
 
-用途: 同步 Tushare 数据 (K 线 / 估值因子 / 股票基础 / 财务 / 主力资金 / 概念板块 / ETF).
+用途: 同步 Tushare 数据 (K 线 / 估值因子 / 股票基础 / 财务 / 概念板块 / ETF).
       写盘唯一路径, 业务层禁止直连 db/网络.
 
 设计原则:

@@ -18,11 +18,11 @@
 
 ## 1. 新 Strategy 类 (5 步)
 
-**目标:** 加 1 个新 strategy 类 (例如 `FundFlowStrategy`),复用到 `/t-analyze` + `/t-backtest` + `/t-wyckoff-a2m`。
+**目标:** 加 1 个新 strategy 类 (例如 `BreakoutStrategy`),复用到 `/t-analyze` + `/t-backtest` + `/t-wyckoff-a2m`。
 
 ### Step 1: 在 `tools/analysis/analysis_engine.py` 加 1 个类
 
-参考现有 5 个 strategy 类的写法 (例如 `FflowStrategy` / `TechnicalStrategy`),**只读 `ctx`,不拉数据**:
+参考现有 3 个 strategy 类的写法 (`WyckoffStrategy` / `TechnicalStrategy` / `FinanceStrategy`),**只读 `ctx`,不拉数据**:
 
 ```python
 class NewStrategy:
@@ -40,21 +40,21 @@ class NewStrategy:
 
 ### Step 2: 在 `RawContext` 加字段 + `DataStore.get_ctx` 加 1 行
 
-如果你需要新数据 (例如 `ctx.fund_flow_extended`):
+如果你需要新数据 (例如 `ctx.some_new_field`):
 
 ```python
 # 1. RawContext 加字段
 @dataclass
 class RawContext:
     ...
-    fund_flow_extended: list = field(default_factory=list)
+    some_new_field: list = field(default_factory=list)
 
 # 2. DataStore.get_ctx 加 1 行 (调 sources/caches/ 落盘)
 def get_ctx(cls, code, ...):
     ...
     return RawContext(
         ...,
-        fund_flow_extended=read_fund_flow_extended(code),  # 走落盘, 不直连网络
+        some_new_field=read_some_new_field(code),  # 走落盘, 不直连网络
     )
 ```
 
@@ -202,7 +202,7 @@ python -m tools.batch.guardrail --check network              # 0 网络
 class NewStrategy:
     def analyze_history(self, ctx):
         import tushare as ts
-        df = ts.pro_api().fund_flow(...)   # ❌ 业务层调网络, 应走 DataStore
+        df = ts.pro_api().some_api(...)   # ❌ 业务层调网络, 应走 DataStore
 
 # ❌ 反例 2: 直读 parquet
 def load_data():

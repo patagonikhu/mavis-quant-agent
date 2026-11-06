@@ -111,7 +111,7 @@ Type: bug
 **apply when:** 任何用 `ctx.market_cap_yi` / 详报 PE 的场景 —— 先查该股 `stk_factor` 的 `trade_date` 是不是最新交易日。
 修法方向: `done` 应该记 `(trade_date, ts_code)` 或者按 code 维度校验行数, 而不是按日期。
 
-### stk_factor / fflow 写盘覆盖丢数据 bug (2026-10-14 固化)
+### stk_factor 写盘覆盖丢数据 bug (2026-10-14 固化)
 Type: rule
 > **摘要:** 写盘必须**合并**不能覆盖, 否则把没拉到的票数据抹掉
 
@@ -122,7 +122,7 @@ Type: rule
 - 注释说"修 bug: 先读旧 parquet metadata, 避免覆盖历史 done_dates" — **只修了 done_dates 状态, 没修 rows 数据**
 - md 渲染时拿不到 stk_factor, 历史 PE 列显示 "—"
 
-**修法 (2026-10-14 已修):** write_stk_factor_quarter 内部读旧 rows → 合并新 rows → drop_duplicates → 写回. append 语义, 跟 write_fflow_quarter 一致.
+**修法 (2026-10-14 已修):** write_stk_factor_quarter 内部读旧 rows → 合并新 rows → drop_duplicates → 写回. append 语义 (合并旧 rows 再写回, 不直接覆盖).
 
 **修复验证:** 手动补 4 天 stk_factor (10/8/9/12/13) → 22237 行, sync 再跑一次不覆盖, md PE 列 4 个值齐.
 
@@ -182,14 +182,14 @@ Type: bug
 - `_write_all` 改原子写: `tempfile.mkstemp(dir=EPS_DIR)` → `df.to_parquet(tmp)` → `os.replace(tmp, EPS_FILE)`
 - `_read_all` 加容错: 读失败 (损坏) → 备份坏文件到 `.parquet.corrupt-<ts>` + 当空表返回, 让 write_eps 能重建
 
-**apply when:** 任何"单文件全表 + upsert"模式的 cache (eps / stk_factor / fflow)。多进程 batch 跑详报时这些 cache 会被并发写。
+**apply when:** 任何"单文件全表 + upsert"模式的 cache (eps / stk_factor)。多进程 batch 跑详报时这些 cache 会被并发写。
 **排查手法:** 详报批量跑完数量对不上 → 先查 `data/history/*/ *.parquet` 能否被 duckdb 读 (`read_parquet` 报 thrift 错 = 文件损坏)。
 
 ### 季度切换的字典硬编码陷阱 (2026-10-14 固化, 防再翻车)
 Type: rule
 > **摘要:** 季度文件名**别硬编码**, 动态取最近 N 个 (季度切换会静默失效)
 
-**铁律:** 业务运行时 (sync / rsi6 / backtest / batch) 永远不要硬编码 "2025Q3" / "2026Q2" / "20250825" / "20260901" 这类季度/日期字符串, 用 `caches/fflow_history.py` 里 3 个工具函数动态算:
+**铁律:** 业务运行时 (sync / backtest / batch) 永远不要硬编码 "2025Q3" / "2026Q2" / "20250825" / "20260901" 这类季度/日期字符串, 用 `caches/quarter_utils.py` 里 3 个工具函数动态算:
 
 1. **`_quarter_of(date_str) -> "YYYYQN"`** — 任意 YYYYMMDD → 季度
    - 例: 财报落盘日 "20260630" → "2026Q2"
