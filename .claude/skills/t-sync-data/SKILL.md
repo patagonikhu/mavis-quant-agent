@@ -49,6 +49,20 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-force
 - **`--etf` 随 --auto 默认跑**(日增量幂等,已最新秒返回);fund_basic 月级缓存 30 天
 - `--auto` 是默认行为:不传任何 sync flag 时隐式走
 
+## 🚫 本 skill 不做什么 (越界 = 违规)
+
+> **用户说 `/t-sync-data` = 只拉数据。拉完就停, 输出同步结果, 结束。**
+> "SKILL.md 没禁止" ≠ "可以做" —— 没写禁令的地方一律不做, 别拿"顺手"当理由。
+
+| ❌ 别做 | 为什么 |
+|---|---|
+| **不跑任何分析 / 报告** | `t_analyze_one` / `t_analyze_all` / `factor_5y` / `a2m` 扫描 / `blowout` / `backtest` 全都不属于同步 |
+| **不因为"上游数据变新"就重跑别的 skill** | 同步更新了 K 线, **不等于**授权你重跑依赖它的分析。发现某份报告数据旧了 → **报告给用户**("X 的数据已更新到 Y, 旧报告用的是 Z, 要重跑吗?"), **等用户答**, 不自己动手 |
+| **不 retry 已知的返空** | `stk_factor_pro` 当日返空 = 正常 T-1 滞后 (lessons 02-data-sync 第 3 条), 次日 `--auto` 会自动补。**不要**单独 `--stk-factor` 重试, **不要** `--auto-force` |
+| **不改 watchlist.json 的内容** | 同步只管数据落盘; watchlist 增删是 `/t-finance-earnings-blowout` 的活 |
+| **不改代码 / schema** | 同步中发现问题 (返空 / 缺列 / 脏数据 / 悬空引用) → **报告给用户**, 别自己动手改 |
+| **不追加用户没要的 flag** | `--auto` 检测到该跑什么就跑什么; 别自作主张加 `--ths` / `--cache` / `--all-data` |
+
 ## 跑后验证
 
 ```bash
