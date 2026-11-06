@@ -45,6 +45,10 @@ bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --dry-run
 
 > 默认 prefilter 全开 (ST / 周期股 / 市值 < 30亿 / 上市 < 16 季 / EBIT 双闸预警) → 自动写 `config/watchlist.json` (`list_type=blowout`)。
 
+> ⚠️ **2026-11-06 起: blowout 段退场直接删** (本季不再命中 = 候选池淘汰, 整条从 watchlist.json 移除)。
+> 11-02 曾改成"降级为自选 + `<季度>-retired` tag 保留", 结果 123 只历史票混进自选池被 `/t-analyze --all` 白写一遍详报 (143 份里 123 份是这种票) —— 已回退。
+> `持仓`/`自选` 段是用户配置, 本流程**不碰**; 只有 `list_type=blowout` 段会被自动增删。
+
 ## 数据特性
 
 - **0 网络**, 走 `DataStore.load_all_financials()` (financials parquet)

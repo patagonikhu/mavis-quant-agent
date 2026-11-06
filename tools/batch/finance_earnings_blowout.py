@@ -526,7 +526,7 @@ def render_stdout(hits: list[dict], args) -> str:
 #     - 在 watchlist 持仓/自选    → 保留 (不抢持仓), 只在 stdout 提示
 #
 #   watchlist 原 blowout 段:
-#     - 本季不再命中 → 改 list_type=自选 (不删, 保留历史)  ← 2026-11-02 代码已对齐
+#     - 本季不再命中 → **直接删掉** (退场 = 不再满足条件, 候选池淘汰)  ← 2026-11-06 改
 #
 # 加 --no-sync-watchlist 可关, 默认开
 
@@ -534,10 +534,12 @@ WATCHLIST_PATH = ROOT / "config" / "watchlist.json"
 
 
 def sync_watchlist_blowout(hits_df: pd.DataFrame, dry_run: bool = False) -> None:
-    """同步 watchlist.json 的 blowout 段: 加新命中, 退场降级为自选
+    """同步 watchlist.json 的 blowout 段: 加新命中, 退场直接删
 
-    2026-11-02 改: 退场条目 **不再删除**, 改成 list_type="自选" + 加 <季度>-retired tag
-      (跟本文件顶部注释的契约一致, 之前代码是直接删 — 持仓配置被静默删条目).
+    2026-11-06 改: 退场条目**直接删掉**。
+      理由: 退场 = 当季不再满足 blowout 条件 = 候选池淘汰, 用户不需要再看它。
+      (11-02 曾经改成「降级为自选 + retired tag 保留」, 结果这批历史票混进自选池,
+       /t-analyze --all 每季给它们白写一遍详报 —— 143 份里 123 份是这种票)
 
     dry_run=True: 只 print 计划, 不写文件 (默认 False, 直接写)
     """
@@ -576,28 +578,26 @@ def sync_watchlist_blowout(hits_df: pd.DataFrame, dry_run: bool = False) -> None
     print(f"     新增 blowout:   {len(added)} 只")
     if added:
         print(f"       {added[:10]}{'...' if len(added) > 10 else ''}")
-    print(f"     退场降级自选:   {len(removed)} 只 (不删, 加 retired tag)")
+    print(f"     退场删除:      {len(removed)} 只 (不再满足条件, 直接删)")
     if removed:
         print(f"       {removed[:10]}{'...' if len(removed) > 10 else ''}")
     print(f"     保留 blowout:   {len(kept)} 只")
     print(f"     同步后 blowout 总数: {len(kept) + len(added)}")
 
     if dry_run:
-        print(f"\n  🔍 DRY-RUN: 不写文件 (传 --no-dry-run 才会真写)")
+        print(f"\n  🔍 DRY-RUN: 不写文件 (去掉 --dry-run 才会真写)")
         return
 
     # 真写
-    # 2026-11-02 修: 原来这里直接把退场条目从 wl["stocks"] 里 **删掉**,
-    #   但上面的注释写的是「改 list_type=自选 (不删, 保留历史)」— 代码与契约相反.
-    #   改成: 退场 → list_type 降级为 "自选", 保留条目 + 加退场 tag (真不删).
-    _retired_tag = f"{q_tag}-retired"
-    for s in wl["stocks"]:
-        if s.get("list_type") == "blowout" and s["code"] not in hit_codes:
-            s["list_type"] = "自选"
-            tags = s.get("tags", [])
-            if _retired_tag not in tags:
-                tags.append(_retired_tag)
-            s["tags"] = tags
+    # 2026-11-06 改: 退场条目**直接删掉** (回到 11-02 之前的行为)
+    #   11-02 曾经改成「降级为自选 + retired tag 保留」, 理由是"别静默删用户持仓配置" ——
+    #   但那只针对**持仓/自选**段, blowout 段是**候选池**, 退场就该淘汰。
+    #   实际后果: 这批历史票混进自选池, /t-analyze --all 每季给它们白写一遍详报
+    #   (143 份自选详报里 123 份是这种退场票)
+    wl["stocks"] = [
+        s for s in wl["stocks"]
+        if not (s.get("list_type") == "blowout" and s["code"] not in hit_codes)
+    ]
     # 更新保留的 tag
     for s in wl["stocks"]:
         if s.get("list_type") == "blowout":
@@ -913,7 +913,7 @@ def main():
 
     # 2026-09-23 加: 同步 watchlist.json (覆盖 blowout 段)
     #   - 当季 (latest end_date) 命中 + 不在 watchlist 的 → 加 (list_type=blowout)
-    #   - watchlist 原 blowout 段 + 本季不再命中 → 改 list_type=自选 (不删, 保留历史)
+    #   - watchlist 原 blowout 段 + 本季不再命中 → 直接删 (2026-11-06 改)
     if not args.no_sync_watchlist and hits:
         sync_watchlist_blowout(hits_df, dry_run=getattr(args, 'dry_run', False))
 
