@@ -492,47 +492,71 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     #   实际走过的分支 (stage_factor 的 channel 段), 「本次判定」列直接由 token
     #   有无决定 → 渲染器与生产判定**不可能漂移**。
     #   「生产侧实际值」列只读 factor_values 既有字段, 不做任何派生计算。
-    if stage == "Markup":
-        _ch_parts = [p for p in (channel or "").split("+") if p]
+    #
+    # ⚠️ 2026-11-06 改: **无条件渲染** (原来 `if stage == "Markup"` → 非 Markup 票整块跳过)。
+    #   非 Markup 票 (含 stage='?' score=0) 的 channel 是空串 → 读者只看到
+    #   「Markup(AND门)」4 项全 ❌, 却**看不到弱信号门 / 加分线各自成没成立** →
+    #   无法回答"严格门没过, 那弱信号门呢? 为什么最终不是 Markup?"
+    #   实测 600089 特变电工: 日线阶段 '?', Markup(AND门) 4 项全 ❌, 下一段直接是 Fallback。
+    #
+    #   修法仍是**规则下沉**: 生产侧 stage_factor 无条件算好 markup_detail.gate_*,
+    #   渲染器只读 —— 不能改成渲染器自己 AND (2026-11-03 教训: 渲染侧反推会跟生产漂移)。
+    #   Markup 阶段用 channel token (保证逐字节不变), 非 Markup 用生产侧 gate bool。
+    _is_markup = (stage == "Markup")
+    _ch_parts = [p for p in (channel or "").split("+") if p]
 
-        def _layer_mark(token: str) -> str:
+    def _layer_mark(token: str, gate: bool) -> str:
+        """本次判定列 — Markup 阶段读 channel token, 其他阶段读生产侧 gate bool"""
+        if _is_markup:
             return "✅ 走" if token in _ch_parts else "⬜ 未走"
+        return "✅ 成立" if gate else "❌ 不成立"
 
-        _gc = fv.get("golden_cross_recent")
-        _ams = fv.get("above_ma200_sustained")
-        _gap = fv.get("ma_gap_pct_above") or 0
-        _up = fv.get("is_uptrend")
-        _am200 = fv.get("above_ma200")
-        _d20 = fv.get("dev_ma20") or 0
-        _pp = fv.get("pos_pct") or 0
+    _gc = fv.get("golden_cross_recent")
+    _ams = fv.get("above_ma200_sustained")
+    _gap = fv.get("ma_gap_pct_above") or 0
+    _up = fv.get("is_uptrend")
+    _am200 = fv.get("above_ma200")
+    _d20 = fv.get("dev_ma20") or 0
+    _pp = fv.get("pos_pct") or 0
+    # 2026-11-06 加: 生产侧无条件算出的三层门成立与否
+    _g_strict = bool(markup_d.get("gate_strict", False))
+    _g_weak = bool(markup_d.get("gate_weak", False))
+    _g_extra = bool(markup_d.get("gate_extra", False))
 
-        rows.append("**Markup 三层门判定** (本次判定走的是哪一层):")
-        rows.append("")
-        rows.append("| 判定层 | 条件 | 生产侧实际值 | 本次判定 |")
-        rows.append("|---|---|---|---|")
-        rows.append(
-            f"| 严格门 | 金叉 + 持续 MA200 上方 + MA gap>0.5% + 上升趋势 | "
-            f"`golden_cross_recent={_gc}` / `above_ma200_sustained={_ams}` / "
-            f"`ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | {_layer_mark('main_strict')} |")
-        rows.append(
-            f"| 弱信号门 | MA200 上方 + MA gap>0.5% + 上升趋势 | "
-            f"`above_ma200={_am200}` / `ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | "
-            f"{_layer_mark('main_weak')} |")
-        rows.append(
-            f"| **加分线** | MA20 偏离>5% + 价格位置>60% + 上升趋势 | "
-            f"`dev_ma20={_d20:+.2f}%` / `pos_pct={_pp:.1f}%` / `is_uptrend={_up}` | "
-            f"{_layer_mark('main_extra')} |")
-        rows.append("")
+    rows.append("**Markup 三层门判定** (本次判定走的是哪一层):")
+    rows.append("")
+    rows.append("| 判定层 | 条件 | 生产侧实际值 | 本次判定 |")
+    rows.append("|---|---|---|---|")
+    rows.append(
+        f"| 严格门 | 金叉 + 持续 MA200 上方 + MA gap>0.5% + 上升趋势 | "
+        f"`golden_cross_recent={_gc}` / `above_ma200_sustained={_ams}` / "
+        f"`ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | {_layer_mark('main_strict', _g_strict)} |")
+    rows.append(
+        f"| 弱信号门 | MA200 上方 + MA gap>0.5% + 上升趋势 | "
+        f"`above_ma200={_am200}` / `ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | "
+        f"{_layer_mark('main_weak', _g_weak)} |")
+    rows.append(
+        f"| **加分线** | MA20 偏离>5% + 价格位置>60% + 上升趋势 | "
+        f"`dev_ma20={_d20:+.2f}%` / `pos_pct={_pp:.1f}%` / `is_uptrend={_up}` | "
+        f"{_layer_mark('main_extra', _g_extra)} |")
+    rows.append("")
+    if _is_markup:
         rows.append("> ℹ️ **「⬜ 未走」= 本次判定不是靠这一层成立**, 不代表该层条件不满足。"
                     "严格门与弱信号门是**互斥 elif**(先满足者生效), 加分线是**独立 if**(可与前两层叠加)。")
-        rows.append("")
+    else:
+        rows.append(f"> ℹ️ 本次最终阶段是 **{stage}**, 没走 Markup 判定链。"
+                    "上表三列是**各门自身条件是否满足** (生产侧算好的 gate 值), "
+                    "用来回答\"严格门没过时, 弱信号门 / 加分线为什么也没成立\"。")
+        rows.append("> 「⬜ 未走 / ✅ 走」在此处不适用 —— 严格门与弱信号门是**互斥 elif**(先满足者生效), "
+                    "加分线是**独立 if**(可与前两层叠加)。")
+    rows.append("")
 
-        if strength == "extra_only":
-            rows.append("> ⚠️ **仅加分线成立 (extra_only)** — 严格门与弱信号门**均未走**, "
-                        "本次 Markup 判定**完全由加分线**给出。")
-            rows.append("> 加分线只看 MA20 偏离 / 价格位置 / 上升趋势, **不看 MA200 / 金叉**, "
-                        "门槛明显低于前两层 → 权重应低于严格门命中的票。")
-            rows.append("")
+    if _is_markup and strength == "extra_only":
+        rows.append("> ⚠️ **仅加分线成立 (extra_only)** — 严格门与弱信号门**均未走**, "
+                    "本次 Markup 判定**完全由加分线**给出。")
+        rows.append("> 加分线只看 MA20 偏离 / 价格位置 / 上升趋势, **不看 MA200 / 金叉**, "
+                    "门槛明显低于前两层 → 权重应低于严格门命中的票。")
+        rows.append("")
 
     # ── 均线结构参考判据的独立表: 2026-11-03 整块删除 ──
     # 理由: 该组 4 条判据 (对齐外部参考实现的 _detect_markup_entry) 当前状态版

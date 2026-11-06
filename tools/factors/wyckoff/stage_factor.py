@@ -414,6 +414,30 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label):
     #   2026-11-05 AST 插桩实测 (门槛 -5): 真走 fallback1 = 3 只。
     channel = ""
 
+    # ── 2026-11-06 加: Markup 三层门结果**无条件**计算 ──
+    #   动机: 原来这三层的判定只在 `stage == 'Markup'` 分支里算 (还要 score>0),
+    #   于是**非 Markup 票** (含 score 全 0 的 '?') 的 channel 是空串 →
+    #   渲染器的「Markup 三层门判定」表整块被跳过 → 报告里看不到弱信号门 / 加分线
+    #   的条件与判定, 读者无法回答"严格门全 ❌ 时, 弱信号门/加分线为什么也没成立"。
+    #   实测 600089 特变电工: 日线阶段 '?' (score=0), 报告里 Markup(AND门) 4 项全 ❌,
+    #   后面直接跳到 Fallback —— 中间少了一层判定的可见性。
+    #
+    #   ⚠️ 规则下沉: 判定在**生产侧**算好, 渲染器只读不算。
+    #   (不能改成渲染器自己 AND —— 2026-11-03 的教训: 渲染侧反推跟生产实际分支对不上,
+    #   旧口径 45 只标 fallback1 的里只有 6 只真走 fallback1)
+    #
+    #   严格门 / 弱信号门是**互斥 elif**(先满足者生效), 加分线是**独立 if**(可叠加)。
+    markup_gate_strict = bool(
+        golden_cross_recent and above_ma200_sustained
+        and ma_gap_pct_above > 0.5 and is_uptrend
+    )
+    markup_gate_weak = bool(
+        above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend
+    )
+    markup_gate_extra = bool(
+        dev_ma20 > 5 and pos_pct > 60 and is_uptrend
+    )
+
     if max(scores.values()) > 0:
         stage = max(scores, key=scores.get)
         # 主路径内部再分: 严格 AND 门 / 弱信号 A-B-C / Markup 弱信号
@@ -427,11 +451,11 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label):
             #   (score_Markup 累加)。所以 channel 允许多值, 用 "+" 连接。
             #   写成互斥单值会把「弱信号 + 加分线」误标成只有弱信号。
             _ch = []
-            if golden_cross_recent and above_ma200_sustained and ma_gap_pct_above > 0.5 and is_uptrend:
+            if markup_gate_strict:
                 _ch.append('main_strict')
-            elif above_ma200 and ma_gap_pct_above > 0.5 and is_uptrend:
+            elif markup_gate_weak:
                 _ch.append('main_weak')
-            if dev_ma20 > 5 and pos_pct > 60 and is_uptrend:
+            if markup_gate_extra:
                 _ch.append('main_extra')
             channel = '+'.join(_ch) if _ch else 'none'
         elif stage == 'Distribution':
@@ -527,6 +551,12 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label):
             "golden_cross_recent": golden_cross_recent,
             "above_ma200_sustained": above_ma200_sustained,
             "ma_gap_pct_above": ma_gap_pct_above, "ma50_angle_5d": ma50_angle_5d,
+            # 2026-11-06 加: 三层门成立与否 (**无条件**计算, 不管最终阶段是不是 Markup)。
+            #   渲染器靠它渲染「Markup 三层门判定」表 → 非 Markup 票也能看到
+            #   弱信号门 / 加分线各自成没成立 (原来只在 Markup 时才渲染, 整块跳过)。
+            "gate_strict": markup_gate_strict,
+            "gate_weak": markup_gate_weak,
+            "gate_extra": markup_gate_extra,
             # 2026-11-03 加: 参考实现 Layer 2.5 的 Markup 4 条判据 + 判定依据
             #   (报告不展示这张表, 仅保留在 markup_detail 里供人工排查)。
             "wta_markup_hit": markup_wta_hit,
