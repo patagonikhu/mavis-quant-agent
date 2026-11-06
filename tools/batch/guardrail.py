@@ -83,13 +83,13 @@ WHITELIST_PATTERNS = [
 ]
 
 # 已知"网络入口"白名单 (允许的工具)
+# 2026-11-06 清理: 删 3 条**文件已不存在**的死路径 + 1 条已纯计算的
+#   - tools/fetch/tushare_fetcher.py / tools/fetch/data_fetcher.py / tools/check_data_sources.py → 文件没了
+#   - tools/storage/sources/eastmoney.py → 2026-11-02 起是**纯计算模块** (0 网络, 名字是历史遗留)
+#   - sync.py 的 datacenter API → 2026-11-04 EPS 一致预期整档已删, 现在只走 Tushare
 NETWORK_ALLOWED = {
-    "tools/storage/sync.py": "唯一数据同步入口 (Tushare + datacenter API)",
+    "tools/storage/sync.py": "唯一数据同步入口 (Tushare)",
     "tools/storage/sources/tushare.py": "Tushare 数据源 (sync.py 调用)",
-    "tools/storage/sources/eastmoney.py": "datacenter EPS 一致预期 (sync.py 调用)",
-    "tools/fetch/tushare_fetcher.py": "Tushare fetcher (旧版, sync 兜底用)",
-    "tools/fetch/data_fetcher.py": "datacenter fetcher (旧版, sync 兜底用)",
-    "tools/check_data_sources.py": "数据源扫描 (只读, 不访问网络)",
     "tools/batch/guardrail.py": "本守门员自己 (检查规则定义里有网络关键词, 正常)",
 }
 

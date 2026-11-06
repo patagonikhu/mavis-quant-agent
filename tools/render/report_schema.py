@@ -281,7 +281,7 @@ REPORT_SECTIONS = [
     # === Tushare 补充数据 (数据驱动) ===
     {
         "id": "data_sources",
-        "title": "📡 数据源矩阵 (类型/主源/备源/状态) — 固化不丢",
+        "title": "📡 数据源矩阵 (数据/主源/备源/单位/说明) — 固化不丢",
         "category": "📋",
         "render": "render_data_sources_matrix",
         "required": True,

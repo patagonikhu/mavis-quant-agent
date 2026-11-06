@@ -1483,7 +1483,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ---
 
-## 📡 数据源矩阵 (类型/主源/备源/状态) — 固化不丢
+## 📡 数据源矩阵 (数据/主源/备源/单位/说明) — 固化不丢
 {_section_data_sources(data)}
 
 ---

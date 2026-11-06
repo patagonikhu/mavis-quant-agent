@@ -2,6 +2,18 @@
 # 所有数据 fetch 必须按本表声明的源拉取, 不在表里的数据 = 未支持
 # 改这个文件 = 改全项目数据源 (单一权威)
 #
+# ⚠️ 2026-11-06 逐条对照 tools/storage/sources/tushare.py + tools/storage/store.py
+#    实际调用核实, 原表有 4 处与代码不符, 已修正:
+#      ① kline_60min / Sina  —— 整条删除。代码里 0 处 Sina 调用 (60min 是 czsc/缠论
+#         依赖, 缠论下线后已无消费者), 且 Sina 不在合法源白名单 (合法源只有 tushare.pro)
+#      ② kline_weekly —— 周线不是拉 Tushare.weekly, 是**日线合成**
+#         (store.py::_synthesize_weekly ← eastmoney.py 纯计算模块)。
+#         Tushare.weekly 只在死代码 fetch_all_tushare() 里, 那函数只被自己的 __main__ 调用
+#      ③ real_time —— 「实时价」来自日 K 线最新收盘 (store.py: current_price = close
+#         or db['close']), 不是 daily_basic; daily_basic 只提供 PE/市值/换手率
+#      ④ industry_sector —— stock_basic 只有 industry 一个字段, 「概念板块」走 THS
+#    并补上 3 个实际在用但漏写的源: valuation_factor / stock_basic / ths_sector
+#
 # 字段:
 #   primary: 主源 (必填)
 #   fallback: 备源 (可选, 逗号分隔, 按顺序尝试)
@@ -10,25 +22,25 @@
 #   note: 备注
 
 real_time:
-  primary: Tushare.daily_basic
+  primary: Tushare.daily (最新收盘价)
+  fallback: Tushare.stk_factor (收盘价, K 线缺失时兜底)
   unit: 元
-  note: 实时价 + PE/PB/换手率, Tushare 2000 积分档 24h 稳定
+  note: 实时价 = 日 K 线最新收盘 (K 线是权威源, 永远不比估值快照旧)
 
 kline_daily:
   primary: Tushare.daily
   unit: 元
-  note: 日 K 线, 默认 250 根
+  note: 日 K 线, 默认 1300 根 (见 project.yaml data.kline_days)
 
 kline_weekly:
-  primary: Tushare.weekly
+  primary: 日线合成 (_synthesize_weekly)
   unit: 元
-  note: 周 K 线, 默认 100 根
+  note: 周线由日线合成 (自然周, 周一开盘~周五收盘), 不额外拉 Tushare.weekly
 
-kline_60min:
-  primary: Sina money.finance.sina.com.cn (公网, 无限制)
-  fallback: — (Tushare.stk_mins 限频 1次/分钟, 太慢, 不用)
-  unit: 元
-  note: 2026-07-24 改单一 Sina 源, Tushare 限流实测不可用
+valuation_factor:
+  primary: Tushare.stk_factor
+  unit: 元 / 亿元
+  note: PE/PB/总市值/换手率/量比/总股本 (stk_factor parquet)
 
 finance_quarterly:
   primary: Tushare.fina_indicator
@@ -38,15 +50,15 @@ finance_quarterly:
   # 2026-11-04: key 从 eps_finance 改为 finance_quarterly
   #   (EPS 一致预期整档已删, 这条现在只描述已审计财报指标)
 
-shares_market_cap:
+stock_basic:
   primary: Tushare.stock_basic
-  unit: 亿股/亿元
-  note: 总股本 + 流通市值
+  unit: 亿股
+  note: 名称/行业/上市日期/总股本/流通股本, 落 data/history/stock_basic/
 
-industry_sector:
-  primary: Tushare.stock_basic.industry
-  unit: — (字符串)
-  note: 行业 + 概念板块
+ths_sector:
+  primary: Tushare.ths_index + ths_daily
+  unit: 元
+  note: 同花顺概念板块 K 线 (sync --ths), 落 data/history/ths/
 
 # ❌ 禁用源 (拉取必失败, 历史踩坑)
 banned:
@@ -57,3 +69,4 @@ banned:
   - web.ifzq.gtimg.cn         # WAF 高频限流 (2026-07-24 实测)
   - push2delay.eastmoney.com  # rc=102 限流 (2026-07-24 实测)
   - qt.gtimg.cn               # GBK 编码, 高频限流
+  - money.finance.sina.com.cn # 60min 唯一源, 缠论下线后已 0 调用 (2026-11-06 补进禁用名单)

@@ -34,18 +34,12 @@ eastmoney.py — 技术指标计算 + 周线合成 (纯计算, 0 网络)
 
 from __future__ import annotations
 
-# 加载 config/project.yaml (60分 K线 datalen 从这里读)
-import pathlib as _pl
-try:
-    import yaml as _yaml
-    _CFG_PATH = _pl.Path(__file__).parent.parent.parent.parent / "config" / "project.yaml"
-    with open(_CFG_PATH, encoding="utf-8") as _f:
-        _PROJECT_CFG = _yaml.safe_load(_f) or {}
-except FileNotFoundError:
-    raise FileNotFoundError(
-        f"config/project.yaml 不存在, 请创建 (路径: {_CFG_PATH})\n"
-        f"  必需字段: data.kline_60m_count, data.kline_days 等"
-    )
+# 2026-11-06 删: 加载 config/project.yaml 的整块死代码
+#   理由: 本文件是**纯计算模块** (0 网络), 加载了 _PROJECT_CFG 但一次都没用
+#         (唯一引用就是这行赋值本身), 却给纯计算模块加了个「project.yaml 必须存在」
+#         的硬依赖 —— 而 project.yaml 里当时被引用的 data.kline_60m_count 是 60min
+#         的残留配置 (60min 随 czsc/缠论下线后已无消费者)。
+#   真正读 config 的是 store.py (data.kline_days) 和 tushare.py (data.weekly_limit)。
 
 # ============================================================
 # 1. 周线合成 (纯计算)
