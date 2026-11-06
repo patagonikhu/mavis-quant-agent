@@ -470,3 +470,52 @@ grep -rn "<术语>" --include=*.md --include=*.py --include=*.yaml . | grep -v "
 **验证:** `config/sources.yaml` 会被报告渲染器读 (数据源矩阵), 改注释也要重跑全量对报告做逐字节 diff。
 
 **apply when:** 任何"按术语批量清理残留"的动作。
+
+### 渲染器能塞 schema 之外的「野 section」—— 它逃过了 linter, 也逃过了删除 (2026-11-06)
+Type: rule
+> **摘要:** schema 是唯一事实源, 但 `report_renderer.render_report()` 里可以硬塞 schema 不认的 section —— 这类野 section 不在 linter 的必填清单里, 所以**坏了也没人知道**, 能活很久
+
+**触发场景:** 跑 `/t-analyze 600261` 时发现报告里有一档
+`## 🧪 GA 因子验证 (2026-07-27 加, 实验性)` 下面永远打印
+`> ⚠️ GA 因子计算失败: No module named 'tools.factors.registry'`。
+
+**根因链 (跨了 2 个 commit、4 个月):**
+1. `1b9d245` (v6.2.9) 删了 `tools/factors/registry.py` + `tools/factors/alpha101/` (含 `alpha_ga_001.py`)
+2. 但 `tools/render/report_renderer.py` 的 `_section_ga_factor` 还在 `from tools.factors.registry import FactorRegistry`
+3. 那段 import 套在 `try/except Exception` 里 → **ImportError 被吞成一行提示**, 不崩不报错
+4. 更关键: **GA 档根本不在 `REPORT_SECTIONS` 里** —— schema 的 7 个有效 section 是
+   `data_completeness / finance_quarterly / ma_indicators / method_matrix / xgboost / data_sources / linter`,
+   GA 不在其中。所以 linter 的 `REQUIRED_SECTIONS` 也不查它 → **linter 报 0 错 0 警, 报告却在持续刷错误**
+
+**三个可复用的判据:**
+
+1. **报告里出现「永远是错误提示」的 section = 恒定坏档** —— 该删, 不是该修。
+   依赖的因子库已经不存在, 功能不可能恢复, 修它等于重写一个没人验证过的新因子。
+
+2. **try/except 包住 import 会把「依赖已死」降级成「运行时一行提示」** → 静默腐烂。
+   顶层 import 挂掉至少 import 时就炸, 不会烂在磁盘上几个月。
+
+3. **schema 外的野 section 逃过整个质量网** —— linter 查必填 = 查「该有的有没有」,
+   查不出「不该有的还在不在」。查野 section 的办法是直接读渲染后的 md。
+
+**删除动作 (本次实际清的面):**
+- `report_renderer.py` 删 `_section_ga_factor` 函数体 (58 行) + 调用处 (含 `---` 分隔线, 6 行)
+- **schema 不用动** (GA 本来就不在里面) → **7 section 计数不变** → CLAUDE.md / README.md /
+  architecture.md / 各 SKILL.md 里那一堆「7 section」描述**全部不用改**
+- linter 不用动 (不在 `REQUIRED_SECTIONS` 里)
+- `tools/research/ga_mine.py` / `lgb_mine.py` **不动** —— 它们 import 的是 gplearn/lightgbm,
+  是独立活工具; 注释里提到 alpha_ga_001 是「未来扩展位」, 不是坏引用
+
+**验证 (改动前后逐字节 diff):**
+```
+diff 前 539 行 → diff 后 533 行, 差异恰好 6 行 (只有 GA 那块), 其余 0 差异
+```
+报告 section 的改动**必须逐字节 diff 验证**, 因为 render_report 是 f-string 模板,
+删一档容易连带改坏分隔线或空行, 那会静默改变后面所有 section 的排版。
+
+**连带刷产物:** 41 份主报告 (portfolio 21 + watchlist 20) 用 `t_analyze_one --codes ... --workers 4`
+重跑 (21s)。**注意别用 `t_analyze_all`** —— 它带孤儿清理, 会把不在 watchlist 里的
+单只报告 (比如 600261) 当孤儿删掉; `t_analyze_one` 没这步, 安全。
+
+**apply when:** 看到报告里有「⚠️ ... 失败/跳过」这种恒定输出 → 查它依赖的模块还在不在。
+不在就删整档 (连 schema 外的野 section 一起), 别留着刷错误。

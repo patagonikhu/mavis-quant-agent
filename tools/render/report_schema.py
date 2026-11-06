@@ -12,6 +12,17 @@ CLAUDE.md 红字硬约束 (2026-07-20 固化):
   1️⃣ 威科夫 3 大阶段判定 (Accumulation / Markup / Distribution) — 一等公民, 最前
   3️⃣ 市场状态定量判断 + 方法优先级矩阵
 
+2026-11-06 删: 🧪 GA 因子验证 一档 (ga_factor) — **schema 外的野 section**
+  → 本档从来不在 REPORT_SECTIONS 里, 是 2026-07-27 由 renderer 直接硬塞进
+    render_report 模板的实验性 section → linter 的必填清单不含它 → **坏了也没人知道**
+  → 依赖早就没了: tools/factors/registry.py + tools/factors/alpha101/ (含 alpha_ga_001.py)
+    在 1b9d245 (v6.2.9) 已删, 但 renderer 的 import 还在 → try/except 把 ImportError
+    吞成一行提示 → **每份报告都刷 "GA 因子计算失败: No module named ..."**, 能烂 4 个月
+  → 该档是"恒定坏档" (依赖不存在 = 功能不可能恢复), 该删不是该修
+  → 只删 renderer 的 _section_ga_factor 函数体 + 调用块 (含 --- 分隔线);
+    **本文件 schema 无需改动** (本来就没这一档) → 有效 section 仍是 7 个, 计数不变
+  → tools/research/ga_mine.py / lgb_mine.py 保留 (独立活工具, import gplearn/lightgbm)
+
 2026-11-03 删: 📊 基础信息 (Tushare) 一档 (ts_basic)
   → 本档内容: 代码/名称/行业/上市日期/总股本/流通股本/市场, 一行文本
   → 信息重复度高: 报告头已有 "# {code} {name}" + 板块 + 股价,

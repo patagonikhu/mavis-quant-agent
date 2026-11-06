@@ -164,66 +164,6 @@ def _section_ma(data: RenderData) -> str:
     return "\n".join(rows) + f"\n\n**MA 排列:** {arrange}"
 
 
-def _section_ga_factor(data: RenderData) -> str:
-    """🧪 GA 因子验证 (2026-07-27 加, 实验性)
-
-    调 tools/factors/alpha101/alpha_ga_001 factor 算当前值
-    显示: 当前值 + 跨票 |IC| 范围 + 方向 + 判定
-
-    输入: data.kline (KLineBar 列表) → 转 DataFrame
-    输出: 表格 (当前值 + 跨票 |IC| + 方向 + 判定)
-    """
-    try:
-        from tools.factors.registry import FactorRegistry
-        import pandas as pd
-
-        reg = FactorRegistry()
-        ga_factor = reg.get("alpha_ga_001")
-        if ga_factor is None:
-            return "> ⚠️ alpha_ga_001 factor 未注册\n"
-
-        if not data.kline or len(data.kline) < 60:
-            return "> ⚠️ K 线不足 60 根, 跳过 GA 因子\n"
-
-        # KLineBar → DataFrame (跟 alpha_ga_001 需要的格式一致)
-        kline_df = pd.DataFrame([{
-            "date": k.date, "open": k.open, "high": k.high,
-            "low": k.low, "close": k.close, "volume": k.vol,  # KLineBar 字段是 vol
-        } for k in data.kline])
-
-        factor_series = ga_factor(kline_df)
-        current = float(factor_series.iloc[-1])
-
-        # 跨票 |IC| 范围 (从 4 张票 GA 报告: 0.077~0.671, 多数反向)
-        # 实际应跑全 57 只扫描, 这里先用 hardcoded 范围
-        ic_range = "0.077 ~ 0.671"
-        ic_typical = "0.40 ~ 0.50"
-
-        # 方向判定: 多数票 (300274/300308/688012) 反向, 002371 正向
-        # 阈值: 0.7 强, 0.3 中, 否则弱 (基于 4 票样本观察)
-        if abs(current) > 0.7:
-            direction = "反向 (高因子值→5d 跌)"
-            signal = "🟢 5d 涨信号强 (取负)"
-        elif abs(current) > 0.3:
-            direction = "反向 (中等)"
-            signal = "🟡 5d 涨信号弱 (取负)"
-        else:
-            direction = "中性"
-            signal = "⚪ 无明确信号"
-
-        return f"""| 因子 | 当前值 | 跨票 IC | 方向 | 判定 |
-|---|---|---|---|---|
-| **alpha_ga_001** | {current:+.3f} | {ic_range} (典型 {ic_typical}) | {direction} | {signal} |
-
-> 📌 **2026-07-27 实验性**: GA 挖的量价背离因子, 公式见 `tools/factors/alpha101/alpha_ga_001.py`
-> 跨票稳定性: 4 张票 (300274/688012/002371/300308) Top 1 公式完全一致
-> 使用建议: |因子| > 0.3 时关注, > 1.0 时强信号
-> 详细分析见 `docs/ga_results_*.md`
-"""
-    except Exception as e:
-        return f"> ⚠️ GA 因子计算失败: {e}\n"
-
-
 def _section_xgboost(data: RenderData) -> str:
     if data.xgboost_prob is not None:
         return f"""- **启动概率:** {data.xgboost_prob:.2f}
@@ -1451,11 +1391,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ### 📋 周线分析 (因子 × 周线视角)
 {_section_weekly(data)}
-
----
-
-## 🧪 GA 因子验证 (2026-07-27 加, 实验性)
-{_section_ga_factor(data)}
 
 ---
 
