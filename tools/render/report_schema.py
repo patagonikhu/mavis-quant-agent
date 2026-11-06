@@ -9,33 +9,8 @@ report_schema.py — 报告格式定义 (单一真源, 不可变)
   5. linter 强校验 — 缺一个就报错
 
 CLAUDE.md 红字硬约束 (2026-07-20 固化):
-  1️⃣ 缠论三要素 (中枢+背驰+止跌) — 一等公民, 最前
-  2️⃣ 1 个缠论补充策略 (威科夫) — 一等公民
-  6️⃣ 买卖点 (1买/2买/3买/1卖/2卖/3卖) — 综合 (买点/卖点)
-  → ⚠️ 2026-11-06: 缠论整层下线, 这 3 条铁律**全部作废**
-    (缠论三要素 / 缠论补充 / 买卖点 都是 czsc 产物)
-
-2026-11-06 删: 缠论整层 (中枢+背驰+止跌+买卖点) + 综合判定投票 (用户指令)
-  → 缠论是 czsc 产物 (分型/笔/中枢/段/背驰/买卖点 全部靠 czsc 算)
-  → 删的东西:
-    - tools/factors/chan/ 整目录 (czsc_adapter / czsc_signals / czsc_wrapper)
-    - requirements.txt 的 czsc>=1.0.1
-    - tools/batch/czsc_history_signals.py (czsc 17 信号历史触发验证脚本)
-    - analysis_engine.ChanStrategy + _derive_buy_sell_points (Phase1 4→3 个策略类)
-    - analysis_result_signals 的 中枢/买卖点 提取 + 变化检测 + 信号产出
-    - render_data 的 chan_data / chan_status / buy_sell_points / supplement
-    - report_renderer 的 【缠论详情】块 + 止跌信号 + _hub_str / _bsp_str
-    - report_linter 的 中枢位置一致性校验 + 段列表/中枢列表检测
-  → 报告变化:
-    - 「🎯 因子 × 3 周期 综合矩阵」→ 「🎯 因子 × 2 周期 矩阵 (威科夫)」
-      (原 3 行: 缠论 / 威科夫 / 综合判定 → 现 1 行: 威科夫)
-    - 数据完整性表少 2 列 (缠论 / 缠论补充)
-    - 因子历史表少 3 列 (日中枢 / 周中枢 / 买卖点) → 24 列变 21 列
-    - 「综合判定」(🥈标准建仓/🟠标准减仓/🟡观察) 整档消失
-  → 方向信号来源改为: 威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离
-    (analysis_result_signals.extract_signals 仍在, 产出 buy/sell 方向)
-  → ⚠️ 投票逻辑是**整块删除**, 不是把阈值从 2 降到 1 ——
-    降阈值会让「任何威科夫 Accumulation 都算建仓建议」, 属另一次决策, 不在本次范围
+  1️⃣ 威科夫 3 大阶段判定 (Accumulation / Markup / Distribution) — 一等公民, 最前
+  3️⃣ 市场状态定量判断 + 方法优先级矩阵
 
 2026-11-03 删: 📊 基础信息 (Tushare) 一档 (ts_basic)
   → 本档内容: 代码/名称/行业/上市日期/总股本/流通股本/市场, 一行文本
@@ -70,47 +45,37 @@ CLAUDE.md 红字硬约束 (2026-07-20 固化):
 2026-11-03 删: 📌 监控触发点 一档 (monitor_triggers)
   → 本档是 2026-11-03 这轮风控四档 (止盈/止损/退场信号/3层仓位) 删完后的
     最后两档之一, 与 "📋 3 层仓位策略" 一起删除
-  → 实际有效信息只有 3 个缠论触发 (60分底背 / 止跌信号 / 60分顶背):
-    - "中枢_突破上沿 / 跌破下沿" 的「已触发」是硬编码 False, 从不变化
+  → 实际有效信息几乎为零:
+    - "突破上沿 / 跌破下沿" 的「已触发」是硬编码 False, 从不变化
     - "时间触发" 生产调用传 events=[] + code="" → 永远为空
   → 操作建议里的仓位比例 (建底仓 25-30% / 加中仓 20-25% / 减仓 1/3) 与
     止损价 (¥price×0.97) 同样是机械外推, 无标的特异性判断
-  → 缠论三要素 (中枢位置 + 背驰 + 止跌) 仍在报告最前面, 买卖点
-    (1买/2买/3买/1卖/2卖/3卖) 仍由 缠论买卖点 section (_fmt_bs) +
-    因子矩阵独立提供 → 删除本档不丢缠论信号
   → 数据管线一并删除: factor_risk.compute_monitor_triggers (该文件删空后
     整个模块移除) + analysis_engine._derive_monitor_triggers + render_data
     的 monitor_triggers property
   → ⚠️ 删除后报告不再有任何独立风控 section (止盈/止损/退场/3层仓位/监控
-    触发点 五档全删); 仓位与止损决策需自行从 缠论三要素 + 买卖点 推导
+    触发点 五档全删); 仓位与止损决策需自行从威科夫阶段/子事件推导
 
 2026-11-03 删: 📋 3 层仓位策略 一档 (three_layer_position)
-  → 输出中枢位三档仓位 (逆势/底/中/波动) + 止损阶梯 + 目标阶梯,
+  → 输出三档仓位 (逆势/底/中/波动) + 止损阶梯 + 目标阶梯,
     其中价位全是"当前价 × 固定百分比"的机械外推 (止损 ×0.85/0.92/0.97,
     目标 +5%/+10%/+20%), 不含标的特异性判断
   → 与 "📌 监控触发点" 重叠; 两档同批删除
-  → 卖点 (1卖/2卖/3卖) 仍由 缠论买卖点 section (_fmt_bs) + 因子矩阵
-    独立提供, 删除本档不丢卖点信息
   → 数据管线一并删除: factor_basic.compute_three_layer_position (该文件删空后
     整个模块移除) + analysis_engine._derive_three_layer_position + render_data
     的 three_layer_position / position_layer 两个 property
 
 2026-11-03 删: 🟢 退场信号检查 一档 (exit_signals)
-  → 纯缠论退出判定 (60分底背/60分顶背/止跌信号 → 一句话 verdict),
-    信息量与 "📌 监控触发点"
-    (缠论 4 触发 + 中枢 2 触发 + 时间触发) 完全重叠
-  → 卖点 (1卖/2卖/3卖) 仍由 缠论买卖点 section (_fmt_bs) + 因子矩阵
-    独立提供, 删除本档不丢卖点信息
+  → 纯退出判定 (一句话 verdict), 信息量与 "📌 监控触发点" 完全重叠
   → 数据管线一并删除: factor_risk.compute_exit_signals +
     analysis_engine._derive_exit_signals + render_data.exit_signals property
 
 2026-11-03 删: 🎯 止盈 3 层 + 🛑 止损 4 档 两档
   → 止盈/止损价位是"当前价 × 固定百分比"的机械外推 (止盈 +5/+10/+20%,
     止损 -3/-5/-8/-10%), 不含任何标的特异性判断
-  → 与 监控触发点 属重复表达, 两档同批删除; 退出/止损依据改由 缠论三要素 +
-    缠论买卖点 承担
+  → 与 监控触发点 属重复表达, 两档同批删除
   → 数据管线一并删除: mech.compute_stop_pl (MA20/MA60 外推) +
-    factor_risk.compute_stop_profit_loss (中枢位外推) + analysis_engine
+    factor_risk.compute_stop_profit_loss + analysis_engine
     ._derive_stop_profit_loss + render_data.take_profit/stop_loss 字段
 
 2026-11-03 删: 🎯 投资四问 + ⏰ T 框架 + 🚨 5 类 14 子信号 三档
@@ -130,7 +95,7 @@ refresh 字段说明 (2026-07-24 加入, 方案 B 核心):
   "REGEN"    — 每次 enhance 强制重新生成 (数据驱动, 不保留旧内容)
                适用: 实时数据 (MA/技术指标), 或之前有单位 bug 的 section
   "PRESERVE" — 保留原报告内容, 只在缺失时补充占位符
-               适用: LLM 填充的分析 (缠论三要素)
+               适用: LLM 填充的分析
                注: 2026-11-03 起 PRESERVE 无消费方 (全仓仅定义处出现)
 """
 
@@ -184,8 +149,6 @@ REPORT_SECTIONS = [
         "render": "render_method_matrix",
         "required": True,
         "refresh": "REGEN",
-        # 2026-11-06: 缠论整层下线 → 3 周期综合矩阵降为 2 周期威科夫对照
-        #   (原 3 行: 缠论 / 威科夫 / 综合判定投票 → 现 1 行: 威科夫)
     },
     # === 3️⃣ 大盘+美股背景 ===
     # 2026-11-03: 整档从 md 报告里删除 (用户指令)
@@ -202,7 +165,6 @@ REPORT_SECTIONS = [
         "_deprecated": True,
     },
     # === 基本面 + 策略 (数据驱动) ===
-    # 2026-09-09 删: 基本面 (4 维) section (走 缠论 + ValuationStrategy PEG+DCF+Magic)
     # {
     #     "id": "fundamental",
     #     "title": "💎 基本面 (4 维) — 自动评估",
@@ -211,7 +173,6 @@ REPORT_SECTIONS = [
     #     "required": True,
     #     "refresh": "REGEN",
     # },
-    # 2026-09-09 删: 4 套交易策略 section (走 缠论, 不再单独跑 4 套指标)
     # {
     #     "id": "strategy",
     #     "title": "🎯 4 套交易策略 — 自动评估",
@@ -263,13 +224,10 @@ REPORT_SECTIONS = [
         "required": True,
         "refresh": "REGEN",
     },
-    # === 7️⃣ 买卖点 (数据驱动) ===
     # 2026-11-03: 止盈 3 层 + 止损 4 档 + 退场信号 + 3 层仓位 + 监控触发点
     #   五档风控全部从 md 报告里删除 (用户指令)
     #   原因: 价位/仓位比例 = 当前价 × 固定百分比的机械外推, 无标的特异性判断;
     #         且五档彼此重复表达
-    #   缠论三要素 (中枢+背驰+止跌) 曾在报告最前, 买卖点由缠论买卖点 section
-    #   + 因子矩阵提供 → 2026-11-06 随缠论整层下线一并删除
     {
         "id": "stop_profit",
         "title": "🎯 止盈 3 层",
@@ -298,8 +256,6 @@ REPORT_SECTIONS = [
         "required": False,
         "refresh": "REGEN",
         # 2026-11-03: renderer 已不再输出该 section (函数 _section_exit_signals 一并删除)
-        #   纯缠论退出判定与 监控触发点 重叠 (两档同批删除);
-        #   卖点仍由缠论买卖点 section 提供
         "_deprecated": True,
     },
     {
@@ -310,7 +266,6 @@ REPORT_SECTIONS = [
         "required": False,
         "refresh": "REGEN",
         # 2026-11-03: renderer 已不再输出该 section (函数 _section_position_layer 一并删除)
-        #   中枢位三档仓位 + 止损/目标阶梯 (机械百分比外推) 与 监控触发点 重叠
         #   (两档同批删除)
         "_deprecated": True,
     },
@@ -322,7 +277,6 @@ REPORT_SECTIONS = [
         "required": False,
         "refresh": "REGEN",
         # 2026-11-03: renderer 已不再输出该 section (函数 _section_monitor 一并删除)
-        #   实际有效信息只有 3 个缠论触发 (中枢 2 触发硬编码 False, 时间触发永远为空)
         "_deprecated": True,
     },
     # === Tushare 补充数据 (数据驱动) ===

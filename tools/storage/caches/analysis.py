@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     date_str        TEXT NOT NULL,
     kline_hash      TEXT NOT NULL,
 
-    -- 2026-09-22 删: wy_* (10列), chan hub/买卖点/背驰 (11列), ma_dev (3列), boll_* (2列)
+    -- 2026-09-22 删: wy_* (10列), ma_dev (3列), boll_* (2列)
     -- 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 是镜像, 删除减少 26 列空白存储
     -- 已删: wy_stage, wy_markup_entry/spring/lps/evr/sos/compression/trendpullback/distributionstart/utad
     --       chan_daily_hub/pos, chan_weekly_hub/pos
@@ -440,7 +440,7 @@ def _calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
     策略：
     - 扫全量 K 线（5年），找所有 stale 日期
     - 取最老的连续缺失段，最多 batch_size 根
-    - 计算时往前加 120 根缠论上下文缓冲
+    - 计算时往前加 120 根上下文缓冲
     """
     import time as _t
     t0 = _t.time()

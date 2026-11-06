@@ -69,7 +69,6 @@ thresholds:
   # 报告完整性
   completeness_min_pct: 50    # 报告完整度 < 50% 不合格
 
-  # 背驰最小有效面积 (相对价格)
   beichi_min_area_pct: 0.03
 
   # 量比触发
@@ -119,7 +118,6 @@ forecast:
 # === 回测窗口 ===
 backtest:
   wave_window: 5        # 找最近 2 个波的窗口
-  # 2026-11-06 删: hub_window (缠论中枢识别窗口 — 缠论整层下线, 全仓无消费方)
 
 
 # === 技术指标阈值 ===
@@ -146,7 +144,7 @@ thresholds:
   dcf:
     discount_rates: [0.08, 0.10, 0.12]
 
-# === signals_5method 阈值 (背驰/量价/MA) ===
+# === signals_5method 阈值 (量价/MA) ===
 signals:
   # MA120 偏离
   ma120:

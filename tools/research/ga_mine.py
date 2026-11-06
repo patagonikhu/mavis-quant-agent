@@ -66,7 +66,6 @@ def fetch_features(code: str = "300274") -> pd.DataFrame:
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df["rsi"] = 100 - 100 / (1 + gain / (loss + 1e-9))
-    # 5. MACD area (5d 累计, 当背驰近似)
     ema12 = df["close"].ewm(span=12, adjust=False).mean()
     ema26 = df["close"].ewm(span=26, adjust=False).mean()
     df["macd_hist"] = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()

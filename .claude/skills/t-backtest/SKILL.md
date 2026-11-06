@@ -15,7 +15,7 @@ allowed-tools:
 
 ```bash
 # 单信号
-... --signal Spring / Accumulation / 趋势1买 / 顶背驰
+... --signal Spring / Accumulation / Markup / UTAD
 
 # 组合 (AND)
 ... --signal Spring --signal 趋势1买
@@ -35,7 +35,6 @@ allowed-tools:
 - **5 年 backfill**: 跑前先 `python -m tools.storage.sync --cache`
 - **缓存命中**: 7 只持仓 × 1250 天 × 7 strategy ≈ 3.5 分钟 (无 cache) / 秒级 (有 cache)
 - **信号类别**: 威科夫子事件 / 威科夫阶段 (Accumulation / Markup / Distribution)
-  > 2026-11-06: 缠论买卖点 (1买/2买/3买/1卖/2卖/3卖) 随缠论整层下线, 已从回测信号类别删除。
 
 ## 输出
 

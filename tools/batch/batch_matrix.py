@@ -79,7 +79,6 @@ def render_one_matrix(code: str) -> str:
     _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
     result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
     s5 = result.to_dict(ctx)
-    # 2026-11-06 删: chan_data / buy_sell_points (缠论 — 缠论整层下线)
 
     if s5.get("error"):
         return f"## {code} 跳过 (AnalysisEngine 失败)\n\n> ❌ {s5['error']}\n\n---\n\n"

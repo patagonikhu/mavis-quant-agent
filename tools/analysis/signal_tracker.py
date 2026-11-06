@@ -27,7 +27,7 @@ Mavis Signal Tracker v1.0 (2026-07-20)
   python3 signal_tracker.py --stats --code 688256
 
   # 按 signal_type 统计
-  python3 signal_tracker.py --stats --type 底背驰
+  python3 signal_tracker.py --stats --type UTAD
 
   # 看 7d 窗口胜率
   python3 signal_tracker.py --stats --window 7
@@ -103,8 +103,6 @@ def save_signals_to_file(signals, date):
 
 # signal_type → model 推断 (按子串匹配, 顺序重要)
 MODEL_INFERENCE = [
-    ('BC+中枢+MA+威科夫', ['BC+中枢+MA+威科夫', '3合1', '3合 1', 'BC_HUB_MA', 'top_alert']),
-    ('缠论', ['中枢', '背驰', '止跌', '1买', '2买', '3买', '1卖', '2卖', '3卖', '60分底', '60分顶', '日线底', '日线顶']),
     ('结构', ['OB', 'FVG', '扫流', 'Demand', 'Supply', 'BOS', 'CHoCH']),
     ('威科夫', ['威科夫', 'A累积', 'B弹簧', 'C测试', 'D突破', 'E顶部', '阶段A', '阶段B', '阶段C', '阶段D', '阶段E']),
     ('T框架', ['T+', 'T-', 'T_']),
@@ -244,7 +242,7 @@ def cmd_record(args):
             'code': input("code: ").strip(),
             'name': input("name: ").strip(),
             'date': input("date (YYYY-MM-DD, 默认今天): ").strip() or datetime.now().strftime('%Y-%m-%d'),
-            'signal_type': input("signal_type (T+1/底背驰/...): ").strip(),
+            'signal_type': input("signal_type (T+1/UTAD/...): ").strip(),
             'source': input("source: ").strip(),
             'trigger_price': float(input("trigger_price: ")),
             'target_price': float(input("target_price: ")),
@@ -399,7 +397,7 @@ def main():
     p_st = sub.add_parser('stats', help='统计信号胜率')
     p_st.add_argument('--code', help='按 code 过滤')
     p_st.add_argument('--type', help='按 signal_type 过滤')
-    p_st.add_argument('--model', help='按 model (BC+中枢+MA+威科夫/缠论/结构/威科夫/T框架/板块) 过滤')
+    p_st.add_argument('--model', help='按 model (结构/威科夫/T框架/板块) 过滤')
     p_st.add_argument('--window', type=int, help='只统计最近 N 天')
     p_st.set_defaults(func=cmd_stats)
 

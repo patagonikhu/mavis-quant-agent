@@ -177,7 +177,6 @@ def process_one(s):
             changes = diff_rows(rows[-2], rows[-1])
             sigs = extract_signals(changes)
             sig_fmtd = format_signals_for_render(changes)
-            # 2026-11-06 删: hub_d / hub_str (缠论中枢列 — 缠论整层下线)
             has_sig = '⭐' if sig_fmtd else ''
             for _, detail, direction in sigs:
                 signals.append((direction, code_tagged, name, detail))

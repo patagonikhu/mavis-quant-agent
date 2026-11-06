@@ -22,7 +22,7 @@
 | [`lessons/01-wyckoff.md`](lessons/01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 18 | MA 容差 / fallback 语义 / 周期口径 / 死代码陷阱 |
 | [`lessons/02-data-sync.md`](lessons/02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 8 | 限频实测 / 写盘覆盖丢数据 / 季度切换陷阱 |
 | [`lessons/03-finance.md`](lessons/03-finance.md) | 财务 / 估值口径 | 5 | 降序陷阱 / PE 年化 bug / 已删维度清单 |
-| [`lessons/04-a2m-scan.md`](lessons/04-a2m-scan.md) | A→M 扫描 / watchlist | 11 | 性能基线 / 过滤链 / ETF 去重 / 买卖点口径 |
+| [`lessons/04-a2m-scan.md`](lessons/04-a2m-scan.md) | A→M 扫描 / watchlist | 11 | 性能基线 / 过滤链 / ETF 去重 / 口径一致性 |
 | [`lessons/05-render-lint.md`](lessons/05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 8 | 表格列数 / linter 截断 / SKILL 兑现铁律 / 占位符豁免 / skip_reason 透传 / 因子历史行数 |
 
 **索引页** (47 条一句话摘要): [`handbook/lessons/README.md`](lessons/README.md)

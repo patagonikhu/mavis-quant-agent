@@ -917,7 +917,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     weight: '1.0x' (2026-09-09 改: 3 周期等权, 不再区分 1.5x/1.0x/0.5x)
 
     2026-10-28: 删 vp_windows 参数 (量价/fflow 维度整体删除)
-    2026-11-06: 删缠论整块 (中枢 / 段表 / 买卖点 — 缠论整层下线)
     """
     s5 = data.analysis or {}
     # v5.10.42: 3 周期 sub_events 都从 s5.get("wyckoff").sub_events_by_period[level] 拿
@@ -1013,8 +1012,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     else:
         wy_focus = f"阶段 {wy_stage} ({wy_name}) {wy_conf}% — {wy_action if level=='daily' else wy_focus_label}"
 
-    # 2026-11-06 删: 止跌信号 (缠论三要素之「止跌」— 缠论整层下线)
-    # 2026-11-06 删: 买卖点 (缠论买卖点 — 缠论整层下线)
 
     return f"""> 周期 **{label}** (3 周期等权, 2026-09-09 删权重展示)
 
@@ -1068,9 +1065,8 @@ def _section_daily(data: RenderData) -> str:
 
 def _section_factor_matrix(data: RenderData) -> str:
     """
-    🎯 因子 × 2 周期 矩阵 (2026-11-06 缠论整层下线后简化: 只剩威科夫)
+    🎯 因子 × 2 周期 矩阵 (威科夫)
 
-    2026-11-06 删: 缠论行 (中枢 + 买卖点) / 综合判定行 (投票) / 实战建议 (中枢上下沿建议价)
 
     注意: 复用 analysis 已算好的数据, render 阶段 0 重复计算
     """
@@ -1106,7 +1102,6 @@ def _section_factor_matrix(data: RenderData) -> str:
 #   记法映射单一事实源 = tools.factors.wyckoff.helpers.strength_token, 渲染器只读不算。
 # 2026-11-04 改列序: 威科夫 3 列 (威科夫(日/周) / 威科夫强度 / 子事件(日/周))
 #   从「MA偏离」右边移到「收盘」右边 —— 用户要求威科夫信息靠前, 紧跟价格看。
-# 2026-11-06 删 3 列: 日中枢 / 周中枢 / 买卖点 (缠论 — 缠论整层下线) → 24 列变 21 列
 #   列序: 日期 → 收盘 → 威科夫3列 → RSI6 → MACD... → PE
 FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 变化 | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
@@ -1148,7 +1143,6 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
         return s.split(" (")[0]
     se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
 
-    # 2026-11-06 删: 买卖点列 (bsp_parts / b3) — 缠论整层下线
 
     chg = format_signals_for_render(changes)
     chg = [c for c in chg if not c.startswith('📊MA')]
@@ -1435,7 +1429,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
     details = [comp[k][1] for k in keys]
     comp_table += "| 详情 | " + " | ".join(details) + " |\n"
 
-    # 报告主体 (2026-11-06 缠论整层下线后: 缠论三要素段 + 缠论补充段已消失)
     # 2026-11-02: 5️⃣ PEG/DCF 整档已删
     # 2026-10-28: 主力 fflow 维度整体删除, 6️⃣ 位取消
     report = f"""# {code} {name} | {today}

@@ -181,7 +181,6 @@ class RenderData:
     # render 改读 data.analysis.<字段> 太散, 加 property 兼容老代码
     # 2026-11-02 删: peg / dcf 两个 property (PEG/DCF 整档已删, 0 调用)
     # 2026-11-03 删: five_categories property (5 类 14 子信号整档已删, 0 调用)
-    # 2026-11-06 删: buy_sell_points property (缠论买卖点 — 缠论整层下线)
 
     # 移植因子 (WyckoffTradingAgent → mavis, 2026-08)
     # 走 factor_scores 路径, to_dict() 已自动提升 raw 到顶层
@@ -194,19 +193,16 @@ class RenderData:
     # 2026-11-02 删: _merge_peg_detail / _merge_dcf_detail
     #   (2026-09-02 就没人调了 — peg_detail/dcf_detail 已合并成 valuation_data; PEG/DCF 整档也已删)
 
-    # 2026-09-09 删: strategy 字段 (5 strategy 投票, 走缠论)
     # strategy: Optional[dict] = None
     # strategy_status: Optional[DataStatus] = None
 
     # ===== 扩展 (mavis LLM 算) =====
-    # 2026-11-06 删: chan_data / chan_status (缠论 — 缠论整层下线)
     # 2026-11-03 删: four_questions / t_frame / signal_5cat 三个字段
     #   (投资四问 / T 框架 / 5 类 14 子信号三档整档已删)
     # 2026-09-02 合并: peg_detail / dcf_detail / magic_formula_detail → valuation_data 1 个
     # 2026-11-02: PEG/DCF 已删, valuation_data 现在只剩 Magic (ROC/EY)
     valuation_data: Optional[dict] = None  # FinanceStrategy 输出 (Magic)
     xgboost_prob: Optional[float] = None
-    # 2026-11-06 删: supplement 字段 (缠论补充 — 缠论整层下线)
     # 2026-11-03 删: take_profit / stop_loss 两个字段 (止盈 3 层 + 止损 4 档整档已删)
     # 2026-11-03 删: exit_signals property (退场信号检查整档已删)
     # 2026-10-30 修: 删掉 position_layer / monitor_triggers 两个字段声明
@@ -279,7 +275,6 @@ class RenderData:
 
         # Phase 2 派生字段 (render 路径一次性运行，engine 不再负责)
         from tools.analysis.analysis_engine import PHASE2_FUNCTIONS
-        # 2026-11-06 删: _chan_bsp / ctx._bsp_for_data (缠论买卖点 — 缠论整层下线)
         for _fn in PHASE2_FUNCTIONS:
             _key = _fn.__name__.replace("_derive_", "")
             try:
@@ -370,8 +365,6 @@ class RenderData:
         # 2026-09-09 删: 基本面 (4 维) — 估值/盈利/增长/安全 评分
         # 走 Magic (ROC/EY), 报告 section 整个删掉
         # 2026-11-03 删: 5 类信号 (整档已删, 只剩"暂未接入"占位, 零有效信息)
-        # 2026-09-09 删: 策略 (5 strategy 投票, 走缠论)
-        # 2026-11-06 删: 缠论补充 (supplement) — 缠论整层下线
         # 2026-11-03 删: 止盈 3 层 + 止损 4 档 (整档已删)
         #   原: out["take_profit"] = compute_stop_pl(ctx.kline or [])
         #   价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断;
@@ -383,8 +376,6 @@ class RenderData:
         return out
 
     # 2026-09-09 删: _agg_strategy (5 strategy 投票, 67 行)
-    # 原因: 决策走 缠论 1买/2买/3买/1卖/2卖/3卖, 不再单独跑 5 strategy 投票
-    # 渲染端: 4 套交易策略 section 整个删掉 (走缠论, 走 TechnicalStrategy 8 个技术指标)
 
     # 2026-11-03 删: _agg_5_categories (5 类 14 子信号整档已删)
     #   演进: 2026-10-28 删量价+资金 → 2026-11-02 删 PEG → 只剩 龙头/政策/情绪
@@ -411,10 +402,8 @@ class RenderData:
         line("技术指标", self.technical_status, "8 种 (MACD/RSI/KDJ/BOLL/ATR/量比)")
         # 2026-09-09 删: 基本面 status 行 (4 维基本面, 走 Magic)
         # 2026-11-03 删: 5类信号 status 行 (5 类 14 子信号整档已删)
-        # 2026-09-09 删: 策略 status 行 (走缠论, 不再单独展示 5 strategy 投票)
         # 2026-08-31: 资金流 section 已停用 (CLAUDE.md 板块适用性限制), 不展示
         # 2026-11-04 删: EPS status 行 (EPS 机构一致预期整档已删)
-        # 2026-11-06 删: 缠论 status 行 (缠论整层下线)
 
         # 2026-11-03 删: 四问 / T框架 两行 (两档整档已删)
         # 2026-09-02 改: 合并 valuation_data 1 个
@@ -439,7 +428,6 @@ class RenderData:
             report["Magic"] = ("❓", "未计算")
         # 2026-11-02 修: 删重复的 report["5类信号"] 赋值
         #   (上面 line("5类信号", ...) 已经赋过, 这里再赋会覆盖掉子信号数详情)
-        # 2026-11-06 删: report["缠论补充"] 行 (缠论整层下线)
         # 2026-11-03 删: report["止盈止损"] 行 (止盈 3 层 + 止损 4 档整档已删)
 
         return report
@@ -450,4 +438,3 @@ class RenderData:
         return int(ok / len(report) * 100)
 
     # 2026-11-02 删: can_calc_peg / can_calc_dcf (0 调用; PEG/DCF 整档已删)
-    # 2026-11-06 删: can_calc_supplement (缠论补充 — 缠论整层下线)

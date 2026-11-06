@@ -189,7 +189,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 def _extract_row(result, date: str, close: float, ctx=None) -> dict:
     """从 AnalysisResult 提取单行因子快照"""
     raw       = result.raw
-    # 2026-11-06 删: chan_raw / bsp_raw (缠论整层下线)
     wy_raw     = raw.get("wyckoff",         {}) or {}
     val_raw    = raw.get("finance",           {}) or {}  # 2026-09-08 改: ValuationStrategy → FinanceStrategy
     tech_raw   = raw.get("technical",        {}) or {}  # v6.2.8 改: TechnicalStrategy 8 指标
@@ -228,8 +227,6 @@ def _extract_row(result, date: str, close: float, ctx=None) -> dict:
 
         # 2026-11-05 删: 结构分析 日线/周线 OB/FVG/Sweep 共 10 个行字段
         #   (structure_* — 报告层早已不消费, 随 StructureStrategy 整档删除)
-        # 2026-11-06 删: 中枢二周期 (hub_daily/hub_weekly) + 买卖点二周期
-        #   (bsp_daily/bsp_weekly) — 缠论整层下线
 
         # 估值 (FinanceStrategy 季报粒度, 共享最新季值)
         # v6.2.8 删: 历史表里不再有 ROC%/EY% 列 (跨季才变, 跟"## 财务数据" section 重复)
@@ -287,11 +284,7 @@ def diff_rows(prev: dict, curr: dict) -> dict:
         if c != "—" and c != p:
             changes[field] = c
 
-    # 买卖点：新出现的点
-    # 2026-11-06 删 (缠论整层下线): bsp_daily / bsp_weekly 新增-消失检测
 
-    # 中枢变化（区间变 or 位置变，任一触发）
-    # 2026-11-06 删 (缠论整层下线): hub_daily_pos / hub_weekly_pos 中枢位置检测
 
     # MA20 偏离穿越（跨越 ±10% / ±20% / ±30% 阈值时记录）
     _MA_THRESHOLDS = [30, 20, 10, -10, -20, -30]
@@ -327,8 +320,6 @@ def diff_rows(prev: dict, curr: dict) -> dict:
 
 _WY_TOP   = {"DistributionStart", "UTAD", "EVR", "LPSY", "BC", "UT"}
 _WY_BOT   = {"Spring", "LPS", "SOS", "SC", "AR", "Compression"}
-# 2026-11-06 删: _BSP_BUY / _BSP_SELL / _bsp_direction / _hub_direction
-#   (缠论买卖点 + 中枢位置 — 缠论整层下线)
 
 
 def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
@@ -342,7 +333,6 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
     """
     signals = []
 
-    # 2026-11-06 删 (缠论整层下线): 买卖点新出现/消失 (bsp_new / bsp_gone)
 
     # 威科夫阶段转变 (2026-11-03 加)
     #   A→M (Accumulation→Markup) = 主升浪启动 = 买入信号
@@ -373,8 +363,6 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
             if ev in _WY_TOP: signals.append(("wyckoff_event_top", f"{ev}({period})", "sell"))
             elif ev in _WY_BOT: signals.append(("wyckoff_event_bot", f"{ev}({period})", "buy"))
 
-    # 中枢位置变化
-    # 2026-11-06 删 (缠论整层下线): hub_pos_change 中枢位置信号
 
     # MA20 偏离穿越
     for field in ("ma_dev_daily", "ma_dev_weekly"):
@@ -404,7 +392,6 @@ def format_signals_for_render(changes: dict) -> list[str]:
     parts = []
     for sig_type, detail, direction in extract_signals(changes):
         icon = "🟢" if direction == "buy" else "🔴"
-        # 2026-11-06 删 (缠论整层下线): bsp_new / bsp_gone / hub_pos_change 分支
         if sig_type == "wyckoff_event_top":
             parts.append(f"🔴{detail}")
         elif sig_type == "wyckoff_event_bot":

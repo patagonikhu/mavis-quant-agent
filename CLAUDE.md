@@ -60,9 +60,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 300274
 | 1️⃣ | 威科夫 3 大阶段判定 (Accumulation / Markup / Distribution) | 🥇 |
 | 3️⃣ | 市场状态定量判断 + 方法优先级矩阵 | 🥈 |
 
-> ⚠️ 2026-11-06: **缠论整层下线** (中枢 / 背驰 / 止跌 / 买卖点 1买2买3买1卖2卖3卖 全是 czsc 产物),
-> 1️⃣ 缠论三要素 / 2️⃣ 缠论补充 / 6️⃣ 买卖点 三条铁律**全部作废**。
-> 方向信号改由 **威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离** 提供。
+> 方向信号由 **威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离** 提供。
 
 section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有效 section, 唯一事实源)。
 
@@ -72,12 +70,12 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 
 **只看 PE (静态) + 盈利质量 (ROC / EY / 毛利率 / 杠杆)**, 全部用已审计 TTM 财报算, 不依赖任何预测值。
 
-**已彻底删除, 禁止复活**: **OBV** (10-27) / **主力资金流 fflow** (10-28) / **PEG** (11-02) / **DCF L** (11-02) / **多市场共振 res** (11-05) / **EPS 机构一致预期** (11-04) / **缠论整层含 czsc** (11-06) / **因子矩阵投票** (11-06)。
+**已彻底删除, 禁止复活**: **OBV** (10-27) / **主力资金流 fflow** (10-28) / **PEG** (11-02) / **DCF L** (11-02) / **多市场共振 res** (11-05) / **EPS 机构一致预期** (11-04) / **因子矩阵投票** (11-06)。
 详见 `docs/fflow-removal-assessment.md` / `docs/obv-removal-record.md`。
 
-> 2026-11-06: **缠论整层下线 + 投票逻辑整块删除** (用户指令) —— 缠论 (中枢 / 背驰 / 止跌 / 买卖点 1买2买3买1卖2卖3卖) 全部是 **czsc** 产物, 一并删掉 czsc 依赖。删除范围: `tools/factors/chan/` 整目录、`requirements.txt` 的 `czsc>=1.0.1`、`tools/batch/czsc_history_signals.py`、`analysis_engine.ChanStrategy` + `_derive_buy_sell_points` (Phase1 **4→3** 个策略类)、`analysis_result_signals` 的中枢/买卖点提取+变化检测+信号产出、`render_data` 的 `chan_data`/`chan_status`/`buy_sell_points`/`supplement`、`report_renderer` 的【缠论详情】块+止跌信号+`_hub_str`/`_bsp_str`、`report_linter` 的中枢位置一致性校验+段/中枢列表检测、`batch_backtest` 的 6 个缠论买卖点回测列、`tools/backtest/double_touch_30d.py` + `tools/batch/_eval_vote.py` (死脚本)。
-> **报告变化**: 「因子 × 3 周期 综合矩阵」→「因子 × 2 周期 矩阵 (威科夫)」; 完整性表少 2 列; 因子历史表少 3 列 (日中枢/周中枢/买卖点) → **24 列变 21 列**; 「综合判定」(🥈标准建仓/🟠标准减仓/🟡观察) 整档消失。
-> **判定口径**: 投票是**整块删除**, 不是把阈值 `bottom_signals >= 2` 降到 1 —— 降阈值会让「任何威科夫 Accumulation 都算建仓建议」, 属另一次决策。方向信号改由 **威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离** 提供 (`analysis_result_signals.extract_signals` 仍在)。
+> 2026-11-06: **因子矩阵投票逻辑整块删除** (用户指令) —— Phase1 strategy 4→3 个, 因子矩阵从 3 行降为 1 行 (威科夫)。
+> **报告变化**: 「因子 × 3 周期 综合矩阵」→「因子 × 2 周期 矩阵 (威科夫)」; 完整性表少 2 列; 因子历史表少 3 列 → **24 列变 21 列**; 「综合判定」(🥈标准建仓/🟠标准减仓/🟡观察) 整档消失。
+> **判定口径**: 投票是**整块删除**, 不是把阈值 `bottom_signals >= 2` 降到 1 —— 降阈值会让「任何威科夫 Accumulation 都算建仓建议」, 属另一次决策。方向信号由 **威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离** 提供 (`analysis_result_signals.extract_signals` 仍在)。
 
 > 2026-11-04: **EPS 机构一致预期整档已删** —— 它是**预测值** (datacenter 拉机构 E0/E1/E2/E3), 11-02 删 PEG/DCF 后已无任何分析消费者, 只剩管道残骸 + 报告展示。删除范围: `tools/storage/caches/eps.py` (整个缓存层)、`eastmoney._build_eps_table` (唯一联网函数, 删完该文件变纯计算模块)、`sync.py --eps` flag、`DataStore.get_eps()`、`RawContext.eps_table`、`RenderData.EpsRow/eps_table/eps_status`、报告「EPS 一致预期」表、linter 的 EPS 检查、guardrail 的 `eps-scope` check。section id `eps_finance` → `finance_quarterly`。
 > **实测: 判定结果零变化** (7 只票 Magic/ROC/EY/因子矩阵逐字节一致)。副产物: 原本 EPS 常为 EMPTY 的票 (如 002371) 数据完整度 87% → **100%**。
@@ -95,7 +93,7 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 
 > 2026-11-04: 结构分析 (OB/FVG/Sweep) 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变); 同日生产层完成改名, 全仓统一用 `structure` / `结构` 命名。
 >
-> 2026-11-05: 结构分析 (structure / 原 SMC) **整个从 analysis 层删除** —— `StructureStrategy` 类、`RawContext.structure_result`、`raw["structure"]`、10 个 `structure_*` 行字段、`tools/factors/structure/` 因子库目录全部移除。报告层早已不消费, 只算不用。删除后 Phase1 strategy = **chan / wyckoff / technical / finance** (chan 已于 11-06 随缠论下线删除, 现为 **wyckoff / technical / finance**)。
+> 2026-11-05: 结构分析 (structure / 原 SMC) **整个从 analysis 层删除** —— `StructureStrategy` 类、`RawContext.structure_result`、`raw["structure"]`、10 个 `structure_*` 行字段、`tools/factors/structure/` 因子库目录全部移除。报告层早已不消费, 只算不用。删除后 Phase1 strategy = **wyckoff / technical / finance**。
 >
 > 2026-11-05: 多市场共振 (res) 那一票一并移除 —— `resonance_3period` 网络调用早已删除, 该票恒为 0, 报告里的「多市场共振: 已移除」占位块 + 因子矩阵表格行同步删掉。判定结果零变化。
 >

@@ -63,9 +63,7 @@ KEY_DATA_PATTERNS = {
     "板块 MA20 偏离": r"MA20\s*偏离.*[\+\-]?[\d.]+%",
     # 2026-11-03 删: "止盈价" / "止损价" (止盈 3 层 + 止损 4 档整档已删)
     "评级": r"(🥇|🥈|🥉|⚠️|❌).*[重仓|标准|轻仓|观察|不买]",
-    # ===== 因子 × 2 周期 矩阵 必填 (2026-11-06 缠论整层下线 → 2 周期) =====
     "因子矩阵标题": r"##\s*🎯\s*因子\s*×\s*2\s*周期",
-    # 2026-11-06 删: 缠论行 / 综合判定(投票)行 — 缠论整层下线
 }
 
 
@@ -139,7 +137,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
     for name, pattern in KEY_DATA_PATTERNS.items():
         key_data[name] = bool(re.search(pattern, content))
 
-    # 3. 警告 (升级: 加占位符检测 + 段列表/中枢列表检测, 防止"数据丢"漏检)
     warnings = []
 
     # 3.0 section 缺失报警 (2026-10-30 加)
@@ -153,12 +150,10 @@ def lint_report(md_path: str) -> dict[str, Any]:
         warnings.append("⚠️ 未找到 MA 表 (K线可能不够)")
     # 2026-11-02 删: PEG / DCF 数值检查 (整档已删)
 
-    # 2026-11-06 删: 中枢位置一致性逻辑校验 (缠论中枢 — 缠论整层下线)
     # ===== 因子 × 2 周期 矩阵 必填校验 (2026-11-06: 3 周期 → 2 周期) =====
     if not key_data["因子矩阵标题"]:
         warnings.append("🔴 缺 '因子 × 2 周期 矩阵' section 标题 (硬保证失败)")
-    # 2026-11-06 删: '5方法场景/共振数/行动/总分' warning (投票逻辑整档已删)
-
+    
     # === 升级: 占位符检测 (2026-07-22 加, 防止"数据丢"漏检) ===
     # 2026-07-23 加: 3 个特定占位符 (sync_watchlist_fresh 之前埋的坑, 实算后必须消失)
     placeholder_patterns = [
@@ -203,7 +198,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
             for line in matches[:3]:  # 只报前 3 个
                 warnings.append(f"⚠️ 占位符 [{desc}]: {line.strip()[:80]}")
 
-    # 2026-11-06 删: 段列表检测 (缠论 seg_idx) + 中枢列表检测 (缠论中枢构成)
 
     # === 2026-07-25 新增: markdown 格式检测 (抓"标题紧接表格"bug) ===
     # 抓"粗体标题行末直接换行表格行"的情况 (中间无空行)
@@ -246,7 +240,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
     try:
         from tools.render.report_schema import get_ordered_titles
         ordered_titles = get_ordered_titles()
-        # 2026-11-06: 缠论 1️⃣2️⃣ 铁律已随缠论整层下线移除
         # 2026-07-25: 优先用 id 注释 (按 REPORT_SECTIONS 顺序), fallback 标题文案
         section_titles_in_doc = re.findall(r"^##\s+(.+)$", content, re.MULTILINE)
         # 构建 id → 标题的索引顺序

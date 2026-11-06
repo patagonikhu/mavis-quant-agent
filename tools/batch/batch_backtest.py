@@ -65,8 +65,6 @@ def _result_to_row(r) -> dict:
         return r
     raw = getattr(r, "raw", None) or {}
     wy = raw.get("wyckoff", {}) or {}
-    # 2026-11-06 删: chan = raw.get("chan", {}) + bsp 派生的 6 个买卖点字段
-    #   (缠论整层下线)
 
     se = wy.get("sub_events", [])
     se_names = {e.get("name") for e in se} if isinstance(se, list) else set()
@@ -82,8 +80,6 @@ def _result_to_row(r) -> dict:
         "wy_markup_entry": 1 if "MarkupEntry" in se_names else None,
         "wy_distributionstart": 1 if "DistributionStart" in se_names else None,
         "wy_utad":         1 if "UTAD" in se_names else None,
-        # 2026-11-06 删: chan_1buy / chan_2buy / chan_3buy /
-        #   chan_1sell / chan_2sell / chan_3sell (缠论买卖点 — 缠论整层下线)
     }
 
 
@@ -110,8 +106,6 @@ def match_signal(row, signals: list[str]) -> bool:
             hit = bool(row.get(SE_COLS[sig]))
         elif sig in ("Accumulation", "Markup", "Distribution", "Markdown"):
             hit = row.get("wy_stage") == sig
-        # 2026-11-06 删: "1买"/"2买"/"3买"/"1卖"/"2卖"/"3卖" 分支
-        #   (缠论买卖点 — 缠论整层下线)
         elif sig.startswith("boll:"):
             # boll:N  →  boll_bpct < N (位置 0-100，越低越接近下轨)
             try:

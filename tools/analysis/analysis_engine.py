@@ -11,8 +11,6 @@ analysis_engine.py — analysis 层 (v5.10.35, 2026-08-26)
   (wyckoff / technical / finance)
 - 2026-11-05 删: StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep)
   → 报告层早已不消费, 只算不用; 因子库 tools/factors/structure/ 整目录删除
-- 2026-11-06 删: ChanStrategy (缠论整层下线 — 用户指令)
-  → czsc 依赖 + 中枢 + 买卖点 + 背驰 全部移除; 投票逻辑一并删
 - 1 个 Phase2 派生函数 (模块级): 纯数据提取, weight=0
 - AnalysisResult.raw: Dict[str, Any] 是唯一数据来源
 """
@@ -50,12 +48,10 @@ class RawContext:
     name: str = ""
 
     # Phase1 Strategy 算完后写这里，Phase2 函数直接读，不重算
-    # 2026-11-06 删: chan_result (缠论整层下线)
     wyckoff_result: dict = field(default_factory=dict)   # 日线
     wyckoff_weekly: dict = field(default_factory=dict)
     technical_result: dict = field(default_factory=dict)  # 8 个技术指标 (v6.2.8 新增, 含 series)
     # 2026-11-05 删 resonance_result: resonance_3period 网络调用早已删除, 该字段从未被写入/读取
-    # 2026-11-06 删: _bsp_for_data (缠论买卖点 — 缠论整层下线)
     kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写
     kline_arrs_weekly:  dict = field(default_factory=dict)   # 周线 arrs，WyckoffStrategy 写，factor_history 读 ma_dev_weekly
 
@@ -85,7 +81,6 @@ class RawContext:
             name=self.name,
         )
         # 透传预计算缓存（factor_history 优化：全量信号预算一次，切片节点直接查表）
-        # 2026-11-06 删: _czsc_* 4 个属性 (缠论 czsc 预计算缓存, 缠论整层下线)
         for _attr in ('_precomputed_signals',):
             if hasattr(self, _attr):
                 setattr(sliced, _attr, getattr(self, _attr))
@@ -103,7 +98,6 @@ class AnalysisResult:
       # Phase2 派生 (weight=0)
       # 2026-11-02 删: raw["peg"] / raw["dcf"] (PEG/DCF 整档已删)
       raw["sector_overheat"]     = {1周涨幅: ..., ...}
-      # 2026-11-06 删: raw["chan"] / raw["buy_sell_points"] (缠论整层下线 — 用户指令)
       # 2026-11-03 删: raw["exit_signals"] (退场信号检查整档已删 —
       #   与 监控触发点 重叠)
       # 2026-11-03 删: raw["stop_profit_loss"] (止盈 3 层 + 止损 4 档整档已删)
@@ -785,7 +779,6 @@ def _derive_sector_overheat(ctx: RawContext, raw: dict) -> dict:
 # Phase1 策略类列表
 # 2026-09-08: 删 ValuationStrategy (合并进 FinanceStrategy)
 # 2026-11-05: 删 StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep — 报告层早已不消费)
-# 2026-11-06: 删 ChanStrategy (缠论整层下线 — 用户指令; 投票逻辑一并删)
 PHASE1_STRATEGY_CLASSES = [
     WyckoffStrategy,
     TechnicalStrategy,  # v6.2.8 加: 8 个技术指标
@@ -793,7 +786,6 @@ PHASE1_STRATEGY_CLASSES = [
 ]
 
 # Phase2 派生函数列表
-# 2026-11-06 删: _derive_buy_sell_points (缠论买卖点 — 缠论整层下线)
 PHASE2_FUNCTIONS = [
     _derive_sector_overheat,
 ]
@@ -877,8 +869,6 @@ class AnalysisEngine:
             raw: Dict[str, Any] = {}
             for inst in self._phase1:
                 raw[inst.name] = (strategy_results.get(inst.name) or {}).get(date, {})
-            # 2026-11-06 删: chan_bsp / ctx._bsp_for_data / raw["buy_sell_points"]
-            #   (缠论买卖点 — 缠论整层下线)
             # 2026-08-29: 删 A/B/C/D/E scene 分类 (硬编码 if-else 不准)
             # 改: signals_active 直接从 raw 聚合 (LLM 自己判)
             signals_active = []

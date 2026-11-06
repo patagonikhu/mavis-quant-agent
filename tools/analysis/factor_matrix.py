@@ -1,25 +1,10 @@
 """
 因子 × 2 周期 矩阵 (威科夫对照)
 
-2026-11-06 缠论整层下线 (用户指令) 后大幅简化。
+威科夫 3 大阶段 (Accumulation / Markup / Distribution) × 周/日 2 周期。
 
-原来 3 行:
-    缠论 (中枢 + 买卖点 + 背驰)  ← czsc 产物
-    威科夫 (3 大阶段)
-    综合判定 (投票: chan 票 + wyckoff 票, 阈值 底>=2 / 顶>=2)
-
-现在 1 行:
-    威科夫 (3 大阶段) × 周/日 2 周期
-
-删掉的东西及原因:
-  - 缠论行: 中枢 / 买卖点 / 背驰 全是 czsc 产物 → 缠论整层下线
-  - 综合判定行 (投票): 2026-11-06 前投票 = 2 类票 (chan + wyckoff), 阈值 底>=2 / 顶>=2。
-    删掉 chan 后只剩 1 票 → 阈值恒不可达 (全部退化成「🟡 观察」)。
-    按用户指令**整块删除投票逻辑**, 不是把阈值降到 1 ——
-    降阈值会让「任何威科夫 Accumulation 都算建仓建议」, 属另一次决策, 不在本次范围。
-    报告里的方向信号改由威科夫阶段转变 (A→M 买 / M→D 卖) + 子事件 + MA 偏离 提供
-    (见 tools/analysis/analysis_result_signals.py: extract_signals)。
-  - 实战建议 (建议买入价 / 建议卖出价 / 中枢区间): 全部基于缠论中枢上下沿 → 无中枢即无建议价
+报告里的方向信号由 tools/analysis/analysis_result_signals.py::extract_signals 提供:
+威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离。
 
 输出: {
     "code", "name", "current_price",
@@ -69,9 +54,6 @@ def build_factor_matrix(
 ) -> dict:
     """
     构建 因子 × 2 周期 矩阵 (威科夫对照)
-
-    2026-11-06 缠论整层下线: 去掉 chan_data / buy_sell_points 两个入参
-      (原来这两个参数喂中枢 + 买卖点 + 缠论投票)
 
     Args:
         code: 股票代码

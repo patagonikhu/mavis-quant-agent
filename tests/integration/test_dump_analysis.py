@@ -113,11 +113,11 @@ class TestDataFlow:
 
 
 # =====================================================================
-# 2. AnalysisEngine: 4 个核心 strategy 都跑出来
+# 2. AnalysisEngine: 3 个核心 strategy 都跑出来
 # =====================================================================
 
 class TestAnalysisEngineStrategies:
-    """AnalysisEngine.analyze() 必须把 4 个 Phase1 strategy 全跑出来 (raw dict)"""
+    """AnalysisEngine.analyze() 必须把 3 个 Phase1 strategy 全跑出来 (raw dict)"""
 
     @pytest.mark.integration
     @pytest.mark.parametrize("strategy_class", PHASE1_STRATEGY_CLASSES)
@@ -125,19 +125,26 @@ class TestAnalysisEngineStrategies:
         self, analysis_data_per_code, strategy_class
     ):
         """每个 Phase1 strategy 都在 result.raw 里, score 范围合理"""
-        strategy_name = strategy_class.name  # chan/wyckoff/technical/finance
+        strategy_name = strategy_class.name  # wyckoff/technical/finance
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
             assert strategy_name in raw, (
                 f"{code}: {strategy_name} 不在 raw (跑了哪几个: {list(raw.keys())})"
             )
             d = raw[strategy_name] or {}
-            # score 范围因 strategy 而异:
+            # score 范围因 strategy 而异 (取真实值域, 不是拍脑袋的 ±1.5):
+            #   wyckoff   → stage score_map: Accumulation 0.6 / Markup 1.0 / Distribution -0.6
+            #   technical → 多空计数打分: -2 / -1 / 0 / 1 / 2
+            #   finance   → 不打分, 恒 0
             score_ranges = {
-                "wyckoff":  (-1.5, 1.5),
-                "chan":     (-1.5, 1.5),
+                "wyckoff":   (-0.6, 1.0),
+                "technical": (-2.0, 2.0),
+                "finance":   (0.0, 0.0),
             }
-            lo, hi = score_ranges.get(strategy_name, (-1.5, 1.5))
+            assert strategy_name in score_ranges, (
+                f"新 strategy {strategy_name!r} 必须在 score_ranges 里声明 score 区间"
+            )
+            lo, hi = score_ranges[strategy_name]
             score = d.get("score", 0) or 0
             assert lo <= score <= hi, (
                 f"{code}: {strategy_name}.score = {score} 超出 [{lo}, {hi}] 范围"
@@ -148,8 +155,8 @@ class TestAnalysisEngineStrategies:
             )
 
     @pytest.mark.integration
-    def test_all_four_strategies_present(self, analysis_data_per_code):
-        """一次检查 4 个 Phase1 strategy 全部在 raw"""
+    def test_all_phase1_strategies_present(self, analysis_data_per_code):
+        """一次检查全部 Phase1 strategy 都在 raw"""
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
             for cls in PHASE1_STRATEGY_CLASSES:
@@ -161,11 +168,11 @@ class TestAnalysisEngineStrategies:
 # =====================================================================
 
 class TestCtxResults:
-    """Strategy 跑完后, ctx 上的 5 个 result dict 都有值"""
+    """Strategy 跑完后, ctx 上的 result dict 都有值"""
 
     @pytest.mark.integration
     @pytest.mark.parametrize("strategy_name", [
-        "chan", "wyckoff",
+        "wyckoff",
     ])
     def test_raw_strategy_not_empty(self, analysis_data_per_code, strategy_name):
         """2026-08-29: ctx.*_result 字段已删, 改读 raw[strategy_name]"""
@@ -235,17 +242,26 @@ class TestAnalysisDict:
             # 2026-10-28: 主力资金流维度整体删除
             assert "fflow" not in d, f"{code}: to_dict() 不应有 fflow 字段"
             assert "moneyflow" not in d, f"{code}: to_dict() 不应有 moneyflow 字段"
+            # 键集合必须严格等于「已注册 strategy + 元字段」——
+            # 任何被下线的 strategy 若被偷偷加回来, 这里立刻炸 (不靠人肉记忆)
+            expected = {s.name for s in PHASE1_STRATEGY_CLASSES} | {
+                "code", "name", "current_price", "signals_active", "action",
+            }
+            assert set(d) == expected, (
+                f"{code}: to_dict() 键集合不符 — 多出 {sorted(set(d) - expected)}, "
+                f"缺少 {sorted(expected - set(d))}"
+            )
 
     @pytest.mark.integration
     def test_to_dict_verdict_matches_raw(self, analysis_data_per_code):
-        """【防 regression】to_dict() chan.verdict 必须跟 raw['chan'].verdict 一致"""
+        """【防 regression】to_dict() wyckoff.verdict 必须跟 raw['wyckoff'].verdict 一致"""
         for code, data in analysis_data_per_code.items():
             d = data["engine_result"].to_dict(data["ctx"])
-            chan_in_dict = d["chan"]
-            chan_in_raw = data["engine_result"].raw["chan"]
-            assert chan_in_dict.get("verdict") == chan_in_raw.get("verdict"), (
-                f"{code}: to_dict.chan.verdict ({chan_in_dict.get('verdict')!r}) "
-                f"!= raw['chan'].verdict ({chan_in_raw.get('verdict')!r}) — "
+            wy_in_dict = d["wyckoff"]
+            wy_in_raw = data["engine_result"].raw["wyckoff"]
+            assert wy_in_dict.get("verdict") == wy_in_raw.get("verdict"), (
+                f"{code}: to_dict.wyckoff.verdict ({wy_in_dict.get('verdict')!r}) "
+                f"!= raw['wyckoff'].verdict ({wy_in_raw.get('verdict')!r}) — "
                 f"可能 to_dict 提升时丢了 verdict 字段"
             )
 
@@ -257,28 +273,22 @@ class TestAnalysisDict:
 BASELINE_PATH = PROJECT_ROOT / "tests" / "baselines" / "v0_baseline.json"
 
 
-@pytest.mark.skipif(not BASELINE_PATH.exists(), reason="v0_baseline.json 不存在, 跑 tools/batch/regression_test baseline")
+@pytest.mark.skipif(not BASELINE_PATH.exists(), reason="v0_baseline.json 不存在")
 class TestBaselineRegression:
     """跟 v0_baseline.json 对比关键字段, 防止 strategy 偷偷改了输出但没人发现
 
-    baseline 格式: regression_test.py 抽出 8 个关键字段 (不是 dump 顶层字段)
+    baseline 格式: 3 个关键字段 (不是 dump 顶层字段)
     - wyckoff_stage / wyckoff_confidence
-    - hub_low / hub_high
-    - peg_真实
-    - dcf_l_10
-    - 5method (scene + total_score)
     - _elapsed
 
-    baseline 是 regression_test 抽出的, 不是 dump 字段. 完整对比走
-    `python3 tools/batch/regression_test.py test`, 那个工具已经覆盖.
-    这里只验证: baseline 8 个字段对应到 dump 的位置 (factor.wyckoff.stage 等)
+    这里只验证: baseline 字段对应到 dump 的位置 (raw.wyckoff.stage 等)
     """
 
     @pytest.mark.integration
     def test_baseline_file_exists_and_has_codes(self):
-        """baseline 存在 + 含 17 只票 (跟 regression_test baseline 模式对应)"""
+        """baseline 存在 + 含 17 只票"""
         if not BASELINE_PATH.exists():
-            pytest.skip("v0_baseline.json 不存在, 跑 regression_test baseline")
+            pytest.skip("v0_baseline.json 不存在")
         baseline = json.load(open(BASELINE_PATH))
         assert len(baseline) == 17, (
             f"baseline 应该有 17 只票, 实际 {len(baseline)} 只"
@@ -295,8 +305,6 @@ class TestBaselineRegression:
         # 2026-11-02: 删 peg_真实 (PEG 是假指标, 整档已删); 改用 Magic roc 替代
         field_paths = {
             "wyckoff_stage":    lambda data: data["engine_result"].raw.get("wyckoff", {}).get("stage", "?"),
-            "hub_low":          lambda data: data["engine_result"].raw.get("chan", {}).get("daily", {}).get("hub", {}).get("low"),
-            "hub_high":         lambda data: data["engine_result"].raw.get("chan", {}).get("daily", {}).get("hub", {}).get("high"),
         }
         for code, data in analysis_data_per_code.items():
             if code not in baseline:

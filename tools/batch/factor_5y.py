@@ -189,7 +189,6 @@ def _summarize_metrics(rows: list[dict]) -> dict:
         max_drawdown = worst
 
     # 阶段转变: 项目口径 (跟 diff_rows 的 wyckoff_daily 一致)
-    # 2026-11-06 改: 缠论买卖点整档删 → 统计威科夫阶段转变
     #   A→M (Accumulation→Markup) = 买信号, M→D (Markup→Distribution) = 卖信号
     buy_count = 0
     sell_count = 0
