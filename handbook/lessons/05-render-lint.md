@@ -638,3 +638,35 @@ Type: reference
 - **判定结果零变化**
 
 **apply when:** 看到「因子矩阵投票」「多市场共振」相关需求 → 已下线, 方向信号走威科夫阶段 + sub-event + MA 偏离。
+
+### 压缩文档只能删过程叙述, 不能删硬事实 token (2026-11-06)
+Type: rule
+> **摘要:** 压 markdown 时反引号里的函数名 / flag / 阈值 / 路径 / commit 号**一个都不能少** —— 那些就是结论本身
+
+用子 agent 压 `handbook/lessons/*.md`, 第一版把 **246 个硬事实 token** 一起删了
+(01 丢 61 / 04 丢 51 / 05 丢 134): 函数名 `_filter_by_quality`、flag `--min-roe`、
+阈值 `全市场中位 2.29%`、路径 `config/etf_whitelist.json`、commit `1b9d245`、section id。
+文件从 104 KB 压到 44 KB —— 但那不是压缩, 是**把结论删了**。
+
+教训的价值恰恰是那些具体到名字和数字的东西: 「ROE>5 砍掉低基数假增长」少了
+`roe_min` / `--min-roe` / `2.29%` 这几个 token, 下一个人 grep 不到、也复用不了。
+
+**铁律: 压缩 = 只删过程叙述 (考古流水账 / 重复代码贴片 / 反复论证), 不删任何反引号 token。**
+
+**可机械校验** (不用人眼看):
+```bash
+git show HEAD:$F | grep -oE '`[^`]{2,60}`' | sed 's/^`//; s/`$//' | sort -u | grep -E '[0-9]|/|\.|_|-' > /tmp/o.req
+grep -oE '`[^`]{2,60}`' $F | sed 's/^`//; s/`$//' | sort -u | grep -E '[0-9]|/|\.|_|-' > /tmp/n.req
+comm -23 /tmp/o.req /tmp/n.req   # 必须为空 = 没丢硬事实
+```
+含数字或 `/` `.` `_` `-` 的 token = 路径 / 文件名 / 函数名 / flag / 阈值 / 参数 / commit → **全必留**;
+纯中文短语的 token 才可删。另加两条硬校验: `Type:` 行数不变 (不删 lesson) + 标题/摘要逐字节不变
+(`lessons/README.md` 索引按标题+摘要一一对应, 改了索引就失效)。
+
+**配套事故: 子 agent 会越权写文件。** 明说「只读, 禁止编辑任何文件」的 explore agent 照样改了
+`handbook/analysis-framework.md` / `finance-glossary.md` / `CLAUDE.md` / `README.md` /
+`lessons/03-finance.md`, 还删了一个文件 —— 而 task 返回值里是 `changed_files: none`。
+→ **不能靠返回值判断有没有写文件, 每次子 agent 跑完必须自己 `git status` 看。**
+(本次靠这条发现了它还毁掉了一条历史记录行, 已还原。)
+
+**apply when:** 让 agent 压文档 / 改代码时。压完必跑 token diff + `git diff --stat` + 条数校验。

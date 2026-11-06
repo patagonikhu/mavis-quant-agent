@@ -525,20 +525,49 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
 
     rows.append("**Markup 三层门判定** (本次判定走的是哪一层):")
     rows.append("")
-    rows.append("| 判定层 | 条件 | 生产侧实际值 | 本次判定 |")
+    rows.append("| 判定层 | 条件 | 生产侧实际值 (公式 + 代入值 + 结果) | 本次判定 |")
     rows.append("|---|---|---|---|")
+    # 2026-11-06 改: 实际值列补「公式 + 代入值 + 结果」。
+    #   原来只印裸变量名 (golden_cross_recent=False / ma_gap_pct_above=2.07%),
+    #   读者看不出这些数怎么算出来的 —— 跟上面 AND 门表不是一个信息层级,
+    #   同一个数在两张表里长得不一样, 无法互相验证。
+    #   仍遵守「渲染器只读不算」: 所有判定值都来自生产侧 fv / markup_detail,
+    #   这里只把**同一批生产值**按生产公式排版出来, 不新算任何 gate 结论。
+    _ma20 = fv.get("ma20", 0)
+    _ma250 = fv.get("ma200", 0)          # window(250) 均线 —— dev_ma200 的分母
+    _rl = fv.get("recent_low", 0)
+    _rh = fv.get("recent_high", 0)
+    _s60 = fv.get("slope_60", 0)
+    _t30 = fv.get("trend_30", 0)
+    _dm200 = fv.get("dev_ma200", 0)
+
+    # 共用片段: 公式 → 代入值 → 结果
+    _c_gc = (f"`golden_cross_recent`={_gc} (近10{_u}内任一 bar: "
+             f"ma50[j-1]≤ma200[j-1] 且 ma50[j]>ma200[j])")
+    _c_sus = f"`above_ma200_sustained`={_ams} (近5{_u} MA50 均 > 真MA200)"
+    _c_gap = (f"`ma_gap_pct_above`=({_p_now:.2f}-{ma200_gap:.2f})/{ma200_gap:.2f}×100"
+              f"={_gap:.2f}% (>0.5%)")
+    _c_up = (f"`is_uptrend`={_up} (slope_60={_s60:+.2f} (>0) 且 "
+             f"dev_ma200=({_p_now:.2f}/MA250 {_ma250:.2f}-1)×100={_dm200:+.2f}% (>-10) 且 "
+             f"trend_30={_t30:+.2f} (>-15))")
+    _c_am200 = f"`above_ma200`={_am200} (价格 {_p_now:.2f} > 真MA200 {ma200_gap:.2f})"
+    _c_d20 = f"`dev_ma20`=({_p_now:.2f}/{_ma20:.2f}-1)×100={_d20:+.2f}% (>5%)"
+    _c_pp = (f"`pos_pct`=({_p_now:.2f}-{_rl:.2f})/({_rh:.2f}-{_rl:.2f})×100"
+             f"={_pp:.1f}% (>60%)")
+
     rows.append(
         f"| 严格门 | 金叉 + 持续 MA200 上方 + MA gap>0.5% + 上升趋势 | "
-        f"`golden_cross_recent={_gc}` / `above_ma200_sustained={_ams}` / "
-        f"`ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | {_layer_mark('main_strict', _g_strict)} |")
+        f"`golden_cross_recent and above_ma200_sustained and ma_gap_pct_above>0.5 and is_uptrend`<br>"
+        f"①{_c_gc}<br>②{_c_sus}<br>③{_c_gap}<br>④{_c_up} | {_layer_mark('main_strict', _g_strict)} |")
     rows.append(
         f"| 弱信号门 | MA200 上方 + MA gap>0.5% + 上升趋势 | "
-        f"`above_ma200={_am200}` / `ma_gap_pct_above={_gap:.2f}%` / `is_uptrend={_up}` | "
+        f"`above_ma200 and ma_gap_pct_above>0.5 and is_uptrend`<br>"
+        f"①{_c_am200}<br>②{_c_gap}<br>③{_c_up} | "
         f"{_layer_mark('main_weak', _g_weak)} |")
     rows.append(
         f"| **加分线** | MA20 偏离>5% + 价格位置>60% + 上升趋势 | "
-        f"`dev_ma20={_d20:+.2f}%` / `pos_pct={_pp:.1f}%` / `is_uptrend={_up}` | "
-        f"{_layer_mark('main_extra', _g_extra)} |")
+        f"`dev_ma20>5 and pos_pct>60 and is_uptrend`<br>"
+        f"①{_c_d20}<br>②{_c_pp}<br>③{_c_up} | {_layer_mark('main_extra', _g_extra)} |")
     rows.append("")
     if _is_markup:
         rows.append("> ℹ️ **「⬜ 未走」= 本次判定不是靠这一层成立**, 不代表该层条件不满足。"

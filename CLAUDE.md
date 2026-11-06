@@ -69,7 +69,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 
 | 文件 | 内容 |
 |---|---|
-| `handbook/lessons/` (5 分册 + `README.md` 索引) | **项目专属教训 69 条** —— 提到具体话题先 grep |
+| `handbook/lessons/` (5 分册 + `README.md` 索引) | **项目专属教训 70 条** —— 提到具体话题先 grep |
 | `handbook/AGENT_MEMORY.md` | 极简 cheat sheet: 入口路径 / 纪律 / 周期口径真源 |
 | `handbook/analysis-framework.md` | 决策框架 (PE + ROC/EY 双轴) |
 | `handbook/naming-convention.md` | 命名硬规则 (7 条 + 5 项 grep 验证) |
