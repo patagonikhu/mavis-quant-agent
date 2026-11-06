@@ -319,3 +319,53 @@ grep -rn "<变量名>" tools/ --include="*.py" | grep -v __pycache__
 
 **apply when:** 任何"声明型配置" (数据源表 / 白名单 / 标题文案 / 口径说明) 呈现给用户之前,
 或者下线一个功能之后 —— 声明不会自己跟着代码走, 只能靠 grep 回去核实。
+
+### 删死代码会制造新的死代码 + 多轮替换会毁掉编号 (2026-11-06)
+Type: rule
+> **摘要:** AST 扫出来的死代码要**删完再扫一遍** —— 删掉消费者会让它依赖的缓存/辅助函数当场变孤儿
+
+**触发场景:** 清理 12 个死函数 + 1 个死模块 (`tools/batch_runner.py`)。
+两个自己踩的坑, 都不是 AST 能查出来的:
+
+**坑 1: 删消费者 → 依赖方变孤儿 (同一轮内产生)**
+删 `factor_lib.batch_magic_scores` (全市场 Magic 批量排名) 之后, 它的唯一依赖
+`_load_bulk_caches` + 模块级缓存 `_FIN_DICT` / `_SB_DICT` / `_DB_DICT`
+**当场变成死代码** —— AST 扫描是**改前**跑的, 看不见改后新产生的孤儿。
+另外还带出一个 2026-09-09 就存在的**孤儿小节头**「板块过热预警」,
+它下面的功能早在 2026-11-05 搬到 `analysis_engine._derive_sector_overheat` 了,
+只剩个空标题。
+
+**解法:** 删完**必须再跑一遍 AST 扫描** (改前扫 ≠ 改后干净)。
+不要相信「第一次扫出 12 个, 我删了 12 个, 就完事了」。
+
+**坑 2: 多轮字符串替换把编号改废**
+删掉 `helpers.py` 的 Section 1 后要把 Section 2..8 重编号成 1..7。
+用 `sed` 倒序替换 (8→2) 会**级联** (8→2→1→…→0),
+第二轮「全部 -1」又把所有 Section 变成 **Section 0**。
+→ **必须单次遍历、按出现顺序重编号**, 不能多轮替换:
+```python
+n = 0
+for m in re.finditer(r"# Section \d+:", s):   # 按出现顺序
+    n += 1
+    s = s[:m.start()] + f"# Section {n}:" + s[m.end():]
+```
+
+**死代码判定的已知误报 (别当真的删):**
+| 误报 | 原因 |
+|---|---|
+| `__init__` | 构造函数, 扫描器把 dunder 也当死函数 |
+| `tools/factors/utils.py` 4 个函数 | 被 `tests/unit/test_factors_utils.py` 用 (pytest 收集的 tests/ 要跳过) |
+| `report_schema.get_section_ids` | 在 `report_linter.py` 里**函数内 import**, 扫描器只扫模块级 |
+| btf 4 个空方法 | ABC 抽象方法, 子类都有覆盖 —— **保留** |
+
+**验证纪律 (比删本身更重要):**
+改动前后**逐字节 diff 生成的报告**, 别只看「跑通了」:
+```bash
+cp docs/watchlist/analyze-<code>-*.md /tmp/after.md
+git stash push && python -m tools.batch.t_analyze_one --code <code> && cp ... /tmp/before.md
+git stash pop && python -m tools.batch.t_analyze_one --code <code>
+diff /tmp/before.md /tmp/after.md     # 必须完全一致
+```
+本次 300588 / 002371 / 600089 三份报告改动前后**逐字节一致**才算过。
+
+**apply when:** 任何"删死代码 / 下线功能"的动作。
