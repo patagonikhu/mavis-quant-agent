@@ -60,8 +60,13 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-force
 | **不因为"上游数据变新"就重跑别的 skill** | 同步更新了 K 线, **不等于**授权你重跑依赖它的分析。发现某份报告数据旧了 → **报告给用户**("X 的数据已更新到 Y, 旧报告用的是 Z, 要重跑吗?"), **等用户答**, 不自己动手 |
 | **不 retry 已知的返空** | `stk_factor_pro` 当日返空 = 正常 T-1 滞后 (lessons 02-data-sync 第 3 条), 次日 `--auto` 会自动补。**不要**单独 `--stk-factor` 重试, **不要** `--auto-force` |
 | **不改 watchlist.json 的内容** | 同步只管数据落盘; watchlist 增删是 `/t-finance-earnings-blowout` 的活 |
-| **不改代码 / schema** | 同步中发现问题 (返空 / 缺列 / 脏数据 / 悬空引用) → **报告给用户**, 别自己动手改 |
-| **不追加用户没要的 flag** | `--auto` 检测到该跑什么就跑什么; 别自作主张加 `--ths` / `--cache` / `--all-data` |
+
+> 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
+
+**📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
+- stdout 末尾已有「🌐 网络请求统计」+「📊 本地数据新鲜度」
+- **不用再跑 `--status` 复查** —— 那是重复劳动
+- `stk_factor_pro` 当日返空是正常的 T-1 滞后, 不要再单独 retry
 
 ## 跑后验证
 

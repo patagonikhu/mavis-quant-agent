@@ -66,9 +66,14 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 |---|---|
 | **不落逐只 md** | 默认只出 1 份汇总表 (`_summary-{scope}.md`)。逐只 md 要显式 `--write-md-all` —— 用户没要就不加 |
 | **不跑 `/t-analyze`** | 因子历史表 ≠ 7 section 详报。用户想看详报 → 让用户自己调 `/t-analyze` |
-| **不改 lookback / 窗口 / 代码** | 5 年窗口是硬编码 `lookback=1250`, 别为了让结果好看去动 |
-| **不自己跑 sync** | 缺数据 → 报"请先 /t-sync-data", 不自己拉 |
+| **不改 lookback / 窗口** | 5 年窗口是硬编码 `lookback=1250`, 别为了让结果好看去动 |
 | **不因为"结果有异常"就调参重跑** | 异常 → 报告给用户, 等判断 |
+
+> 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
+
+**📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
+- stdout 只有「完成 N/N」+ 汇总 md 路径
+- **逐只清单在汇总 md 里** (`docs/factor-5y/_summary-*.md`), 要清单读那个文件, **别重跑**
 
 ## 跑后验证
 

@@ -119,8 +119,13 @@ bash tools/with_venv.sh python -m tools.batch.etf_wyckoff_a2m_scan --report-top 
 | **不跑股票版** | 股票 A→M 走 `/t-wyckoff-a2m`, 过滤链完全不同, 别混 |
 | **不改候选池口径** | 唯一真源 = `tools/batch/etf_universe.py` (fund_type 过滤 + 同指数两级并查集去重)。**不新增手工白名单** (手工名单必然过期) |
 | **不跑 `/t-analyze --all`** | 只对命中 ETF 出详报 |
-| **不改代码 / 去重逻辑** | 去重漏判 → 报告给用户, 不自己调 |
-| **不自己跑 sync** | 缺 ETF 数据 → 报"请先 /t-sync-data", 不自己拉 |
+| **不改去重逻辑** | 去重漏判 → 报告给用户, 不自己调 |
+
+> 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
+
+**📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
+- stdout 只有「原始命中 N 只」+ 汇总 md 路径
+- **命中清单在 `docs/etf-wyckoff-a2m.md`** —— 要清单 grep 那个文件, **别重扫一遍**
 
 ## 跑后验证
 

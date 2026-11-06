@@ -147,11 +147,16 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 | ❌ 别做 | 为什么 |
 |---|---|
 | **不跑 ETF 版** | ETF 走独立 skill `/t-etf-wyckoff-a2m` (过滤链不同), 别混着跑 |
-| **不改过滤链 / V13 严判 / 代码** | 过滤链是调参后的固化口径, 想调 → 报告给用户 |
+| **不改过滤链 / V13 严判** | 过滤链是调参后的固化口径, 想调 → 报告给用户 |
 | **不跑 `/t-analyze --all` 全量** | 只对**命中**票出详报; 股票全量详报是 `/t-analyze --all` 的活 |
 | **不碰 watchlist** | 详报落 `docs/wyckoff-a2m/`, 与自选池**完全隔离**, 不污染 watchlist |
-| **不自己跑 sync** | 缺数据 → 报"请先 /t-sync-data", 不自己拉 |
 | **不加 `--clean` 除非用户明说** | `--clean` 清空 `docs/wyckoff-a2m/` **不可恢复** |
+
+> 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
+
+**📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
+- stdout 只有「命中 N 只」+ 过滤漏斗 (每个 step 前后剩余数)
+- **命中清单在 `docs/wyckoff-a2m.md`** —— 要清单 grep 那个文件, **别重扫一遍**
 
 ## 命名沿革 (关键节点)
 

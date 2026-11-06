@@ -65,10 +65,15 @@ bash tools/with_venv.sh python -m tools.batch.finance_earnings_blowout --dry-run
 | ❌ 别做 | 为什么 |
 |---|---|
 | **不跑分析 / 逐只详报** | 命中名单看 stdout 或 `docs/earnings-blowout-watchlist.md` 就行, 别顺手给命中票各跑一份 `/t-analyze` |
-| **不自己跑 sync** | 缺财报 → 报"请先 `/t-sync-data --financials`", 不自己拉 |
-| **不改阈值 / prefilter / 代码** | 5 闸 + 3 rule 是 v6.3.0 固化的, 想调 → 报告给用户 |
+| **不改阈值 / prefilter** | 5 闸 + 3 rule 是 v6.3.0 固化的, 想调 → 报告给用户 |
 | **不额外改 watchlist 的其他段** | 本 skill 只动 `list_type=blowout` 段 (增新命中 / 删退场)。`持仓`/`自选` 段是用户配置, **不碰** |
 | **不重扫刚退场又符合条件的票** | 退场 = 当季不再满足条件。重新命中是**下季**的事, 不是本轮该做的 |
+
+> 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
+
+**📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
+- stdout 已有命中 Top N 表 + 「📋 watchlist 同步计划」(新增/退场/保留各几只)
+- **不用再读 `docs/earnings-blowout-watchlist.md` 找命中**
 
 ## 跑后验证
 
