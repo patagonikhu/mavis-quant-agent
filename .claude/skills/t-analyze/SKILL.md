@@ -54,14 +54,14 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
 ## 输出
 
 - `docs/portfolio/analyze-{code}-{name}.md` (持仓票) / `docs/watchlist/...` (自选)
-- `docs/signal-watchlist.md` (批量模式汇总)
+- **批量模式汇总走 stdout** —— buy / sell 信号明细直接打在终端, 不落汇总 md
 - **blowout 段不参与批量跑, 也不落 md** (2026-11-06): `list_type=blowout` 是"业绩暴增候选池",
-  用来筛的 —— 筛完看汇总表 / stdout 就够, 不给 157 只各存一份详报
+  用来筛的 —— 筛完看 stdout 就够, 不给 157 只各存一份详报
   (`--include-blowout` flag 已删, `docs/blowout/` 已废弃并清空)
 
 ### 汇总里的信号类型
 
-`signal-watchlist.md` 的 buy / sell 两张表来自 `extract_signals()` 的 direction 字段:
+stdout 的 buy / sell 明细来自 `extract_signals()` 的 direction 字段:
 
 | 信号 | 方向 | 含义 |
 |---|---|---|

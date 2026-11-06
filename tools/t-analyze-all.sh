@@ -1,5 +1,5 @@
 #!/bin/bash
-# tools/t-analyze-all.sh — 强制按 t-analyze skill 5 步执行, 不允许跳
+# tools/t-analyze-all.sh — 强制按 t-analyze skill 4 步执行, 不允许跳
 #
 # 用法:
 #   bash tools/t-analyze-all.sh            # 全量
@@ -8,9 +8,8 @@
 # 流程 (固定, 不许跳):
 #   Step 1: 读 watchlist
 #   Step 2: sync_incremental (单线程, 补 K线缺口)
-#   Step 3: 写 docs/signal-watchlist.md
-#   Step 4: 验证所有 watchlist 文件都是 8/25 后新数据
-#   Step 5: chat 摘要输出
+#   Step 3: 验证所有 watchlist 文件都是今天新数据
+#   Step 4: chat 摘要输出
 #
 # v1.0 (2026-08-25): 强制全流程, 任何 step 失败立即 exit 1
 
@@ -50,95 +49,9 @@ from tools.storage.store import sync_incremental
 sync_incremental()
 " 2>&1 | tail -5
 
-# === Step 3: 写 docs/signal-watchlist.md ===
+# === Step 3: 验证所有 watchlist 文件都是新数据 ===
 echo ""
-echo "📝 Step 3: 写 docs/signal-watchlist.md..."
-bash tools/with_venv.sh python3 << 'PYEOF' 2>&1 | tail -5
-import json, sys, datetime
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-sys.path.insert(0, '.')
-from tools.storage.store import DataStore
-from tools.analysis.analysis_engine import AnalysisEngine
-from tools.analysis.analysis_result_signals import (
-    compute_factor_history, diff_rows, extract_signals, format_signals_for_render,
-)
-# 复用 report_renderer 的 20 列单行渲染 + 20 列 header/sep
-# MA20 斜率在 compute_factor_history 末尾已经算进每行 row['ma20_slope'], 0 重算
-from tools.render.report_renderer import (
-    _format_factor_row, FACTOR_HISTORY_HEADER, FACTOR_HISTORY_SEP,
-)
-
-watchlist = DataStore.load_watchlist().get('stocks', [])
-output_path = Path('docs') / 'signal-watchlist.md'
-
-# lookback=10: 至少留 5 日给 MA20 斜率 (5 日前 vs 当下), 多留 5 日 buffer
-_LOOKBACK = 10
-
-def _scan_one(s):
-    code, name = s['code'], s['name']
-    try:
-        ctx = DataStore.get_ctx(code)
-        if not ctx.kline: return None
-        # 预算 history (10 天), compute_factor_history 强制要传 (避免内部重跑 analyze_history)
-        all_dates = [k['trade_date'].replace('-', '')[:8] for k in ctx.kline]
-        dates = all_dates[-_LOOKBACK:]
-        history = AnalysisEngine().analyze_history(ctx, dates)
-        if len(history) < 2: return None
-        rows = compute_factor_history(ctx, step=1, lookback=_LOOKBACK, history=history)
-        if len(rows) < 2: return None
-        # 复用 render 的 20 列单行渲染 (跟 _section_factor_history 同一份真源, 斜率已预算)
-        row_md = _format_factor_row(rows, idx=len(rows) - 1)
-        if row_md is None: return None
-        # 信号列表 (buy/sell) 走原本的 diff_rows + extract_signals
-        changes = diff_rows(rows[-2], rows[-1])
-        sigs = extract_signals(changes)
-        return (s, row_md, sigs, format_signals_for_render(changes))
-    except Exception:
-        return None
-
-buy_rows, sell_rows, all_table_rows = [], [], []
-with ThreadPoolExecutor(max_workers=4) as ex:
-    futs = {ex.submit(_scan_one, s): s for s in watchlist}
-    for fut in as_completed(futs):
-        r = fut.result()
-        if not r: continue
-        s, row_md, sigs, sig_fmtd = r
-        for _, detail, direction in sigs:
-            (buy_rows if direction == 'buy' else sell_rows).append((s['code'], s['name'], detail))
-        all_table_rows.append((s['code'], s['name'], row_md, sig_fmtd))
-
-lines = [f"# 全量扫描 {datetime.date.today().isoformat()}\n",
-         f"> {len(watchlist)} 只票 | 因子历史 diff | refresh_all 已跑 (Step 2)\n",
-         "---\n\n## 底部信号 (buy)\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n"]
-for code, name, d in buy_rows:
-    lines.append(f"| {code} | {name} | {d} |\n")
-lines.append("\n---\n\n## 顶部/弱势信号 (sell)\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
-for code, name, d in sell_rows:
-    lines.append(f"| {code} | {name} | {d} |\n")
-
-# 📈 因子历史走势 — 列跟 _section_factor_history 完全对齐 (复用 FACTOR_HISTORY_HEADER 真源)
-# 拼接 22 列: 代码 | 名称 + 20 列因子
-header_factor = FACTOR_HISTORY_HEADER
-sep_factor    = FACTOR_HISTORY_SEP
-lines += [
-    "\n---\n\n## 📈 因子历史走势 (取每只最后一行, 列与单只报告完全对齐)\n\n",
-    f"| 代码 | 名称 | {header_factor[1:].strip()}\n",
-    f"|------|------|{sep_factor[1:].strip()}\n",
-]
-all_table_rows.sort(key=lambda x: (0 if x[3] else 1, x[0]))
-for code, name, row_md, sig_fmtd in all_table_rows:
-    has_sig = '⭐' if sig_fmtd else ''
-    body = row_md.strip().strip("|").strip()
-    lines.append(f"| {code} | {name}{has_sig} | {body} |\n")
-lines.append(f"\n---\n> 生成时间: {datetime.datetime.now().strftime('%H:%M:%S')}\n")
-output_path.write_text(''.join(lines), encoding='utf-8')
-print(f'OK: {output_path} ({len(all_table_rows)} 只, {len(buy_rows)} buy / {len(sell_rows)} sell)')
-PYEOF
-
-# === Step 4: 验证所有 watchlist 文件都是新数据 ===
-echo ""
-echo "✅ Step 4: 验证 watchlist 内所有票都是本次新数据..."
+echo "✅ Step 3: 验证 watchlist 内所有票都是本次新数据..."
 bash tools/with_venv.sh python3 << 'PYEOF' 2>&1 | tail -10
 import os, re, json, datetime
 import sys
@@ -146,7 +59,10 @@ sys.path.insert(0, '.')
 from tools.storage.store import DataStore
 
 wl = DataStore.load_watchlist().get('stocks', [])
-watchlist_codes = {s['code']: s['name'] for s in wl}
+# blowout 是业绩暴增候选池, 按设计不落 md → 不参与文件存在性检查
+# (不排除的话: 156 只候选池永远"缺文件", 这道检查恒挂)
+watchlist_codes = {s['code']: s['name'] for s in wl
+                   if s.get('list_type', '自选') != 'blowout'}
 
 today = datetime.date.today().isoformat()
 # 阈值 = 今天 00:00 (本脚本开跑前必须全量重生成过)
@@ -190,13 +106,12 @@ if old_files:
 print(f'  ✅ watchlist 内 {len(watchlist_codes)} 只全部 {today} 新数据, 0 旧文件')
 PYEOF
 
-# === Step 5: chat 摘要 (输出文件位置 + summary) ===
+# === Step 4: chat 摘要 (输出文件位置 + summary) ===
 echo ""
 echo "=================================================="
-echo "✅ 全部完成 (5 步全跑, 无跳)"
+echo "✅ 全部完成 (4 步全跑, 无跳)"
 echo "=================================================="
 echo ""
-echo "📄 主报告: docs/signal-watchlist.md"
 echo "📄 个股报告: docs/portfolio/ + docs/watchlist/ (全部分流)"
 echo ""
 echo "运行时间: $(date '+%Y-%m-%d %H:%M:%S')"

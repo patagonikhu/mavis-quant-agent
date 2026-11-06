@@ -12,7 +12,7 @@
 | 命令 | 用途 | 示例 |
 |---|---|---|
 | `/t-analyze <code> [name]` | 单只详报 (7 section: 因子矩阵 + 威科夫阶段详情) | `/t-analyze 688256 寒武纪` |
-| `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md` + `docs/signal-watchlist.md` | `/t-analyze --all` |
+| `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md`, buy/sell 汇总走 stdout | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--cache/--meta/--all-data, 默认 --auto 智能检测 | `/t-sync-data --auto` |
 | `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
 | `/t-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-earnings-blowout --top-np-jump 30` |

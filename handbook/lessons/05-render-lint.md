@@ -37,6 +37,11 @@ Type: rule
 删「变化」列时, `diff_rows` / `extract_signals` **一个字都不能动** —— 它们还供
 `signals_active` (报告方向信号) 和汇总表「信号」列用。只删渲染层的那一格 + header 里的一格。
 
+**删整个汇总文件 ≠ 删数据链路 (2026-11-06 补)**
+删 `docs/signal-watchlist.md` 整个产物时, `diff_rows` / `extract_signals` 同样一个字都不能动 ——
+它们还供 stdout 的 buy/sell 明细用。只删「生成 md 文件」那一段代码, 数据链路 + stdout 输出全留。
+判据: **用户删的是"文件"还是"这份数据"?** 前者只删产物层, 后者才动链路。
+
 ### linter warning 输出被截断 (2026-10-14 固化)
 Type: rule
 > **摘要:** 不要截断前 5 条 —— 真正的列数错位常在第 6+ 条
@@ -243,7 +248,7 @@ Type: rule
 
 **为什么 blowout 段不该落 md:**
 - blowout 段 = 业绩暴增候选池, 是**筛选用**的输入, 不是持仓/自选那种"长期跟踪的票"
-- 筛选结论要的是**对比** (谁值得买), 对比看 `signal-watchlist.md` 汇总表就够
+- 筛选结论要的是**对比** (谁值得买), 对比看 stdout 的 buy/sell 汇总就够
 - 157 份 × 58KB 详报, 没人会一只只翻, 但目录里就是 157 个"看起来很重要"的噪声文件
 
 **落地 (t_analyze_one + t_analyze_all 两个入口):**
@@ -269,7 +274,7 @@ Type: rule
 2. **CLI flag** —— 功能没了 flag 就是死开关, 一起删 (`--no-etf` / `--include-blowout`)
 3. **产物目录** —— 跟着删, 别留空壳 (`docs/etf-macd/` 72 份 / `docs/blowout/`)
 4. **调用方的 import + 那一整段** —— 删 import 不删调用段 → ImportError; 删调用段不删 flag → 死 flag
-5. **汇总文件里的那段** —— 例: `signal-watchlist.md` 的「ETF 状态」段
+5. **汇总文件里的那段** —— 例: `docs/factor-5y/_summary-{scope}.md` 的表头行
 6. **跨文件引用** —— 注释 / docstring / SKILL.md / CLAUDE.md / handbook, 留着就误导后人
 
 **共享模块留不留, 看消费者数量:** `etf_universe.py` 被两个扫描器共用 → 删掉其中一个扫描器时

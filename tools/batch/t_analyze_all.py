@@ -1,5 +1,5 @@
 """
-t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-watchlist.md
+t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 逐只落 md + 汇总走 stdout
 
 2026-09-03 v6.0 改造:
   - 不再偷偷调 sync_incremental (改走 /t-sync skill, 入口 tools/sync_data.py)
@@ -16,7 +16,7 @@ t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 输出 signal-wa
   - tools/batch/etf_macd_scan.py 已删, --no-etf flag 一并删
   - ETF 扫描由 /t-etf-wyckoff-a2m 单独承担, 本脚本只管持仓 + 自选
 """
-import json, sys, datetime, time, os
+import sys, datetime, time, os
 import argparse
 from pathlib import Path
 sys.path.insert(0, '.')
@@ -48,8 +48,6 @@ excluded = len(wl) - len(stocks)
 if excluded:
     print(f'  ℹ️  跳过 blowout 候选池 {excluded} 只 '
           f'(候选池不参与批量详报; 单只深挖用 /t-analyze <code>)', flush=True)
-today = datetime.date.today().isoformat()
-output_path = Path('docs/signal-watchlist.md')
 
 # === 2026-09-15 加: 清理 watchlist 之外的孤儿 md (残留旧详报, 让用户以为"没刷新") ===
 # 2026-11-02 修 (两个真 bug):
@@ -120,7 +118,7 @@ def process_one(s):
     code = s['code']
     name = s['name']
     # 2026-09-18 加: 3 路分流 — 持仓→portfolio, 自选→watchlist, blowout→blowout
-    # 2026-11-06 改: blowout 段**不落 md** (候选池, 用来筛的) —— 只进汇总表
+    # 2026-11-06 改: blowout 段**不落 md** (候选池, 用来筛的) —— 只进 stdout 汇总
     lt = s.get('list_type', '自选')
     if lt == '持仓':
         subdir = 'portfolio'
@@ -212,7 +210,7 @@ with ThreadPoolExecutor(max_workers=WORKERS) as ex:
             errs.append((code, payload))
             print(f'  [{i}/{len(stocks)}] ❌ {code}: {payload}', flush=True)
 
-# 汇总 signal-watchlist.md
+# 汇总 → stdout (不落汇总 md 文件)
 for r in results:
     if r.get('md_path'):
         md_written += 1
@@ -225,31 +223,14 @@ for r in results:
 
 total_elapsed = time.time() - t_total
 
-# write summary
 # 2026-09-02 加: 按 list_type 分类统计 (持仓/自选/ROC_EY初筛), 2026-09-09 Magic→ROC_EY
+# 2026-11-06: 汇总 md 删了, 这个分布从 md 头挪到 stdout —— 信息不能跟着文件一起丢
 from collections import Counter
 _lt_counter = Counter(s.get("list_type", "自选") for s in stocks)
 _lt_summary = " | ".join(f"{k} {v}" for k, v in sorted(_lt_counter.items(), key=lambda x: -x[1]))
-lines = [f"# 全量扫描 {today}\n\n> {len(stocks)} 只 ({_lt_summary}) | DataStore | {datetime.datetime.now().strftime('%H:%M:%S')}\n\n"]
-lines.append("## 底部信号（buy）\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
-for code, name, detail in buy_rows:
-    lines.append(f"| {code} | {name} | {detail} |\n")
-if not buy_rows:
-    lines.append("| — | 无 | — |\n")
-lines.append("\n## 顶部/弱势信号（sell）\n\n| 代码 | 名称 | 信号 |\n|------|------|------|\n")
-for code, name, detail in sell_rows:
-    lines.append(f"| {code} | {name} | {detail} |\n")
-if not sell_rows:
-    lines.append("| — | 无 | — |\n")
-lines.append("\n## 完整状态表\n\n| 代码 | 名称 | 场景 | 威科夫日 | MA日% | 今日信号 |\n|------|------|------|---------|-------|----------|\n")
-all_table_rows.sort(key=lambda x: (0 if x[5] == '⭐' else 1, x[0]))
-for code, name, wy, ma, sig_str, has_sig in all_table_rows:
-    lines.append(f"| {code} | {name} | {has_sig} | {wy} | {ma} | {sig_str} |\n")
-output_path.parent.mkdir(exist_ok=True)
-output_path.write_text(''.join(lines), encoding='utf-8')
 
 print(f'\n=== 完成 ===')
-print(f'FILE: {output_path}')
+print(f'扫描: {len(stocks)} 只 ({_lt_summary})')
 print(f'MD生成: {md_written}/{len(stocks)}')
 print(f'有今日信号: {sum(1 for r in all_table_rows if r[5]=="⭐")}只')
 print(f'总耗时: {total_elapsed:.0f}s')
@@ -269,12 +250,6 @@ if errs:
     print(f'错误: {len(errs)}只')
     for c, e in errs:
         print(f'  {c}: {e}')
-    # 把 errs 写进 md 报告 (顶部提示, 不影响看表)
-    with output_path.open('a', encoding='utf-8') as f:
-        f.write(f"\n\n## ⚠️ 失败清单 ({len(errs)} 只)\n\n")
-        f.write("| 代码 | 错误 |\n|---|---|\n")
-        for c, e in errs:
-            f.write(f"| {c} | {e} |\n")
 
 
 # 2026-11-06 删 ETF MACD 扫描段 (整段下线)
