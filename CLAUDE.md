@@ -73,7 +73,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 | `handbook/AGENT_MEMORY.md` | 极简 cheat sheet: 入口路径 / 纪律 / 周期口径真源 |
 | `handbook/analysis-framework.md` | 决策框架 (PE + ROC/EY 双轴) |
 | `handbook/naming-convention.md` | 命名硬规则 (7 条 + 5 项 grep 验证) |
-| `handbook/finance-glossary.md` / `backtest-roc-ey-formula.md` | 术语表 / ROC-EY 回测公式 |
+| `handbook/finance-glossary.md` | 术语表 / 估值口径速查 |
 
 **铁律**: 往 agent memory 写东西前先问「换个项目还成立吗」—— 不成立就写进本目录。
 

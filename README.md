@@ -107,10 +107,9 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 .
 ├── CLAUDE.md                              # Agent 人设 + 决策框架 + 铁律
 ├── handbook/
-│   ├── analysis-framework.md              # 投资四问 + T框架
+│   ├── analysis-framework.md              # 投资四问 + 决策矩阵
 │   ├── AGENT_MEMORY.md                    # 项目记忆 (活跃 skill 列表)
-│   ├── finance-glossary.md                # 财务术语表
-│   └── backtest-roc-ey-formula.md         # ROC_EY 算法公式
+│   └── finance-glossary.md                # 财务术语表
 │
 ├── data/                                  # 静态数据 (你/Claude 维护, v6.2.5)
 │   ├── watchlist.json                     # 关注股 + 笔记 (54 只: 21 持仓 + 33 自选)

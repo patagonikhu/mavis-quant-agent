@@ -113,6 +113,8 @@ Type: fact
 - `handbook/analysis-framework.md`: 删 §2.5 PEG 整档 (53 行), §3 决策矩阵双轴改 PE+ROCEY, §11 三个排序表 PEG 列 → PE 列, §14.1 公式表补 ROC/EY, §14.5 术语表 PEG → ROC/EY, §15 五关改 PE+ROCEY+L
 - `handbook/finance-glossary.md`: 删 §8 PEG 详解 (83 行) + 12 处引用改写
 - `handbook/backtest-roc-ey-formula.md`: 用当前 4 策略代码重跑重建 (原 PEG +147% 结论作废)
+  → 2026-11-06 删除: 内容恒 0 (roc/ey 两列从未回填), 跑 `tools/btf/run_1year.py` 可重新生成
+- `handbook/finance-glossary.md`: 术语表 / 估值口径速查
 
 **⚠️ 已知遗留 (跟 PEG/OBV 无关, 但会让估值链路失效):**
 `analysis_cache` 的 `roc` / `ey` 两列**全表 0 行非空** — `backfill_roc_ey_cache.py` 从没成功跑过。
