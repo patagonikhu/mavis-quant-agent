@@ -1,6 +1,6 @@
 ---
 name: t-factor-5y
-description: 单只 / 批量跑 5 年因子历史走势, 输出 md (21 列: 价格 / 威科夫 / 技术指标). 0 网络, 复用 AnalysisEngine.analyze_history + compute_factor_history. 触发词: "5年因子"、"长势"、"5年走势"、"factor-5y".
+description: 单只 / 批量跑 5 年因子历史走势, 输出 md (20 列: 价格 / 威科夫 / 技术指标). 0 网络, 复用 AnalysisEngine.analyze_history + compute_factor_history. 触发词: "5年因子"、"长势"、"5年走势"、"factor-5y".
 user-invocable: true
 allowed-tools:
   - Bash

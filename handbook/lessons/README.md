@@ -96,7 +96,7 @@
 
 | # | 条目 | 一句话摘要 |
 |---|---|---|
-| 1 | markdown table header / sep 写死脱节 bug | 表格列数变了要**同步改表头 + 分隔行 + 行拼接**三处 |
+| 1 | markdown table header / sep 写死脱节 bug | 表格列数变了要**同步改表头 + 分隔行 + 行拼接 + 文档里的列数描述**四处 |
 | 2 | linter warning 输出被截断 | 不要截断前 5 条 —— 真正的列数错位常在第 6+ 条 |
 | 3 | SKILL.md 描述 vs 代码实现的兑现铁律 | SKILL.md 写的每个 flag/口径都必须在代码里兑现, 否则文档漂移 |
 | 4 | EPS 机构一致预期整档删除 | 同名不同物 —— **预测值** (datacenter E0~E3) vs **已审计真实 EPS** (fina_indicator), 别删错 |

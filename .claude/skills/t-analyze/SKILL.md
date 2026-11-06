@@ -73,7 +73,6 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
 
 
 > ⚠️ 威科夫 **A→M 是 daily 和 weekly 分开算的** —— 日线 A→M 但周线还是 A, 是两个不同的信号, 报表里会分别列出。
-> 「变化」列不会重复显示同一转变 (A→M 只出现一次)。
 
 ## 相关
 

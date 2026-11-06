@@ -63,7 +63,7 @@ from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.analysis_result_signals import (
     compute_factor_history, diff_rows, extract_signals, format_signals_for_render,
 )
-# 复用 report_renderer 的 14 列单行渲染 + 14 列 header/sep
+# 复用 report_renderer 的 20 列单行渲染 + 20 列 header/sep
 # MA20 斜率在 compute_factor_history 末尾已经算进每行 row['ma20_slope'], 0 重算
 from tools.render.report_renderer import (
     _format_factor_row, FACTOR_HISTORY_HEADER, FACTOR_HISTORY_SEP,
@@ -87,7 +87,7 @@ def _scan_one(s):
         if len(history) < 2: return None
         rows = compute_factor_history(ctx, step=1, lookback=_LOOKBACK, history=history)
         if len(rows) < 2: return None
-        # 复用 render 的 14 列单行渲染 (跟 _section_factor_history 同一份真源, 斜率已预算)
+        # 复用 render 的 20 列单行渲染 (跟 _section_factor_history 同一份真源, 斜率已预算)
         row_md = _format_factor_row(rows, idx=len(rows) - 1)
         if row_md is None: return None
         # 信号列表 (buy/sell) 走原本的 diff_rows + extract_signals
@@ -118,7 +118,7 @@ for code, name, d in sell_rows:
     lines.append(f"| {code} | {name} | {d} |\n")
 
 # 📈 因子历史走势 — 列跟 _section_factor_history 完全对齐 (复用 FACTOR_HISTORY_HEADER 真源)
-# 拼接 16 列: 代码 | 名称 + 14 列因子
+# 拼接 22 列: 代码 | 名称 + 20 列因子
 header_factor = FACTOR_HISTORY_HEADER
 sep_factor    = FACTOR_HISTORY_SEP
 lines += [
@@ -138,7 +138,7 @@ PYEOF
 
 # === Step 4: 验证所有 watchlist 文件都是新数据 ===
 echo ""
-echo "✅ Step 4: 验证 watchlist 内 57 只全部 8/25 后新数据..."
+echo "✅ Step 4: 验证 watchlist 内所有票都是本次新数据..."
 bash tools/with_venv.sh python3 << 'PYEOF' 2>&1 | tail -10
 import os, re, json, datetime
 import sys
@@ -148,8 +148,10 @@ from tools.storage.store import DataStore
 wl = DataStore.load_watchlist().get('stocks', [])
 watchlist_codes = {s['code']: s['name'] for s in wl}
 
-today = datetime.date.today().isoformat()  # 2026-08-25
-threshold = datetime.datetime(2026, 8, 25, 0, 0)
+today = datetime.date.today().isoformat()
+# 阈值 = 今天 00:00 (本脚本开跑前必须全量重生成过)
+# 2026-11-06 改: 原写死 2026-08-25, 早就恒真 —— 这道检查等于没有, 换成动态阈值才守得住
+threshold = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
 
 # 检查 1: watchlist 内的所有 code 都有 md 文件 (portfolio/ 或 watchlist/)
 analyzed = set()
@@ -166,7 +168,7 @@ if missing:
     print(f'{sys.stderr}: ❌ 缺文件: {missing}')
     sys.exit(1)
 
-# 检查 2: 全部 watchlist 文件都是 8/25 后新数据
+# 检查 2: 全部 watchlist 文件都是本次跑之前刚生成的
 old_files = []
 for subdir in ('docs/portfolio', 'docs/watchlist'):
     if os.path.isdir(subdir):
@@ -180,7 +182,7 @@ for subdir in ('docs/portfolio', 'docs/watchlist'):
                         old_files.append((dt, f))
 
 if old_files:
-    print(f'❌ watchlist 内 {len(old_files)} 个文件还是 8/25 之前的旧数据:')
+    print(f'❌ watchlist 内 {len(old_files)} 个文件还是本次跑之前的老数据:')
     for dt, f in old_files:
         print(f'  {dt.strftime("%m-%d %H:%M")}  {f}')
     sys.exit(1)
@@ -195,6 +197,6 @@ echo "✅ 全部完成 (5 步全跑, 无跳)"
 echo "=================================================="
 echo ""
 echo "📄 主报告: docs/signal-watchlist.md"
-echo "📄 个股报告: docs/portfolio/ + docs/watchlist/ (61 只, 全部分流)"
+echo "📄 个股报告: docs/portfolio/ + docs/watchlist/ (全部分流)"
 echo ""
 echo "运行时间: $(date '+%Y-%m-%d %H:%M:%S')"

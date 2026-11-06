@@ -1,7 +1,7 @@
 # 报告渲染 / linter / 文档一致性
 
 > 本文件是 `handbook/project-lessons.md` 的主题分册 (05-render-lint.md)。
-> 索引 (全 47 条一句话摘要) 见 [`handbook/lessons/README.md`](README.md)。
+> 索引 (全 58 条一句话摘要) 见 [`handbook/lessons/README.md`](README.md)。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在这里搜关键词。
 
 ---
@@ -9,7 +9,7 @@
 
 ### markdown table header / sep 写死脱节 bug (2026-10-14 固化)
 Type: rule
-> **摘要:** 表格列数变了要**同步改表头 + 分隔行 + 行拼接**三处
+> **摘要:** 表格列数变了要**同步改表头 + 分隔行 + 行拼接 + 文档里的列数描述**四处
 
 **铁律:** 任何 "|---|" + "---|" * N 写死 N 的模式 → N 必须从 header 动态算. 加列时 sep 必漏改 → GFM 表格不渲染.
 
@@ -24,6 +24,18 @@ Type: rule
 - 静态扫描: `grep -n "'\-\-\-'" tools/render/*.py` 找写死 sep 模式
 
 **apply when:** 任何 md 表格有 '|---|' + '---|' * N 模式. N 必须从 header.count("|") - 1 算. 验证: `awk -F'|' '{print NF-2}'` 跟 header cell 数对比.
+
+**第 4 处: 文档里的列数 (2026-11-06 补)**
+因子历史表 21 列 → 20 列时, 除 header + 行拼接外, **还有 12 处文档/注释写着旧列数**:
+`SKILL.md` × 3 (t-factor-5y / _shared/analysis_framework / t-backtest)、`handbook/AGENT_MEMORY.md` × 2、
+`handbook/lessons/03-finance.md`、`tools/batch/factor_5y.py` × 3、`tools/batch/verify_a2m_financials.py`、
+`tools/t-analyze-all.sh` × 3、`README.md`。
+**只改代码不改文档 = SKILL.md 跟代码脱节** (违反 `handbook/naming-convention.md` 第 7 条)。
+查法: `grep -rn "21 列\|24 列\|因子历史表" --include="*.md" --include="*.py" --include="*.sh" .`
+
+**删展示列 ≠ 删数据链路 (2026-11-06 补)**
+删「变化」列时, `diff_rows` / `extract_signals` **一个字都不能动** —— 它们还供
+`signals_active` (报告方向信号) 和汇总表「信号」列用。只删渲染层的那一格 + header 里的一格。
 
 ### linter warning 输出被截断 (2026-10-14 固化)
 Type: rule
@@ -201,7 +213,7 @@ Type: rule
 **事故实录 (2026-11-06):** 用户要求把因子历史表的 3 列(威科夫(日/周) / 威科夫强度 / 子事件(日/周))
 移到收盘价右边。我为了"验证列序"跑了
 `python -m tools.batch.factor_5y --watchlist-types 持仓,自选 --workers 4`
-→ 8 分钟生成 **168 份 md / 49MB** (每只 1250 行 × 24 列 ≈ 290KB)。
+→ 8 分钟生成 **168 份 md / 49MB** (每只 1250 行 × 当时 24 列 ≈ 290KB)。
 我自己写下的意图明明是"45 份 (持仓 21 + 自选 20 + 4 只历史票)", 命令却写成了"持仓,自选"全量。
 
 **三个错:**

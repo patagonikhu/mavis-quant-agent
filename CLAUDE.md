@@ -77,6 +77,10 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 > **报告变化**: 「因子 × 3 周期 综合矩阵」→「因子 × 2 周期 矩阵 (威科夫)」; 完整性表少 2 列; 因子历史表少 3 列 → **24 列变 21 列**; 「综合判定」(🥈标准建仓/🟠标准减仓/🟡观察) 整档消失。
 > **判定口径**: 投票是**整块删除**, 不是把阈值 `bottom_signals >= 2` 降到 1 —— 降阈值会让「任何威科夫 Accumulation 都算建仓建议」, 属另一次决策。方向信号由 **威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离** 提供 (`analysis_result_signals.extract_signals` 仍在)。
 
+> 2026-11-06: **因子历史表「变化」列删除** (用户指令) —— 因子历史表 **21 列 → 20 列**。
+> **只删展示列, 数据链路不动**: `diff_rows` / `extract_signals` 仍在 —— 它们供 `signals_active` (报告方向信号) 和汇总表「信号」列使用, 只是不再渲染成因子历史表的一列。
+> 改列只动 2 处: `FACTOR_HISTORY_HEADER` 常量 + `_format_factor_row` 的 `line` 拼接, **必须严格同步**, 否则列错位。
+
 > 2026-11-04: **EPS 机构一致预期整档已删** —— 它是**预测值** (datacenter 拉机构 E0/E1/E2/E3), 11-02 删 PEG/DCF 后已无任何分析消费者, 只剩管道残骸 + 报告展示。删除范围: `tools/storage/caches/eps.py` (整个缓存层)、`eastmoney._build_eps_table` (唯一联网函数, 删完该文件变纯计算模块)、`sync.py --eps` flag、`DataStore.get_eps()`、`RawContext.eps_table`、`RenderData.EpsRow/eps_table/eps_status`、报告「EPS 一致预期」表、linter 的 EPS 检查、guardrail 的 `eps-scope` check。section id `eps_finance` → `finance_quarterly`。
 > **实测: 判定结果零变化** (7 只票 Magic/ROC/EY/因子矩阵逐字节一致)。副产物: 原本 EPS 常为 EMPTY 的票 (如 002371) 数据完整度 87% → **100%**。
 > ⚠️ 注意区分: **财报里的真实 EPS 仍在** (`fina_indicator` 已审计, `financials` parquet), 算 `np_yi` 在用, **不要动** (rsi6 亏损过滤已于同日随 rsi6 家族下线)。

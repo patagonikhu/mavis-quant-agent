@@ -90,7 +90,7 @@
 ### 阶段 3: 落报告 (LLM 套 7 section 模板)
 - 工具: `tools/render/report_renderer.py`
 - 输出: `docs/analyze-{code}-{name}.md`
-- 强制项: 4 季财务大表 (中段) + 威科夫阶段详情 + 因子历史表 (21 列)
+- 强制项: 4 季财务大表 (中段) + 威科夫阶段详情 + 因子历史表 (20 列)
 
 ---
 

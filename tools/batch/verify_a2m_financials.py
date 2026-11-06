@@ -23,7 +23,7 @@ FIN_HDR = "ROC 资本回报率"
 def extract_fin_rows(text: str) -> list[list[str]]:
     """只抽「最近 4 季财务 + Magic 公式」表的数据行。
 
-    详报里还有 24 列的因子历史表 (日期/收盘/RSI6/...)，行首也是 8 位日期，
+    详报里还有 20 列的因子历史表 (日期/收盘/RSI6/...)，行首也是 8 位日期，
     必须靠表头定位窗口，否则会误抓。
     """
     lines = text.split("\n")

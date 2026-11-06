@@ -1,6 +1,6 @@
 """factor_5y.py — 5 年因子历史批量跑批
 
-用途: 单只 / 批量跑 5 年因子历史 (21 列: 价格 / 威科夫 / 技术指标),
+用途: 单只 / 批量跑 5 年因子历史 (20 列: 价格 / 威科夫 / 技术指标),
        默认 watchlist (持仓)。
 
 **输出分两种 (2026-11-06 改, 治"目录里堆几百份 md"):**
@@ -9,7 +9,7 @@
     `docs/factor-5y/_summary-{scope}.md` (每只 1 行: 5 年累计 / 最大回撤 / RSI6 / 阶段 / 阶段转变)
     逐只 md 要显式加 `--write-md-all` 才出 (并同步清掉不在本次范围的旧 md)
     —— 批量场景的用途是"多只对比找穿越牛熊的票", 对比看**汇总表**才有用,
-    一只一只翻 24 列长表没意义, 而且 164 只 × 290KB ≈ 49MB 把目录撑爆。
+    一只一只翻 20 列长表没意义, 而且 164 只 × 290KB ≈ 49MB 把目录撑爆。
 
 复用链路 (跟 /t-analyze 完全同接口, 仅 lookback 改 1250 + 输出目录换):
   DataStore.get_ctx(code) → AnalysisEngine.analyze_history → compute_factor_history
@@ -36,7 +36,7 @@
   - 逐只 (点名, 或批量加 --write-md-all):
     docs/factor-5y/analyze-{code}-{name}-5y.md (每只 1 个 md)
     └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样 step=N"
-    └─ 📈 因子历史走势 (21 列 GFM 表)
+    └─ 📈 因子历史走势 (20 列 GFM 表)
     └─ 🗒 5 年阶段摘要 (5 年累计, MA20 偏离段)
 
 不替代 /t-analyze:

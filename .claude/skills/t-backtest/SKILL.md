@@ -43,4 +43,4 @@ allowed-tools:
 
 ## 相关
 
-- `/t-analyze` / `/t-sync-data` / `tools/batch/batch_backtest.py` (回测引擎) / `tools/analysis/signal_cache.py` (24 列因子缓存)
+- `/t-analyze` / `/t-sync-data` / `tools/batch/batch_backtest.py` (回测引擎) / `tools/storage/caches/analysis.py` (分析结果缓存)

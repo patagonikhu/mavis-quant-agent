@@ -119,22 +119,20 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │   ├── stk_factor/                    # 17 列估值 (DataStore, 5 季 290 天 × 5555 只 ≈ 160 万行)
 │   │   ├── financials/                    # 季报 13 季度 (DataStore, 72253 行)
 │   │   └── stock_basic/                   # 股票基础信息 (5555 只, DataStore)
-│   └── analysis_cache.db                  # signal_cache SQLite 缓存 (24 列因子)
+│   └── analysis_cache.db                  # 分析结果 SQLite 缓存 (sync --cache 写入)
 
 > v6.2 起 events.json + sectors.json **已删**: T 事件由 LLM 报告生成时从外部查 (年报/新闻/公告),
 > 板块分类走 stock_basic.parquet 的 industry 字段 (5555 只全覆盖).
 │
 ├── tools/                                 # 核心引擎
-│   ├── sync_stock.py                      # 单只拉数据 (DataStore)
-│   ├── sync_watchlist_fresh.py            # 批量同步新鲜度
+│   ├── storage/sync.py                    # 同步入口 (7 数据段 flag, 默认 --auto)
+│   ├── storage/store.py                   # DataStore (parquet reader)
 │   ├── batch/t_analyze_all.py             # 1 键刷 watchlist (sync + 4 worker analyze + render)
-│   ├── kline_store.py                     # DataStore (parquet reader)
 │   ├── with_venv.sh                       # venv 包装 (必须走这个)
 │   │
 │   ├── analysis/                          # 分析引擎 (单次 O(n) 遍历)
 │   │   ├── analysis_engine.py             # AnalysisEngine.analyze_history()
 │   │   ├── analysis_result_signals.py      # compute_factor_history() 批量信号
-│   │   ├── signal_cache.py                # SQLite 缓存 (wyckoff 9 bool)
 │   │   └── render_data.py                 # RenderData (7 派生 property)
 │   │
 │   ├── factors/                           # 3 strategy 算子 (wyckoff/technical/finance)
@@ -148,13 +146,11 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   │
 │   └── batch/                             # 批量脚本
 │       ├── t_analyze_all.py               # /t-analyze --all (verbose + 异常立即抛)
-│       ├── batch_backtest.py              # /t-backtest (走 signal_cache)
-│       ├── signal_cache_warmup.py         # /t-sync-cache (增量断点续跑)
+│       └── batch_backtest.py              # /t-backtest (走 analysis_cache)
 │
 └── .claude/skills/                        # 8 个 slash 命令
     ├── t-analyze/SKILL.md
     ├── t-backtest/SKILL.md
-    ├── t-sync-cache/SKILL.md
 ```
 
 ---
@@ -223,7 +219,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 3. ThreadPoolExecutor(N)        # 再开多线程，每个线程只读 DataStore（0 网络）
 ```
 
-`tools/batch/signal_cache_warmup.py` 4 worker 并发跑全市场 5783 只（lookback=1250 step=1）估计 ~50min；禁止在 worker 线程里调 sync 或任何网络请求。
+`tools/storage/caches/analysis.py::warmup_cache` 4 worker 并发跑全市场 5783 只（lookback=1250 step=1）估计 ~50min；禁止在 worker 线程里调 sync 或任何网络请求。
 
 
 
