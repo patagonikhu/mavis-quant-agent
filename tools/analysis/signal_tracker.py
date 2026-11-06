@@ -103,7 +103,6 @@ def save_signals_to_file(signals, date):
 
 # signal_type → model 推断 (按子串匹配, 顺序重要)
 MODEL_INFERENCE = [
-    ('结构', ['OB', 'FVG', '扫流', 'Demand', 'Supply', 'BOS', 'CHoCH']),
     ('威科夫', ['威科夫', 'A累积', 'B弹簧', 'C测试', 'D突破', 'E顶部', '阶段A', '阶段B', '阶段C', '阶段D', '阶段E']),
     ('T框架', ['T+', 'T-', 'T_']),
     ('板块', ['板块', 'sector']),

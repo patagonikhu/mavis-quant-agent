@@ -5,7 +5,7 @@
 data:
   # 1️⃣ 日常 dump 默认 (轻量, 跑 watchlist 用)
   # 2026-08-22 user 拍板: 拉 5 年数据重跑 SOS+LPS 叠加 → kline_days 1300
-  # (之前配比 250/156/200 那套含 60分, 60min 随 czsc/缠论 下线后已无消费者, 一并删)
+  # (之前配比 250/156/200 那套含 60分, 60min 已无消费者, 一并删)
   kline_days: 1300        # 日线 5 年
   weekly_limit: 250       # 周线 (仅死代码 fetch_all_tushare 读, 生产走日线合成)
 
@@ -25,7 +25,7 @@ report:
 
   # Regression test 单票 dump timeout (秒)
   # 2026-11-06 改注释: 原写「17 只并发对新浪/腾讯打 68+ 请求偶发限流」——
-  #   新浪/腾讯早已不是数据源 (新浪随 60min/缠论下线清零, 腾讯在禁用名单), 现在只走 tushare。
+  #   新浪/腾讯早已不是数据源 (新浪随 60min 清零, 腾讯在禁用名单), 现在只走 tushare。
   dump_timeout: 240
 
 # === GA 挖因子 ===

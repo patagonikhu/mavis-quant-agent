@@ -9,8 +9,6 @@ analysis_engine.py — analysis 层 (v5.10.35, 2026-08-26)
 策略模式 (v5.10.35 简化):
 - 3 个 Phase1 策略类: 返回 dict (含 score + 因子数据), 不再继承 AnalysisStrategy ABC
   (wyckoff / technical / finance)
-- 2026-11-05 删: StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep)
-  → 报告层早已不消费, 只算不用; 因子库 tools/factors/structure/ 整目录删除
 - 1 个 Phase2 派生函数 (模块级): 纯数据提取, weight=0
 - AnalysisResult.raw: Dict[str, Any] 是唯一数据来源
 """
@@ -742,7 +740,6 @@ def _derive_sector_overheat(ctx: RawContext) -> dict:
 
 # Phase1 策略类列表
 # 2026-09-08: 删 ValuationStrategy (合并进 FinanceStrategy)
-# 2026-11-05: 删 StructureStrategy (原 SMC 结构分析 OB/FVG/Sweep — 报告层早已不消费)
 PHASE1_STRATEGY_CLASSES = [
     WyckoffStrategy,
     TechnicalStrategy,  # v6.2.8 加: 8 个技术指标

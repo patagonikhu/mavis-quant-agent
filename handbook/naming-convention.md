@@ -114,7 +114,7 @@ grep -nE "args\.(np|rev|gm)_" file.py  # 内部属性改业务名
 
 | 命中 | 实际含义 | 处置 |
 |---|---|---|
-| `chan_` / `chan` — 只出现在 `tools/batch/_eval_*` / `_verify_*` | **威科夫通道** (channel) 的缩写, 不是已下线的缠论 | **别改**: 插桩 tag `('chan', ...)` 与读取端 `k == "chan"` 必须成对, 且生产侧字段名就叫 `channel` |
+| `chan_` / `chan` — 只出现在 `tools/batch/_eval_*` / `_verify_*` | **威科夫通道** (channel) 的缩写 | **别改**: 插桩 tag `('chan', ...)` 与读取端 `k == "chan"` 必须成对, 且生产侧字段名就叫 `channel` |
 | `bsp` — 出现在 `os.path.abspath` 里 | Python 内置函数名 | 别改 |
 | `change_pct` / `price_change` | 涨跌幅, 与任何被删维度无关 | 别改 |
 

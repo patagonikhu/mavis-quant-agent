@@ -293,7 +293,7 @@ Type: rule
 
 | 声称 | 实际 |
 |---|---|
-| kline_60min → Sina | 代码 0 处 Sina 调用 (60min 随 czsc/缠论 下线) |
+| kline_60min → Sina | 代码 0 处 Sina 调用 (60min 已无消费者) |
 | kline_weekly → Tushare.weekly | 日线**合成** (`_synthesize_weekly`), weekly 只在死代码里 |
 | real_time → daily_basic 实时价 | 实时价 = 日 K 线最新收盘, daily_basic 只给 PE/市值/换手率 |
 | industry_sector → 行业 + 概念板块 | stock_basic 只有 industry, 概念板块走 THS |
@@ -417,3 +417,31 @@ bash tools/with_venv.sh python tools/render/factor_history_only.py 300588.SZ --d
 → **改签名后, 把所有引用该函数的 skill 入口都跑一遍**, 别只跑出报告的那条。
 
 **apply when:** 任何"删函数参数 / 改函数签名"的动作。
+
+### 删术语前先确认它在该上下文的真实语义 (2026-11-06)
+Type: rule
+> **摘要:** grep 命中的术语**不能按字面批量删** —— 同一个词在不同上下文里可能完全是另一回事
+
+**触发场景:** 清理 md 层残留的 缠论 / SMC / 结构分析 / OB / FVG / Sweep / 扫流。
+`grep -ril "OB"` 之类会捞出两类**同名不同物**的假目标:
+
+| 词 | 看起来像 | 实际是 | 处置 |
+|---|---|---|---|
+| `chan_` / `chan` | 已下线的缠论 | **威科夫通道** (channel) 缩写 —— 生产侧字段名就叫 `channel`, 插桩 tag `('chan', ...)` 与读取端 `k == "chan"` 必须成对 | **别改** (豁免表见 `handbook/naming-convention.md`) |
+| `OB` | 订单块 (Order Block) | alpha101 的 `OB` = (open+close)/2, 在 `tools/research/ga_mine.py` | **别改** |
+
+反过来, 真要删的 `signal_tracker.py` 里 `MODEL_INFERENCE` 的 `('结构', ['OB','FVG','扫流','Demand','Supply','BOS','CHoCH'])`
+—— 那是 SMC 的模型推断条目, 2026-10-28 删 PEG 时同样删过 `MODEL_INFERENCE` 里的 'PEG' 条目, 同一套路。
+
+**做法:**
+```bash
+# 1. 先全量列出命中, 按「文件 + 行」逐条看上下文, 再决定删/改/留
+grep -rn "<术语>" --include=*.md --include=*.py --include=*.yaml . | grep -v "^./.venv"
+# 2. 删除只动「纯墓碑注释」(纯说明, 无行为)
+# 3. 行为代码里的条目 → 参考同类的历史删除先例 (PEG 删法)
+# 4. 误报 → 在 naming-convention.md 的豁免表里留一条, 避免下一个人再踩
+```
+
+**验证:** `config/sources.yaml` 会被报告渲染器读 (数据源矩阵), 改注释也要重跑全量对报告做逐字节 diff。
+
+**apply when:** 任何"按术语批量清理残留"的动作。

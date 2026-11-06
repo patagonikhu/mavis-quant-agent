@@ -12,7 +12,6 @@ tools/factors/__init__.py - 因子库入口 (2026-09-09 简化)
     其余因子早已迁走, 直接删除整个模块)
   - 2026-11-03 删: factor_risk.py (监控触发点整档已删后该文件只剩
     compute_monitor_triggers 一个函数, 直接删除整个模块)
-  - 2026-11-05 删: structure/ (原 smc/, 结构分析 OB/FVG/Sweep) —
     整档从 analysis 层删除后无任何引用, 因子库整目录移除
   → 至此 tools/factors/ 顶层只剩 utils.py + kline_arrays.py
   - 保留框架: utils.py (K 线处理) + kline_arrays.py (滑动窗口)

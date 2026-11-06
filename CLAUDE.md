@@ -95,13 +95,8 @@ section 列表 / 因子矩阵 / fallback: `tools/render/report_schema.py` (7 有
 > **不参与威科夫/Magic/因子矩阵任何判定**, 删掉对 `/t-analyze` 单只详报和批量股票段**零影响**。
 > ETF 扫描能力由 `/t-etf-wyckoff-a2m` 承担 (A→M 三重确认); ETF 候选池唯一真源仍是 `tools/batch/etf_universe.py` (fund_type 过滤 + 同指数两级并查集去重, 现只剩一个消费者)。
 
-> 2026-11-04: 结构分析 (OB/FVG/Sweep) 那一票已从因子矩阵投票与报告展示中移除 (实测对现有报告 action 零影响, 阈值不变); 同日生产层完成改名, 全仓统一用 `structure` / `结构` 命名。
+> 2026-11-05: 多市场共振 (res) 那一票移除 —— `resonance_3period` 网络调用早已删除, 该票恒为 0, 报告里的「多市场共振: 已移除」占位块 + 因子矩阵表格行同步删掉。判定结果零变化。
 >
-> 2026-11-05: 结构分析 (structure / 原 SMC) **整个从 analysis 层删除** —— `StructureStrategy` 类、`RawContext.structure_result`、`raw["structure"]`、10 个 `structure_*` 行字段、`tools/factors/structure/` 因子库目录全部移除。报告层早已不消费, 只算不用。删除后 Phase1 strategy = **wyckoff / technical / finance**。
->
-> 2026-11-05: 多市场共振 (res) 那一票一并移除 —— `resonance_3period` 网络调用早已删除, 该票恒为 0, 报告里的「多市场共振: 已移除」占位块 + 因子矩阵表格行同步删掉。判定结果零变化。
->
-> 2026-11-05: 结构分析的 **md 层同步清理** —— README 第 9 章「结构分析 (OB/FVG/Sweep)」整节 + 已于 10-28 下线的「量价综合」整节删除, 报告模板「OB 列表」文案删除。报告 md 里 OB / FVG / Sweep / 扫流 / 结构分析 / 订单块 / 量价 全部 0 命中。
 
 ---
 

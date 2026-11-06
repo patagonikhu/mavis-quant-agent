@@ -38,7 +38,7 @@ from __future__ import annotations
 #   理由: 本文件是**纯计算模块** (0 网络), 加载了 _PROJECT_CFG 但一次都没用
 #         (唯一引用就是这行赋值本身), 却给纯计算模块加了个「project.yaml 必须存在」
 #         的硬依赖 —— 而 project.yaml 里当时被引用的 data.kline_60m_count 是 60min
-#         的残留配置 (60min 随 czsc/缠论下线后已无消费者)。
+#         的残留配置 (60min 已无消费者)。
 #   真正读 config 的是 store.py (data.kline_days) 和 tushare.py (data.weekly_limit)。
 
 # ============================================================

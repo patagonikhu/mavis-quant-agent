@@ -217,9 +217,6 @@ def _extract_row(result, date: str, close: float) -> dict:
         "sub_event_daily":  _today_sub_events(wy_raw, "daily",  date),
         "sub_event_weekly": _today_sub_events(wy_raw, "weekly", date),
 
-        # 2026-11-05 删: 结构分析 日线/周线 OB/FVG/Sweep 共 10 个行字段
-        #   (structure_* — 报告层早已不消费, 随 StructureStrategy 整档删除)
-
         # 估值 (FinanceStrategy 季报粒度, 共享最新季值)
         # v6.2.8 删: 历史表里不再有 ROC%/EY% 列 (跨季才变, 跟"## 财务数据" section 重复)
 

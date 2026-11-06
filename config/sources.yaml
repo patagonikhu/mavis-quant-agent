@@ -4,8 +4,8 @@
 #
 # ⚠️ 2026-11-06 逐条对照 tools/storage/sources/tushare.py + tools/storage/store.py
 #    实际调用核实, 原表有 4 处与代码不符, 已修正:
-#      ① kline_60min / Sina  —— 整条删除。代码里 0 处 Sina 调用 (60min 是 czsc/缠论
-#         依赖, 缠论下线后已无消费者), 且 Sina 不在合法源白名单 (合法源只有 tushare.pro)
+#      ① kline_60min / Sina  —— 整条删除。代码里 0 处 Sina 调用 (60min 已无消费者),
+#         且 Sina 不在合法源白名单 (合法源只有 tushare.pro)
 #      ② kline_weekly —— 周线不是拉 Tushare.weekly, 是**日线合成**
 #         (store.py::_synthesize_weekly ← eastmoney.py 纯计算模块)。
 #         Tushare.weekly 只在死代码 fetch_all_tushare() 里, 那函数只被自己的 __main__ 调用
@@ -69,4 +69,4 @@ banned:
   - web.ifzq.gtimg.cn         # WAF 高频限流 (2026-07-24 实测)
   - push2delay.eastmoney.com  # rc=102 限流 (2026-07-24 实测)
   - qt.gtimg.cn               # GBK 编码, 高频限流
-  - money.finance.sina.com.cn # 60min 唯一源, 缠论下线后已 0 调用 (2026-11-06 补进禁用名单)
+  - money.finance.sina.com.cn # 60min 唯一源, 现已 0 调用 (2026-11-06 补进禁用名单)
