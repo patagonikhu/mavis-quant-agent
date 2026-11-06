@@ -141,7 +141,6 @@ REPORT_SECTIONS = [
         #   → 下面 get_section_titles 现在会过滤掉
     },
     # 2026-07-25: 5 方法 × 3 周期 矩阵 (独立 section, 整合原 5 合 1 顶部预警)
-    # 注: chan_signals / chan_supplement 已于 7-29 合并入 factor_history + method_matrix, 废弃删除
     {
         "id": "method_matrix",
         "title": "🎯 因子 × 2 周期 矩阵 (威科夫)",
@@ -464,7 +463,7 @@ def validate_schema() -> dict:
                 errors.append(f"❌ 顺序错误: {s['id']} ({cat}) 在 {last_cat} 之后")
             last_cat = max(last_cat, cur)
 
-    # 3. 关键 section 必填 (chan_supplement 已于 7-29 废弃, 用 method_matrix 替代)
+    # 3. 关键 section 必填
     # 2026-08-31: fflow section 已停用; 2026-10-28: 主力资金流维度整体删除
     # 2026-11-02: peg / dcf 已删 (PEG 是假指标)
     required = {"method_matrix"}

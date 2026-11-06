@@ -267,7 +267,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
             return -1
 
         # 2026-07-25: 用 id 注释精确找位置 (不用关键词模糊匹配)
-        # 2️⃣ 5 方法详情 = chan_supplement (chan_signals 已于 7-29 废弃合并入 factor_history)
         # 2026-11-02: 删 PEG/DCF 顺序检查 (5️⃣ 整档已删)
         def _find_id_idx(target_id: str) -> int:
             for i, doc_id in enumerate(md_ids):

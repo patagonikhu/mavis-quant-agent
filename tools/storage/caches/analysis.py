@@ -16,7 +16,7 @@ Schema (2026-10-19 v3 改: 加 13 列威科夫字段, 回测威科夫 A→M 胜�
       wy_30d_pct (30 日涨幅%)
       wy_has_{spring,lps,evr,sos,compression,trend_pullback,markup_entry,distribution_start,utad}
       (9 个 0/1, 近 5 根 K 线内有触发 = 1)
-  历史: 2026-09-22 删 26 列 (10 wy_* + 11 chan_* + 3 ma_dev + 2 boll_*)
+  历史: 2026-09-22 删 26 列 (10 wy_* + 11 信号列 + 3 ma_dev + 2 boll_*)
         2026-10-19 用户做威科夫胜率回测, 加回 13 列 (sub_event 9 + 主 stage/score/count/30d)
 """
 from __future__ import annotations
@@ -44,8 +44,6 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     -- 2026-09-22 删: wy_* (10列), ma_dev (3列), boll_* (2列)
     -- 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 是镜像, 删除减少 26 列空白存储
     -- 已删: wy_stage, wy_markup_entry/spring/lps/evr/sos/compression/trendpullback/distributionstart/utad
-    --       chan_daily_hub/pos, chan_weekly_hub/pos
-    --       chan_1buy/2buy/3buy/1sell/2sell/3sell + chan_bot_div/top_div
     --       ma5_dev/ma20_dev/ma60_dev
     --       boll_bpct/boll_bwidth
 
@@ -112,7 +110,7 @@ def _init():
         # 自动迁移：加新列（若已存在则忽略）
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
         for col, typedef in [
-                             # 2026-09-22 删: boll_bwidth/chan_bot_div/chan_top_div (随 26 列一并删)
+                             # 2026-09-22 删: boll_bwidth (随 26 列一并删)
                              # 2026-09-02 加: 估值 4 列 (Magic Formula 回测用)
                              # 2026-11-02 删: peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
                              ("roc", "REAL"),       # Greenblatt ROC % (TTM)
@@ -231,7 +229,7 @@ def _extract_wyckoff(result, lookback_sub_events: int = 5) -> dict:
 
 def _result_to_row(code: str, date_str: str,
                    kline: list[dict], result) -> dict[str, Any]:
-    # 2026-09-22 改: 删 wy_* / chan_* / boll_* / ma_dev 全部赋值
+    # 2026-09-22 改: 删 wy_* / boll_* / ma_dev 全部赋值
     # 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 只存技术指标 + 估值
     # 2026-10-19 改: 重新加 wy_* 13 列 (用户回测威科夫 A→M 胜率, cache 必须能查)
     raw = getattr(result, "raw", None) or (result.get("raw", {}) if isinstance(result, dict) else {})
