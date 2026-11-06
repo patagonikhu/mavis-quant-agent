@@ -97,13 +97,11 @@ class TestToolImports:
             search_stock,
             get_realtime_quote,
             get_kline_data,
-            get_fund_flow,
             get_market_overview,
         )
         assert search_stock.name == "search_stock"
         assert get_realtime_quote.name == "get_realtime_quote"
         assert get_kline_data.name == "get_kline_data"
-        assert get_fund_flow.name == "get_fund_flow"
         assert get_market_overview.name == "get_market_overview"
 
     def test_technical_tools(self):

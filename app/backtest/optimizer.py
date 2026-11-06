@@ -24,11 +24,10 @@ logger = logging.getLogger(__name__)
 
 BEST_PARAMS_PATH = Path("data/best_params.json")
 
-# 5大类信号分组
+# 4大类信号分组
 SIGNAL_GROUPS = {
     "volume_price": ["volume_breakout", "limit_up_surge", "volume_price_uptrend", "breakout_resistance"],
     "leader":       ["leader_launching", "sector_diffusion"],
-    "capital":      ["main_capital_inflow", "north_capital_anomaly", "institutional_concentration"],
     "policy":       ["policy_keyword_hit", "llm_policy_score"],
     "sentiment":    ["hot_rank_surge", "research_surge", "discussion_anomaly"],
 }

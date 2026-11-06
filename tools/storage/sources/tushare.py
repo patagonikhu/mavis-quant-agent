@@ -4,17 +4,13 @@ tushare_fetcher.py — Tushare Pro 数据拉取 (2026-07-22 接入, 2026-09-04 �
 数据源: https://tushare.pro (5000 积分档, 解锁 20+ 项核心数据)
 Token: 从 os.environ["TUSHARE_TOKEN"] 读 (.env 文件, 不进 git)
 
-覆盖的 9+ 个核心接口 (按用户最常看的 6 项排):
-  1. stk_factor_pro - PE/PB/PS/PS-TTM/股息率/自由流通股换手率/总股本/流通股本 (5000 积分档 pro, v6.2.4 替代 daily_basic)
-  2. weekly/monthly  - 周月 K 线 (Sina 60分硬上限的备选, 跨更大周期)
-  3. moneyflow_hsgt  - 北向资金 (每日沪深股通净买入)
-  4. margin_detail   - 融资融券 (单只票的融资余额/买入)
-  5. top_list        - 龙虎榜 (当日上榜机构+营业部)
-  6. income          - 利润表 (营收/净利/同比)
-  7. fina_indicator  - 财务指标 (ROE/毛利率/净利率/资产负债率)
-  8. fina_indicator_vip - 财务指标 (vip, 全市场一次性, Magic 用)
-  9. dividend        - 分红送转 (历史分红)
- 10. stock_basic     - 基础信息 (行业/上市日期/总股本)
+本模块有独立封装的接口:
+  1. daily         - 日 K 线 (按交易日拉全市场, 24h 可用, 不 WAF)
+  2. stk_factor_pro - PE/PB/PS/PS-TTM/股息率/自由流通股换手率/总股本/流通股本 (5000 积分档 pro, v6.2.4 替代 daily_basic)
+  3. index_daily   - 指数 K 线 (指数要走 index_daily, daily 只返个股)
+  4. fund_basic / fund_daily - ETF 场内基金
+
+其余接口 (stock_basic / fina_indicator_vip / forecast ...) 由调用方直接用 _safe_call 拉。
 
 设计原则:
   - 永远不 raise (每个接口返回 (data, status), status ∈ {OK/EMPTY/PERM_DENIED/EXCEPTION_xxx})
@@ -26,7 +22,7 @@ Token: 从 os.environ["TUSHARE_TOKEN"] 读 (.env 文件, 不进 git)
   - 重复行 (tushare 已知 bug) 用 drop_duplicates 去重
 
 v6.2.4 升级要点:
-  - 5000 积分档: 解锁 stk_factor_pro / fina_indicator_vip / forecast / top_list / margin / north_flow
+  - 5000 积分档: 解锁 stk_factor_pro / fina_indicator_vip (本模块只封装 stk_factor_pro)
   - daily_basic 被 stk_factor_pro 替代 (16 列, 多了 ps/dv_ratio/float_share/turnover_rate_f)
   - stock_basic 仍缺 total_share (跨积分档都缺, 走 stk_factor_pro 兜底)
 """
@@ -35,7 +31,6 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -139,57 +134,19 @@ def _cache_put(api_name: str, kwargs: dict, data):
 # 工具函数
 # ============================================================
 
-def _latest_trade_date(lookback: int = 7) -> str:
-    """返回最近 lookback 天内最后一个交易日（YYYYMMDD）。
-
-    逻辑：从今天往前推，跳过周六(5)和周日(6)，取第一个工作日。
-    注意：只排除周末，不排除法定节假日（节假日 tushare 会返回空，调用方再往前一天重试）。
-    """
-    from datetime import datetime, timedelta
-    d = datetime.now()
-    for _ in range(lookback):
-        if d.weekday() < 5:  # 0=Mon ... 4=Fri
-            return d.strftime("%Y%m%d")
-        d -= timedelta(days=1)
-    return datetime.now().strftime("%Y%m%d")  # fallback
-
-
-def _code_to_ts(code: str) -> str:
-    """A 股代码 → tushare ts_code 格式: 300274 → 300274.SZ / 600519 → 600519.SH"""
-    if not code:
-        return ""
-    code = str(code).strip()
-    if "." in code:
-        return code  # 已经是 ts_code 格式
-    if code.startswith(("60", "68", "90", "51", "56")):
-        return f"{code}.SH"
-    return f"{code}.SZ"
-
 
 def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
     """统一 tushare 调用, 永不 raise, 返回 (data_list, status)
 
     2026-07-22 升级: 加 1 小时内存缓存, 重接口 (4s/次) 复用后 0s
     2026-09-18 升级: **0 retry** — 1 次失败直接报 (5000 积分档不限流, retry 是浪费)
-    2026-09-04 v6.2.4: 升级 5000 积分档, 白名单只剩真正限量接口
-                  (forecast/top_list/north_flow/margin 100% 永远返空, 1 次失败直接 EMPTY 不 retry)
+    2026-09-04 v6.2.4: 升级 5000 积分档
 
     ⚠️ 需要"EMPTY 再试一次"的地方, 由**调用方**自己做 (例: sync.action_stk_factor
     循环里 EMPTY → sleep 5s → 重试 1 次, 治"限流假阳导致该日永久缺失")。
     """
     if not _PRO:
         return None, "TOKEN_MISSING"
-
-    # v6.2.4 限量接口白名单 (5000 积分档仍不可调, 永久返空, 不 retry)
-    # 2026-09-04 实测 5000 积分档用户接口:
-    #   ✅ 可调: stk_factor_pro / fina_indicator_vip / top_list / margin
-    #   ❌ 限量 (需单独开通权限): forecast / forecast_vip
-    #   ❌ 10000 积分档: north_flow (10k 积分起)
-    _NO_RETRY_LIMITED = {
-        "forecast",      # 业绩预告 (用户权限未开, 单独收费)
-        "forecast_vip",  # 多券商一致预期 (同上)
-        "north_flow",    # 北向资金 (10000 积分档起步)
-    }
 
     # 1. 查缓存
     cached = _cache_get(api_name, kwargs)
@@ -205,14 +162,7 @@ def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
         method = getattr(_PRO, api_name)
         df = method(**kwargs)
         if df is None or len(df) == 0:
-            # 限量接口 (用户没开权限) → EMPTY
-            if api_name in _NO_RETRY_LIMITED:
-                logger.info(
-                    "tushare.%s 限量接口 (用户未开权限), 返空 (不 retry)",
-                    api_name,
-                )
-                return None, "EMPTY_NEED_HIGHER_TIER"
-            # 其他接口返空 → EMPTY (不重试)
+            # 接口返空 → EMPTY (不重试)
             logger.warning("tushare.%s 返空 (待确认原因, 不 retry)", api_name)
             return None, "EMPTY"
         df = df.drop_duplicates()
@@ -239,46 +189,7 @@ def _safe_call(api_name: str, **kwargs) -> tuple[list[dict] | None, str]:
 
 
 # ============================================================
-# 1. 基础信息 stock_basic
-# ============================================================
-
-def get_stock_basic(code: str) -> tuple[dict | None, str]:
-    """单只票基础信息: 行业 / 上市日期 / 总股本
-
-    返回: {ts_code, name, industry, list_date, total_share, float_share, market}
-    单位: total_share / float_share = 万股 (跟 daily_basic 一致)
-
-    v6.2.4 修复: 跨积分档 stock_basic 都不返回 total_share/float_share
-    改用 stk_factor_pro (替代 daily_basic) 补全, 16 列含 total_share/float_share
-    """
-    ts_code = _code_to_ts(code)
-    data, status = _safe_call(
-        "stock_basic",
-        ts_code=ts_code,
-        fields="ts_code,name,industry,list_date,market",
-    )
-    if not data:
-        return None, status
-    row = dict(data[0])
-    # 2026-09-04: stock_basic 跨积分档都缺 total_share, 走 stk_factor_pro 补 (5000 积分档可调, 16 列)
-    try:
-        trade_date = _latest_trade_date()
-        db_data, _ = _safe_call(
-            "stk_factor_pro",  # v6.2.4 改: daily_basic → stk_factor_pro (5000 积分档 16 列)
-            ts_code=ts_code,
-            trade_date=trade_date,
-            fields="ts_code,total_share,float_share",
-        )
-        if db_data and db_data[0].get("total_share"):
-            row["total_share"] = db_data[0]["total_share"]  # 万股
-            row["float_share"] = db_data[0].get("float_share") or 0
-    except Exception:
-        pass
-    return row, "OK"
-
-
-# ============================================================
-# 2. 日 K 线 daily (24h 可用, 不 WAF)
+# 1. 日 K 线 daily + stk_factor_pro (24h 可用, 不 WAF)
 # ============================================================
 
 def get_daily_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
@@ -331,51 +242,8 @@ def get_stk_factor_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
 
 
 # ============================================================
-# 3. daily_basic — PE/PB/市值 (替代 push2 f164)
+# 2. 指数 K 线 index_daily
 # ============================================================
-
-def get_daily_basic(code: str, start_date: str = "", end_date: str = "", limit: int = 30) -> tuple[list[dict] | None, str]:
-    """PE_TTM / PB / 总市值 / 流通市值
-
-    替代 push2 f164, 更准 (tushare 是当日收盘后正式值, 不是盘中)
-    """
-    ts_code = _code_to_ts(code)
-    kwargs = {
-        "ts_code": ts_code,
-        "fields": "ts_code,trade_date,close,pe,pe_ttm,pb,ps,ps_ttm,total_mv,circ_mv,turnover_rate,volume_ratio",
-    }
-    if start_date:
-        kwargs["start_date"] = start_date
-    if end_date:
-        kwargs["end_date"] = end_date
-    data, status = _safe_call("daily_basic", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["trade_date"])
-    if limit and not start_date:
-        data = data[-limit:]
-    return data, "OK"
-
-
-# ============================================================
-# 4. 周线 weekly / 月线 monthly
-# ============================================================
-
-def get_weekly(code: str, start_date: str = "", end_date: str = "", limit: int = 60) -> tuple[list[dict] | None, str]:
-    """周 K 线 — Sina 60分硬上限的备选, 用于看跨大周期"""
-    ts_code = _code_to_ts(code)
-    kwargs = {"ts_code": ts_code, "fields": "ts_code,trade_date,open,high,low,close,vol,amount,pct_chg"}
-    if start_date:
-        kwargs["start_date"] = start_date
-    if end_date:
-        kwargs["end_date"] = end_date
-    data, status = _safe_call("weekly", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["trade_date"])
-    if limit and not start_date:
-        data = data[-limit:]
-    return data, "OK"
 
 
 def get_index_daily(code: str, start_date: str = "", end_date: str = "", limit: int = 60) -> tuple[list[dict] | None, str]:
@@ -413,176 +281,7 @@ def get_index_daily(code: str, start_date: str = "", end_date: str = "", limit: 
 
 
 # ============================================================
-# 5. 北向资金 moneyflow_hsgt
-# ============================================================
-
-def get_north_flow(trade_date: str = "") -> tuple[dict | None, str]:
-    """北向资金 (沪深股通) — 每日北向净流入
-
-    Args:
-        trade_date: 20260721 格式, 留空取最近 1 个完整交易日 (避免今天未收盘)
-    """
-    if not trade_date:
-        from datetime import datetime, timedelta
-        # 取最近 30 个交易日, 排除今天 (今天可能未收盘, 数据未出)
-        end = datetime.now().strftime("%Y%m%d")
-        start = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
-        cal_data, _ = _safe_call(
-            "trade_cal",
-            exchange="SSE",
-            is_open="1",
-            start_date=start,
-            end_date=end,
-            fields="cal_date,is_open",
-        )
-        if cal_data:
-            cal_data.sort(key=lambda x: x["cal_date"], reverse=True)
-            # 排除今天 (避免未收盘), 取最近 1 个完整交易日
-            today = datetime.now().strftime("%Y%m%d")
-            for c in cal_data:
-                if c["cal_date"] < today:
-                    trade_date = c["cal_date"]
-                    break
-        if not trade_date:
-            return None, "EMPTY_CAL"
-    data, status = _safe_call(
-        "moneyflow_hsgt",
-        trade_date=trade_date,
-        fields="trade_date,ggt_ss,ggt_sz,hgt,sgt,south_money,north_money",
-    )
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["trade_date"], reverse=True)
-    return data[0], "OK"
-
-
-# ============================================================
-# 6. 融资融券 margin_detail
-# ============================================================
-
-def get_margin(code: str, trade_date: str = "") -> tuple[dict | None, str]:
-    """单只票融资融券
-
-    字段: rzye=融资余额, rzmre=融资买入, rzche=融资偿还,
-          rqye=融券余额, rqmcl=融券卖出, rqchl=融券偿还
-    """
-    ts_code = _code_to_ts(code)
-    kwargs = {
-        "ts_code": ts_code,
-        "fields": "trade_date,ts_code,rzye,rzmre,rzche,rqye,rqmcl,rqchl",
-    }
-    if trade_date:
-        kwargs["trade_date"] = trade_date
-    data, status = _safe_call("margin_detail", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["trade_date"], reverse=True)
-    return data[0], "OK"
-
-
-# ============================================================
-# 7. 龙虎榜 top_list
-# ============================================================
-
-def get_top_list(code: str, trade_date: str = "") -> tuple[list[dict] | None, str]:
-    """龙虎榜 — 哪些机构/营业部门买卖
-
-    Args:
-        code: 留空拿当日所有上榜, 给定 code 拿该票所有上榜
-        trade_date: 必填, 留空用 trade_cal 拿最近 1 个完整交易日
-    """
-    if not trade_date:
-        from datetime import datetime, timedelta
-        end = datetime.now().strftime("%Y%m%d")
-        start = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
-        cal_data, _ = _safe_call(
-            "trade_cal",
-            exchange="SSE",
-            is_open="1",
-            start_date=start,
-            end_date=end,
-            fields="cal_date,is_open",
-        )
-        if cal_data:
-            cal_data.sort(key=lambda x: x["cal_date"], reverse=True)
-            today = datetime.now().strftime("%Y%m%d")
-            for c in cal_data:
-                if c["cal_date"] < today:
-                    trade_date = c["cal_date"]
-                    break
-        if not trade_date:
-            return None, "EMPTY_CAL"
-    kwargs = {
-        "trade_date": trade_date,
-        "fields": "trade_date,ts_code,name,close,pct_change,turnover_rate,amount,l_sell,l_buy,l_amount,net_amount,net_rate,amount_rate",
-    }
-    if code:
-        kwargs["ts_code"] = _code_to_ts(code)
-    data, status = _safe_call("top_list", **kwargs)
-    if not data:
-        return None, status
-    return data, "OK"
-
-
-# ============================================================
-# 8. 财务三大表 + 财务指标
-# ============================================================
-
-def get_income(code: str, period: str = "") -> tuple[dict | None, str]:
-    """利润表 — 单期"""
-    ts_code = _code_to_ts(code)
-    kwargs = {
-        "ts_code": ts_code,
-        "fields": "ts_code,end_date,total_revenue,operate_profit,n_income,basic_eps,total_cogs,sell_exp,admin_exp,fin_exp",
-    }
-    if period:
-        kwargs["period"] = period
-    data, status = _safe_call("income", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["end_date"], reverse=True)
-    return data[0], "OK"
-
-
-def get_fina_indicator(code: str, period: str = "") -> tuple[dict | None, str]:
-    """财务指标 — ROE/毛利率/净利率/资产负债率/同比
-
-    period: 20250331 (Q1) / 20250630 (Q2) / 20251231 (年报)
-    """
-    ts_code = _code_to_ts(code)
-    kwargs = {
-        "ts_code": ts_code,
-        "fields": "ts_code,end_date,roe,roe_eps,gross_margin,netprofit_margin,debt_to_assets,eps,yoy_eps,yoy_tr,yoy_or,assets_yoy,equity_yoy",
-    }
-    if period:
-        kwargs["period"] = period
-    data, status = _safe_call("fina_indicator", **kwargs)
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["end_date"], reverse=True)
-    return data[0], "OK"
-
-
-# ============================================================
-# 9. 分红 dividend
-# ============================================================
-
-def get_dividend(code: str, limit: int = 10) -> tuple[list[dict] | None, str]:
-    """分红送转历史"""
-    ts_code = _code_to_ts(code)
-    data, status = _safe_call(
-        "dividend",
-        ts_code=ts_code,
-        fields="ts_code,end_date,div_proc,stk_div,cash_div,stk_bo_rate,cash_div_tax,record_date,ex_date,pay_date",
-    )
-    if not data:
-        return None, status
-    data.sort(key=lambda x: x["end_date"], reverse=True)
-    return data[:limit], "OK"
-
-
-# ============================================================
-# 10b. ETF 场内基金 (2026-10-09 加, 走 tushare fund_basic / fund_daily / fund_nav)
+# 3. ETF 场内基金 (2026-10-09 加, 走 tushare fund_basic / fund_daily / fund_nav)
 #   - 字段名跟 daily 股票 100% 重合 (OHLCV), AnalysisEngine.analyze_history 无需改
 #   - fund_basic 一次性全量, 落 data/history/etf/etf_basic.parquet
 # ============================================================
@@ -652,196 +351,3 @@ def get_fund_daily(trade_date: str = "", ts_code: str = "", start_date: str = ""
         return None, status
     data.sort(key=lambda x: x.get("trade_date", ""))
     return data, "OK"
-
-
-# ============================================================
-# 11. 业绩预告 pro.forecast (限量接口, 需用户单独开通权限)
-# ============================================================
-
-def get_forecast(code: str, recent_n: int = 4) -> tuple[list[dict] | None, str]:
-    """业绩预告 (业绩预增/预减/扭亏/首亏/续亏/续盈/略增/略减)
-
-    Tushare forecast 是限量接口 (用户权限未开, 永久返空, 走白名单)
-    forecast_vip 需更高积分 (不在档内)
-    4 个披露期: 1/15-1/30, 4/15-4/30, 7/15-7/30, 10/15-10/30
-
-    字段:
-      ann_date       公告日期
-      end_date       报告期 (20260630 = 中报)
-      type           预增/预减/扭亏/首亏/续亏/续盈/略增/略减
-      p_change_min   变动幅度下限 (%)
-      p_change_max   变动幅度上限 (%)
-      net_profit_min 净利润下限 (万元)
-      net_profit_max 净利润上限 (万元)
-      summary        业绩预告摘要
-      change_reason  业绩变动原因
-
-    Returns:
-        最近 N 条预告 (按 ann_date 倒序)
-    """
-    ts_code = _code_to_ts(code)
-    # ann_date 拉近 1 年 (4 个披露期足够)
-    from datetime import datetime, timedelta
-    end_d = datetime.now().strftime("%Y%m%d")
-    start_d = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
-
-    data, status = _safe_call(
-        "forecast",
-        ts_code=ts_code,
-        start_date=start_d,
-        end_date=end_d,
-        fields="ts_code,ann_date,end_date,type,p_change_min,p_change_max,net_profit_min,net_profit_max,summary,change_reason",
-    )
-    if not data:
-        return None, status
-    # 按 ann_date 倒序 (新→旧)
-    data.sort(key=lambda x: x.get("ann_date", ""), reverse=True)
-    return data[:recent_n], "OK"
-
-
-# ============================================================
-# 状态码 → emoji
-# ============================================================
-
-
-# ============================================================
-# 状态码 → emoji
-# ============================================================
-
-def status_emoji(status: str) -> str:
-    if status == "OK":
-        return "✅"
-    if status == "EMPTY":
-        return "⚪"
-    if status == "TOKEN_MISSING":
-        return "🔴"
-    if status.startswith("EXCEPTION"):
-        return "🟠"
-    if status.startswith("PERM"):
-        return "🔒"
-    return "❓"
-
-
-# ============================================================
-# 批量拉取 (sync_watchlist_fresh.py 调用这个)
-# ============================================================
-
-def fetch_all_tushare(code: str, trade_date: str = "") -> dict[str, Any]:
-    """一键拉所有 tushare 段, 返回 dict 给 sync_watchlist_fresh.py 拼装
-
-    段: stock_basic / daily_basic / weekly / north_flow / margin / top_list
-        / income / fina_indicator / dividend / forecast
-    (2026-07-28 砍 monthly: 5方法×3周期 = 周/日/60分, 无月线)
-
-    Args:
-        code: 6 位 A 股代码
-        trade_date: 用于 margin/top_list (留空取最近 1 日)
-    """
-    out = {
-        "ts_code": _code_to_ts(code),
-        "stock_basic": None,
-        "daily_basic": None,
-        "weekly": None,
-        "monthly": None,
-        "north_flow": None,
-        "margin": None,
-        "top_list": None,
-        "income": None,
-        "fina_indicator": None,
-        "dividend": None,
-        "forecast": None,
-        "statuses": {},
-    }
-
-    # 1. 基础信息
-    sb, sb_s = get_stock_basic(code)
-    out["stock_basic"] = sb
-    out["statuses"]["stock_basic"] = sb_s
-
-    # 2. daily_basic (替代 push2 f164, PE/PB/市值)
-    db, db_s = get_daily_basic(code, limit=30)
-    out["daily_basic"] = db
-    out["statuses"]["daily_basic"] = db_s
-
-    # 3. 周月 K (2026-07-28 v5.5: 强制走 config.project.yaml:data.weekly_limit, 读不到报错)
-    try:
-        import yaml as _yaml
-        from pathlib import Path as _Path
-        _cfg = _yaml.safe_load(open(_Path('config/project.yaml'), encoding='utf-8'))
-        weekly_limit = _cfg.get('data', {}).get('weekly_limit')
-        if weekly_limit is None:
-            raise FileNotFoundError(
-                "config/project.yaml 缺 data.weekly_limit 字段 (硬编码已废, 全部走 config)"
-            )
-    except FileNotFoundError:
-        raise
-    except Exception as e:
-        raise FileNotFoundError(f"config/project.yaml 读取失败: {e}")
-    wk, wk_s = get_weekly(code, limit=weekly_limit)
-    out["weekly"] = wk
-    out["statuses"]["weekly"] = wk_s
-
-    # 2026-07-28 砍: monthly K 线分析不用 (5方法×3周期 = 周/日/60分, 无月线)
-    out["monthly"] = []
-    out["statuses"]["monthly"] = "SKIP"
-
-    # 4. 北向资金 (不需要 code, 全市场 1 个数)
-    nf, nf_s = get_north_flow(trade_date=trade_date)
-    out["north_flow"] = nf
-    out["statuses"]["north_flow"] = nf_s
-
-    # 5. 融资融券
-    mg, mg_s = get_margin(code, trade_date=trade_date)
-    out["margin"] = mg
-    out["statuses"]["margin"] = mg_s
-
-    # 6. 龙虎榜 (可能空, 正常)
-    tl, tl_s = get_top_list(code, trade_date=trade_date)
-    out["top_list"] = tl
-    out["statuses"]["top_list"] = tl_s
-
-    # 7. 利润表 (Q1 已披露, 留空取最近期)
-    ic, ic_s = get_income(code)
-    out["income"] = ic
-    out["statuses"]["income"] = ic_s
-
-    # 8. 财务指标
-    fi, fi_s = get_fina_indicator(code)
-    out["fina_indicator"] = fi
-    out["statuses"]["fina_indicator"] = fi_s
-
-    # 9. 分红
-    dv, dv_s = get_dividend(code, limit=10)
-    out["dividend"] = dv
-    out["statuses"]["dividend"] = dv_s
-
-    # 10. 业绩预告 (限量接口, 4 条/年, 用户权限未开)
-    fc, fc_s = get_forecast(code, recent_n=4)
-    out["forecast"] = fc
-    out["statuses"]["forecast"] = fc_s
-
-    return out
-
-
-# ============================================================
-# 演示
-# ============================================================
-
-if __name__ == "__main__":
-    from pprint import pprint
-    import sys
-    code = sys.argv[1] if len(sys.argv) > 1 else "300274"
-    print(f"=== tushare fetch_all_tushare({code}) ===")
-    result = fetch_all_tushare(code)
-    print("\n--- 段状态 ---")
-    for k, v in result["statuses"].items():
-        print(f"  {k:20s} {status_emoji(v)} {v}")
-    print("\n--- 关键数据 (前 200 字符) ---")
-    for k in ["stock_basic", "daily_basic", "north_flow", "margin", "fina_indicator"]:
-        v = result[k]
-        if v is None:
-            print(f"  {k}: None")
-        elif isinstance(v, list):
-            print(f"  {k}: {len(v)} 行")
-        else:
-            print(f"  {k}: {str(v)[:200]}")

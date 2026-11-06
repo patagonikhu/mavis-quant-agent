@@ -218,10 +218,6 @@ class RenderData:
     # ===== Tushare 扩展数据 (幂等性: 存入 dump，不在 renderer 实时拉) =====
     ts_weekly: list = field(default_factory=list)       # 周线 K
     ts_monthly: list = field(default_factory=list)      # 月线 K
-    ts_north_flow: list = field(default_factory=list)   # 北向资金
-    ts_margin: list = field(default_factory=list)       # 融资融券
-    ts_top_list: list = field(default_factory=list)     # 龙虎榜
-    ts_dividend: list = field(default_factory=list)     # 分红
     ts_fina_rows: list = field(default_factory=list)    # 财务指标多期
 
     # ============================================================

@@ -117,32 +117,6 @@ async def get_kline_data(symbol: str, period: str = "daily", count: int = 60) ->
 
 
 @tool
-async def get_fund_flow(symbol: str) -> str:
-    """获取个股资金流向
-
-    Args:
-        symbol: 股票代码, 如 "600519"
-    """
-    try:
-        provider = get_data_provider()
-        flow = await provider.get_fund_flow(symbol)
-
-        return json.dumps({
-            "股票": f"{flow.name}({flow.symbol})" if flow.name else flow.symbol,
-            "日期": str(flow.trade_date),
-            "主力净流入": f"{flow.main_net_inflow / 1e4:.2f}万 ({flow.main_net_pct:+.2f}%)",
-            "超大单净流入": f"{flow.super_large_inflow / 1e4:.2f}万",
-            "大单净流入": f"{flow.large_inflow / 1e4:.2f}万",
-            "中单净流入": f"{flow.medium_inflow / 1e4:.2f}万",
-            "小单净流入": f"{flow.small_inflow / 1e4:.2f}万",
-        }, ensure_ascii=False, indent=2)
-
-    except Exception as e:
-        logger.error("获取资金流向失败: %s", e)
-        return f"获取资金流向失败: {e}"
-
-
-@tool
 async def get_market_overview() -> str:
     """获取大盘概览 (上证指数、深证成指、创业板指等主要指数)"""
     try:

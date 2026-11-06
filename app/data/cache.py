@@ -79,7 +79,3 @@ def cache_key_sector_kline(sector_name: str, count: int) -> str:
 
 def cache_key_sector_constituents(sector_name: str) -> str:
     return f"sector_cons:{sector_name}"
-
-
-def cache_key_sector_fund_flow() -> str:
-    return "sector_fund_flow"

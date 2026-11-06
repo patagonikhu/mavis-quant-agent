@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 
 from app.data.models import (
     FinancialData,
-    FundFlow,
     IndexData,
     KlineBar,
     Period,
@@ -35,10 +34,6 @@ class DataProvider(ABC):
     @abstractmethod
     async def get_financial(self, symbol: str) -> FinancialData:
         """获取财务数据"""
-
-    @abstractmethod
-    async def get_fund_flow(self, symbol: str) -> FundFlow:
-        """获取个股资金流向"""
 
     @abstractmethod
     async def get_major_indices(self) -> list[IndexData]:

@@ -276,6 +276,14 @@ Type: rule
 4. **调用方的 import + 那一整段** —— 删 import 不删调用段 → ImportError; 删调用段不删 flag → 死 flag
 5. **汇总文件里的那段** —— 例: `docs/factor-5y/_summary-{scope}.md` 的表头行
 6. **跨文件引用** —— 注释 / docstring / SKILL.md / CLAUDE.md / handbook, 留着就误导后人
+7. **并行的第二套实现** —— `app/` 是独立的 FastAPI + LangGraph 服务层, `tools/` 下线某个维度时
+   它可能还留着**另一份完整实现**。2026-11-06 实测: fflow 10-28 下线时漏了 `app/`,
+   整个 `app/signals/capital.py` (主力资金连续净流入 / 北向异常 / 机构席位 / ETF 申购)
+   一直活到今天; `app/` 在 README / CLAUDE.md / architecture.md 里**一个字都没提**,
+   光扫 `tools/` 会以为"全仓都清了"
+   → 下线前必须 `grep -rn <符号> app/ btf/ tests/`, **不只看 `tools/`**
+   (附: `app/` 还长期缺 pydantic/langchain_core 跑不起来, 且 `tushare_provider.py`
+   有 4 个 `cache_key_*` 根本不存在 —— 它本身就是死代码, 别拿它当"还有人在用"的证据)
 
 **共享模块留不留, 看消费者数量:** `etf_universe.py` 被两个扫描器共用 → 删掉其中一个扫描器时
 **它保留** (另一个还在用), 只把 docstring 里"两个扫描器共用"的描述改掉;

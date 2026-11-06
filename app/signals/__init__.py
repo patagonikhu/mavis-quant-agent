@@ -13,21 +13,12 @@ from typing import Optional
 from app.data.models import (
     HotRankRecord,
     KlineBar,
-    LhbRecord,
     NewsItem,
-    NorthFlowRecord,
     ResearchReportRecord,
     SectorConstituentStock,
-    SectorFundFlow,
     SectorKlineBar,
 )
 from app.signals.base import SignalResult
-from app.signals.capital import (
-    etf_subscription_surge,
-    institutional_concentration,
-    main_capital_consecutive_inflow,
-    north_capital_anomaly,
-)
 from app.signals.leader import identify_leaders, leader_launching, sector_diffusion
 from app.signals.policy import llm_policy_evaluation, policy_keyword_hit
 from app.signals.scorer import SectorSignalReport, calculate_score
@@ -50,16 +41,13 @@ async def evaluate_sector(
     leader_launch_date: Optional[datetime.date] = None,
     evaluate_date: Optional[datetime.date] = None,
     # Phase 2 可选数据
-    fund_flow_history: Optional[list[SectorFundFlow]] = None,
-    north_flow_history: Optional[list[NorthFlowRecord]] = None,
-    lhb_records: Optional[list[LhbRecord]] = None,
     news_list: Optional[list[NewsItem]] = None,
     hot_rank_history: Optional[list[HotRankRecord]] = None,
     research_history: Optional[list[ResearchReportRecord]] = None,
     discussion_counts: Optional[list[int]] = None,
     enable_llm_policy: bool = False,
 ) -> SectorSignalReport:
-    """对单个板块运行全部 5 类信号，返回评分报告
+    """对单个板块运行全部 4 类信号，返回评分报告
 
     Phase 2 数据参数均为可选，未传则跳过对应信号。
     """
@@ -90,31 +78,6 @@ async def evaluate_sector(
     except Exception as e:
         logger.warning("sector_diffusion 异常: %s", e)
         results["sector_diffusion"] = SignalResult(reason=f"计算异常: {e}")
-
-    # ---- 资金流信号 ----
-    if fund_flow_history:
-        try:
-            results["main_capital_inflow"] = main_capital_consecutive_inflow(fund_flow_history)
-        except Exception as e:
-            logger.warning("main_capital_inflow 异常: %s", e)
-            results["main_capital_inflow"] = SignalResult(reason=f"计算异常: {e}")
-
-    if north_flow_history:
-        try:
-            results["north_capital_anomaly"] = north_capital_anomaly(north_flow_history)
-        except Exception as e:
-            logger.warning("north_capital_anomaly 异常: %s", e)
-            results["north_capital_anomaly"] = SignalResult(reason=f"计算异常: {e}")
-
-    if lhb_records is not None:
-        try:
-            sector_symbols = {c.symbol for c in constituents}
-            results["institutional_concentration"] = institutional_concentration(
-                lhb_records, sector_symbols
-            )
-        except Exception as e:
-            logger.warning("institutional_concentration 异常: %s", e)
-            results["institutional_concentration"] = SignalResult(reason=f"计算异常: {e}")
 
     # ---- 政策/事件信号 ----
     if news_list is not None:

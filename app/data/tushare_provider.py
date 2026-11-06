@@ -18,7 +18,6 @@ from app.data.cache import (
     DataCache,
     cache,
     cache_key_financial,
-    cache_key_fund_flow,
     cache_key_index,
     cache_key_kline,
     cache_key_quote,
@@ -26,7 +25,6 @@ from app.data.cache import (
 )
 from app.data.models import (
     FinancialData,
-    FundFlow,
     IndexData,
     KlineBar,
     MAJOR_INDICES,
@@ -217,42 +215,6 @@ class TushareProvider(DataProvider):
 
         except Exception as e:
             logger.error("获取财务数据失败 [%s]: %s", symbol, e)
-            raise
-
-    async def get_fund_flow(self, symbol: str) -> FundFlow:
-        key = cache_key_fund_flow(symbol)
-        cached = await self._cache.get(key)
-        if cached is not None:
-            return cached
-
-        ts_code = self._to_ts_code(symbol)
-
-        try:
-            df = await self._call(
-                "moneyflow",
-                ts_code=ts_code,
-                fields="ts_code,trade_date,buy_sm_vol,buy_sm_amount,sell_sm_vol,sell_sm_amount,buy_md_vol,buy_md_amount,sell_md_vol,sell_md_amount,buy_lg_vol,buy_lg_amount,sell_lg_vol,sell_lg_amount,buy_elg_vol,buy_elg_amount,sell_elg_vol,sell_elg_amount",
-            )
-
-            if df is None or df.empty:
-                raise ValueError(f"未找到资金流向: {symbol}")
-
-            latest = df.iloc[0]
-            flow = FundFlow(
-                symbol=symbol,
-                trade_date=pd.to_datetime(latest["trade_date"]).date(),
-                super_large_inflow=float(latest.get("buy_elg_amount", 0) or 0) - float(latest.get("sell_elg_amount", 0) or 0),
-                large_inflow=float(latest.get("buy_lg_amount", 0) or 0) - float(latest.get("sell_lg_amount", 0) or 0),
-                medium_inflow=float(latest.get("buy_md_amount", 0) or 0) - float(latest.get("sell_md_amount", 0) or 0),
-                small_inflow=float(latest.get("buy_sm_amount", 0) or 0) - float(latest.get("sell_sm_amount", 0) or 0),
-            )
-            flow.main_net_inflow = flow.super_large_inflow + flow.large_inflow
-
-            await self._cache.set(key, flow, DataCache.TTL_FUND_FLOW)
-            return flow
-
-        except Exception as e:
-            logger.error("获取资金流向失败 [%s]: %s", symbol, e)
             raise
 
     async def get_index_quote(self, symbol: str) -> IndexData:

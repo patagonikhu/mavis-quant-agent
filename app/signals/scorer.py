@@ -1,6 +1,6 @@
 """信号融合与评分
 
-加权合并 5 大类信号（量价 + 龙头 + 资金 + 政策 + 情绪），
+加权合并 4 大类信号（量价 + 龙头 + 政策 + 情绪），
 输出 SectorSignalReport。
 """
 
@@ -24,10 +24,6 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     # 龙头（25分）
     "leader_launching": 15.0,
     "sector_diffusion": 10.0,
-    # 资金（20分）
-    "main_capital_inflow": 10.0,
-    "north_capital_anomaly": 5.0,
-    "institutional_concentration": 5.0,
     # 政策（15分）
     "policy_keyword_hit": 5.0,
     "llm_policy_score": 10.0,
@@ -37,7 +33,7 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "discussion_anomaly": 3.0,
 }
 
-_MAX_SCORE = sum(SIGNAL_WEIGHTS.values())  # 123分（满分）
+_MAX_SCORE = sum(SIGNAL_WEIGHTS.values())  # 88分（满分）
 
 
 def _try_load_optimized_weights() -> None:

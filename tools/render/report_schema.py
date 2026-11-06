@@ -306,8 +306,7 @@ REPORT_SECTIONS = [
         "render": "render_ts_pe_pb",
         "required": True,
         "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        # 2026-10-30: 标记废弃 — render 函数从未实现 (数据已并入现有 section / 本地无 parquet)
         #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
         "_deprecated": True,
     },
@@ -318,44 +317,7 @@ REPORT_SECTIONS = [
         "render": "render_ts_weekly_monthly",
         "required": True,
         "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
-        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
-        "_deprecated": True,
-    },
-    {
-        "id": "ts_north_flow",
-        "title": "🌐 北向资金 (沪深股通)",
-        "category": "📋",
-        "render": "render_ts_north_flow",
-        "required": True,
-        "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
-        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
-        "_deprecated": True,
-    },
-    {
-        "id": "ts_margin",
-        "title": "💳 融资融券",
-        "category": "📋",
-        "render": "render_ts_margin",
-        "required": True,
-        "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
-        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
-        "_deprecated": True,
-    },
-    {
-        "id": "ts_top_list",
-        "title": "🐉 龙虎榜 (近 1 日, Tushare)",
-        "category": "📋",
-        "render": "render_ts_top_list",
-        "required": False,
-        "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        # 2026-10-30: 标记废弃 — render 函数从未实现 (数据已并入现有 section / 本地无 parquet)
         #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
         "_deprecated": True,
     },
@@ -366,32 +328,7 @@ REPORT_SECTIONS = [
         "render": "render_ts_finance",
         "required": True,
         "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
-        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
-        "_deprecated": True,
-    },
-    {
-        "id": "ts_dividend",
-        "title": "💰 分红送转 (近 10 年)",
-        "category": "📋",
-        "render": "render_ts_dividend",
-        "required": True,
-        "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
-        #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
-        "_deprecated": True,
-    },
-    {
-        "id": "ts_forecast",
-        "title": "📊 业绩预告 (Tushare forecast, 限量接口) ⭐",
-        "category": "📋",
-        "render": "render_ts_forecast",
-        "required": True,
-        "refresh": "REGEN",
-        # 2026-10-30: 标记废弃 — 从未实现 (render 函数不存在, 数据源本地也没有:
-        #   north_flow/margin/top_list/dividend 无 DataStore 方法, data/history 下无 parquet)
+        # 2026-10-30: 标记废弃 — render 函数从未实现 (数据已并入现有 section / 本地无 parquet)
         #   /t-analyze 是 0 网络 skill, 不能拉这些数据 → 本 section 永远出不来
         "_deprecated": True,
     },

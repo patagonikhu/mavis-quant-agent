@@ -8,7 +8,6 @@ import logging
 
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.tools.market_data import (
-    get_fund_flow,
     get_kline_data,
     get_market_overview,
     get_realtime_quote,
@@ -28,7 +27,6 @@ ALL_TOOLS = [
     search_stock,
     get_realtime_quote,
     get_kline_data,
-    get_fund_flow,
     get_market_overview,
     calculate_technical_indicators,
     analyze_fundamental,

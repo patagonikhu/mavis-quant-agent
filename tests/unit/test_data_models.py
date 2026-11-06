@@ -9,7 +9,6 @@ import pytest
 from app.data.cache import DataCache, cache_key_quote, cache_key_kline
 from app.data.models import (
     FinancialData,
-    FundFlow,
     IndexData,
     KlineBar,
     Period,
@@ -73,13 +72,6 @@ class TestFinancialData:
         assert data.pe_ttm == 0.0
         assert data.roe == 0.0
         assert data.revenue == 0.0
-
-
-class TestFundFlow:
-    def test_defaults(self):
-        flow = FundFlow(symbol="600519")
-        assert flow.main_net_inflow == 0.0
-        assert flow.trade_date == datetime.date.today()
 
 
 class TestIndexData:

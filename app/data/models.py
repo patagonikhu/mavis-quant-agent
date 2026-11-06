@@ -77,18 +77,6 @@ class FinancialData(BaseModel):
     total_assets: float = 0.0
 
 
-class FundFlow(BaseModel):
-    symbol: str
-    name: str = ""
-    trade_date: datetime.date = Field(default_factory=datetime.date.today)
-    main_net_inflow: float = 0.0
-    main_net_pct: float = 0.0
-    super_large_inflow: float = 0.0
-    large_inflow: float = 0.0
-    medium_inflow: float = 0.0
-    small_inflow: float = 0.0
-
-
 class IndexData(BaseModel):
     symbol: str
     name: str
@@ -131,39 +119,6 @@ class SectorConstituentStock(BaseModel):
     is_limit_up: bool = False
     # 流通市值（亿元）
     circ_mv: float = 0.0
-
-
-class SectorFundFlow(BaseModel):
-    """板块资金流向"""
-    name: str
-    trade_date: datetime.date = Field(default_factory=datetime.date.today)
-    # 主力净流入（万元）
-    main_net_inflow: float = 0.0
-    main_net_pct: float = 0.0
-    # 超大单净流入（万元）
-    super_large_inflow: float = 0.0
-    # 大单净流入（万元）
-    large_inflow: float = 0.0
-
-
-# ---- Phase 2 扩展模型 ----
-
-class NorthFlowRecord(BaseModel):
-    """北向资金（陆股通）按板块净流入"""
-    sector_name: str
-    trade_date: datetime.date = Field(default_factory=datetime.date.today)
-    net_inflow: float = 0.0   # 万元
-
-
-class LhbRecord(BaseModel):
-    """龙虎榜记录"""
-    trade_date: datetime.date
-    symbol: str
-    name: str = ""
-    # 买一~买五席位中机构数量
-    institutional_buy_count: int = 0
-    # 买入总额（万元）
-    buy_amount: float = 0.0
 
 
 class HotRankRecord(BaseModel):

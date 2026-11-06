@@ -23,9 +23,6 @@ class FeatureVector:
     volume_ratio: float = 0.0       # 今日量比（相对20日均量）
     price_change: float = 0.0       # 今日涨跌幅
     limit_up_z_score: float = 0.0   # 涨停家数 Z-score
-    # 资金
-    main_capital_3d: float = 0.0    # 近3日主力净流入之和（万元）
-    north_capital_z: float = 0.0    # 北向资金 Z-score
     # 龙头
     leader_consec_limit_up: float = 0.0  # 龙头连续涨停天数
     # 政策
@@ -46,8 +43,6 @@ class FeatureVector:
             self.volume_ratio,
             self.price_change,
             self.limit_up_z_score,
-            self.main_capital_3d,
-            self.north_capital_z,
             self.leader_consec_limit_up,
             self.policy_keyword_score,
             self.llm_policy_score,
@@ -63,7 +58,7 @@ class FeatureVector:
     def feature_names(cls) -> list[str]:
         return [
             "volume_ratio", "price_change", "limit_up_z_score",
-            "main_capital_3d", "north_capital_z", "leader_consec_limit_up",
+            "leader_consec_limit_up",
             "policy_keyword_score", "llm_policy_score", "hot_rank_change",
             "rule_total_score",
             "ma20_breakout", "ma60_breakout", "high_60d_breakout", "vol_price_uptrend",
@@ -95,15 +90,6 @@ def extract_features(report: SectorSignalReport) -> FeatureVector:
 
     vpu = d.get("volume_price_uptrend")
     fv.vol_price_uptrend = 1.0 if (vpu and vpu.triggered) else 0.0
-
-    # ---- 资金特征 ----
-    nca = d.get("north_capital_anomaly")
-    if nca and nca.detail:
-        fv.north_capital_z = float(nca.detail.get("z_score", 0))
-
-    mci = d.get("main_capital_inflow")
-    if mci and mci.detail:
-        fv.main_capital_3d = float(mci.detail.get("total_inflow_wan", 0))
 
     # ---- 龙头特征 ----
     ll = d.get("leader_launching")
