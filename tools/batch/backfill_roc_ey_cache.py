@@ -28,7 +28,7 @@ _PROJECT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_PROJECT))
 os.chdir(_PROJECT)
 
-from tools.storage.caches.analysis import _DB, _init
+from tools.storage.caches.analysis import _init
 from tools.storage.store import (
     DataStore, _to_ts_code,
 )

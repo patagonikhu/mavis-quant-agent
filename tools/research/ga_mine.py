@@ -8,7 +8,6 @@ ga_mine.py - GA 挖掘 demo (Day 9, 2026-07-27)
 参数集中在 config/project.yaml (ga 段), 改 1 处全项目生效
 """
 import sys
-import json
 import time
 import warnings
 from pathlib import Path

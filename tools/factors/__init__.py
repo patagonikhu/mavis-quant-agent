@@ -16,7 +16,7 @@ tools/factors/__init__.py - 因子库入口 (2026-09-09 简化)
     整档从 analysis 层删除后无任何引用, 因子库整目录移除
   → 至此 tools/factors/ 顶层只剩 utils.py + kline_arrays.py
   - 保留框架: utils.py (K 线处理) + kline_arrays.py (滑动窗口)
-  - 保留专用: chan/ wyckoff/ (各自保留 class Factor 风格)
+  - 保留专用: wyckoff/ (威科夫专用复杂框架, 纯函数形态, 无 class Factor 包装)
 
 Mavis 守门员 (t-guardrail::factor-guard) 规则:
   - ❌ 禁止 class XXX(Factor) 包装 (在 valuation/ 目录)

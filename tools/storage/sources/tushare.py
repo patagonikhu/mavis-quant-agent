@@ -281,30 +281,6 @@ def get_stock_basic(code: str) -> tuple[dict | None, str]:
 # 2. 日 K 线 daily (24h 可用, 不 WAF)
 # ============================================================
 
-def get_daily(code: str, start_date: str = "", end_date: str = "", limit: int = 0) -> tuple[list[dict] | None, str]:
-    """日 K 线
-
-    Args:
-        code: 6 位代码
-        start_date/end_date: 20260715 格式
-        limit: 如果给 (且不给 start_date), 取最近 N 天
-    """
-    ts_code = _code_to_ts(code)
-    kwargs = {"ts_code": ts_code, "fields": "ts_code,trade_date,open,high,low,close,pre_close,vol,amount,pct_chg"}
-    if start_date:
-        kwargs["start_date"] = start_date
-    if end_date:
-        kwargs["end_date"] = end_date
-    data, status = _safe_call("daily", **kwargs)
-    if not data:
-        return None, status
-    # tushare 默认倒序 (新→旧), 我们升序 (旧→新), 跟 web.ifzq 一致
-    data.sort(key=lambda x: x["trade_date"])
-    if limit and not start_date:
-        data = data[-limit:]
-    return data, "OK"
-
-
 def get_daily_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
     """按交易日拉全市场日K线，一次返回当天所有股票。
 
@@ -317,14 +293,6 @@ def get_daily_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
         fields="ts_code,trade_date,open,high,low,close,pre_close,vol,amount,pct_chg",
     )
     return data, status
-
-
-def get_daily_basic_by_date(trade_date: str) -> tuple[list[dict] | None, str]:
-    """⚠️ v6.2.4 废弃: 用 get_stk_factor_by_date 替代 (字段更全, 一次性替代 daily_basic)
-
-    保留函数签名只为兼容, 内部走 stk_factor_pro
-    """
-    return get_stk_factor_by_date(trade_date)
 
 
 def get_stk_factor_by_date(trade_date: str) -> tuple[list[dict] | None, str]:

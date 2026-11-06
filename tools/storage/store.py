@@ -1807,8 +1807,7 @@ class DataStore:
                 df["total_mv"].astype(float),
             ))
         except Exception:
-            import pandas as pd
-            return pd.DataFrame() if False else {}
+            return {}
 
     @classmethod
     def get_stk_factor_latest(cls) -> "pd.DataFrame":

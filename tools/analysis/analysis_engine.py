@@ -55,37 +55,6 @@ class RawContext:
     kline_arrs:         dict = field(default_factory=dict)   # build_kline_features 预算结果，WyckoffStrategy 算完后写
     kline_arrs_weekly:  dict = field(default_factory=dict)   # 周线 arrs，WyckoffStrategy 写，factor_history 读 ma_dev_weekly
 
-    def slice(self, as_of_date: str) -> "RawContext":
-        """按日期截断 K 线，返回新 RawContext，原对象不变"""
-        # 统一转成 YYYYMMDD 格式比较，避免 '2026-07-30' vs '20260601' 格式不一致
-        as_of_clean = as_of_date.replace("-", "")[:8]
-
-        def date_clean(b, key="trade_date"):
-            return b.get(key, "").replace("-", "")[:8]
-
-        k   = [b for b in self.kline  if date_clean(b) <= as_of_clean]
-        w   = [b for b in self.weekly if date_clean(b) <= as_of_clean]
-
-        # 切片正确性验证
-        assert not k or date_clean(k[-1]) <= as_of_clean, \
-            f"日线切片错误: 最后一根 {date_clean(k[-1])} > {as_of_clean}"
-        assert not w or date_clean(w[-1]) <= as_of_clean, \
-            f"周线切片错误: 最后一根 {date_clean(w[-1])} > {as_of_clean}"
-
-        price = k[-1]["close"] if k else self.current_price
-        sliced = RawContext(
-            kline=k, weekly=w,
-            current_price=price,
-            market_cap_yi=self.market_cap_yi,
-            code=self.code,
-            name=self.name,
-        )
-        # 透传预计算缓存（factor_history 优化：全量信号预算一次，切片节点直接查表）
-        for _attr in ('_precomputed_signals',):
-            if hasattr(self, _attr):
-                setattr(sliced, _attr, getattr(self, _attr))
-        return sliced
-
 
 @dataclass
 class AnalysisResult:

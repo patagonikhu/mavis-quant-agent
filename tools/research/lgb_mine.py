@@ -55,7 +55,6 @@ def _load_lgb_config() -> dict:
 
 _LGB_CFG = _load_lgb_config()
 
-import json
 import time
 from datetime import datetime
 from tools.storage.store import DataStore

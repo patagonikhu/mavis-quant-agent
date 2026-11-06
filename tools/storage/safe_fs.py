@@ -109,15 +109,6 @@ def safe_delete(path: Path, reason: str = "") -> bool:
         return False
 
 
-def safe_delete_many(paths, reason: str = "") -> int:
-    """批量安全删除, 返回成功移到回收站的个数"""
-    n = 0
-    for p in paths:
-        if safe_delete(Path(p), reason=reason):
-            n += 1
-    return n
-
-
 def atomic_write_json(path: Path, data, backup: bool = True, indent: int = 2) -> bool:
     """原子写 JSON (写前备份 + tmp + replace)。
 

@@ -11,29 +11,9 @@ v5.4 重写 (2026-07-28): 从 tools.wyckoff 拆过来, 跟 WyckoffTradingAgent 1
               stage, stage_name, action, confidence, stage_detail, phase_progress, scores,
               accum_detail, distribution_detail, markup_detail, signals }
 """
-import statistics
-from typing import List, Optional
-import pandas as pd
-# 2026-09-09 改: tools.factors.base 已删, 临时定义个本地占位 Factor 类
-# WyckoffStageFactor 继承这个 (Wyckoff 专用, 不在 factor-guard 范围, 保留 class 形式)
-class Factor:
-    """占位 Factor 基类 (2026-09-09 占位, 仅 Wyckoff 用)
-
-    真实 Factor 基类在 tools.factors/base.py, 2026-09-09 删除.
-    Wyckoff 是专用复杂框架, 保留 class 形式 (不受 factor-guard 约束).
-    """
-    name: str = ""
-    category: str = ""
-    dependencies: list = []
-    description: str = ""
-    version: str = "1.0"
-    output_type: str = "series"
-    def compute(self, df, **kwargs):
-        raise NotImplementedError
 from tools.factors.wyckoff.helpers import (
-    _find_range, _ma50_reached_ma200, FB1_TREND30_MIN, MARKUP_ANGLE_MIN, stage_strength,
+    _ma50_reached_ma200, FB1_TREND30_MIN, MARKUP_ANGLE_MIN, stage_strength,
 )
-from tools.factors.wyckoff.detectors import scan_sub_events
 
 
 # ============================================================================

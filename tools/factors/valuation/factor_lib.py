@@ -2,7 +2,7 @@
 tools/factors/valuation/factor_lib.py — 估值算子全集 (纯函数, 2026-09-09 统一)
 
 历史: 之前 3 个文件重复实现:
-  - tools/analysis/valuation.py       (calc_roc_at_date / calc_ey_at_date / calc_magic_one_day / batch_magic_scores)
+  - tools/analysis/valuation.py       (calc_roc_at_date / calc_ey_at_date / calc_magic_one_day)
   - tools/factors/valuation/multi.py  (PegFactor / DcfFactor / SectorOverheatFactor)
                                       [2026-11-02 PEG/DCF 已删; 2026-11-03 FiveCategoriesFactor 已删]
   - (2026-10-27: tools/analysis/report_section_evaluators.py 已删, 是死代码副本)
@@ -18,13 +18,11 @@ Mavis 守门员 (t-guardrail) 规则: 所有 factor 统一放 1 个文件, 纯�
   - compute_roc(financials, as_of_date, min_capital_yi)  # ROC 资本回报率
   - compute_ey(financials, as_of_date, market_cap_wan)   # EY 盈利收益率
   - compute_magic_one_day(...)                    # ROC+EY 合并
-  - batch_magic_scores(codes, with_market_cap)   # 全市场批量排名入口
   - find_full_year_financials(financials, as_of_date)  # 找全年财报
 
 # 内部工具
   - _ttm_ebit(financials)                        # TTM EBIT 拼装
   - EXCLUDED_INDUSTRIES (8+5 类)                 # 行业黑名单
-  - _load_bulk_caches()                           # 模块级缓存 (N+1 优化)
 """
 from __future__ import annotations
 
@@ -290,133 +288,3 @@ def compute_magic_one_day(financials: list[dict], as_of_date: str, market_cap_wa
         "netdebt_yi":    ey_data.get("netdebt_yi"),
         "market_cap_yi": ey_data.get("market_cap_yi"),
     }
-
-
-# ============================================================
-# 板块过热预警 (1周/1月/3月涨幅)
-# ============================================================
-# ============================================================
-# 模块级缓存 (2026-09-09 性能优化, N+1 修复)
-# ============================================================
-# 全市场 5500+ 只数据一次性加载, 后续批量算直接 dict 查表
-# 避免 N+1 查询问题 (每只 3 次 DataStore 调用)
-_FIN_DICT: dict = {}
-_SB_DICT: dict = {}
-_DB_DICT: dict = {}
-_CACHE_LOADED: bool = False
-
-
-def _load_bulk_caches(force: bool = False) -> None:
-    """模块级缓存: 一次性 bulk 加载 3 张表, 后续 batch 调用直接查表
-
-    实测: 全市场 5555 只
-      - Q2 单文件加载: 0.05s
-      - groupby 建 dict: 0.5s
-      - 后续 1900 只查表: 0.01s
-      相比原 N+1 查询: 258s → 0.5s (≈500x 加速)
-    """
-    global _FIN_DICT, _SB_DICT, _DB_DICT, _CACHE_LOADED
-    if _CACHE_LOADED and not force:
-        return
-
-    from tools.storage.store import DataStore, _conn
-    import pandas as pd
-    from pathlib import Path as _Path
-
-    # === financials: UNION ALL BY NAME 全 5 季 (Q2 含 1231 全年数据, _ttm_ebit 需要) ===
-    needed_cols = ['ts_code', 'code', 'end_date', 'industry', 'fetch_status',
-                   'ebit', 'fixed_assets', 'networking_capital', 'netdebt', 'interestdebt',
-                   'or_yoy', 'netprofit_yoy']  # 2026-09-10 加: 给 _quality_gate 用
-    fin_dir = _Path(__file__).resolve().parent.parent.parent.parent / "data/history/financials"
-    if fin_dir.exists():
-        fin_files = sorted(fin_dir.glob("*.parquet"))
-        if fin_files:
-            union_sql = " UNION ALL BY NAME ".join(
-                f"SELECT * FROM read_parquet('{f}')" for f in fin_files
-            )
-            try:
-                all_fin_full = _conn().execute(union_sql).df()
-                all_fin = all_fin_full[[c for c in needed_cols if c in all_fin_full.columns]]
-            except Exception:
-                all_fin = pd.DataFrame()
-            if not all_fin.empty:
-                all_fin = all_fin[all_fin["fetch_status"] == "ok"]
-                all_fin = all_fin.sort_values(["code", "end_date"], ascending=[True, False])
-                for code_short, g in all_fin.groupby("code", sort=False):
-                    _FIN_DICT[code_short] = g.head(4).iloc[::-1].to_dict("records")
-                all_fin2 = all_fin.sort_values(["ts_code", "end_date"], ascending=[True, False])
-                for ts_code, g in all_fin2.groupby("ts_code", sort=False):
-                    _FIN_DICT[ts_code] = g.head(4).iloc[::-1].to_dict("records")
-
-    # === stock_basic ===
-    sb_df = DataStore.load_stock_basic()
-    if sb_df is not None and not sb_df.empty:
-        for _, r in sb_df.iterrows():
-            _SB_DICT[r["code"]] = r.get("name", r["code"])
-            _SB_DICT[r["ts_code"]] = r.get("name", r["ts_code"])
-
-    # === daily_basic ===
-    all_db = DataStore.load_all_daily_basic()
-    if all_db is not None and not all_db.empty:
-        latest_db = all_db.sort_values("trade_date").groupby("ts_code").tail(1)
-        for _, r in latest_db.iterrows():
-            ts_code = r["ts_code"]
-            _DB_DICT[ts_code] = r.get("total_mv")
-            if isinstance(ts_code, str) and len(ts_code) >= 6:
-                _DB_DICT[ts_code[:6]] = r.get("total_mv")
-
-    _CACHE_LOADED = True
-
-
-def batch_magic_scores(codes: list[str], with_market_cap: bool = True,
-                       min_capital_yi: float = 5) -> list[dict]:
-    """批量算 Magic Formula 评分 (排名用)
-
-    2026-09-09 性能优化 (修复 N+1 查询):
-      改前: 每只票循环 3 次 DataStore 单只查询
-            5555 只 = 16665 次 SQL/duckdb 调用, 实测 ~5-7 分钟
-      改后: 1 次模块级 bulk 加载, 缓存后查表 < 0.01s
-            5555 只总耗时 ~0.5s (首次 0.5s + 计算 0.01s)
-    """
-    from tools.storage.store import DataStore
-    import pandas as pd
-
-    # === 1. 模块级缓存 (首次加载, 后续 0 IO) ===
-    _load_bulk_caches()
-    fin_dict = _FIN_DICT
-    sb_dict = _SB_DICT
-    all_db_dict = _DB_DICT if with_market_cap else {}
-
-    results = []
-    for code in codes:
-        # code 是 6 位短码, 财报用 ts_code (6位.SH/.SZ/.CSI 等)
-        fins = fin_dict.get(code, [])
-
-        # 名称
-        name = sb_dict.get(code, code)
-
-        # 市值
-        mc = all_db_dict.get(code) if with_market_cap else None
-
-        if not fins:
-            results.append({
-                "code": code, "name": name, "market_cap": mc,
-                "roc": None, "ey": None, "industry": "",
-                "skip_reason": "no_data", "ev_yi": None,
-                "seasonal_warning": False, "period_label": "no_data",
-                "ebit_yi": None, "capital_yi": None,
-                "netdebt_yi": 0, "market_cap_yi": mc,
-            })
-            continue
-
-        latest_date = fins[-1].get("end_date", "20251231").replace("-", "")[:8]
-        # 2026-09-09 设计: 全市场排名用"最新可用全年 TTM EBIT" (找 12-31 全年报) → 跨股票可比
-        # 注: 这与 /t-analyze 4 季大表的"每季单期"语义不同, 是有意区分:
-        #   - /t-analyze 4 季大表: 每行是该季快照 (周期分析)
-        #   - 全市场排名: 跨股票统一用最新全年 TTM (排名可比)
-        score = compute_magic_one_day(fins, latest_date, mc, min_capital_yi=min_capital_yi)
-        score["code"] = code
-        score["name"] = name
-        score["market_cap"] = mc
-        results.append(score)
-    return results

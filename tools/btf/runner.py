@@ -27,7 +27,7 @@ from typing import Optional
 import pandas as pd
 
 from tools.btf.framework import (
-    AnalysisCacheData, Strategy, Portfolio, Evaluator, NavPoint, Trade,
+    AnalysisCacheData, Strategy, Portfolio, Evaluator,
 )
 
 

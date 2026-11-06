@@ -8,10 +8,9 @@ analysis_result_signals.py - 历史因子计算 + 信号 diff
 render 和回测都调 compute_factor_history，保证一致性。
 
 2026-10-30 删: score_top_signals / score_bottom_signals / backtest_signal / analyze_fp
-  (旧的加权信号打分, 决策已走 factor_matrix 的 4 类等权投票)
+  (旧的加权信号打分, 方向信号现由威科夫阶段转变 + sub-event + MA 偏离提供)
 """
 from __future__ import annotations
-from typing import Callable
 
 
 # ============================================================

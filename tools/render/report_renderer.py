@@ -234,12 +234,6 @@ def _section_xgboost(data: RenderData) -> str:
 """
 
 
-def _fmt_date(d: str) -> str:
-    """20260428 → 2026-04-28，带时间的取日期部分"""
-    d = str(d).split(" ")[0].replace("-", "")
-    return f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) >= 8 else d
-
-
 def _wy_sub_indicators_md(wy_signals: list, level: str) -> str:
     """
     威科夫 5 子指标 → markdown 表格行

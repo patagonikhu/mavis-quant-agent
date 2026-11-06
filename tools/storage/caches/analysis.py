@@ -151,7 +151,7 @@ def _kline_hash(kline: list[dict]) -> str:
 # ── result → row ──────────────────────────────────────────
 
 # 2026-09-22 删: _ma_dev, _boll_bpct, _boll_bwidth (随 wy/chan/boll 列一并删除)
-#   get_boll_bpct / get_boll_bpct_all 也需同步删 (下游已替换为实时算)
+#   get_boll_bpct / get_boll_bpct_all 同步删 (下游已替换为实时算)
 
 
 def _ma20_slope(kline: list[dict]) -> float | None:
@@ -343,23 +343,6 @@ def get_valuation_coverage() -> dict:
         rows = _query(f"SELECT COUNT(*) AS n FROM analysis_cache WHERE {col} IS NOT NULL")
         out[col] = rows[0]["n"] if rows else 0
     return out
-
-
-def get_codes_since(min_date: str) -> list[str]:
-    """返 min_date 之后有 cache 的 code"""
-    rows = _query(
-        "SELECT DISTINCT code FROM analysis_cache WHERE date_str >= ?",
-        (min_date,),
-    )
-    return [r["code"] for r in rows]
-def get_boll_bpct(code: str, dates: list[str]) -> dict[str, float]:
-    """compat stub — boll_bpct 列已删 (2026-09-22), 返空 dict, 下游 try/except 会回退滑动算"""
-    return {}
-
-
-def get_boll_bpct_all() -> list[tuple[str, str, float]]:
-    """compat stub — boll_bpct 列已删 (2026-09-22), 返空 list"""
-    return []
 
 
 def check_stale_batch(code: str, dates: list[str],

@@ -39,7 +39,7 @@ if not args.signals:
 # ── 数据加载 ────────────────────────────────────────────────
 t0 = time.time()
 from tools.storage.store import DataStore
-from tools.storage.caches.analysis import get_cached, write_batch, get_stats
+from tools.storage.caches.analysis import get_cached, get_stats
 
 ds = DataStore()
 

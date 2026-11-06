@@ -2,7 +2,6 @@
 wyckoff/helpers.py - 威科夫核心 helper (跟 WyckoffTradingAgent 1:1 命名)
 
 抽离 wyckoff.py 里的 13 个 helper 函数, 命名严格对齐 WyckoffTradingAgent/core/wyckoff_engine.py:
-  - _find_range / _candle_type (内部工具, 不暴露 WyckoffTradingAgent)
   - _op_from_prev_close / _is_frozen_board_day / _swing_values
   - _swing_high_points / _creek_line
   - _bias_200_exceeds_limit
@@ -14,30 +13,11 @@ wyckoff/helpers.py - 威科夫核心 helper (跟 WyckoffTradingAgent 1:1 命名)
 
 所有函数纯计算, 无 side effect. 9 detector 都在 detectors/ 目录, 通过这些 helper 拼装.
 """
-from typing import List, Tuple, Optional, NamedTuple
-import math
+from typing import Optional
 
 
 # ============================================================
-# Section 1: 内部工具 (wyckoff.py 自有, 不是 WyckoffTradingAgent 1:1)
-# ============================================================
-
-def _find_range(closes, highs, lows, vols, lookback=30):
-    """找最近 lookback 根 K 线的 TR 区间 (内部工具, Stage 用)
-
-    Returns: (range_low, range_high) - 取 lookback 内 low min, high max
-    """
-    if not closes or len(closes) < lookback:
-        return None, None
-    recent_lows = lows[-lookback:] if lows else []
-    recent_highs = highs[-lookback:] if highs else []
-    if not recent_lows or not recent_highs:
-        return None, None
-    return min(recent_lows), max(recent_highs)
-
-
-# ============================================================
-# Section 2: K 线 / 形态基础 helper (跟 WyckoffTradingAgent 1:1)
+# Section 1: K 线 / 形态基础 helper (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
 def _is_frozen_board_day(op, hi, low, cl, *, market="cn") -> bool:
@@ -116,7 +96,7 @@ def _creek_line(swing_high_points_list, breakout_pct: float = 0.5):
 
 
 # ============================================================
-# Section 3: bias / trading range / support (跟 WyckoffTradingAgent 1:1)
+# Section 2: bias / trading range / support (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
 # MA50 相对 MA200 的容差比例。
@@ -470,7 +450,7 @@ def _spring_support_level(zone_l, zone_c,
 
 
 # ============================================================
-# Section 4: EVR 三件套 + abstract series (跟 WyckoffTradingAgent 1:1)
+# Section 3: EVR 三件套 + abstract series (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
 def _evr_turnover_ok(turnovers, idx: int, min_turnover: float) -> bool:
@@ -510,7 +490,7 @@ def _evr_confirmation_ok(closes, lows, idx: int, confirm_days: int, allow_break_
 
 
 # ============================================================
-# Section 5: SOS 三件套 (跟 WyckoffTradingAgent 1:1)
+# Section 4: SOS 三件套 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
 def _sos_volume_ratio(vols, vol_quantile_window: int = 60, vol_ratio: float = 3.0, vol_quantile: float = 0.95) -> Optional[float]:
@@ -558,7 +538,7 @@ def _sos_breakout_or_ma_cross(closes, highs, breakout_window: int = 60, breakout
 
 
 # ============================================================
-# Section 6: Compression 四件套 (跟 WyckoffTradingAgent 1:1)
+# Section 5: Compression 四件套 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
 def _compression_direction_ok(closes, ma_window: int = 20, lookback: int = 5,
@@ -637,7 +617,7 @@ def _compression_atr_ratio(closes, highs, lows, vols,
 
 
 # ============================================================
-# Section 7: TrendPullback 两件套 (跟 WyckoffTradingAgent 1:1)
+# Section 6: TrendPullback 两件套 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
 def _trend_pullback_peak_idx(closes, lookback: int = 10, ma_window: int = 20,
@@ -700,7 +680,7 @@ def _trend_pullback_vol_threshold(closes, market_cap_yi: float = 0.0,
 
 
 # ============================================================
-# Section 8: LPS creek 确认 (跟 WyckoffTradingAgent 1:1)
+# Section 7: LPS creek 确认 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
 def _lps_creek_confirmed(c, h, l,
