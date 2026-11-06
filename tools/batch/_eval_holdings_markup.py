@@ -44,7 +44,6 @@ def ret_pct(closes, back):
 def main():
     cfg = FunnelConfig()
     kl = _load_all_klines([c for c, _ in HOLDINGS], limit_per_code=2000)
-    basic = load_stock_basic()
 
     print("=" * 122)
     print("持仓 11 只 — Markup 判定 vs 实际表现 (数据日期 20261102)")
@@ -68,7 +67,7 @@ def main():
         dates_ = df['date'].astype(str).str.replace('-', '').str[:8].tolist()
         n = len(closes)
         arrs = build_kline_features(closes, highs, lows, vols, window=min(250, n))
-        subs = scan_sub_events(closes, highs, lows, vols, None, o=opens, pct_chg=pct_chgs,
+        subs = scan_sub_events(closes, highs, lows, vols, o=opens, pct_chg=pct_chgs,
                                period_label="daily", code=code, as_of_idx=None,
                                dates=dates_, precomputed_arrs=arrs)
 

@@ -114,7 +114,6 @@ def _load_financials_window(codes: list[str]) -> dict[str, list[dict]]:
 # ============================================================
 
 def _calc_2cols_for_code(
-    code: str,
     dates: list[str],
     db_window: dict[str, float],     # {date: {total_mv, pe_ttm, close}} (单只票, 1 个 code)
     fin_data: list[dict],          # 跨多季 financials
@@ -136,13 +135,13 @@ def _calc_2cols_for_code(
         # 1) ROC (只要 financials, 不需要 daily_basic)
         roc = None
         if fin:
-            magic = compute_roc([fin], d)
+            magic = compute_roc([fin])
             roc = magic.get("roc")
 
         # 2) EY (要 daily_basic.market_cap)
         ey = None
         if fin and mc_wan:
-            magic = compute_ey([fin], d, mc_wan)
+            magic = compute_ey([fin], mc_wan)
             ey = magic.get("ey")
 
         # 2026-11-02 删: 3) PEG 计算 + 4) DCF L/E3 计算 (PEG 是假指标, 整档已删)
@@ -225,14 +224,13 @@ def main():
     t_start = time.time()
     done = 0
     write_batch: list[tuple] = []
-    WRITE_EVERY = 5000
 
     def process_one(item):
         code, d = item
         # 拿单只票单天的 daily_basic (db_window 已经是 {code: {date: {total_mv,...}}})
         db_d = (db_window.get(code) or {}).get(d) or {}
         fin = fin_window.get(code, [])
-        return (code, d, _calc_2cols_for_code(code, [d], {d: db_d}, fin).get(d))
+        return (code, d, _calc_2cols_for_code([d], {d: db_d}, fin).get(d))
 
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(process_one, item): item for item in todo}

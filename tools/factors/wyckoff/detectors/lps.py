@@ -11,10 +11,9 @@ v5.4 final: 加 lps_creek_confirmation_enabled 选项 (默认 False, 跟原版�
 from ..helpers import _bias_200_exceeds_limit, _lps_creek_confirmed
 
 
-def detect_lps(c, h, l, v, o, i, lookback=3, ma_window=20, ma_tolerance=0.02,
+def detect_lps(c, h, l, v, i, lookback=3, ma_window=20, ma_tolerance=0.02,
                vol_dry_ratio=0.50, vol_ref_window=60, ma_rising_window=5,
-               max_bias=25.0, pct_chg=None,
-               precomputed_atr=None,
+               max_bias=25.0,
                precomputed_arrs=None,
                creek_confirmation_enabled: bool = False) -> bool:
     """LPS 检测 (1:1 搬运 WyckoffTradingAgent 1138 行)
@@ -96,5 +95,5 @@ def detect_lps(c, h, l, v, o, i, lookback=3, ma_window=20, ma_tolerance=0.02,
         return False
     # creek 确认 (v5.4 final, 跟原版 cfg.lps_creek_confirmation_enabled 默认 False)
     if creek_confirmation_enabled:
-        return _lps_creek_confirmed(c[:i], h[:i], l[:i])
+        return _lps_creek_confirmed(c[:i], h[:i])
     return True

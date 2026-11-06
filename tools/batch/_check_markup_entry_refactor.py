@@ -94,7 +94,7 @@ def main():
         # 扫近 400 根 (覆盖 warm-up 边界 i=210 附近)
         for i in range(max(0, n - 400), n):
             old = bool(old_detect(c, h, l, v, o, i, precomputed_arrs=arrs))
-            new = bool(detect_markup_entry(c, h, l, v, o, i, precomputed_arrs=arrs))
+            new = bool(detect_markup_entry(c, i, precomputed_arrs=arrs))
             n_checked += 1
             n_old_true += int(old)
             n_new_true += int(new)
@@ -102,7 +102,7 @@ def main():
                 if len(mismatch) < 20:
                     mismatch.append((code, i, old, new))
             if i == n - 1:
-                cd = markup_entry_conditions(c, h, l, v, o, i, precomputed_arrs=arrs)
+                cd = markup_entry_conditions(c, i, precomputed_arrs=arrs)
                 for k in cond_cnt:
                     cond_cnt[k] += int(bool(cd[k]))
         if idx % 100 == 0:

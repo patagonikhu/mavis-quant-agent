@@ -236,7 +236,7 @@ class TestAnalysisDict:
     def test_to_dict_has_no_deleted_dimensions(self, analysis_data_per_code):
         """已删除维度 (obv 2026-10-27 / fflow 2026-10-28) 不应出现在 to_dict 顶层"""
         for code, data in analysis_data_per_code.items():
-            d = data["engine_result"].to_dict(data["ctx"])
+            d = data["engine_result"].to_dict()
             # 2026-10-27: OBV strategy 已删除, raw 不应有 obv
             assert "obv" not in d, f"{code}: to_dict() 不应有 obv 字段"
             # 2026-10-28: 主力资金流维度整体删除
@@ -256,7 +256,7 @@ class TestAnalysisDict:
     def test_to_dict_verdict_matches_raw(self, analysis_data_per_code):
         """【防 regression】to_dict() wyckoff.verdict 必须跟 raw['wyckoff'].verdict 一致"""
         for code, data in analysis_data_per_code.items():
-            d = data["engine_result"].to_dict(data["ctx"])
+            d = data["engine_result"].to_dict()
             wy_in_dict = d["wyckoff"]
             wy_in_raw = data["engine_result"].raw["wyckoff"]
             assert wy_in_dict.get("verdict") == wy_in_raw.get("verdict"), (

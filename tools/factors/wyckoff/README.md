@@ -310,7 +310,7 @@ def _judge_full(self, ...):
     dev_ma200 = (c[-1] / ma200 - 1) * 100
     
     # 4. 扫 9 sub_event
-    sub_events = scan_sub_events(c, h, l, v, rng, ...)
+    sub_events = scan_sub_events(c, h, l, v, ...)
     
     # 5. 评分 3 阶段
     score_Accumulation = score_Markup = score_Distribution = 0

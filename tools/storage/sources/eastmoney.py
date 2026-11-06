@@ -122,7 +122,6 @@ def compute_indicators(kline: list[dict]) -> dict:
     result = {}
     # v6.2.8 改: TechnicalStrategy 需要 series 时序, 这里预算完整 series 一并存入 result
     # 系列长度对齐到 K 线, 前面不足的位填 None
-    series_dates = [bar.get("date") or bar.get("trade_date", "") for bar in kline]
 
     def _align_to_kline(series: list, series_start_idx: int) -> list:
         """把 series 对齐到 K 线, 前面 series_start_idx 位填 None"""

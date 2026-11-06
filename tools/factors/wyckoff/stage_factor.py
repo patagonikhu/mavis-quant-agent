@@ -41,7 +41,7 @@ MARKUP_CROSS_LOOKBACK = 10    # 对齐 max(confirm_days*2, 10)
 #   生产侧 (本文件) 与报告渲染侧共用同一个常量, 避免阈值一调两边对不上。
 
 
-def detect_markup_entry(i, arrs, window=None):
+def detect_markup_entry(i, arrs):
     """Markup 趋势判定 — 1:1 对齐参考实现 _detect_markup_entry。
 
     返回 dict:
@@ -109,8 +109,7 @@ def detect_markup_entry(i, arrs, window=None):
     }
 
 
-def wyckoff_judge(i, arrs, sub_events, window, period_label,
-                  ma_short=20, ma_long=60, pos_lookback=60):
+def wyckoff_judge(i, arrs, sub_events, window, period_label):
     """威科夫阶段判定 — O(1) per call，使用 kline_arrays.build_kline_features() 返回的预算数组。
 
     参数:
@@ -321,7 +320,7 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label,
 
     # 2026-11-03 加: 参考实现 Layer 2.5 的 Markup 判定 (4 条全满足)
     #   跟本项目原评分体系并行: 原评分算 score_Markup, 这里算独立的 hit 标志
-    markup_wta = detect_markup_entry(i, arrs, window=window)
+    markup_wta = detect_markup_entry(i, arrs)
     markup_wta_hit = bool(markup_wta and markup_wta["hit"])
 
     is_uptrend = slope_60 > 0 and dev_ma200 > -10 and trend_30 > -15

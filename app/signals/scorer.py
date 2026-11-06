@@ -153,7 +153,7 @@ def calculate_score(
                 signal_details=signal_results,
                 total_score=rule_total,
             )
-            fv = extract_features(tmp_report, sector_bars)
+            fv = extract_features(tmp_report)
             calibrator = get_calibrator()
             total = calibrator.calibrate_score(rule_total, fv)
         except Exception:

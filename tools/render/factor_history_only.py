@@ -32,7 +32,7 @@ def main():
 
     ar = AnalysisEngine().analyze(ctx)
     data = RenderData.from_result(ctx, ar)
-    section = _section_factor_history(data, lookback=args.days)
+    section = _section_factor_history(data)
 
     header = f"# 因子历史走势 — {args.code} {ctx.name}\n\n"
     header += f"> 数据范围: {ctx.kline[0]['trade_date']} ~ {ctx.kline[-1]['trade_date']} ({len(ctx.kline)} 日)\n"

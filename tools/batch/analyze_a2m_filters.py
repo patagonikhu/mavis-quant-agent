@@ -128,9 +128,7 @@ def load() -> pd.DataFrame:
     return df
 
 
-def funnel(df: pd.DataFrame, pe_max: float, quality_thr: float,
-           min_roe: float | None = None, min_gm: float | None = None,
-           max_nd_ratio: float | None = None) -> pd.DataFrame:
+def funnel(df: pd.DataFrame, pe_max: float, quality_thr: float) -> pd.DataFrame:
     """按过滤链逐步过滤, 返回每步剩余票。"""
     steps = []
     cur = df[~df["is_st"]].copy()

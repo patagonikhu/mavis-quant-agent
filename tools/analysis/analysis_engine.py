@@ -82,7 +82,7 @@ class AnalysisResult:
     signals_active: list[str] = field(default_factory=list)
     action: str = ""
 
-    def to_dict(self, ctx: "RawContext | None" = None) -> dict:
+    def to_dict(self) -> dict:
         """序列化为 dict (给 RenderData / render 用)
 
         以 raw 为基础，顶层补充 code/name/scene 等元字段。
@@ -151,7 +151,7 @@ class WyckoffStrategy:
             sub_raw = _pre.get(level)
             if sub_raw is None:
                 sub_raw = _scan(
-                    closes, highs, lows, vols, None,
+                    closes, highs, lows, vols,
                     o=opens, pct_chg=[k.get("pct_chg", 0) for k in bars],
                     period_label=label, code=ctx.code, as_of_idx=i_last,
                     dates=[k["trade_date"].replace("-", "")[:8] for k in bars],
@@ -215,7 +215,6 @@ class WyckoffStrategy:
             return _scan(
                 [k["close"] for k in bars],           [k["high"] for k in bars],
                 [k["low"] for k in bars],              [k.get("volume", 0) for k in bars],
-                None,
                 o=[k.get("open", k["close"]) for k in bars],
                 pct_chg=[k.get("pct_chg", 0) for k in bars],
                 dates=[k["trade_date"].replace("-", "")[:8] for k in bars],
@@ -318,7 +317,7 @@ class TechnicalStrategy:
         try:
             kline = ctx.kline or []
             result = compute_indicators(kline) or {}
-        except Exception as e:
+        except Exception:
             return {"score": 0, "signals": [], "summary": "技术指标失败", "verdict": "—"}
 
         # 把完整 series 挂到 result (供 render_data 复用, 避免 render 端再算)
@@ -405,7 +404,6 @@ class TechnicalStrategy:
         kdj_k    = result.get("kdj",  {}).get("k_series", [])
         kdj_d    = result.get("kdj",  {}).get("d_series", [])
         kdj_j    = result.get("kdj",  {}).get("j_series", [])
-        boll_mid = result.get("boll", {}).get("mid_series", [])
         boll_pct = result.get("boll", {}).get("pct_series", [])
         atr14    = result.get("atr",  {}).get("atr14_series", [])
         atr_pct  = result.get("atr",  {}).get("atr_pct_series", [])
@@ -427,7 +425,6 @@ class TechnicalStrategy:
             kk_v  = kdj_k[i]    if i < len(kdj_k)    else None
             kd_v  = kdj_d[i]    if i < len(kdj_d)    else None
             kj_v  = kdj_j[i]    if i < len(kdj_j)    else None
-            bm_v  = boll_mid[i] if i < len(boll_mid) else None
             bp_v  = boll_pct[i] if i < len(boll_pct) else None
             at_v  = atr14[i]    if i < len(atr14)    else None
             ap_v  = atr_pct[i]  if i < len(atr_pct)  else None
@@ -616,7 +613,7 @@ class FinanceStrategy:
             if q_market_cap_wan > 0:
                 try:
                     # 单季 [r] → _ttm_ebit fallback 用该季 EBIT (符合"周期分析"语义)
-                    magic = compute_magic_one_day([r], q_str, q_market_cap_wan) or {}
+                    magic = compute_magic_one_day([r], q_market_cap_wan) or {}
                 except Exception:
                     pass
 
@@ -676,9 +673,7 @@ class FinanceStrategy:
         if financials and market_cap_wan > 0:
             try:
                 # 2026-09-09 修: 传完整 financials, 让 _ttm_ebit 找 12-31 全年 (与全市场排名口径一致)
-                latest_magic = compute_magic_one_day(
-                    financials, str(financials[-1].get("end_date", "")), market_cap_wan
-                ) or {}
+                latest_magic = compute_magic_one_day(financials, market_cap_wan) or {}
             except Exception:
                 pass
 
@@ -718,7 +713,7 @@ class FinanceStrategy:
 # _derive_dcf 删除: DCF 已合并到 ValuationStrategy (Phase1), 2026-09-02
 
 
-def _derive_sector_overheat(ctx: RawContext, raw: dict) -> dict:
+def _derive_sector_overheat(ctx: RawContext) -> dict:
     """板块过热预警 (个股 K线代理)"""
     kline = ctx.kline or []
     if len(kline) < 64:

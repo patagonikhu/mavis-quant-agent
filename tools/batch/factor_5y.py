@@ -113,7 +113,7 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
             ctx, step=step, lookback=1250, history=history
         )
 
-        section = _section_factor_history(data, lookback=1250)
+        section = _section_factor_history(data)
 
         # md header
         first_d = ctx.kline[max(0, len(ctx.kline) - 1250)]["trade_date"]

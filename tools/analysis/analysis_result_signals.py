@@ -47,14 +47,13 @@ def factor_history_lookback(code: str) -> int:
 
 
 def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
-                           strategies=None, history=None) -> list[dict]:
+                           history=None) -> list[dict]:
     """把 AnalysisResult 列表转成 flat dict 列表 (拼装, 不调 analyze_history)
 
     Args:
         ctx:         RawContext，含完整 K 线
         step:        采样间隔（render 用 5，回测用 1）
         lookback:    回看天数（默认 60 = 3个月）
-        strategies:  保留参数 (兼容旧调用, 不再使用)
         history:     必填, dict[date, AnalysisResult], 调用方预算好传进来
                      (不传会 raise, 强制避免重跑 analyze_history)
 
@@ -71,10 +70,8 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     dates = [kline[i]["trade_date"] for i in range(start, len(kline), step)]
 
     # 预建索引，避免 for-loop 里 O(n) 查找
-    import bisect
     date_to_ki    = {k["trade_date"].replace("-","")[:8]: i for i, k in enumerate(kline)}
     date_to_close = {k["trade_date"].replace("-","")[:8]: k["close"] for k in kline}
-    weekly_dates_sorted = [b["trade_date"].replace("-","")[:8] for b in (ctx.weekly or [])]
 
     # 2026-10-12 加: 批量读 daily_basic (含 pe/pe_ttm pb) 注入每行
     # 1 次 SQL 拿 N 天数据, 0 网络 (走 DataStore 落盘 parquet)
@@ -89,8 +86,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 
     # 从 ctx 预算数组里取各日期对应值（WyckoffStrategy 已算，O(1) 查询）
     d_arrs = ctx.kline_arrs        # 日线 arrs
-    w_arrs = ctx.kline_arrs_weekly # 周线 arrs
-    weekly_date_to_ki = {b["trade_date"].replace("-","")[:8]: i for i, b in enumerate(ctx.weekly or [])}
 
     rows = []
     for date in dates:
@@ -101,7 +96,6 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
         close = date_to_close.get(date_clean, 0)
 
         ki = date_to_ki.get(date_clean, len(kline))
-        wi = bisect.bisect_right(weekly_dates_sorted, date_clean) - 1
 
         # MA/Boll 从预算数组 O(1) 读，不重算
         ma5     = d_arrs.get('ma5',   [None] * (ki+2))
@@ -153,7 +147,7 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
             "pb":       round(float(pb_v), 2)     if pb_v is not None else None,
         }
 
-        rows.append({**_extract_row(result, date, close, ctx), **ma_devs, **daily_val})
+        rows.append({**_extract_row(result, date, close), **ma_devs, **daily_val})
         # 提取完立即释放，避免 AnalysisResult 大对象在循环结束前全部驻留内存
         del history[date_clean]
 
@@ -185,11 +179,10 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
     return rows
 
 
-def _extract_row(result, date: str, close: float, ctx=None) -> dict:
+def _extract_row(result, date: str, close: float) -> dict:
     """从 AnalysisResult 提取单行因子快照"""
     raw       = result.raw
     wy_raw     = raw.get("wyckoff",         {}) or {}
-    val_raw    = raw.get("finance",           {}) or {}  # 2026-09-08 改: ValuationStrategy → FinanceStrategy
     tech_raw   = raw.get("technical",        {}) or {}  # v6.2.8 改: TechnicalStrategy 8 指标
     p3         = wy_raw.get("3period") or {}
 
@@ -307,7 +300,6 @@ def diff_rows(prev: dict, curr: dict) -> dict:
         p_zone = _ma_zone(p_v)
         c_zone = _ma_zone(c_v)
         if p_zone != c_zone:
-            level = field.replace("ma_dev_", "")  # daily / weekly
             changes[field] = f"{p_zone}→{c_zone}({c_v:+.1f}%)"
 
     return changes
@@ -389,8 +381,7 @@ def extract_signals(changes: dict) -> list[tuple[str, str, str]]:
 def format_signals_for_render(changes: dict) -> list[str]:
     """extract_signals 结果 → render 用的 emoji 字符串列表（变化列）"""
     parts = []
-    for sig_type, detail, direction in extract_signals(changes):
-        icon = "🟢" if direction == "buy" else "🔴"
+    for sig_type, detail, _direction in extract_signals(changes):
         if sig_type == "wyckoff_event_top":
             parts.append(f"🔴{detail}")
         elif sig_type == "wyckoff_event_bot":

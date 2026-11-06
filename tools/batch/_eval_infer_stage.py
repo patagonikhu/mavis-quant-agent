@@ -64,7 +64,7 @@ def analyze_one(code, df, cfg):
 
     arrs = build_kline_features(closes, highs, lows, vols, window=window)
     sub_events_all = scan_sub_events(
-        closes, highs, lows, vols, None, o=opens, pct_chg=pct_chgs,
+        closes, highs, lows, vols, o=opens, pct_chg=pct_chgs,
         period_label="daily", code=code, as_of_idx=None, dates=dates_,
         precomputed_arrs=arrs,
     )
@@ -165,7 +165,7 @@ def main():
             print(f"  ... {idx}/{len(all_kl)}", flush=True)
         try:
             r = analyze_one(code, df, cfg)
-        except Exception as e:
+        except Exception:
             r = None
         if r:
             r["name"] = name_by_code.get(r["code"], r["code"])

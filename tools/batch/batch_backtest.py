@@ -172,7 +172,6 @@ def backtest_one(code: str):
             ret = (max_price / buy_price - 1) * 100
             hits.append({"date": d, "price": buy_price, "return": ret, "code": code})
 
-    from_cache_label = "📦缓存" if from_cache else "⚡重算"
     return code, hits, time.time() - t1, from_cache
 
 

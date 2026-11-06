@@ -32,7 +32,7 @@ def probe(code):
     dates_ = df['date'].astype(str).str.replace('-', '').str[:8].tolist()
     n = len(c)
     arrs = build_kline_features(c, h, l, v, window=min(250, n))
-    subs = scan_sub_events(c, h, l, v, None, o=o, pct_chg=pct,
+    subs = scan_sub_events(c, h, l, v, o=o, pct_chg=pct,
                            period_label="daily", code=code, as_of_idx=None,
                            dates=dates_, precomputed_arrs=arrs)
     i = n - 1

@@ -7,12 +7,11 @@ detectors/compression.py - Compression 压缩蓄势 (跟 WyckoffTradingAgent 152
 from ..helpers import _compression_direction_ok, _compression_bias_ok, _compression_atr_ratio
 
 
-def detect_compression(c, h, l, v, o, i, lookback=5, atr_window=20, atr_quantile=0.20,
-                       vol_decline_ratio=0.60, max_bias=25.0, pct_chg=None,
+def detect_compression(c, h, l, v, i, lookback=5, atr_window=20, atr_quantile=0.20,
+                       vol_decline_ratio=0.60, max_bias=25.0,
                        precomputed_ma200=None,
                        precomputed_arrs=None) -> bool:
     """Compression 检测 (1:1 搬运 WyckoffTradingAgent 1521 行, v5.3 分位数)"""
-    n = len(c)
     if i < atr_window + lookback + 5:
         return False
     if i < atr_window + lookback + 1:
@@ -37,7 +36,7 @@ def detect_compression(c, h, l, v, o, i, lookback=5, atr_window=20, atr_quantile
     if vol_baseline_avg <= 0 or vol_recent_avg / vol_baseline_avg > vol_decline_ratio:
         return False
     # 4. ATR 收窄 (分位数算法, 1:1 对齐 WyckoffTradingAgent 1488 行)
-    if _compression_atr_ratio(c[:i], h[:i], l[:i], v[:i],
+    if _compression_atr_ratio(c[:i], h[:i], l[:i],
                               lookback, atr_window, atr_quantile) is None:
         return False
     return True

@@ -35,7 +35,7 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     """AI 对话接口 — 与量化 Agent 交互"""
-    reply = await agent_chat(req.message, req.history or None)
+    reply = await agent_chat(req.message)
     return ChatResponse(reply=reply)
 
 

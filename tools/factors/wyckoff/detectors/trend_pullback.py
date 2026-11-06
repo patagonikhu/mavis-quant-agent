@@ -7,7 +7,7 @@ detectors/trend_pullback.py - TrendPullback 趋势回踩 (跟 WyckoffTradingAgen
 from ..helpers import _bias_200_exceeds_limit, _trend_pullback_peak_idx, _trend_pullback_vol_threshold
 
 
-def detect_trend_pullback(c, h, l, v, o, i, lookback=10, ma_window=20,
+def detect_trend_pullback(c, v, i, lookback=10, ma_window=20,
                           min_pullback=5.0, max_pullback=20.0,
                           vol_shrink_ratio=0.6, max_bias=35.0, market_cap_yi=0.0,
                           precomputed_ma200=None,
@@ -18,7 +18,6 @@ def detect_trend_pullback(c, h, l, v, o, i, lookback=10, ma_window=20,
     v5.10.57 (P8.A, 2026-07-31): min_pullback/max_pullback 加显式参数 (默认 5/20 兼容老调用)
     60m 短周期 p50 1.65% 远小于 5%, 周期分层后 60m 用 0.5/8
     """
-    n = len(c)
     if i < ma_window + lookback + 5:
         return False
     if _bias_200_exceeds_limit(c[:i], max_bias, precomputed_ma200=precomputed_ma200):

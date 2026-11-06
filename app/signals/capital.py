@@ -64,10 +64,7 @@ def main_capital_consecutive_inflow(
     )
 
 
-def north_capital_anomaly(
-    north_flow_history: list[NorthFlowRecord],
-    lookback: int = 20,
-) -> SignalResult:
+def north_capital_anomaly(north_flow_history: list[NorthFlowRecord]) -> SignalResult:
     """北向资金加仓异常信号（Z-score 检测）
 
     今日净买入显著异常（Z>2）且为正值。

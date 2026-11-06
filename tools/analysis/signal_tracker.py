@@ -67,7 +67,7 @@ def fetch_kline_range(code, start_date, end_date):
                     'low': float(b.get('low', 0) or 0),
                 })
         return result
-    except Exception as e:
+    except Exception:
         return []
 
 

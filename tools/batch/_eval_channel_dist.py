@@ -84,7 +84,7 @@ def main():
         dates_ = df['date'].astype(str).str.replace('-', '').str[:8].tolist()
         n = len(closes)
         arrs = build_kline_features(closes, highs, lows, vols, window=min(250, n))
-        subs = scan_sub_events(closes, highs, lows, vols, None, o=opens, pct_chg=pct_chgs,
+        subs = scan_sub_events(closes, highs, lows, vols, o=opens, pct_chg=pct_chgs,
                                period_label="daily", code=code, as_of_idx=None,
                                dates=dates_, precomputed_arrs=arrs)
         i = n - 1
@@ -149,7 +149,6 @@ def main():
 
         # --- 校验点 5: Markup 多值 channel ---
         if stage == "Markup" and "+" in ch:
-            md = out.get("markup_detail", {}) or {}
             fv = out.get("factor_values", {}) or {}
             parts = ch.split("+")
             combo_rows.append((code, name_by_code.get(code, code), ch, score,

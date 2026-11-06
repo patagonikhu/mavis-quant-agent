@@ -6,7 +6,7 @@ wyckoff/helpers.py - 威科夫核心 helper (跟 WyckoffTradingAgent 1:1 命名)
   - _swing_high_points / _creek_line
   - _bias_200_exceeds_limit
   - _is_trading_range_context / _spring_support_level
-  - _evr_turnover_ok / _evr_structure_ok / _evr_confirmation_ok / _evr_candidate_indexes
+  - _evr_turnover_ok / _evr_structure_ok / _evr_candidate_indexes
   - _evr_series / _evr_ref_volume_avg / _sos_series / _sos_volume_ratio / _sos_breakout_or_ma_cross
   - _compression_ohlcv / _compression_direction_ok / _compression_bias_ok / _compression_atr_ratio
   - _trend_pullback_peak_idx / _trend_pullback_vol_threshold
@@ -20,7 +20,7 @@ from typing import Optional
 # Section 1: K 线 / 形态基础 helper (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
-def _is_frozen_board_day(op, hi, low, cl, *, market="cn") -> bool:
+def _is_frozen_board_day(op, hi, low, cl) -> bool:
     """(WyckoffTradingAgent 1052 行) 一字板检测
 
     对齐 WTA: 振幅 ≤ 1% 且开收差 ≤ 1% (原版 < 0.1% 过严, 会漏近一字板)
@@ -76,7 +76,7 @@ def _swing_high_points(high_values, window: int) -> list:
     return points
 
 
-def _creek_line(swing_high_points_list, breakout_pct: float = 0.5):
+def _creek_line(swing_high_points_list):
     """(WyckoffTradingAgent 1195 行) swing high 拟合阻力线
 
     Returns: (slope, intercept) | None
@@ -478,17 +478,6 @@ def _evr_structure_ok(closes, close_last: float) -> bool:
     return float(close_last) >= float(close_3d_ago) * 0.98
 
 
-def _evr_confirmation_ok(closes, lows, idx: int, confirm_days: int, allow_break_pct: float) -> bool:
-    """EVR 确认日不破底
-
-    WTA 检查事件日后 confirm_days 根 K 线收盘不低于事件日低点。
-    mavis index-based 框架中 closes = c[:i]，idx = i-1 是最后一根，
-    confirm 窗口 c[i:i+confirm_days] 是未来数据，无法前瞻。
-    结构稳定性已由 _evr_structure_ok (close >= 3日前close×0.98) 覆盖，此处恒 True。
-    """
-    return True
-
-
 # ============================================================
 # Section 4: SOS 三件套 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
@@ -564,7 +553,7 @@ def _compression_bias_ok(closes, max_bias_200: float = 25.0,
     return not _bias_200_exceeds_limit(closes, max_bias_200, precomputed_ma200=precomputed_ma200)
 
 
-def _compression_atr_ratio(closes, highs, lows, vols,
+def _compression_atr_ratio(closes, highs, lows,
                            lookback: int = 5, atr_window: int = 20,
                            atr_quantile: float = 0.20) -> Optional[float]:
     """(WyckoffTradingAgent 1488 行) Compression ATR 分位数 + 压缩比
@@ -683,7 +672,7 @@ def _trend_pullback_vol_threshold(closes, market_cap_yi: float = 0.0,
 # Section 7: LPS creek 确认 (跟 WyckoffTradingAgent 1:1)
 # ============================================================
 
-def _lps_creek_confirmed(c, h, l,
+def _lps_creek_confirmed(c, h,
                           lps_lookback: int = 3,
                           anchor_days: int = 60,
                           breakout_days: int = 15,
@@ -705,7 +694,7 @@ def _lps_creek_confirmed(c, h, l,
     if not anchor_highs:
         return False
     # 拟合阻力线
-    line = _creek_line(_swing_high_points(anchor_highs, swing_window), 0.5)
+    line = _creek_line(_swing_high_points(anchor_highs, swing_window))
     if line is None:
         return False
     slope, intercept = line

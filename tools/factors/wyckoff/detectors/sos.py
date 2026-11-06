@@ -13,7 +13,6 @@ def detect_sos(c, h, l, v, o, i, vol_window=20, vol_ratio=3.0, vol_quantile_wind
                precomputed_ma200=None,
                precomputed_arrs=None) -> bool:
     """SOS 检测 (1:1 搬运 WyckoffTradingAgent 1416 行)"""
-    n = len(c)
     if i < max(vol_window, breakout_window) + 2:
         return False
     if _bias_200_exceeds_limit(c[:i], max_bias, precomputed_ma200=precomputed_ma200):

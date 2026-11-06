@@ -238,8 +238,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
 
     # === 新增: section 顺序检测 (基于 report_schema.REPORT_SECTIONS) ===
     try:
-        from tools.render.report_schema import get_ordered_titles
-        ordered_titles = get_ordered_titles()
         # 2026-07-25: 优先用 id 注释 (按 REPORT_SECTIONS 顺序), fallback 标题文案
         section_titles_in_doc = re.findall(r"^##\s+(.+)$", content, re.MULTILINE)
         # 构建 id → 标题的索引顺序

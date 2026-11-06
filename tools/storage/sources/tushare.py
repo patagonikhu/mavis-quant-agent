@@ -263,7 +263,7 @@ def get_stock_basic(code: str) -> tuple[dict | None, str]:
     # 2026-09-04: stock_basic 跨积分档都缺 total_share, 走 stk_factor_pro 补 (5000 积分档可调, 16 列)
     try:
         trade_date = _latest_trade_date()
-        db_data, db_status = _safe_call(
+        db_data, _ = _safe_call(
             "stk_factor_pro",  # v6.2.4 改: daily_basic → stk_factor_pro (5000 积分档 16 列)
             ts_code=ts_code,
             trade_date=trade_date,

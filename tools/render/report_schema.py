@@ -437,11 +437,6 @@ def get_section_titles() -> list:
     return [s["title"] for s in REPORT_SECTIONS if not s.get("_deprecated")]
 
 
-def get_ordered_titles() -> list[str]:
-    """按 CLAUDE.md 1️⃣-7️⃣ 顺序返回所有 section 标题 (linter 顺序检查用)"""
-    return [s["title"] for s in REPORT_SECTIONS]
-
-
 def validate_schema() -> dict:
     """校验 schema 自身: section 数量, ID 唯一, 顺序符合 CLAUDE.md 1️⃣-7️⃣"""
     errors = []

@@ -47,7 +47,7 @@ def _macd_bar(closes):
     return bar
 
 
-def check_red_to_green(code, name, min_red_days, last_date):
+def check_red_to_green(code, name, min_red_days):
     """单只扫描: 红柱 ≥ N 天 + 最近 2 根 K 线翻绿"""
     df = get_kline(code)
     if df is None or len(df) < 60: return None
@@ -86,7 +86,7 @@ def main():
     t0 = time.time()
     hits = []
     for code in all_codes:
-        r = check_red_to_green(code, name_map.get(code, ''), args.min_red, None)
+        r = check_red_to_green(code, name_map.get(code, ''), args.min_red)
         if r: hits.append(r)
 
     elapsed = time.time() - t0

@@ -209,7 +209,7 @@ def _process_one(ts_code: str, rows: list[dict]) -> dict | None:
 
     # ② sub_events 全段扫 1 次 (as_of_idx=None)
     sub_events_all = scan_sub_events(
-        closes, highs, lows, vols, None,
+        closes, highs, lows, vols,
         o=opens, pct_chg=pct_chgs,
         period_label="daily", code=ts_code,
         as_of_idx=None,
@@ -353,7 +353,7 @@ def _write_md(reps: list[dict], details: list[dict], raw_hits: list[dict],
 # ============================================================
 
 def _run_reports(reps: list[dict], raw_hit_codes: set[str], subdir: str,
-                 existing: dict, refresh: bool, keep_stale: bool,
+                 existing: dict, keep_stale: bool,
                  stale_only: bool, report_top: int, workers: int) -> None:
     """逐只生成 7 section 详报 → docs/<subdir>/
 
@@ -602,7 +602,7 @@ def main() -> int:
     raw_hit_codes = {h["code"] for h in hits}
     # D 类 (同指数被合并的已有详报) 也在 _run_reports 里跑 (刷新 + 改标 merged)
     _run_reports(reps, raw_hit_codes, args.report_subdir, existing,
-                 args.refresh, args.keep_stale, args.stale_only,
+                 args.keep_stale, args.stale_only,
                  args.report_top, args.workers)
 
     return 0

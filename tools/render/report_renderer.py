@@ -367,7 +367,6 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     #   那是用「已被四舍五入到 2 位」的角度反解, 误差被放大, 且 angle=0 时直接置 0。
     #   规则下沉到代码: 生产侧 stage_factor 已直接输出 ma50_5d_ago。
     ma50_i = fv.get("ma50", 0)
-    ma50_angle_5d_v = fv.get("ma50_angle_5d", 0)
     ma50_i_5 = fv.get("ma50_5d_ago") or 0
 
     # 当前阶段总结
@@ -799,15 +798,12 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     bias_200 = (p / ma200_i - 1) * 100 if ma200_i > 0 else 0
     rmin60 = arrs["rmin_l_pos"][i]
     rmax60 = arrs["rmax_h_pos"][i]
-    rmin250 = arrs["rmin_l_250"][i]
-    rmin20 = arrs["rmin_l_20"][i]
     pos_pct = ((p - rmin60) / (rmax60 - rmin60) * 100) if rmax60 > rmin60 else 50.0
 
     # Spring
     support_zone_l = l[max(0, i - 60 - 2):i - 1] if i >= 1 else []
     support_level = min(support_zone_l) if support_zone_l else 0
     zone_max_h = max(h[max(0, i - 60 - 2):i - 1]) if i >= 1 else 0
-    zone_width = (zone_max_h - support_level) / support_level * 100 if support_level > 0 else 0
     vol_5_avg = sum(v[max(0, i - 4):i + 1]) / 5
     vol_ratio_spring = v[i] / vol_5_avg if vol_5_avg > 0 else 0
     vol_ratio_prev = v[i - 1] / v[i] if i >= 1 and v[i] > 0 else 0
@@ -826,8 +822,6 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     # SOS
     vol_60_avg = sum(v[max(0, i - 59):i + 1]) / 60
     vol_ratio_sos = v[i] / vol_60_avg if vol_60_avg > 0 else 0
-    sorted_v60 = sorted(v[max(0, i - 60):i + 1])
-    p95 = sorted_v60[int(len(sorted_v60) * 0.95)] if sorted_v60 else 0
     h_60max = max(h[max(0, i - 60):i])
 
     # Compression
@@ -843,7 +837,7 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     #   报告不再自己手算一遍 (手算 = 两份实现必然漂移)。
     #   ⚠️ detector 里的 MA200 是**真 200 日均线**, 不是 bias_200 用的 250 日均线。
     from tools.factors.wyckoff.detectors.markup_entry import markup_entry_conditions
-    _me = markup_entry_conditions(c, h, l, v, o, i, precomputed_arrs=arrs)
+    _me = markup_entry_conditions(c, i, precomputed_arrs=arrs)
     ma200_true_i = _me["ma200"]
     ma50_i_5 = _me["ma50_5d_ago"]
     ma50_angle_5d = _me["angle"]
@@ -903,7 +897,7 @@ def _wy_sub_events_md(events: list, glossary: dict, current_stage: str,
     return "\n".join(rows)
 
 
-def _section_period(data: RenderData, level: str, label: str, weight: str) -> str:
+def _section_period(data: RenderData, level: str, label: str) -> str:
     """
     单周期 section：威科夫在该周期视角的数据
     level: 'weekly' | 'daily' | '60min'
@@ -1000,13 +994,6 @@ def _section_period(data: RenderData, level: str, label: str, weight: str) -> st
     wy_sub_events_md = _wy_sub_events_md(sub_events, SUB_EVENT_GLOSSARY, wy_stage,
                                           c=_c, h=_h, l=_l, v=_v, o=_o, pct=_pct,
                                           period_unit=("周" if level == "weekly" else "日"))
-    scores_str = " / ".join(f"{k}:{v}" for k, v in scores.items() if v > 0) if scores else "无得分"
-    if wy_stage == "?" or wy_conf == 0:
-        wy_focus = f"K线不足（需≥30根）— {wy_focus_label}"
-    else:
-        wy_focus = f"阶段 {wy_stage} ({wy_name}) {wy_conf}% — {wy_action if level=='daily' else wy_focus_label}"
-
-
     return f"""> 周期 **{label}** (3 周期等权, 2026-09-09 删权重展示)
 
 **【威科夫详情】** (对齐 WyckoffTradingAgent 3 大阶段: Accumulation / Markup / Distribution)
@@ -1047,14 +1034,14 @@ def _section_weekly(data: RenderData) -> str:
     """📋 周线分析 (因子)"""
     if not data.analysis:
         return "> **数据状态:** ⚠️ 因子数据未生成\n"
-    return _section_period(data, "weekly", "周线", "1.0x")
+    return _section_period(data, "weekly", "周线")
 
 
 def _section_daily(data: RenderData) -> str:
     """📋 日线分析 (因子)"""
     if not data.analysis:
         return "> **数据状态:** ⚠️ 因子数据未生成\n"
-    return _section_period(data, "daily", "日线", "1.0x")
+    return _section_period(data, "daily", "日线")
 
 
 def _section_factor_matrix(data: RenderData) -> str:
@@ -1301,11 +1288,11 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     return line.rstrip(" |") + f" | {bpct_s} | {bwid_s} | {kdj_s} | {kdj_cross} | {atr_s} | {macd_state} | {pe_s} |"
 
 
-def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
+def _section_factor_history(data: RenderData) -> str:
     """因子历史走势 — 每天一行，全部显示
 
-    Args:
-        lookback: 回看交易日数 (默认 120 ≈ 6 个月, t-history skill 用 1250=5年)
+    行数完全由 data.factor_history_rows 决定 (调用方算好传进来),
+    本函数不认 lookback 参数。
     """
     if not data.ctx:
         return "> ⚠️ ctx 未设置，无法计算历史\n"
@@ -1356,7 +1343,7 @@ def _section_factor_history(data: RenderData, lookback: int = 120) -> str:
 
     return "\n".join(lines) + "\n"
 
-def _section_data_sources(data: RenderData) -> str:
+def _section_data_sources() -> str:
     """📡 数据源矩阵 (2026-08-26: 内联 _load_config, 删 data_source 间接层)"""
     try:
         import yaml
@@ -1478,7 +1465,7 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 ---
 
 ## 📡 数据源矩阵 (数据/主源/备源/单位/说明) — 固化不丢
-{_section_data_sources(data)}
+{_section_data_sources()}
 
 ---
 

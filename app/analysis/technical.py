@@ -249,7 +249,7 @@ class TechnicalIndicators:
             result[col] = self.df.iloc[idx].get(col)
 
         # 各指标
-        for name, indicator_df in [
+        for _name, indicator_df in [
             ("ma", self.ma), ("macd", self.macd), ("kdj", self.kdj),
             ("rsi", self.rsi), ("boll", self.boll), ("vol_ma", self.vol_ma),
         ]:

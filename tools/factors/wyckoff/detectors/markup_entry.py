@@ -22,7 +22,7 @@ from ..helpers import (MA50_MA200_TOLERANCE, _bias_200_exceeds_limit,
                       _ma50_reached_ma200)
 
 
-def markup_entry_conditions(c, h, l, v, o, i, ma_short_w=50, ma_long_w=200,
+def markup_entry_conditions(c, i, ma_short_w=50, ma_long_w=200,
                             confirm_days=5, ma_angle_min=2.0,
                             precomputed_arrs=None) -> dict:
     """MarkupEntry 4 条判据逐条结果 (单一事实源)
@@ -106,12 +106,12 @@ def markup_entry_conditions(c, h, l, v, o, i, ma_short_w=50, ma_long_w=200,
     return res
 
 
-def detect_markup_entry(c, h, l, v, o, i, ma_short_w=50, ma_long_w=200,
+def detect_markup_entry(c, i, ma_short_w=50, ma_long_w=200,
                         confirm_days=5, ma_angle_min=2.0,
                         precomputed_arrs=None) -> bool:
     """MarkupEntry 检测 (1:1 搬运 WyckoffTradingAgent 1742 行)"""
     cond = markup_entry_conditions(
-        c, h, l, v, o, i, ma_short_w=ma_short_w, ma_long_w=ma_long_w,
+        c, i, ma_short_w=ma_short_w, ma_long_w=ma_long_w,
         confirm_days=confirm_days, ma_angle_min=ma_angle_min,
         precomputed_arrs=precomputed_arrs)
     return cond["hit"]

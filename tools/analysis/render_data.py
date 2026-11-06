@@ -228,22 +228,12 @@ class RenderData:
     # 构造
     # ============================================================
 
-    @staticmethod
-    def _extract_quarterly_finance(ctx: "RawContext", valuation_data: "Optional[dict]" = None, n: int = 4) -> list[dict]:
-        """2026-09-08 废弃: 逻辑已迁移到 FinanceStrategy。
-        保留存根避免外部引用报错。实际数据来自 result.raw['finance']['quarterly']。
-        """
-        return []
-
-
     @classmethod
     def from_result(cls, ctx: "RawContext", result: "AnalysisResult") -> "RenderData":
         """从 RawContext (L1) + AnalysisResult (L2) 构造 RenderData (L3)。
 
         这是三层分离后的正确入口，不再自己跑 analysis。
         """
-        from tools.analysis.analysis_engine import AnalysisResult as AR
-
         # K线相关辅助数据
         kline_raw = ctx.kline or []
         ma_table = []
@@ -271,25 +261,16 @@ class RenderData:
                     technical = {"error": str(e)}
 
         # analysis dict（L2 结果）
-        signals_5 = result.to_dict(ctx)
+        signals_5 = result.to_dict()
 
         # Phase 2 派生字段 (render 路径一次性运行，engine 不再负责)
         from tools.analysis.analysis_engine import PHASE2_FUNCTIONS
         for _fn in PHASE2_FUNCTIONS:
             _key = _fn.__name__.replace("_derive_", "")
             try:
-                signals_5[_key] = _fn(ctx, signals_5)
+                signals_5[_key] = _fn(ctx)
             except Exception:
                 pass
-
-        # 机械推导字段
-        raw_for_mech = {
-            "close":    ctx.current_price,
-            "total_mv": ctx.market_cap_yi,
-            "industry": ctx.industry,
-            "code":     ctx.code,
-            "name":     ctx.name,
-        }
 
         return cls(
             code=ctx.code,
@@ -322,25 +303,11 @@ class RenderData:
             # Magic Formula: 在 from_result 里直接算, 不留 N/A
             # market_cap 入参单位"万" (跟 Tushare daily_basic 一致), 内部 / 1e4 转亿
             # 2026-09-02 改: 删 magic_formula_detail, 用 valuation_data 1 个字段
-            valuation_data=cls._compute_valuation(ctx, result),
-            # 2026-09-03 修 12 处 Phase2 降级: 7 个 schema 字段填值
-            # _compute_phase2 返 dict 包含: sector_overheat
-            #   2026-11-03 删: fundamental / signal_5cat / strategy 三个 key
-            #   2026-11-03 删: take_profit key (止盈/止损两档整档已删)
-            **cls._compute_phase2(ctx, result, signals_5, ma_table),
+            valuation_data=cls._compute_valuation(result),
         )
 
     @classmethod
-    def _compute_magic(cls, ctx: "RawContext") -> Optional[dict]:
-        """旧 _compute_magic: 2026-09-02 保留兼容, 实际数据从 valuation_data 读。
-
-        报告渲染层已经从 data.valuation_data 读 (Magic)。
-        这个方法保持存在但不再被 from_result 调用, 避免删了破坏向后兼容。
-        """
-        return None  # 已废弃, 用 _compute_valuation 替代
-
-    @classmethod
-    def _compute_valuation(cls, ctx: "RawContext", result) -> Optional[dict]:
+    def _compute_valuation(cls, result) -> Optional[dict]:
         """从 AnalysisResult.raw["finance"] 拿 FinanceStrategy 算的 4 指标 (2026-09-08 改)"""
         try:
             if not result or not result.raw:
@@ -348,32 +315,6 @@ class RenderData:
             return result.raw.get("finance", {}) or None
         except Exception:
             return None
-
-    @classmethod
-    def _compute_phase2(cls, ctx: "RawContext", result, signals_5, ma_table) -> dict:
-        """算 7 个 Phase2 派生字段 (2026-09-03 修)
-
-        之前 schema 字段在, from_result 没人调, 12 个 section 显示"❌ 未计算"。
-        现在从 result.raw 里读 (Phase1 strategy 已算的) 或现场算 (Phase1 没算的)。
-        """
-        out: dict = {}
-        raw = (result.raw if result and hasattr(result, "raw") else {}) or {}
-
-        def _ok(name: str) -> DataStatus:
-            return DataStatus(name=name, status="OK")
-
-        # 2026-09-09 删: 基本面 (4 维) — 估值/盈利/增长/安全 评分
-        # 走 Magic (ROC/EY), 报告 section 整个删掉
-        # 2026-11-03 删: 5 类信号 (整档已删, 只剩"暂未接入"占位, 零有效信息)
-        # 2026-11-03 删: 止盈 3 层 + 止损 4 档 (整档已删)
-        #   原: out["take_profit"] = compute_stop_pl(ctx.kline or [])
-        #   价位是"当前价 × 固定百分比"的机械外推, 无标的特异性判断;
-        #   (原注释说"真实风控由 monitor_triggers 承担" — 该档本轮也已删, 见下)
-        # 2026-11-03 删: 退场信号检查 (exit_signals) — 与上面两档重叠
-        # 2026-11-03 删: 3 层仓位策略 + 监控触发点 (整档已删)
-        #   → 报告已无独立风控 section; 仓位/止损需自行从 威科夫阶段/子事件 推导
-
-        return out
 
     # 2026-09-09 删: _agg_strategy (5 strategy 投票, 67 行)
 

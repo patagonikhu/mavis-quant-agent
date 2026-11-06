@@ -369,7 +369,7 @@ def _load_all_klines(codes: list[str], limit_per_code: int = 2000) -> dict[str, 
     return out
 
 
-def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
+def _process_one(code: str, df: pd.DataFrame) -> dict | None:
     """单只票 威科夫当前阶段检测 (v9 改: 只要当前是 Markup 就命中, 不再要求 A→M 转变)
 
     性能: ~0.075s/只 (单进程顺序), 5812 × 5.3 分钟
@@ -403,7 +403,7 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
 
     # ② sub_events 全段扫 1 次 (as_of_idx=None)
     sub_events_all = scan_sub_events(
-        closes, highs, lows, vols, None,
+        closes, highs, lows, vols,
         o=opens, pct_chg=pct_chgs,
         period_label="daily", code=code,
         as_of_idx=None,
@@ -485,10 +485,10 @@ from tools.batch.a2m_report_common import (  # noqa: E402
 )
 
 
-def _worker(code: str, df: pd.DataFrame, lookback: int) -> dict | None:
+def _worker(code: str, df: pd.DataFrame) -> dict | None:
     """单只票检测当前威科夫 M 阶段 (df 来自 _load_all_klines 一次 SQL 预加载)"""
     try:
-        return _process_one(code, df, lookback)
+        return _process_one(code, df)
     except Exception as e:
         return {"code": code, "error": f"{type(e).__name__}: {e}"}
 
@@ -562,17 +562,17 @@ def _print_effective_conditions(args) -> None:
     # --- 前置过滤链 ---
     # step1 ST
     if args.include_st:
-        st_on, st_desc = False, "❌ OFF (--include-st 显式包含 ST/*ST)"
+        st_desc = "❌ OFF (--include-st 显式包含 ST/*ST)"
     elif args.exclude_st:
-        st_on, st_desc = True, "✅ ON  排除 ST/*ST"
+        st_desc = "✅ ON  排除 ST/*ST"
     else:
-        st_on, st_desc = False, "❌ OFF (不排除 ST)"
+        st_desc = "❌ OFF (不排除 ST)"
 
     # step2 PE
     if args.exclude_pe > 0:
-        pe_on, pe_desc = True, f"✅ ON  PE > {args.exclude_pe:.0f} 排除"
+        pe_desc = f"✅ ON  PE > {args.exclude_pe:.0f} 排除"
     else:
-        pe_on, pe_desc = False, "❌ OFF (--exclude-pe 0, 不限 PE)"
+        pe_desc = "❌ OFF (--exclude-pe 0, 不限 PE)"
 
     # step3 quality
     quality_thr = {"basic": 0, "strong": 10, "elite": 20}.get(args.with_quality, 0)
@@ -587,19 +587,18 @@ def _print_effective_conditions(args) -> None:
             q_parts.append(f"ROE>{args.min_roe:g}%")
         if args.min_gross_margin > 0:
             q_parts.append(f"毛利率>{args.min_gross_margin:g}%")
-        q_on, q_desc = True, "✅ ON  " + " + ".join(q_parts)
+        q_desc = "✅ ON  " + " + ".join(q_parts)
     else:
-        q_on, q_desc = False, "❌ OFF (--with-quality off)"
+        q_desc = "❌ OFF (--with-quality off)"
 
     # step4 杠杆
     if args.max_net_debt_ratio > 0:
-        lv_on, lv_desc = True, f"✅ ON  净负债/市值 < {args.max_net_debt_ratio:g}"
+        lv_desc = f"✅ ON  净负债/市值 < {args.max_net_debt_ratio:g}"
     else:
-        lv_on, lv_desc = False, "❌ OFF (--max-net-debt-ratio 0, 不限杠杆)"
+        lv_desc = "❌ OFF (--max-net-debt-ratio 0, 不限杠杆)"
 
     # step5 finance (亏损股)
-    fin_on, fin_desc = (True, "✅ ON  剔除亏损股 (PE<=0)") if args.with_finance \
-        else (False, "❌ OFF (--with-finance 未开)")
+    fin_desc = "✅ ON  剔除亏损股 (PE<=0)" if args.with_finance else "❌ OFF (--with-finance 未开)"
 
     # rsi (已弃用 flag, 但仍可能开着)
     rsi_on = bool(args.with_rsi)
@@ -785,7 +784,7 @@ def main():
         # 1 worker baseline
         t0 = time.time()
         with mp.get_context("spawn").Pool(1) as p:
-            results = list(p.imap_unordered(_report_worker, tasks))
+            list(p.imap_unordered(_report_worker, tasks))
         t1 = time.time() - t0
         print(f"  1 spawn-worker: {t1:.1f}s ({len(bench_codes)} 只 = {t1/len(bench_codes):.2f}s/只)", flush=True)
         # N worker
@@ -793,7 +792,7 @@ def main():
         nw = min(cpu_n, len(bench_codes))
         t0 = time.time()
         with mp.get_context("spawn").Pool(nw) as p:
-            results = list(p.imap_unordered(_report_worker, tasks))
+            list(p.imap_unordered(_report_worker, tasks))
         tn = time.time() - t0
         speedup = t1 / tn if tn > 0 else 0
         print(f"  {nw} spawn-worker: {tn:.1f}s ({len(bench_codes)} 只 = {tn/len(bench_codes):.2f}s/只)")
@@ -906,7 +905,7 @@ def main():
         df = kline_map.get(code)
         if df is None or len(df) < 220:
             continue
-        r = _worker(code, df, args.lookback)
+        r = _worker(code, df)
         if r and 'error' not in r:
             hits.append(r)
         elif r and 'error' in r:

@@ -15,8 +15,8 @@ Mavis 守门员 (t-guardrail) 规则: 所有 factor 统一放 1 个文件, 纯�
   → 估值只看 PE (静态) + 盈利质量 (ROC/EY/毛利率/杠杆).
 
 # 公开 API
-  - compute_roc(financials, as_of_date, min_capital_yi)  # ROC 资本回报率
-  - compute_ey(financials, as_of_date, market_cap_wan)   # EY 盈利收益率
+  - compute_roc(financials, min_capital_yi)            # ROC 资本回报率
+  - compute_ey(financials, market_cap_wan)              # EY 盈利收益率
   - compute_magic_one_day(...)                    # ROC+EY 合并
   - find_full_year_financials(financials, as_of_date)  # 找全年财报
 
@@ -152,7 +152,7 @@ def find_full_year_financials(financials: list[dict], as_of_date: str) -> Option
 # ============================================================
 # ROC 资本回报率 (单日)
 # ============================================================
-def compute_roc(financials: list[dict], as_of_date: str, min_capital_yi: float = 5) -> dict:
+def compute_roc(financials: list[dict], min_capital_yi: float = 5) -> dict:
     """单日 ROC = TTM EBIT / (NWC + FA)
 
     Args:
@@ -210,7 +210,7 @@ def compute_roc(financials: list[dict], as_of_date: str, min_capital_yi: float =
 # ============================================================
 # EY 盈利收益率 (单日)
 # ============================================================
-def compute_ey(financials: list[dict], as_of_date: str, market_cap_wan: float) -> dict:
+def compute_ey(financials: list[dict], market_cap_wan: float) -> dict:
     """单日 EY = TTM EBIT / EV (EV = mkt_cap + net_debt)
 
     Args:
@@ -259,15 +259,15 @@ def compute_ey(financials: list[dict], as_of_date: str, market_cap_wan: float) -
 # ============================================================
 # Magic (ROC + EY 1 次性合并)
 # ============================================================
-def compute_magic_one_day(financials: list[dict], as_of_date: str, market_cap_wan: float,
+def compute_magic_one_day(financials: list[dict], market_cap_wan: float,
                           min_capital_yi: float = 5) -> dict:
     """单日 Magic (ROC + EY 1 次 financials + 1 次市场值 读)
 
     Args:
         min_capital_yi: NWC+FA 最小阈值 (亿), 透传给 compute_roc
     """
-    roc_data = compute_roc(financials, as_of_date, min_capital_yi=min_capital_yi)
-    ey_data  = compute_ey(financials, as_of_date, market_cap_wan)
+    roc_data = compute_roc(financials, min_capital_yi=min_capital_yi)
+    ey_data  = compute_ey(financials, market_cap_wan)
 
     # 合并 skip_reason: 两个都失败才算 no_data
     if roc_data.get("skip_reason") and ey_data.get("skip_reason"):

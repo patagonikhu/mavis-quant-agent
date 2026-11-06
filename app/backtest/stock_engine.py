@@ -32,7 +32,7 @@ WITH_VENV = Path("tools/with_venv.sh")
 
 # ── 收益计算 ──────────────────────────────────────────────────────────────
 
-def _calc_returns(kline: list[dict], signal_idx: int, hold_days: int) -> tuple:
+def _calc_returns(kline: list[dict], signal_idx: int) -> tuple:
     """返回 (ret_5d, ret_10d, ret_20d)，不足则为 None"""
     base = kline[signal_idx]["close"]
     if base <= 0:
@@ -126,7 +126,7 @@ class StockBacktestEngine:
             if idx is None:
                 continue
 
-            ret_5d, ret_10d, ret_20d = _calc_returns(kline, idx, self.hold_days)
+            ret_5d, ret_10d, ret_20d = _calc_returns(kline, idx)
 
             for sig_type, sig_detail, direction in signals:
                 records.append(StockSignalRecord(

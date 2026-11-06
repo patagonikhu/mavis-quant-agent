@@ -32,7 +32,6 @@ A2M = [
 def main():
     codes = [c for c, _ in HOLDINGS] + [c for c, _ in A2M]
     kl = _load_all_klines(sorted(set(codes)), limit_per_code=2000)
-    basic = load_stock_basic()
 
     print("=" * 112)
     print("MA50 / MA200 实际值 — 两套口径")

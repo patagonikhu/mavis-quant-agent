@@ -48,7 +48,7 @@ def main():
 
 def _scan_one(code, df):
     try:
-        return _process_one(code, df, 5)
+        return _process_one(code, df)
     except Exception as e:
         return {"code": code, "error": f"{type(e).__name__}: {e}"}
 

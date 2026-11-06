@@ -12,7 +12,6 @@ def detect_upthrust(c, h, l, v, o, i, ma_long_w=200, lookback=60,
                     vol_ratio_thr=1.5, min_bias=15.0,
                     precomputed_ma=None) -> bool:
     """UTAD 检测 (1:1 搬运 WyckoffTradingAgent 2556 行 _detect_upthrust_after_distribution)"""
-    n = len(c)
     if i < max(ma_long_w, lookback) + 1:
         return False
     if i < lookback + 2:

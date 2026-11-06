@@ -144,7 +144,6 @@ def detect_volume_bottom(idx: pd.DataFrame) -> pd.DataFrame:
       - 量比 5/20 > 1.05 (短期量超过中期)
       - 5日量斜率 > +10% (量能加速)
     """
-    g = idx.groupby("industry")
     # 量能底 3 维典型值
     VOL_BOT_RATIO = 1.33
     VOL_BOT_RATIO_5_20 = 1.05

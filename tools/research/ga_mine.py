@@ -130,7 +130,6 @@ def run_ga(code: str = "300274", generations: int = None, pop: int = None):
     )
     # 关键: 用 abs(pearson) 当 fitness, 不管正负方向, GP 选绝对值最大的
     # 然后 eval 时取 sign(测试IC) * 绝对值, 报告里写明方向
-    y_train_abs = np.abs(y_train)  # 留个接口, 这里其实用 pearson 自带正负
     est.fit(X_train, y_train)
     t1 = time.time()
     print(f"\n⏱️  GA 训练耗时: {t1-t0:.1f}s")
@@ -155,8 +154,6 @@ def run_ga(code: str = "300274", generations: int = None, pop: int = None):
     # 取出 top 5 公式
     programs = est._programs[-1]  # 最后一代
     # 按 fitness 排序
-    fitness_scores = [est.run_details_["best_oob_fitness"][i] if i < len(est.run_details_["best_oob_fitness"]) else 0
-                      for i in range(min(5, len(programs)))]
     top_programs = programs[:5]
 
     # === 落地结果 ===

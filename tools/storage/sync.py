@@ -76,7 +76,7 @@ sys.path.insert(0, str(ROOT))
 WATCHLIST = ROOT / "config" / "watchlist.json"
 
 
-def _get_codes(scope: str, codes_arg: list[str], all_market: bool) -> list[str]:
+def _get_codes(codes_arg: list[str], all_market: bool) -> list[str]:
     """解析 --codes / --watchlist / --all, 返 code 列表 (纯数字, 不带后缀)"""
     if codes_arg:
         return [c.zfill(6) for c in codes_arg]
@@ -99,7 +99,7 @@ def _get_codes(scope: str, codes_arg: list[str], all_market: bool) -> list[str]:
 # 7 个正交行为 (按 flag 调用)
 # ============================================================
 
-def action_kline(codes: list[str], target_date: str | None = None) -> int:
+def action_kline(target_date: str | None = None) -> int:
     """增量 K 线 (含 6 个指数) — sync_incremental 是全局操作, 不按 codes 过滤"""
     from .store import sync_incremental
     n = sync_incremental(target_date=target_date)
@@ -392,7 +392,7 @@ def action_stk_factor(force: bool = False) -> int:
     return n_total
 
 
-def action_stock_basic(codes: list[str]) -> int:
+def action_stock_basic() -> int:
     """股票基础信息 (行业/名称) — 一次性, 每月跑 1 次"""
     from .store import sync_stock_basic
     n = sync_stock_basic()
@@ -453,7 +453,7 @@ def action_financials(codes: list[str], period: str | None = None) -> int:
     to_run: list[tuple[str, str]] = []   # [(period, reason)]
     for yr in range(today.year - 5, today.year + 1):
         for q in range(1, 5):
-            qend, deadline = _quarter_end_and_deadline(yr, q)
+            _, deadline = _quarter_end_and_deadline(yr, q)
             if deadline > today:
                 continue  # 还没到截止日, 数据未完整, 跳过
             label = _quarter_label(yr, q)
@@ -592,7 +592,6 @@ def detect_stale_flags() -> dict[str, bool]:
     from .store import HISTORY_DIR, STK_FACTOR_DIR, FIN_DIR, STOCK_BASIC_PARQUET
 
     today = datetime.now()
-    today_str = today.strftime("%Y%m%d")
     # --auto 检测范围: 盯这 6 个 flag
     # cache / meta 不在 --auto 检测范围 (按需手动 sync), 不进 flags dict
     # 2026-10-14 加 etf: 之前 SKILL.md 写"auto 含 etf"但实际没接, 导致 ETF 段天天需要手动 sync
@@ -788,14 +787,14 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
     print("\n🚀 跑 stale 的 flag:")
     if flags["kline"]:
         print("  [1/7] --kline")
-        action_kline(_last_codes)
+        action_kline()
     if flags["stk_factor"]:
         # 2026-09-22 加: v6.2.4 重构漏接 auto 链路, 今天补上
         print("  [1.5/7] --stk-factor (auto 检测到 stale)")
         action_stk_factor(force=False)
     if flags["stock_basic"]:
         print("  [2/7] --stock-basic")
-        action_stock_basic(_last_codes)
+        action_stock_basic()
     if flags["financials"]:
         print("  [3/7] --financials")
         action_financials(_last_codes)
@@ -885,9 +884,9 @@ def main():
         if args.codes:
             _last_codes = [c.zfill(6) for c in args.codes]
         elif args.all:
-            _last_codes = _get_codes("all", None, all_market=True)
+            _last_codes = _get_codes(None, all_market=True)
         else:
-            _last_codes = _get_codes("watchlist", None, all_market=False)
+            _last_codes = _get_codes(None, all_market=False)
         scope = f"watchlist {len(_last_codes)} 只" if not (args.codes or args.all) else (
             f"指定 {len(_last_codes)} 只" if args.codes else f"全市场 {len(_last_codes)} 只"
         )
@@ -905,10 +904,10 @@ def main():
         codes = [c.zfill(6) for c in args.codes]
         scope_label = f"指定 {len(codes)} 只"
     elif args.all:
-        codes = _get_codes("all", None, all_market=True)
+        codes = _get_codes(None, all_market=True)
         scope_label = f"全市场 {len(codes)} 只"
     else:
-        codes = _get_codes("watchlist", None, all_market=False)
+        codes = _get_codes(None, all_market=False)
         scope_label = f"watchlist {len(codes)} 只"
     _last_codes = codes
 
@@ -941,14 +940,14 @@ def main():
     # 按 flag 调用 (顺序: kline → stock_basic → financials → cache → meta)
     if args.kline:
         print("\n[1/7] --kline (增量 K 线)")
-        action_kline(codes)
+        action_kline()
     if args.stk_factor:
         # v6.2.4 重构: 替代 daily_basic, 16 列, 8 分钟重拉
         print("\n[1.5/7] --stk-factor (重拉 17 列 stk_factor_pro, 替代 daily_basic)")
         action_stk_factor(force=False)
     if args.stock_basic:
         print("\n[2/7] --stock-basic (股票基础)")
-        action_stock_basic(codes)
+        action_stock_basic()
     if args.financials:
         print("\n[3/7] --financials (财务 5 季度)")
         # v6.2.4 改: financials 强制全市场 (传 None, action_financials 内部会拉 5555 只)

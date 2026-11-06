@@ -74,7 +74,7 @@ sql = """
 df_all = duckdb.execute(sql).fetchdf()  # 0.5s 拿 5812 票
 
 # 2. 1 次 scan_sub_events 全段扫 (as_of_idx=None) + 缓存
-sub_events_all = scan_sub_events(closes, highs, lows, vols, rng, o=opens, pct_chg=pct_chgs, as_of_idx=None, ...)
+sub_events_all = scan_sub_events(closes, highs, lows, vols, o=opens, pct_chg=pct_chgs, as_of_idx=None, ...)
 
 # 3. 循环每只, 不同 as_of_idx 时 过滤 sub_events (i <= as_of_idx), 传 precomputed_sub_events_raw
 for k in range(lookback + 1):

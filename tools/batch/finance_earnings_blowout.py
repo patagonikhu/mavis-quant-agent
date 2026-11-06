@@ -556,7 +556,6 @@ def sync_watchlist_blowout(hits_df: pd.DataFrame, dry_run: bool = False) -> None
     with open(WATCHLIST_PATH, encoding="utf-8") as f:
         wl = json.load(f)
 
-    old_blowout_codes = {s["code"] for s in wl.get("stocks", []) if s.get("list_type") == "blowout"}
     added, removed, kept = [], [], []
 
     for s in wl.get("stocks", []):

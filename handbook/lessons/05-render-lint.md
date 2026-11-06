@@ -369,3 +369,51 @@ diff /tmp/before.md /tmp/after.md     # 必须完全一致
 本次 300588 / 002371 / 600089 三份报告改动前后**逐字节一致**才算过。
 
 **apply when:** 任何"删死代码 / 下线功能"的动作。
+
+### 删参数前:「AST 说没用」≠「调用方没在传」 (2026-11-06)
+Type: rule
+> **摘要:** AST 只能证明参数**函数体内**没用, 证明不了外部没在传 —— 删参数前必须 grep 全仓调用点 + 跑一遍受影响的 skill 入口
+
+**触发场景:** 清理冗余参数/变量, 删了 ~30 个参数。
+**3 个参数在函数体内确实没用, 但外部调用点正在传值**, 删完签名就炸:
+
+| 被删参数 | 炸的调用点 | 报错 |
+|---|---|---|
+| `_section_factor_history(lookback=)` | `tools/batch/factor_5y.py:116` | `unexpected keyword argument 'lookback'` |
+| `_section_factor_history(lookback=)` | `tools/render/factor_history_only.py:35` | 同上 |
+| `_process_one(lookback=)` | `tools/batch/_eval_a2m_hits.py:51` | `takes 2 positional arguments but 3 were given` |
+
+**为什么 AST 看不出来:** AST 扫描只统计**参数在函数体内部**有没有被 Load。
+外部调用方传了 `lookback=1250` 而函数体忽略它 —— 函数体视角看是「冗余」, 调用方视角看是「在传值」。
+**「被传但被忽略」是比「没传」更危险的一种**: 改签名直接炸, 不改则永远是静默的假参数。
+
+**自造验证工具本身也会假绿 —— 3 个坑:**
+1. **绑定检查中断**: 用 `except (ValueError, TypeError)` 包 `inspect.signature`, 一个函数抛别的异常
+   → 整个 defs 构建循环**提前中断** → 只扫到 108/1223 个调用点 → 报「0 失败」是**假绿**。
+   → 教训: 校验器的单点异常**必须兜住**, 否则「没报错」= 「没检查到」。
+2. **import 副作用**: `tools/batch/t_analyze_all.py` **无 `if __name__ == '__main__'` 保护**,
+   `importlib.import_module` 它会**直接跑全市场扫描** → 校验器被拖慢 + 污染产物。
+   → 校验器要先排掉这类模块。
+3. **缺依赖**: `app/` 依赖 pydantic / langchain / fastapi, 本地没装 → **导入式校验根本覆盖不到 app/**。
+   → 正解是**纯 AST 建签名**(不 import 任何模块), 覆盖率才是 100%。
+
+**正解 (三件套, 缺一不可):**
+```bash
+# 1. grep 全仓: 参数名 + 函数名 两个维度都搜
+grep -rn "<func>(\|<param>=" --include=*.py . | grep -v "^./.venv"
+
+# 2. 纯 AST 绑定检查 (不 import → 不受缺依赖/sys.exit 影响)
+#    对每个调用点, 试所有同名定义, 全绑不上才报错
+#    → 本轮: 1223 个调用点, 抓出上面 3 个真 bug
+
+# 3. 改动前后逐字节 diff + **逐个跑受影响的 skill 入口**
+#    (签名改动只会在某条具体链路上炸, 必须真跑)
+bash tools/with_venv.sh python -m tools.batch.factor_5y --codes 300588 --write-md-all
+bash tools/with_venv.sh python tools/render/factor_history_only.py 300588.SZ --days 60
+```
+
+**本轮实际抓到 3 个真 bug 靠的就是第 3 步** —— 光看报告 diff 全绿 (164 份逐字节一致),
+但 `/t-factor-5y` 和 `factor_history_only` 这两条**不进 /t-analyze 报告的链路**已经炸了。
+→ **改签名后, 把所有引用该函数的 skill 入口都跑一遍**, 别只跑出报告的那条。
+
+**apply when:** 任何"删函数参数 / 改函数签名"的动作。

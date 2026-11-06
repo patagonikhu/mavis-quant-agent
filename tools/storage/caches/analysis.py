@@ -415,7 +415,7 @@ def _load_tech_codes() -> list[str]:
         return [s["code"] for s in wl]
 
 
-def _calc_signals_for_code(code: str, full: bool, batch_size: int, step: int):
+def _calc_signals_for_code(code: str, full: bool, batch_size: int):
     """Phase1: 找最老的缺失段（最多 batch_size 根），只算那一段。
 
     策略：
@@ -534,7 +534,7 @@ def warmup_cache(codes: list[str] | None = None,
     recent_times: list[float] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(_calc_signals_for_code, code, full, batch_size, 1): code
+        futs = {ex.submit(_calc_signals_for_code, code, full, batch_size): code
                 for code in CODES}
         for fut in as_completed(futs):
             code = futs[fut]

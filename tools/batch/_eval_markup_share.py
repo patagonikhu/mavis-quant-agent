@@ -56,7 +56,7 @@ def main():
         dates_ = df['date'].astype(str).str.replace('-', '').str[:8].tolist()
         n = len(closes)
         arrs = build_kline_features(closes, highs, lows, vols, window=min(250, n))
-        subs = scan_sub_events(closes, highs, lows, vols, None, o=opens, pct_chg=pct_chgs,
+        subs = scan_sub_events(closes, highs, lows, vols, o=opens, pct_chg=pct_chgs,
                                period_label="daily", code=code, as_of_idx=None,
                                dates=dates_, precomputed_arrs=arrs)
         i = n - 1
@@ -94,7 +94,6 @@ def main():
 
         if ch == "main(主路径)":
             md = out.get("markup_detail", {}) or {}
-            fv = out.get("factor_values", {}) or {}
             def r(v):
                 return f"{v:+.2f}%" if isinstance(v, (int, float)) else "n/a"
             main_rows.append({

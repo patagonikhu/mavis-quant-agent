@@ -108,7 +108,6 @@ def render_detail_section(name: str, metrics: dict) -> str:
     # 指标归类: 哪类用 _fmt_pct, 哪类用 _fmt_ratio/_fmt_num
     PCT_KEYS = {"总收益", "年化", "最大回撤", "日均", "年化波动", "下行波动"}
     RATIO_KEYS = {"胜率", "盈亏比", "换手率", "平均持仓天数"}
-    NUM_KEYS = {"夏普", "Sortino", "Calmar", "总交易数"}
 
     lines = [f"### {name}", ""]
     for ev_name, ev_metrics in metrics.items():
@@ -127,7 +126,7 @@ def render_detail_section(name: str, metrics: dict) -> str:
     return "\n".join(lines)
 
 
-def render_signal_stats(all_results: dict[str, dict], data_loader, start: str = None, end: str = None) -> dict:
+def render_signal_stats(data_loader, start: str = None, end: str = None) -> dict:
     """4 策略 1 年的选股信号统计 (每天选多少只)"""
     import pandas as pd
     from datetime import datetime, timedelta
@@ -222,7 +221,7 @@ def main():
 
     # 3) 信号触发统计
     print("--- 信号触发统计 ---")
-    sig_stats = render_signal_stats(all_results, data, start=args.start, end=args.end)
+    sig_stats = render_signal_stats(data, start=args.start, end=args.end)
     print(render_signal_table(sig_stats))
     print()
 

@@ -70,11 +70,8 @@ class FeatureVector:
         ]
 
 
-def extract_features(
-    report: SectorSignalReport,
-    sector_bars: list[SectorKlineBar],
-) -> FeatureVector:
-    """从信号报告和K线数据中提取特征向量"""
+def extract_features(report: SectorSignalReport) -> FeatureVector:
+    """从信号报告中提取特征向量"""
     d = report.signal_details
     fv = FeatureVector(sector_name=report.sector_name)
     fv.rule_total_score = report.total_score

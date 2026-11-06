@@ -50,7 +50,7 @@ def ret_pct(closes, back):
     return (closes[-1] / closes[-1 - back] - 1) * 100
 
 
-def judge_replica(i, arrs, evs, sub_all, sub_recent, closes, vols,
+def judge_replica(i, arrs, sub_all, sub_recent, closes, vols,
                   sub_window=None, vol_dry_ratio=None, slope_min=None):
     """复刻 stage_factor 的判定链, 但参数可调
 
@@ -69,12 +69,6 @@ def judge_replica(i, arrs, evs, sub_all, sub_recent, closes, vols,
                if recent_high > recent_low else 50)
     ma_gap_pct_above = ((p - ma200) / ma200 * 100) if ma200 > 0 else 0.0
     is_uptrend = slope_60 > 0 and dev_ma200 > -10 and trend_30 > -15
-
-    ma50_angle_5d = 0.0
-    if i >= 54:
-        ma50_5d_ago = sum(closes[i - 54:i - 49]) / 5
-        if ma50_5d_ago > 0:
-            ma50_angle_5d = (ma50 / ma50_5d_ago - 1) * 100
 
     # ── sub_event 集合: 全集 或 最近 N 根 (时效窗口) ──
     # 生产代码没有时效 (sub_set = {e["name"] for e in sub_raw}, 只过滤 idx<=abs_idx),
@@ -257,7 +251,7 @@ def main():
         dates_ = df['date'].astype(str).str.replace('-', '').str[:8].tolist()
         n = len(closes)
         arrs = build_kline_features(closes, highs, lows, vols, window=min(250, n))
-        evs = scan_sub_events(closes, highs, lows, vols, None, o=opens, pct_chg=pct_chgs,
+        evs = scan_sub_events(closes, highs, lows, vols, o=opens, pct_chg=pct_chgs,
                               period_label="daily", code=code, as_of_idx=None,
                               dates=dates_, precomputed_arrs=arrs)
         i = n - 1
@@ -268,7 +262,7 @@ def main():
         prod_stage = "?" if prod_out is None else prod_out.get("stage", "?")
 
         # 复刻 (默认参数 = 生产)
-        rep_stage, rep_ch = judge_replica(i, arrs, evs, sub_all, None, closes, vols)
+        rep_stage, rep_ch = judge_replica(i, arrs, sub_all, None, closes, vols)
         if rep_stage != prod_stage:
             mismatches += 1
             if mismatches <= 5:
@@ -319,7 +313,7 @@ def main():
                 recent = {nm for nm, a in r["age"].items() if a <= sub_window}
             else:
                 recent = None
-            stage, ch = judge_replica(r["i"], r["arrs"], None, r["sub_all"], recent,
+            stage, ch = judge_replica(r["i"], r["arrs"], r["sub_all"], recent,
                                        r["closes"], r["vols"],
                                        sub_window=sub_window,
                                        vol_dry_ratio=vol_dry_ratio,

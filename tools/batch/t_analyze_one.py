@@ -147,10 +147,8 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         rows = data.factor_history_rows
         signals = []
         if len(rows) >= 2:
-            r = rows[-1]
             changes = diff_rows(rows[-2], rows[-1])
             sigs = extract_signals(changes)
-            sig_fmtd = format_signals_for_render(changes)
             for _, detail, direction in sigs:
                 signals.append((direction, code, name_for_file, detail))
 
@@ -227,9 +225,9 @@ def main() -> int:
     if n_workers == 1:
         # 单进程串行
         for idx, t in enumerate(tasks, 1):
-            code, name_, sub = t
+            code = t[0]
             print(f"\n[{idx}/{len(codes)}] {code} ...", flush=True)
-            code_r, ok, path_or_err, elapsed, list_type = _process_one_mp(t)
+            code_r, ok, path_or_err, elapsed, _list_type = _process_one_mp(t)
             if ok:
                 ok_n += 1
                 print(f"  ✅ {code_r} → {path_or_err} ({elapsed:.1f}s)")
@@ -240,7 +238,7 @@ def main() -> int:
         ctx = mp.get_context("spawn")
         with ctx.Pool(processes=n_workers) as pool:
             for idx, result in enumerate(pool.imap_unordered(_process_one_mp, tasks), 1):
-                code, ok, path_or_err, elapsed, list_type = result
+                code, ok, path_or_err, elapsed, _list_type = result
                 mark = "✅" if ok else "⚠️ "
                 sys.stdout.write(f"\r  [{idx}/{len(codes)}] {mark} {code} ({elapsed:.1f}s)")
                 sys.stdout.flush()

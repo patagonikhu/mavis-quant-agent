@@ -92,7 +92,7 @@ def main():
         if n < MIN_KLINE:
             return None
         arrs = build_kline_features(closes, highs, lows, vols, window=min(250, n))
-        se = scan_sub_events(closes, highs, lows, vols, None, o=opens, pct_chg=pct,
+        se = scan_sub_events(closes, highs, lows, vols, o=opens, pct_chg=pct,
                              period_label='daily', code=code, as_of_idx=None,
                              dates=dates, precomputed_arrs=arrs)
         s5, s3 = [], []

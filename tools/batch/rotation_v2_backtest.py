@@ -84,14 +84,9 @@ def main():
     df["red_ret"] = df["red_close"].pct_change().shift(-1)
     df = df.dropna().reset_index(drop=True)
 
-    cutoff = df["dt"].iloc[0]
     if args.lookback:
         from datetime import datetime, timedelta
         # 找 lookback 年前的日期
-        all_dates = sorted(df["dt"].unique())
-        last_dt = all_dates[-1]
-        last_yyyymm = int(last_dt[:6])
-        target_yyyymm = last_yyyymm - args.lookback * 100
         # 简化: 用行数
         n_lookback = args.lookback * 250  # 约一年 250 个交易日
         if len(df) > n_lookback:

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.tools.market_data import (
@@ -39,7 +38,7 @@ ALL_TOOLS = [
 ]
 
 
-async def chat(user_message: str, history: Optional[list[dict]] = None) -> str:
+async def chat(user_message: str) -> str:
     """ReAct 对话入口：用户消息直接进 ReAct agent"""
     try:
         from langchain.agents import AgentExecutor, create_react_agent

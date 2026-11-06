@@ -11,7 +11,6 @@ def detect_spring(c, h, l, v, o, i, support_window=60, vol_ratio=1.3, max_bias=1
                   precomputed_atr=None, precomputed_ma200=None,
                   precomputed_arrs=None) -> bool:
     """Spring 检测 (1:1 搬运 WyckoffTradingAgent 1093 行)"""
-    n = len(c)
     if i < support_window + 2:
         return False
     # 支撑位不能包含 prev (i-1)

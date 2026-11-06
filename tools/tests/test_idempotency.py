@@ -14,7 +14,7 @@ def test(code: str = "300274", runs: int = 3) -> bool:
         print(f"❌ {code} 本地无K线")
         return False
     hashes = set()
-    for i in range(runs):
+    for _ in range(runs):
         _last = ctx.kline[-1]["trade_date"].replace("-", "")[:8] if ctx.kline else ""
         result = AnalysisEngine().analyze_history(ctx, [_last]).get(_last)
         data = RenderData.from_result(ctx, result)

@@ -36,7 +36,7 @@ def main():
     cnt = Counter()
     only_addline = []
     markup_all = []
-    for idx, (code, df) in enumerate(sorted(all_kl.items())):
+    for code, df in sorted(all_kl.items()):
         if df is None or len(df) < 220:
             continue
         closes = df['close'].tolist()
@@ -48,7 +48,7 @@ def main():
         dates_ = df['date'].astype(str).str.replace('-', '').str[:8].tolist()
         n = len(closes)
         arrs = build_kline_features(closes, highs, lows, vols, window=min(250, n))
-        subs = scan_sub_events(closes, highs, lows, vols, None, o=opens, pct_chg=pct_chgs,
+        subs = scan_sub_events(closes, highs, lows, vols, o=opens, pct_chg=pct_chgs,
                                period_label="daily", code=code, as_of_idx=None,
                                dates=dates_, precomputed_arrs=arrs)
         i = n - 1
@@ -62,7 +62,6 @@ def main():
         markup_all.append(code)
         fv = out.get("factor_values", {})
         md = out.get("markup_detail", {})
-        scores = out.get("scores", {})
         # 严格 AND 门 (强信号 / 弱信号) 是否命中
         strict = bool(md.get("golden_cross_recent") and md.get("above_ma200_sustained")
                       and md.get("ma_gap_pct_above", 0) > 0.5)

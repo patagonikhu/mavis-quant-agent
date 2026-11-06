@@ -232,9 +232,9 @@ wyckoff_detectors:
       daily: 2.0
       weekly: 3.0
       60m: 3.5
-    # confirm_days / allow_break_pct 2026-07-31 移除:
-    # _evr_confirmation_ok 永远 True (见 helpers.py), 3 bug 修了, 确认机制 60m 无效
-    # 保留 confirm_days/allow_break_pct 函数参数 (兼容), 但不再读 config
+    # confirm_days 2026-07-31 移除 config 读取:
+    # _evr_confirmation_ok 恒 True 空壳已删 (index-based 框架无法前瞻未来 K 线),
+    # 结构稳定性由 _evr_structure_ok 覆盖; 确认机制 60m 无效
   # TrendPullback 趋势回调
   trend_pullback:
     max_bias:

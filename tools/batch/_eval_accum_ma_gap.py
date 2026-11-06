@@ -43,7 +43,7 @@ def main():
             name_by_code[c] = str(v[0]) if isinstance(v, (tuple, list)) and v else str(v)
 
     diffs = []
-    both_ok = win_ok = true_ok = 0
+    both_ok = win_ok = 0
     for code, df in sorted(all_kl.items()):
         if df is None or len(df) < 220:
             continue
@@ -79,7 +79,6 @@ def main():
                 "ma50": ma50, "ma250": ma250, "ma200": ma200,
             })
 
-    total = both_ok + len(diffs) + (win_ok - both_ok) * 0 + 0
     total_all = both_ok + len(diffs)
     print(f"\n{'='*104}")
     print("「均线胶着」判定: window(250) vs 真 MA200 (阈值 |gap| ≤ 8%)")

@@ -7,20 +7,18 @@ detectors/evr.py - EVR 努力无结果 (跟 WyckoffTradingAgent 1303 行 1:1)
 三件套 (跟 WyckoffTradingAgent 1:1):
   1. _evr_turnover_ok: 流动性 (默认 min_turnover=0 跳过)
   2. _evr_structure_ok: 当前 close >= 3 日前 close × 0.98
-  3. _evr_confirmation_ok: event 后 N 日没破 event_low
 """
 from ..helpers import (
     _bias_200_exceeds_limit, _is_frozen_board_day,
-    _evr_turnover_ok, _evr_structure_ok, _evr_confirmation_ok,
+    _evr_turnover_ok, _evr_structure_ok,
 )
 
 
 def detect_evr(c, h, l, v, o, i, vol_window=20, vol_ratio=1.8, max_drop=2.0, max_rise=2.0,
-               confirm_days=1, min_turnover=0.0, allow_break_pct=0.0,
+               confirm_days=1, min_turnover=0.0,
                max_bias=25.0, min_bias=10.0, pct_chg=None, turnovers=None,
                precomputed_arrs=None) -> bool:
     """EVR 检测 (1:1 搬运 WyckoffTradingAgent 1303 行, v5.2 三件套完整)
-    2026-07-31: 简化 _evr_confirmation_ok 永远 True (3 bug 修了, 见 helpers.py)
     2026-08-05: 加 min_bias 下限, 排除低位噪声 (低位放量不涨是吸筹, 不是出货)
     """
     n = len(c)
@@ -67,8 +65,4 @@ def detect_evr(c, h, l, v, o, i, vol_window=20, vol_ratio=1.8, max_drop=2.0, max
     # 三件套 2: structure_ok
     if not _evr_structure_ok(c[:i], close_last):
         return False
-    # 三件套 3: confirmation_ok (2026-07-31 简化, 永远 True, 见 helpers.py)
-    if not _evr_confirmation_ok(c[:i], l[:i], real_idx, confirm_days, allow_break_pct):
-        return False
     return True
-    return False
