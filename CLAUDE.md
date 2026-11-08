@@ -46,7 +46,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 ## 🐍 环境 + 报告契约
 
 **venv**: `bash tools/with_venv.sh python ...` — ❌ 裸 `python3` / ❌ `pip install` / ❌ `source activate`
-**git**: 默认直连, 失败才用 `proxy.sin.sap.corp:8080` (带 scheme); 数据 API 永不加 proxy
+**网络**: **proxy 只给 GitHub 用** —— git push/pull 直接走 `http://proxy.sin.sap.corp:8080` (带 scheme, 直连慢 ~8s / 代理 ~2.2s); **其余一切 (数据 API / tushare / 网页 / 第三方接口) 一律直连, 永不加 proxy**
 **`config/watchlist.json`**: 手维护 (持仓 / 自选 / blowout 候选池三段)
 
 **报告**: 7 有效 section, 顺序与内容真源 = [`tools/render/report_schema.py`](tools/render/report_schema.py) (改 schema 别散到 `batch/*.py`)。
