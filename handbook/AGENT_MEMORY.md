@@ -14,6 +14,9 @@
 - **已删 skill (禁止复活, 2026-11-02 批)**: `t-watchlist` / `t-monitor` / `t-sector` / `t-etf` / `t-chain` / `t-checklist` / `t-bottleneck` / `t-trigger` / `t-rotation` / `t-ranking` / `t-near-low` / `t-roc-ey`; 另 2026-11-04 删 `t-rsi6-tech`
 - **项目教训**: [`handbook/project-lessons.md`](project-lessons.md) = 索引页 → 5 个主题分册在 `handbook/lessons/` (一句话摘要在 `lessons/README.md`)
 - **批量分析**: `tools/batch/t_analyze_all.py` (4 worker 并发)
+  - blowout 段: 先用 `tools/batch/blowout_markup_screen.py` 筛**日线 stage == Markup** 的票
+    (口径同源: `analyze_history` → `raw["wyckoff"]["3period"]["daily"]["stage"]`),
+    只有命中的出详报 → `docs/blowout/`; 其余不落 md、不进主汇总
 - **单只分析**: `tools/batch/t_analyze_one.py --code <code>` (新加, 829 行详报)
 
 ## 纪律 (8-24 固化)

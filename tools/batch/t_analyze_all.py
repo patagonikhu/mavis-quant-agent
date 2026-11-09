@@ -15,6 +15,14 @@ t-analyze --all 批量分析: 4-8 worker 并发 analyze+render, 逐只落 md + �
 2026-11-06 改造: ETF MACD 扫描段整段下线
   - tools/batch/etf_macd_scan.py 已删, --no-etf flag 一并删
   - ETF 扫描由 /t-etf-wyckoff-a2m 单独承担, 本脚本只管持仓 + 自选
+
+2026-11-09 改造: blowout 段**只跑威科夫 M 阶段**的票, 详报落 docs/blowout/
+  - 之前 (2026-11-06) blowout 整段排除: 候选池 158 只全不落 md
+  - 现在: 先用 tools/batch/blowout_markup_screen.py 筛出**当前日线 stage == Markup** 的票,
+    只有这些票跑完整详报 → docs/blowout/analyze-{code}-{name}.md
+  - 筛选口径跟 /t-analyze 详报末行同源 (生产侧 analyze_history → 3period.daily.stage),
+    **不自己重算 stage**
+  - blowout 段的 buy/sell 信号**单独打印**, 不混进持仓+自选的主汇总 (口径不污染)
 """
 import sys, datetime, time, os
 import argparse
@@ -42,12 +50,31 @@ _, _unknown = _arg_parser.parse_known_args()
 
 
 wl = DataStore.load_watchlist()['stocks']
-# 2026-11-06: blowout 段永久排除 (候选池, 用来筛的, 不参与批量详报)
+# 2026-11-06: blowout 段整段排除 (候选池, 用来筛的, 不参与批量详报)
+# 2026-11-09 改: blowout 段**只跑威科夫 M 阶段的票** —— 先筛 stage == Markup, 再出详报
+#   筛选走 tools/batch/blowout_markup_screen.py (生产侧 analyze_history, 跟详报末行同源)
+from tools.batch.blowout_markup_screen import screen_markup_stocks
+
 stocks = [s for s in wl if s.get('list_type', '自选') != 'blowout']
+blowout_pool = [s for s in wl if s.get('list_type', '自选') == 'blowout']
 excluded = len(wl) - len(stocks)
+
+# === blowout 段: 威科夫 M 阶段筛选 ===
+blowout_hits = []
+if blowout_pool:
+    print(f'  🔎 blowout 候选池 {len(blowout_pool)} 只 → 筛威科夫 M 阶段 (日线 stage == Markup) ...',
+          flush=True)
+    _b_t0 = time.time()
+    blowout_hits = screen_markup_stocks([s['code'] for s in blowout_pool],
+                                         workers=int(os.environ.get('T_ANALYZE_WORKERS', '4')))
+    print(f'     → 命中 {len(blowout_hits)} 只 M 阶段 ({time.time() - _b_t0:.1f}s)', flush=True)
+    _hit_codes = {h['code'] for h in blowout_hits}
+    blowout_stocks = [s for s in blowout_pool if s['code'] in _hit_codes]
+else:
+    blowout_stocks = []
 if excluded:
-    print(f'  ℹ️  跳过 blowout 候选池 {excluded} 只 '
-          f'(候选池不参与批量详报; 单只深挖用 /t-analyze <code>)', flush=True)
+    print(f'  ℹ️  blowout 候选池 {len(blowout_pool)} 只 → 只有 M 阶段的 {len(blowout_stocks)} 只出详报 '
+          f'(落 docs/blowout/)', flush=True)
 
 # === 2026-09-15 加: 清理 watchlist 之外的孤儿 md (残留旧详报, 让用户以为"没刷新") ===
 # 2026-11-02 修 (两个真 bug):
@@ -59,7 +86,6 @@ if excluded:
 #      (name 为空/未知时) → 自己刚生成的报告下一轮就被当孤儿删掉
 #      修: 用跟 t_analyze_one 一样的 name_for_file 解析
 #   ③ 删除改用 safe_delete (移到 ~/.Trash, 不可恢复的 unlink 是事故根源)
-import re
 from tools.storage.safe_fs import safe_delete
 
 
@@ -85,11 +111,14 @@ _all_wl = DataStore.load_watchlist()['stocks']
 _expected_by_sub = {'portfolio': set(), 'watchlist': set(), 'blowout': set()}
 for _s in _all_wl:
     _lt = _s.get('list_type', '自选')
-    # 2026-11-06 改: blowout 段不再生成 md → docs/blowout/ 里全是历史产物, 全清
     if _lt == 'blowout':
+        # 2026-11-09 改: blowout 段**只出 M 阶段的详报** → 期望文件 = 本次 M 命中名单
+        #   (非 M 的票不落 md → 它们在 docs/blowout/ 的旧产物按孤儿清理移走)
         continue
     _sub = 'portfolio' if _lt == '持仓' else 'watchlist'
     _expected_by_sub[_sub].add(_name_for_file(_s))
+for _s in blowout_stocks:
+    _expected_by_sub['blowout'].add(_name_for_file(_s))
 
 for sub in ('portfolio', 'watchlist', 'blowout'):
     d = Path(f'docs/{sub}')
@@ -118,15 +147,13 @@ def process_one(s):
     code = s['code']
     name = s['name']
     # 2026-09-18 加: 3 路分流 — 持仓→portfolio, 自选→watchlist, blowout→blowout
-    # 2026-11-06 改: blowout 段**不落 md** (候选池, 用来筛的) —— 只进 stdout 汇总
+    # 2026-11-09 改: blowout 段只跑 M 阶段的票 (外面已筛过), 详报落 docs/blowout/
     lt = s.get('list_type', '自选')
     if lt == '持仓':
         subdir = 'portfolio'
         list_type_label = '持仓'
     elif lt == 'blowout':
-        # backstop: blowout 段已不参与批量跑 (上面的 stocks 已排除),
-        # 这里再兜一层 —— 万一以后有人把它加回 stocks, 也不该落 md
-        subdir = None
+        subdir = 'blowout'
         list_type_label = 'blowout'
     else:
         subdir = 'watchlist'
@@ -186,7 +213,8 @@ def process_one(s):
 
         elapsed = time.time() - t0
         return ('ok', code, {'md_path': md_path, 'elapsed': elapsed, 'len': len(md),
-                              'signals': signals, 'table_row': table_row, 'list_type': list_type_label})
+                              'signals': signals, 'table_row': table_row,
+                              'list_type': list_type_label, 'code': code})
     except Exception as e:
         return ('err', code, str(e)[:200])
 
@@ -196,19 +224,39 @@ WORKERS = int(os.environ.get('T_ANALYZE_WORKERS', '4'))
 print(f'\n[并发] {WORKERS} workers', flush=True)
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+def _run_pool(pool_stocks, pool_label):
+    """跑一批票, 返回 (ok_results, errs)
+
+    2026-11-09: 抽成函数 —— blowout 段 (M 阶段票) 要单独跑一遍,
+    信号单独汇总, 不混进持仓+自选的主汇总。
+    """
+    ok_results, pool_errs = [], []
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        futs = {ex.submit(process_one, s): s for s in pool_stocks}
+        for i, fut in enumerate(as_completed(futs), 1):
+            status, code, payload = fut.result()
+            if status == 'ok':
+                ok_results.append(payload)
+                _md_name = payload["md_path"].name if payload.get("md_path") else "(未落盘)"
+                print(f'  [{pool_label} {i}/{len(pool_stocks)}] ✅ {code} -> {_md_name} '
+                      f'({payload["elapsed"]:.1f}s, {payload["len"]:,}chars)', flush=True)
+            else:
+                pool_errs.append((code, payload))
+                print(f'  [{pool_label} {i}/{len(pool_stocks)}] ❌ {code}: {payload}', flush=True)
+    return ok_results, pool_errs
+
+
 results = []
-with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-    futs = {ex.submit(process_one, s): s for s in stocks}
-    for i, fut in enumerate(as_completed(futs), 1):
-        s = futs[fut]
-        status, code, payload = fut.result()
-        if status == 'ok':
-            results.append(payload)
-            _md_name = payload["md_path"].name if payload.get("md_path") else "(blowout 候选池, 不落盘)"
-            print(f'  [{i}/{len(stocks)}] ✅ {code} -> {_md_name} ({payload["elapsed"]:.1f}s, {payload["len"]:,}chars)', flush=True)
-        else:
-            errs.append((code, payload))
-            print(f'  [{i}/{len(stocks)}] ❌ {code}: {payload}', flush=True)
+results, errs = _run_pool(stocks, '持仓+自选')
+
+# === blowout 段: 只跑 M 阶段的票, 详报落 docs/blowout/ ===
+blowout_results = []
+if blowout_stocks:
+    print(f'\n=== blowout M 阶段详报 ({len(blowout_stocks)} 只 → docs/blowout/) ===', flush=True)
+    blowout_results, blowout_errs = _run_pool(blowout_stocks, 'blowout')
+    errs.extend(blowout_errs)
 
 # 汇总 → stdout (不落汇总 md 文件)
 for r in results:
@@ -250,6 +298,32 @@ if errs:
     print(f'错误: {len(errs)}只')
     for c, e in errs:
         print(f'  {c}: {e}')
+
+# === blowout 段汇总 (2026-11-09) ===
+# 信号**单独打印** —— 不混进上面持仓+自选的主汇总 (两个口径不能混)
+if blowout_stocks:
+    _b_buy, _b_sell = [], []
+    for r in blowout_results:
+        for direction, code, name, detail in r['signals']:
+            (_b_buy if direction == 'buy' else _b_sell).append((code, name, detail))
+    _b_md = sum(1 for r in blowout_results if r.get('md_path'))
+    print(f'\n=== blowout M 阶段 ({len(blowout_stocks)} 只候选 → {len(blowout_hits)} 只 M 阶段) ===')
+    print(f'MD生成: {_b_md}/{len(blowout_stocks)} (→ docs/blowout/)')
+    print(f'有今日信号: {sum(1 for r in blowout_results if r["table_row"][5] == "⭐")}只')
+    for _h in blowout_hits:
+        _row = next((r for r in blowout_results if r.get('code') == _h['code']), None)
+        _wk = _h.get('stage_weekly', '?')
+        print(f'  🔵 {_h["code"]} {_row["table_row"][1] if _row else "?"} | '
+              f'日线 M / 周线 {_wk} | MA偏离 {_row["table_row"][3] if _row else "—"} | '
+              f'{" ".join(_row["table_row"][4].split()) if _row else "—"}')
+    if _b_buy:
+        print(f'\n  --- blowout buy ({len(_b_buy)}) ---')
+        for code, name, detail in _b_buy:
+            print(f'  🟢 {code} {name} | {detail}')
+    if _b_sell:
+        print(f'\n  --- blowout sell ({len(_b_sell)}) ---')
+        for code, name, detail in _b_sell:
+            print(f'  🔴 {code} {name} | {detail}')
 
 
 # 2026-11-06 删 ETF MACD 扫描段 (整段下线)
