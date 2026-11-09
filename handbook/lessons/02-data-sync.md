@@ -336,3 +336,36 @@ Type: rule
 
 **apply when:** 任何 slash skill 调用。判断标准: 这个动作**在用户这句话的字面范围内吗**?
 不在 → 先问, 不做。
+
+### 自动迁移是双刃剑: 旧代码跑一次就把删掉的列 ADD 回来 (2026-11-09)
+Type: rule
+> **摘要:** `_init()` 同时做 ADD + DROP 迁移 → **用旧代码打开一次 db, 删掉的列就复活**。
+> 验完改动要 `git stash` 回旧代码跑一遍时, 顺手把 schema 也回滚了。
+
+**触发场景 (2026-11-09 实测):**
+analysis_cache 删 14 列 + 冗余索引 `uq_code_date`, VACUUM 后 9→11 列 / 324.5MB ✅
+→ 之后为了验证「`--no-cache` 恒 0 命中是不是我引入的」做了 `git stash` + 用**旧代码**跑 batch_backtest
+→ 旧代码的 `_init()`: ① ADD 列表里有那 14 列 → `ALTER TABLE ADD COLUMN` 全加回来 (值 NULL, 数据没丢)
+② 旧 `_SCHEMA` 里有 `CREATE UNIQUE INDEX uq_code_date` → 索引重建
+→ **324.5MB 变回 388MB (正好 +63.5MB = 索引体积), 25 列复活**, 数据层无损 (14 列全 NULL)。
+
+**为什么危险 (不是"看着别扭", 是会骗人):**
+- 文件大小变化 ≠ 数据丢失 → 容易误判成"备份丢了/迁移失败"
+- 但**下次任何人用旧代码跑一次, 迁移就被静默撤销** —— 自动迁移的幂等性是双向的
+- 唯一读方 (子事件回测) 会从"读不到列"变成"读到全 NULL" → 静默 0 命中, 跟删列前一模一样
+
+**怎么防:**
+1. 改 schema 的那轮, **验证完立刻复查 `PRAGMA table_info` + 文件大小** —— 别信"我跑过了"
+2. `git stash` 前后各查一次 db schema; 用了旧代码就把迁移重跑一遍 (新代码 import 即触发)
+3. 删列的**读方路径要同时下线或改成响亮失败** —— 列没了但读方还在, 就是下一个静默 bug
+
+**验收口径 (本轮实测):**
+```
+旧代码跑过之后: 25 列 / 388MB → 新代码 import (触发 _init) → 11 列 / VACUUM → 324MB
+行数 2,759,110 不变 | PK 重复 0 | 空 code/date 0
+查询计划: SEARCH analysis_cache USING INDEX sqlite_autoindex_analysis_cache_1 (code=? AND date_str=?)
+保留列非空率: kline_hash/updated_at 100% | rsi6 97.8% | vol_ratio 98.2% | wy_stage 50.1%
+```
+
+**apply when:** 任何改 db schema 的活 —— 收尾必查 `PRAGMA table_info` + 体积, 尤其在用过 `git stash` /
+`git checkout` 回旧代码之后。**改完不看 = 没改完。**
