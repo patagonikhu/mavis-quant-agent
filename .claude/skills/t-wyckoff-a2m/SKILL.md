@@ -85,7 +85,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 ## 跑流程
 
-1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `_filter_by_pe` → `_filter_by_quality` (+ROE/毛利率) → `_filter_by_leverage` → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
+1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `DataStore.filter_codes_by_pe` → `DataStore.filter_codes_by_quality` (+ROE/毛利率) → `DataStore.filter_codes_by_leverage` → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
 2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/`
 
 ### step 2 两种模式 (2026-10-29 加 `--refresh`, **2026-11-02 起 `--refresh` 是默认**)
@@ -125,9 +125,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 - `当前 K 线 stage == Markup` (必须)
 - 最近 **40** 根 K 线 `M 占比 < 10%` (允许 ≤ 3 根, 排除"反复 M"假突破)
-  - **豁免**: 当前**周线 stage == Markup** 时跳过此检查 (大级别趋势已确认, 日线反复震荡不算假突破)
-  - 周线由日线合成 (`_synthesize_weekly`), 0 网络, 单独跑一次 `wyckoff_judge`
-  - 输出表新增「周线」列: `M★` = 豁免命中 / `M` = 正常命中 / 其他首字母
+- 转折点在最近 **lookback** 根 K 线内 (默认 5)
 - 单日涨跌 > 20% 跳过 (除权 / 复牌)
 - K 线长度 ≥ 11 根
 

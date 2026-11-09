@@ -28,8 +28,7 @@ import pandas as pd
 
 from tools.storage.store import DataStore
 from tools.batch.wyckoff_a2m_scan import (
-    _filter_by_st, _filter_by_pe, _filter_by_quality,
-    _filter_by_leverage, load_codes_all_market,
+    _filter_by_st, load_codes_all_market,
 )
 from tools.factors.kline_arrays import build_kline_features
 from tools.factors.wyckoff.detectors.markup_entry import (
@@ -62,10 +61,10 @@ def main():
 
     codes = load_codes_all_market()
     codes = _filter_by_st(codes)
-    codes = _filter_by_pe(codes, 60.0)
-    codes = _filter_by_quality(codes, or_yoy_min=0, gm_min=0, np_yoy_min=0,
-                                roe_min=5.0, gm_abs_min=20.0)
-    codes = _filter_by_leverage(codes, 0.5)
+    codes = DataStore.filter_codes_by_pe(codes, 60.0)
+    codes = DataStore.filter_codes_by_quality(codes, or_yoy_min=0, np_yoy_min=0,
+                                roe_min=5.0, gm_min=20.0)
+    codes = DataStore.filter_codes_by_leverage(codes, 0.5)
     print(f"候选池 {len(codes)}", flush=True)
 
     n_checked = 0

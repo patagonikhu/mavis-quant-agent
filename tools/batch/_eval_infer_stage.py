@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tools.storage.store import DataStore
 from tools.factors.wyckoff.helpers import FB1_TREND30_MIN
 
 WTA = Path("/Users/I514959/workspace/WyckoffTradingAgent")
@@ -24,8 +26,7 @@ import duckdb
 import pandas as pd
 
 from tools.batch.wyckoff_a2m_scan import (
-    _load_all_klines, _filter_by_st, _filter_by_pe, _filter_by_quality,
-    _filter_by_leverage, load_codes_all_market, load_stock_basic,
+    _load_all_klines, _filter_by_st, load_codes_all_market, load_stock_basic,
 )
 from tools.factors.kline_arrays import build_kline_features
 from tools.factors.wyckoff.stage_factor import wyckoff_judge
@@ -39,11 +40,11 @@ from core.wyckoff_engine import FunnelConfig
 def load_candidate_codes():
     codes = load_codes_all_market()
     codes = _filter_by_st(codes)
-    codes = _filter_by_pe(codes, 60.0)
-    codes = _filter_by_quality(codes, or_yoy_min=0, gm_min=0, np_yoy_min=0,
-                              roe_min=5.0, gm_abs_min=20.0)
+    codes = DataStore.filter_codes_by_pe(codes, 60.0)
+    codes = DataStore.filter_codes_by_quality(codes, or_yoy_min=0, np_yoy_min=0,
+                              roe_min=5.0, gm_min=20.0)
     # 生产默认 --max-net-debt-ratio 0.5 (462 → 443), 必须补上以对齐生产池
-    codes = _filter_by_leverage(codes, 0.5)
+    codes = DataStore.filter_codes_by_leverage(codes, 0.5)
     return codes
 
 

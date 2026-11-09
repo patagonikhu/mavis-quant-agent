@@ -38,6 +38,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.storage.store import DataStore
+
 from tools.factors.wyckoff.helpers import stage_strength, strength_label
 
 SRC = ROOT / "tools" / "factors" / "wyckoff" / "stage_factor.py"
@@ -205,8 +207,7 @@ def _expected_strength(path, gates, stage):
 
 def main():
     from tools.batch.wyckoff_a2m_scan import (
-        _load_all_klines, _filter_by_st, _filter_by_pe, _filter_by_quality,
-        _filter_by_leverage, load_codes_all_market, load_stock_basic,
+        _load_all_klines, _filter_by_st, load_codes_all_market, load_stock_basic,
     )
     from tools.factors.kline_arrays import build_kline_features
     from tools.factors.wyckoff.detectors.sub_event_scanner import scan_sub_events
@@ -217,10 +218,10 @@ def main():
 
     codes = load_codes_all_market()
     codes = _filter_by_st(codes)
-    codes = _filter_by_pe(codes, 60.0)
-    codes = _filter_by_quality(codes, or_yoy_min=0, gm_min=0, np_yoy_min=0,
-                                roe_min=5.0, gm_abs_min=20.0)
-    codes = _filter_by_leverage(codes, 0.5)
+    codes = DataStore.filter_codes_by_pe(codes, 60.0)
+    codes = DataStore.filter_codes_by_quality(codes, or_yoy_min=0, np_yoy_min=0,
+                                roe_min=5.0, gm_min=20.0)
+    codes = DataStore.filter_codes_by_leverage(codes, 0.5)
     print(f"候选池 {len(codes)}", flush=True)
 
     all_kl = _load_all_klines(codes, limit_per_code=2000)

@@ -6,9 +6,9 @@ tools/batch/wyckoff_a2m_scan.py — 全市场扫描"最近 N 根 K 线 A→M 转
   - wyckoff_judge 输出 stage (Accumulation / Markup / Distribution)
   - ① 当前 (最后) 根 stage == 'Markup'                    (必须)
   - ② 最近 40 根里 Markup 占比 < 10% (允许 ≤ 3 根)       (排除"反复 M"假突破)
-     豁免: 周线当前 stage == Markup (大级别趋势已确认)
-  - ③ 单日涨跌 > 20% 跳过                                 (除权/复牌)
-  - ④ K 线长度 ≥ 11 根
+  - ③ 转折点在最近 lookback 根内 (默认 5)
+  - ④ 单日涨跌 > 20% 跳过                                 (除权/复牌)
+  - ⑤ K 线长度 ≥ 11 根
   命中后定位 trans_idx: 从右往左第一根 != M 的位置
 
 数据一致性 (跟 /t-analyze 100%):
@@ -70,8 +70,7 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
     """单只票威科夫当前阶段检测。
 
     日线: 直调 wyckoff_judge (build_kline_features + scan_sub_events 预算一次)
-    周线: AnalysisEngine(WyckoffStrategy).analyze_history 最后一日, 跟 /t-analyze 同源
-    判定: V13 严判 — 当前 M + 最近 40 根 M 占比 < 10% (周线 M 时豁免) + 转折在最近 lookback 根内
+    判定: V13 严判 — 当前 M + 最近 40 根 M 占比 < 10% + 转折在最近 lookback 根内
     """
     if df is None or len(df) < 220:
         return None
@@ -117,33 +116,6 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         closes_tail.append(closes[i])
         dates_tail.append(dates_[i])
 
-    # 周线 stage — 复用 analyze_history(WyckoffStrategy), 跟 /t-analyze 详报同源
-    # 豁免 V13 m_ratio 检查: 周线已是 Markup 说明大级别趋势已确认
-    weekly_stage = "?"
-    try:
-        from tools.analysis.analysis_engine import AnalysisEngine, RawContext, WyckoffStrategy
-        from tools.storage.sources.eastmoney import _synthesize_weekly
-        bars_for_ctx = [
-            {"trade_date": dates_[i], "open": opens[i], "close": closes[i],
-             "high": highs[i], "low": lows[i], "vol": vols[i], "volume": vols[i],
-             "pct_chg": pct_chgs[i] if pct_chgs else 0.0}
-            for i in range(n)
-        ]
-        ctx = RawContext(
-            kline=bars_for_ctx,
-            weekly=_synthesize_weekly(bars_for_ctx),
-            current_price=closes[-1],
-            market_cap_yi=0.0,
-            industry="", code=code, name="",
-        )
-        last_date = dates_[-1]
-        engine = AnalysisEngine(strategies=[WyckoffStrategy])
-        hist = engine.analyze_history(ctx, dates=[last_date])
-        entry = hist.get(last_date, {})
-        weekly_stage = entry.raw.get("wyckoff", {}).get("3period", {}).get("weekly", {}).get("stage", "?")
-    except Exception:
-        pass
-
     last_chg = abs(closes_tail[-1] / closes_tail[-2] - 1) if len(closes_tail) >= 2 and closes_tail[-2] > 0 else 0
     if last_chg > 0.20:
         return None
@@ -152,8 +124,6 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
     if len(stages) < 11:
         return None
 
-    # 必须在最近 lookback 根里找到 A→M 转折 (从右往左第一根非 M 的位置)
-    # trans_idx=0 表示 40 根全是 M 没有转折; trans_idx < 40-lookback 表示转折太早
     trans_idx = 0
     for k in range(len(stages) - 1, 0, -1):
         if stages[k - 1] != "Markup":
@@ -166,8 +136,7 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
     recent_stages = stages[-m_window_size:]
     m_count = sum(1 for s in recent_stages if s == "Markup")
     m_ratio = m_count / m_window_size
-    weekly_exempt = (weekly_stage == "Markup")
-    if m_ratio >= 0.10 and not weekly_exempt:
+    if m_ratio >= 0.10:
         return None
 
     return {
@@ -181,8 +150,6 @@ def _process_one(code: str, df: pd.DataFrame, lookback: int = 5) -> dict | None:
         "curr_stage": stages[-1],
         "trans_stages": stages,
         "m_ratio": m_ratio,
-        "weekly_stage": weekly_stage,
-        "weekly_exempt": weekly_exempt,
     }
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -294,7 +261,7 @@ def _print_effective_conditions(args) -> None:
     else:
         lv_desc = "❌ OFF (--max-net-debt-ratio 0, 不限杠杆)"
 
-    fin_desc = "✅ ON  剔除亏损股 (PE<=0)" if args.with_finance else "❌ OFF (--with-finance 未开)"
+    fin_desc = "✅ ON  剔除亏损股 (PE_TTM 缺失/<=0)" if args.with_finance else "❌ OFF (--with-finance 未开)"
 
     print("\n" + "=" * 72)
     print("  本次运行生效条件 (Effective Conditions)")
@@ -317,9 +284,9 @@ def _print_effective_conditions(args) -> None:
     print(f"\n  【V13 严判】(硬编码, 无 flag 可调)")
     print(f"    ① 当前 K 线 stage == Markup            (必须)")
     print(f"    ② 最近 40 根 K 线 M 占比 < 10%         (允许 ≤3 根, 排除'反复 M'假突破)")
-    print(f"       豁免: 周线当前 stage == Markup       (大级别趋势已确认)")
-    print(f"    ③ 单日涨跌幅 > 20% 跳过                 (除权/复牌)")
-    print(f"    ④ K 线长度 ≥ 11 根")
+    print(f"    ③ 转折点在最近 lookback 根内")
+    print(f"    ④ 单日涨跌幅 > 20% 跳过                 (除权/复牌)")
+    print(f"    ⑤ K 线长度 ≥ 11 根")
 
     print(f"\n  【输出】")
     write_md_on = args.write_md and not args.no_write_md
@@ -374,7 +341,7 @@ def main():
     ap.add_argument("--stale-only", action="store_true",
                     help="只刷新 C 类 (历史留档), 不跑本次命中票的详报")
     ap.add_argument("--with-finance", action="store_true",
-                    help="加 finance 过滤: 剔除亏损股 (PE <= 0)")
+                    help="加 finance 过滤: 剔除亏损股 (PE_TTM 缺失或 <= 0) + PE>500 异常")
     ap.add_argument("--with-quality", choices=["off", "basic", "strong", "elite"], default="basic",
                     help="quality 过滤: off/basic(yoy>0)/strong(yoy>10)/elite(yoy>20) (默认 basic)")
     ap.add_argument("--exclude-st", action="store_true", default=True,
@@ -535,11 +502,18 @@ def main():
 
     if args.with_finance and hits:
         hit_codes_list = [h['code'] for h in hits]
-        kept_finance = set(DataStore.filter_codes_by_pe(hit_codes_list, pe_max=500))
+        kept_finance, pe_map = DataStore.filter_codes_by_finance(hit_codes_list, pe_max=500.0)
+        kept_set = set(kept_finance)
         before = len(hits)
-        hits = [h for h in hits if h['code'] in kept_finance]
-        funnel.append(("step6 with-finance", "PE∈(0,500]", before, len(hits)))
-        print(f"\n=== finance 过滤: {before} → {len(hits)} 只 (剔除 {before - len(hits)} 只亏损/异常) ===\n")
+        hits = [h for h in hits if h['code'] in kept_set]
+        for h in hits:
+            info = pe_map.get(h['code'])
+            if info:
+                h['pe'] = info.get('pe')
+                h['pe_ttm'] = info.get('pe_ttm')
+        funnel.append(("step6 with-finance", "剔亏损股(PE_TTM缺失/<=0) + PE>500", before, len(hits)))
+        print(f"\n=== finance 过滤: {before} → {len(hits)} 只 "
+              f"(剔除 {before - len(hits)} 只亏损/异常) ===\n")
 
     sub_dir = Path(f"docs/{args.report_subdir}")
     existing = _scan_existing_reports(sub_dir) if args.refresh else {}
@@ -580,7 +554,7 @@ def main():
     lines.append(f"| ③ with-quality | {_q} |")
     lines.append(f"| ④ max-net-debt-ratio | {f'ON (净负债/市值<{args.max_net_debt_ratio:g})' if args.max_net_debt_ratio > 0 else 'OFF (不限)'} |")
     lines.append(f"| ⑤ with-finance | {'ON (剔除亏损股)' if args.with_finance else 'OFF'} |")
-    lines.append(f"| V13 严判 | 当前 M + 最近 40 根 M 占比<10% + 周线M豁免 + 单日涨跌<20% + K线≥11根 |")
+    lines.append(f"| V13 严判 | 当前 M + 最近 40 根 M 占比<10% + 转折在 lookback 根内 + 单日涨跌<20% + K线≥11根 |")
     lines.append("")
 
     lines.append("## 过滤漏斗\n")
@@ -604,18 +578,16 @@ def main():
 
     if hits:
         if args.with_finance:
-            lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | PE | PE_TTM | 阶段序列 | 周线 |")
-            lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+            lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | PE | PE_TTM | 阶段序列 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
         else:
-            lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | 阶段序列 | 周线 |")
-            lines.append("|---|---|---|---|---|---|---|---|---|---|")
+            lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | 阶段序列 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
         for r in hits:
             code = r['code']
             name, industry = basic.get(code, (code, "—"))
             stages_str = "/".join(s[0] for s in r['trans_stages'][-(args.lookback + 1):])
             chg = (r['last_close'] / r['trans_close'] - 1) * 100
-            weekly_s = r.get('weekly_stage', '?')
-            weekly_col = f"**{weekly_s[0]}**★" if r.get('weekly_exempt') else weekly_s[0] if weekly_s != '?' else '?'
             if args.with_finance:
                 pe = r.get('pe', '')
                 pe_ttm = r.get('pe_ttm', '')
@@ -624,13 +596,13 @@ def main():
                 lines.append(
                     f"| **T-{r['trans_idx']}** | `{code}` | {name} | {industry} | "
                     f"{r['trans_date']} | ¥{r['trans_close']:.2f} | ¥{r['last_close']:.2f} | "
-                    f"{chg:+.1f}% | {pe_s} | {pe_ttm_s} | {stages_str} | {weekly_col} |"
+                    f"{chg:+.1f}% | {pe_s} | {pe_ttm_s} | {stages_str} |"
                 )
             else:
                 lines.append(
                     f"| **T-{r['trans_idx']}** | `{code}` | {name} | {industry} | "
                     f"{r['trans_date']} | ¥{r['trans_close']:.2f} | ¥{r['last_close']:.2f} | "
-                    f"{chg:+.1f}% | {stages_str} | {weekly_col} |"
+                    f"{chg:+.1f}% | {stages_str} |"
                 )
 
     out_path = Path(args.output)

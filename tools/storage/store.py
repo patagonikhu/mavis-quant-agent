@@ -183,6 +183,36 @@ _synced_in_process: bool = False
 _tl = threading.local()  # thread-local duckdb 连接
 
 
+def _is_num(v) -> bool:
+    """v 是不是一个有效数值。
+
+    ⚠️ pandas 读 parquet 的 NULL 列拿到的是 **NaN 而不是 None**,
+    所以 `v is None` 判缺值会全部失效 (NaN != None)。
+    这里用 `v == v` 判 NaN (NaN != NaN), 兼容 python float / numpy 各种浮点类型。
+    """
+    if v is None:
+        return False
+    try:
+        return bool(v == v)
+    except Exception:
+        return False
+
+
+def _pe_finance_ok(pe, pe_ttm, pe_max: float) -> bool:
+    """单只票的 finance 判定 (True = 保留)。纯函数, 便于单测。
+
+    pe / pe_ttm 都是**已归一化**的值 (NaN → None), 所以直接跟 None 比。
+    口径跟 filter_codes_by_finance 的 docstring 一致, 别改一处漏一处。
+    """
+    if pe_ttm is None:
+        return False                       # TTM 算不出 → 亏损股
+    if pe is not None and (pe <= 0 or pe > pe_max):
+        return False                       # pe 亏损 / 估值异常
+    if pe_ttm <= 0 or pe_ttm > pe_max:
+        return False                       # pe_ttm 亏损 / 估值异常
+    return True
+
+
 def _conn():
     """每线程复用同一个 duckdb 连接，避免每次 connect() 开销。"""
     import duckdb
@@ -1985,6 +2015,79 @@ class DataStore:
         """).df()
         expensive = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
         return [c for c in codes if c not in expensive]
+
+    @classmethod
+    def filter_codes_by_finance(cls, codes: list[str], pe_max: float = 500.0
+                                ) -> tuple[list[str], dict[str, dict]]:
+        """剔除亏损股 + 估值异常的票 (per-code latest stk_factor)。
+
+        ⚠️ 跟 filter_codes_by_pe 的语义**不同**, 别混用:
+            filter_codes_by_pe     → 只剔 PE > pe_max 的**高估值**票, 亏损股全放行
+            filter_codes_by_finance → 剔**亏损股** + 估值异常 (--with-finance 专用)
+
+        2026-11-09 修 Bug2: 原 --with-finance 直接复用 filter_codes_by_pe(pe_max=500),
+        那个函数语义是「只剔高估值」, flag 承诺的「剔除亏损股」完全没生效。
+
+        🔴 亏损股怎么认 (实测 stk_factor 全库 5588 只, **PE 恒为正, 没有一只 <= 0**):
+            Tushare 对算不出估值的票把 pe/pe_ttm 写成 NULL, 所以亏损股的标记是 **NULL**,
+            不是 <= 0。2026-11-09 实测:
+                pe_ttm IS NULL  → 1734 只, 其中 78.7% 净利率<0 (真亏损)
+                pe  IS NULL     → 1464 只, 其中 70.9% 净利率<0
+            全库 A/B 实测 (ground truth = financials 净利率<0, 1502 只亏损股):
+                旧 filter_codes_by_pe(500)     → 只剔 38 只,  召回  2.5%
+                新 filter_codes_by_finance(500) → 剔 1398 只,   召回 93.1%, 精度 73.8%
+            取 pe_ttm 口径 —— 跟本项目「估值全用已审计 TTM 财报」一致, 且召回最高。
+            判 pe IS NULL 会误杀 28.7% 的盈利股 (dynamic PE 算不出但 TTM 盈利的票)。
+
+        剔除规则 (pe / pe_ttm 任一命中即剔):
+            pe_ttm IS NULL      → TTM 亏损 (算不出 TTM 估值)
+            pe <= 0 或 pe_ttm <= 0 → 亏损 (防御性, 当前数据不触发)
+            pe > pe_max 或 pe_ttm > pe_max → 估值异常
+
+        stk_factor 压根没这票的记录 → 放行 (不因缺数据误杀)。
+
+        Args:
+            codes: 6 位纯数字 code 列表
+            pe_max: PE 上限 (超过视为估值异常, 默认 500)
+
+        Returns:
+            (保留的 code 列表, {code: {"pe":…, "pe_ttm":…}})
+            第二个返回值供报告渲染回填 PE 列 (缺失的票不在表里)
+        """
+        if not codes:
+            return [], {}
+        files = sorted(STK_FACTOR_DIR.glob("*.parquet"))
+        if not files:
+            return list(codes), {}
+        glob_expr = "[" + ", ".join(f"'{f}'" for f in files[-2:]) + "]"
+        in_clause = ",".join(f"'{c}.SZ', '{c}.SH', '{c}.BJ'" for c in codes)
+        df = _conn().execute(f"""
+            WITH latest AS (
+                SELECT ts_code, pe, pe_ttm,
+                       ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) rn
+                FROM read_parquet({glob_expr})
+                WHERE ts_code IN ({in_clause})
+            )
+            SELECT ts_code, pe, pe_ttm FROM latest WHERE rn = 1
+        """).df()
+        # ⚠️ parquet 的 NULL 读进 pandas 是 NaN 不是 None, 必须归一化,
+        #    否则下游 `is None` / `isinstance(x, float)` 全部判错 (md 会渲染出 "nan")
+        pe_map = {r['ts_code'].split('.')[0]: {
+            "pe": r['pe'] if _is_num(r['pe']) else None,
+            "pe_ttm": r['pe_ttm'] if _is_num(r['pe_ttm']) else None,
+        } for r in df.to_dict('records')}
+
+        kept = []
+        for code in codes:
+            info = pe_map.get(code)
+            if info is None:
+                kept.append(code)          # 无 stk_factor 数据 → 放行
+                continue
+            pe, pe_ttm = info["pe"], info["pe_ttm"]
+            if not _pe_finance_ok(pe, pe_ttm, pe_max):
+                continue
+            kept.append(code)
+        return kept, pe_map
 
     @classmethod
     def filter_codes_by_quality(cls, codes: list[str],
