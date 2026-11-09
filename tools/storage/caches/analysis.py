@@ -39,9 +39,9 @@ from typing import Any
 _ROOT = Path(__file__).parent.parent.parent.parent
 _DB = _ROOT / "data" / "analysis_cache.db"
 # 2026-09-22 修复 path bug: 之前 .parent.parent.parent 是 3 层 (= tools/), 正确应为 4 层 (项目根 mavis-quant-agent/)
-# 2026-11-06: 唯一 db 就是项目根 data/analysis_cache.db (275 万行 / 442MB / 25 列)
-#   注: tools/data/analysis_cache.db 是 500 行 sandbox 残留 (带已下线的缠论 chan_* 列), 0 引用,
-#     但 safe_delete 的 PROTECTED_PATHS.endswith 规则把任意层级的 data/analysis_cache.db 都护住了 → 清不掉
+# 2026-11-06: 唯一 db 就是项目根 data/analysis_cache.db
+# 2026-11-09: 孤儿 tools/data/analysis_cache.db (500 行 / 44 列, 带已下线的缠论 chan_1buy/chan_3buy
+#   等死列) 已删 —— safe_fs._is_protected 改成按项目根相对路径匹配后不再误护 (0 引用, 纯残留)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS analysis_cache (

@@ -1,23 +1,28 @@
 # A股量化智能投顾 Agent (LLM-driven)
 
-> 6 个 Claude Code Skill (v6.2.8) + 单次 O(n) 因子引擎 = 你在终端的投资分析师。
-> 数据走本地 parquet (Tushare 同步) + LLM 训练知识 + 你手维护的 watchlist (54 只: 21 持仓 + 33 自选)。
+> 8 个 Claude Code Skill (v6.2.8) + 单次 O(n) 因子引擎 = 你在终端的投资分析师。
+> 数据走本地 parquet (Tushare 同步) + LLM 训练知识 + 你手维护的 watchlist (203 条: 21 持仓 + 24 自选 + 158 blowout)。
 
 ---
 
-## 1. 6 个 Slash 命令 (v6.2.8)
+## 1. 8 个 Slash 命令 (v6.2.8)
 
 所有 skill 都在 `.claude/skills/` 下, 直接在终端敲命令触发。
 
 | 命令 | 用途 | 示例 |
 |---|---|---|
 | `/t-analyze <code> [name]` | 单只详报 (7 section: 因子矩阵 + 威科夫阶段详情) | `/t-analyze 688256 寒武纪` |
-| `/t-analyze --all` | 批量扫 watchlist 全部 (54 只: 21 持仓 + 33 自选), 写 `docs/{portfolio,watchlist}/analyze-*.md`, buy/sell 汇总走 stdout | `/t-analyze --all` |
+| `/t-analyze --all` | 批量扫 watchlist 全部 (持仓 + 自选 + blowout M 阶段), 写 `docs/{portfolio,watchlist,blowout}/analyze-*.md`, buy/sell 汇总走 stdout | `/t-analyze --all` |
 | `/t-sync-data [flag]` | **唯一数据同步入口 (v6.2.5)** — 7 flag 正交: --kline/--stk-factor/--stock-basic/--financials/--cache/--meta/--all-data, 默认 --auto 智能检测 | `/t-sync-data --auto` |
-| `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 signal_cache 缓存) | `/t-backtest --signal Spring --threshold 10` |
-| `/t-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-earnings-blowout --top-np-jump 30` |
+| `/t-backtest <signal>` | 信号回测 — 5年历史扫描 + 30日最大涨幅命中率 (走 analysis_cache 缓存) | `/t-backtest --signal Accumulation --threshold 10` |
+| `/t-wyckoff-a2m` | 全市场 A→M 扫描 (威科夫积累期→拉升期) | `/t-wyckoff-a2m` |
+| `/t-etf-wyckoff-a2m` | ETF 版 A→M 扫描 | `/t-etf-wyckoff-a2m` |
+| `/t-finance-earnings-blowout` | Earnings Blowout 财季炸裂扫描 (R3 v6.2.7 启动期反转信号), 找 3 年内涨 10 倍的"10x 票"启动期 | `/t-finance-earnings-blowout --top-np-jump 30` |
+| `/t-guardrail` | 守门员自检 (network / factor / parquet / safe-fs) | `/t-guardrail` |
 
-> 8 个 skill (含 t-earnings-blowout, 2026-09-09 改自 t-quality-growth; 2026-11-02 删 t-near-low / t-roc-ey), 加 `t-sync-data --cache` 替代旧 `t-sync-cache`
+> `/t-factor-5y` 也在 `.claude/skills/` 里 (因子 5 年回测)。
+> 历史沿革: 2026-09-09 改自 t-quality-growth; 2026-11-02 删 t-near-low / t-roc-ey;
+> 2026-11-06 删 t-sync-cache (并入 `t-sync-data --cache`)。
 
 ### 1.1 典型用法
 
@@ -25,20 +30,25 @@
 # 单只分析 (7 section 详报, 800+ 行)
 /t-analyze 688256 寒武纪
 
-# 批量 (后台跑 54 只约 50s)
-/t-analyze --all              # 全 watchlist + 写 docs/{portfolio,watchlist}/analyze-*.md
+# 批量 (后台跑 55 只约 50s)
+/t-analyze --all              # 全 watchlist + 写 docs/{portfolio,watchlist,blowout}/analyze-*.md
 
-# 信号回测（走 signal_cache 缓存，命中行 0.5s 出结果）
-/t-backtest --signal Spring --days 30 --threshold 10 --portfolio
-/t-backtest --signal Accumulation --signal 趋势1买         # 组合信号 (AND)
+# 信号回测（走 analysis_cache 缓存，命中行 0.5s 出结果）
+/t-backtest --signal Accumulation --days 30 --threshold 10 --portfolio
+/t-backtest --signal Markup --signal Distribution   # 组合信号 (AND)
 
 # 缓存预热（10 分钟断点续跑，多次跑逐步覆盖 5 年）
-/t-sync-cache --portfolio      # 仅持仓
-/t-sync-cache --codes 300274 002371
+/t-sync-data --cache --portfolio      # 仅持仓
+/t-sync-data --cache --codes 300274 002371
 
 # 全市场 A→M 三重确认扫描
 /t-wyckoff-a2m
 ```
+
+> **可用信号只有 4 个** (2026-11-09): `Accumulation` / `Markup` / `Distribution` / `Markdown` (走 `wy_stage` 列)。
+> 子事件信号 (`Spring` / `LPS` / `EVR` / `SOS` / `Compression` / `TrendPullback` / `MarkupEntry` /
+> `DistributionStart` / `UTAD`) 和 `boll:` / `bbw:` 前缀**已下线** —— 对应的缓存列已删,
+> 传入会直接报错 (不是"没命中")。子事件的概念与触发条件见 §8.1.2。
 
 ### 1.2 推荐工作流
 
@@ -47,9 +57,9 @@
               ↓
 /t-analyze {code}                ← 2. 对候选标的做完整 7 section 详报
               ↓
-/t-backtest --signal Accumulation  ← 3. 验证信号历史胜率 (signal_cache 加速)
+/t-backtest --signal Accumulation  ← 3. 验证信号历史胜率 (analysis_cache 加速)
               ↓
-/t-sync-cache                    ← 4. 持续预热缓存，让 /t-analyze --all 也能加速
+/t-sync-data --cache               ← 4. 持续预热缓存，让 /t-analyze --all 也能加速
 ```
 
 ### 1.3 输出格式
@@ -112,7 +122,7 @@ T框架口诀：**T-3 埋伏, T+0 加仓, T+6 跑路**
 │   └── finance-glossary.md                # 财务术语表
 │
 ├── data/                                  # 静态数据 (你/Claude 维护, v6.2.5)
-│   ├── watchlist.json                     # 关注股 + 笔记 (54 只: 21 持仓 + 33 自选)
+│   ├── watchlist.json                     # 关注股 + 笔记 (203 条: 21 持仓 + 24 自选 + 158 blowout)
 │   ├── history/
 │   │   ├── daily/                         # 日 K 线 parquet (DataStore, 5 季)
 │   │   ├── stk_factor/                    # 17 列估值 (DataStore, 5 季 290 天 × 5555 只 ≈ 160 万行)
@@ -240,7 +250,7 @@ AnalysisResult 合并 (signals_active + action) — 2026-08-29 删 scene/resonan
 }
 ```
 
-54 只: 21 持仓 + 33 自选.
+203 条: 21 持仓 + 24 自选 + 158 blowout (blowout 是候选池, 退场即淘汰, 不算用户配置).
 
 ### 4.2 events.json (v6.2 起 **删除**)
 
@@ -332,6 +342,10 @@ black tools/ tests/
 - **UTAD** 派发后再次上探前期阻力 (强顶部信号, bias_200>15%)
 
 #### 9.1.2 9 个 sub-event (实战中真正的"信号", 跟 WyckoffTradingAgent L4 1:1)
+
+> ⚠️ **2026-11-09: 这 9 个 sub-event 不再是 `/t-backtest` 的可用信号** —— 它们对应的缓存列
+> (`wy_has_*`) 已随 `analysis_cache` 瘦身删除, 传入会直接报错。下面保留的是**概念与触发条件**
+> (生产判定 `tools/factors/wyckoff/detectors/` 仍在跑, 报告里的「威科夫阶段详情」section 仍用)。
 
 **Accumulation 末段 → Markup 起点 (3 个)**:
 
@@ -432,7 +446,7 @@ black tools/ tests/
 |---|---|---|
 | 🟢 | 实数据 (parquet) | Tushare 同步 → `data/history/` → DataStore |
 | 🟡 | 硬编码 (LLM/STOCK_REGISTRY) | 卡点/leader/板块等元数据 |
-| ⚪ | 计算派生 | Magic (ROC/EY) / MA / 4 因子 × 2 周期 |
+| ⚪ | 计算派生 | Magic (ROC/EY) / MA / 威科夫阶段 (A→M 买 / M→D 卖) |
 
 > 报告里每个数字都标来源, 用户一眼能看出真数据 vs 估算。
 
@@ -477,12 +491,16 @@ python3 tools/batch/t_analyze_all.py    # 一键刷全 watchlist
 ### requirements.txt 依赖清单
 
 ```
-lightgbm>=4.0
-gplearn>=0.4
-pandas>=2.0
+tushare>=1.4.0        # 数据源
+duckdb>=1.5.5         # parquet 读取
+pandas>=3.0           # 因子计算
 numpy>=1.24
 pyyaml>=6.0
 requests>=2.31
+python-dotenv>=1.0
+lightgbm>=4.0         # 因子挖掘 (tools/research/)
+gplearn>=0.4
+pytest>=8.0           # 测试
 ```
 
 ### 跨机器兼容性清单

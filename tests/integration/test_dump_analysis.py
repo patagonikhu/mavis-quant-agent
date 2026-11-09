@@ -17,8 +17,13 @@ tests/integration/test_dump_analysis.py - dump + analysis 集成测试
 - signals_active: list[str] (从 raw[*].signals 聚合, LLM 自己判)
 
 **防 regression 的关键断言**:
-- ctx.name == dump.name (防 name 字段被默认 "" 覆盖)
+- ctx.name / ctx.industry / ctx.kline 都非空 (防被默认 "" 覆盖)
 - 核心 strategy 都在 result.raw 里
+- to_dict() 键集合严格等于「已注册 strategy + 元字段」—— 被下线的维度偷偷复活会立刻炸
+
+**2026-11-09 瘦身**: 15 → 10 个用例。同类断言合并 (ctx 三字段合一 / result 三不变量合一),
+删掉跟 parametrize 用例重复的 test_all_phase1_strategies_present。**覆盖面不减**。
+另: 删掉 6 个只测 `app/` 死包的测试文件 (155 个用例), 详见 handbook/lessons/05-render-lint.md。
 
 **运行**: pytest tests/integration/test_dump_analysis.py -v
 **跳过**: 没 dump 的票会 pytest.skip (避免污染测试结果)
@@ -88,28 +93,17 @@ class TestDataFlow:
     """dump 字段 → RenderData / RawContext 数据流不丢"""
 
     @pytest.mark.integration
-    def test_ctx_name_equals_dump_name(self, analysis_data_per_code):
-        """【防 regression】ctx.name == dump.name (防 name 字段被空串覆盖)
+    def test_ctx_fields_populated(self, analysis_data_per_code):
+        """【防 regression】ctx 的 name / industry / kline 都得非空
+        (DataStore 应该填上; 历史上出现过 name 被空串覆盖的 bug)
 
-        2026-08-29: fixture 走 DataStore 模式 (dump: {}), 改成验证 ctx.name 非空
+        2026-08-29: fixture 走 DataStore 模式 (dump: {}), 改成验证字段非空
         """
         for code, data in analysis_data_per_code.items():
-            ctx_name = data["ctx"].name
-            assert ctx_name, f"{code}: ctx.name 是空字符串 (DataStore 应该填上)"
-
-    @pytest.mark.integration
-    def test_ctx_industry_equals_dump_industry(self, analysis_data_per_code):
-        """ctx.industry 非空 (DataStore 应填, 等同 dump.industry 防 regression)"""
-        for code, data in analysis_data_per_code.items():
-            ctx_ind = data["ctx"].industry
-            assert ctx_ind, f"{code}: ctx.industry 是空字符串 (DataStore 应该填上)"
-
-    @pytest.mark.integration
-    def test_ctx_kline_length_matches_dump(self, analysis_data_per_code):
-        """ctx.kline 非空 (DataStore 应填 K 线)"""
-        for code, data in analysis_data_per_code.items():
-            ctx_k = data["ctx"].kline
-            assert len(ctx_k) > 0, f"{code}: ctx.kline 空 (DataStore 应填 K 线)"
+            ctx = data["ctx"]
+            assert ctx.name, f"{code}: ctx.name 是空字符串 (DataStore 应该填上)"
+            assert ctx.industry, f"{code}: ctx.industry 是空字符串 (DataStore 应该填上)"
+            assert len(ctx.kline) > 0, f"{code}: ctx.kline 空 (DataStore 应该填 K 线)"
 
 
 # =====================================================================
@@ -124,7 +118,11 @@ class TestAnalysisEngineStrategies:
     def test_each_core_strategy_in_raw(
         self, analysis_data_per_code, strategy_class
     ):
-        """每个 Phase1 strategy 都在 result.raw 里, score 范围合理"""
+        """每个 Phase1 strategy 都在 result.raw 里, score 范围合理
+
+        2026-11-09: 删掉 test_all_phase1_strategies_present —— 本用例 parametrize
+        已覆盖「所有 strategy 都在 raw 里」, 那个是纯重复。
+        """
         strategy_name = strategy_class.name  # wyckoff/technical/finance
         for code, data in analysis_data_per_code.items():
             raw = data["engine_result"].raw
@@ -154,14 +152,6 @@ class TestAnalysisEngineStrategies:
                 f"{code}: {strategy_name} summary/verdict 都空"
             )
 
-    @pytest.mark.integration
-    def test_all_phase1_strategies_present(self, analysis_data_per_code):
-        """一次检查全部 Phase1 strategy 都在 raw"""
-        for code, data in analysis_data_per_code.items():
-            raw = data["engine_result"].raw
-            for cls in PHASE1_STRATEGY_CLASSES:
-                assert cls.name in raw, f"{code}: 缺 {cls.name} strategy"
-
 
 # =====================================================================
 # 5. ctx strategy result dict 都不空
@@ -183,46 +173,39 @@ class TestCtxResults:
 
 
 # =====================================================================
-# 6. scene 判定 + total_score 合理
+# 6. AnalysisResult 顶层字段 invariant
 # =====================================================================
 
 class TestSceneAndScore:
-    """AnalysisResult 顶层字段 invariant"""
+    """AnalysisResult 顶层字段 invariant
+
+    2026-11-09: 3 个断言合并成 1 个用例 (覆盖面不变, 只是少跑 2 次 fixture)
+    """
 
     @pytest.mark.integration
-    def test_scene_deleted(self, analysis_data_per_code):
-        """2026-08-29: scene/scene_name/resonance_count 已删 (硬编码 if-else 不准)"""
+    def test_result_invariants(self, analysis_data_per_code):
+        """已删字段不该复活 + signals_active 是 list + action 是 str"""
         for code, data in analysis_data_per_code.items():
             ar = data["engine_result"]
+            # 2026-08-29: scene/scene_name/resonance_count 已删 (硬编码 if-else 不准)
             assert not hasattr(ar, "scene"), f"{code}: scene 字段应已删除"
             assert not hasattr(ar, "scene_name"), f"{code}: scene_name 字段应已删除"
             assert not hasattr(ar, "resonance_count"), f"{code}: resonance_count 应已删除"
             # 必有字段
             assert hasattr(ar, "code")
             assert hasattr(ar, "raw")
-            assert hasattr(ar, "signals_active")
-            assert hasattr(ar, "action")
-
-    @pytest.mark.integration
-    def test_signals_active_is_list(self, analysis_data_per_code):
-        """2026-08-29: signals_active 替代 scene, 必须是 list"""
-        for code, data in analysis_data_per_code.items():
-            ar = data["engine_result"]
+            # signals_active 应是 list, 且从 raw 聚合了 strategy 的 signals
             assert isinstance(ar.signals_active, list), f"{code}: signals_active 应是 list"
-            # 应从 raw 聚合了 strategy 的 signals
             for k, d in (ar.raw or {}).items():
                 if isinstance(d, dict) and d.get("signals"):
                     expected = [f"{k}: {s}" for s in d["signals"]]
                     assert all(s in ar.signals_active for s in expected), (
                         f"{code}: raw[{k}].signals 未聚合到 signals_active"
                     )
-
-    @pytest.mark.integration
-    def test_action_is_str(self, analysis_data_per_code):
-        """action 字段存在, 是字符串 (2026-08-29: 不再硬编码, 默认空字符串, 由 LLM 在 chat 里判)"""
-        for code, data in analysis_data_per_code.items():
-            action = data["engine_result"].action
-            assert isinstance(action, str), f"{code}: action 应是 str, 实际 {type(action)}"
+            # action 字段存在, 是字符串 (不再硬编码, 默认空字符串, 由 LLM 在 chat 里判)
+            assert isinstance(ar.action, str), (
+                f"{code}: action 应是 str, 实际 {type(ar.action)}"
+            )
 
 
 # =====================================================================

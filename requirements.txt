@@ -18,23 +18,6 @@ pyyaml>=6.0
 gplearn>=0.4
 lightgbm>=4.0
 
-# Web 服务层 (app/ — FastAPI + LangGraph agent + 调度 + ML 校准)
-# app/ 整套依赖以前一个都没声明, 导致 pytest 收集直接挂 (pydantic 缺失)。
-# 声明补齐后 `uv sync` / `pip install -r requirements.txt` 就能装上。
-fastapi>=0.115
-uvicorn>=0.30
-httpx>=0.27
-pydantic>=2.7
-pydantic-settings>=2.2
-langchain>=0.2,<0.4
-langchain-core>=0.2
-langchain-litellm>=0.1
-apscheduler>=3.10
-sse-starlette>=1.8
-scikit-learn>=1.4
-xgboost>=2.0
-
-# 测试 (pytest.ini 里 asyncio_mode = auto → 必须有 pytest-asyncio)
+# 测试
 pytest>=8.0
-pytest-asyncio>=0.23
 

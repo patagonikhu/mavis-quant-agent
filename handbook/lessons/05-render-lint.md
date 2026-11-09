@@ -284,6 +284,10 @@ Type: rule
    → 下线前必须 `grep -rn <符号> app/ btf/ tests/`, **不只看 `tools/`**
    (附: `app/` 还长期缺 pydantic/langchain_core 跑不起来, 且 `tushare_provider.py`
    有 4 个 `cache_key_*` 根本不存在 —— 它本身就是死代码, 别拿它当"还有人在用"的证据)
+   → **2026-11-09 已整档删除**: 824K / 56 文件 / 零运行时入口 / 零文档提及,
+     只剩 init 时带进来的 `Dockerfile` (`CMD uvicorn app.main:app`) 指着它。
+     FastAPI app 本身**能构造成功** (不是坏档), 但无任何部署 / CI / 文档引用它
+     → 判定「脚手架残留」, 连 Dockerfile 一起删。回滚: `git checkout <commit> -- app/ Dockerfile`
 8. **依赖声明** —— 加了包就得加依赖。`pyproject.toml` 的 `packages.find include = ["app*"]`
    把 `app/` 打进发行包, 但 `dependencies` 里一个 app/ 的库都没有 (fastapi / pydantic /
    langchain / apscheduler / sse-starlette / uvicorn / httpx / pydantic-settings /
@@ -292,6 +296,11 @@ Type: rule
    `app/data/cache.py` 缺的模块级 `cache` 单例 / 3 个 `cache_key_*` / 5 个 `TTL_*` 常量,
    pytest **37 passed + 7 errors → 192 passed + 0 errors**
    (附: `pytest.ini` 的 `asyncio_mode = auto` 需要 `pytest-asyncio` —— **测试插件也是依赖**)
+   → **2026-11-09 反转**: app/ 删了, 这 12 个依赖 (fastapi / uvicorn / httpx / pydantic /
+     pydantic-settings / langchain ×3 / apscheduler / sse-starlette / sklearn / xgboost)
+     全部从 `pyproject.toml` + `requirements.txt` 摘掉, `packages.find` 改 `include = ["tools*"]`,
+     `pytest.ini` 的 `asyncio_mode = auto` 一并删 (删完已无 async 测试)。
+     **教训反过来也成立: 声明了不等于需要 —— 先数消费者再声明依赖。**
 9. **测试指向已删模块** —— 孤儿测试文件会一直挂在收集阶段。`tests/unit/test_factors_position.py`
    测的 `tools/factors/price/` 早在 `1b9d245` 就删了, 测试没同步 → 收集 error。
    → 删模块时同步删测试; 测试里的 `NameError: name 'xxx' is not defined` 也是同一类
@@ -670,3 +679,36 @@ comm -23 /tmp/o.req /tmp/n.req   # 必须为空 = 没丢硬事实
 (本次靠这条发现了它还毁掉了一条历史记录行, 已还原。)
 
 **apply when:** 让 agent 压文档 / 改代码时。压完必跑 token diff + `git diff --stat` + 条数校验。
+
+### 测试套件瘦身: 先分「测死代码」还是「测活代码」 (2026-11-09)
+Type: rule
+> **摘要:** 192 个用例里 155 个在测一个**已废弃的并行实现** (`app/` 死包) —— 删测试前先数消费者,
+> 别按「测试好像都没用」一刀切。
+
+**触发场景 (用户提问):** 「pytest 192 passed, 都是些啥呀, 没啥用吧, 删掉90%」
+
+**先分类再动手 (别先删再想):**
+```
+192 用例 = app/ 死包 155 (6 个文件) + tools/ 活链路 37 (2 个文件)
+```
+判据 = **被测模块有没有生产消费者**:
+- `app/` 56 个 py 文件, 零 import / 零入口 / README·CLAUDE.md·architecture.md 零提及
+  → 它的 6 个测试文件全在测没人跑的东西 → 整个文件删
+- `tools/factors/utils.py` + `tools/analysis/*` 是真生产链路 → 留着, 但**合并同类断言**瘦身
+
+**结果:** 192 → **19 个用例 (删 90.1%)**, 8 个文件 → 2 个。
+- `tests/unit/test_factors_utils.py` 22 → 9 (合并同类断言, 覆盖面不减)
+- `tests/integration/test_dump_analysis.py` 15 → 10 (合并 ctx 三字段 / result 三不变量;
+  删掉跟 parametrize 用例重复的 `test_all_phase1_strategies_present`)
+
+**留哪 19 个 —— 判据是「错了会静默出错」而不是「错了会崩」:**
+- `asof_slice` / `normalize_asof`: 日期对齐错 → 因子**静默算错** (不崩, 结果是错的) → 最该守
+- `test_to_dict_has_no_deleted_dimensions`: 被下线的维度偷偷复活 → 立刻炸 → 直接对应项目纪律
+
+**教训:**
+1. **「测试都挺没用」通常 = 测试在测死代码**, 不是测试本身没用。分完类再删。
+2. 删测试 = 删覆盖面, 合并同类断言才是**不减覆盖面**的瘦身; 直接删用例 = 自断安全网。
+3. 孤儿测试文件会挂在收集阶段 (见上面第 9 条) —— 删模块时同步删测试, 顺序反了会挂 CI。
+
+**apply when:** 用户说「测试没用 / 删测试 / 瘦身」。流程: 列出每个测试文件的**被测模块 + 消费者数**
+→ 消费者为 0 的整个文件删 → 剩下的合并同类断言 → 最后跑 pytest 确认。

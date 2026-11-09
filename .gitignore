@@ -34,9 +34,6 @@ data/
 !data/signals/
 !data/signals/**
 
-# app/data/ 是源码目录, 不受上方 data/ 规则影响
-!app/data/
-
 # SQLite 数据库
 *.db
 *.sqlite3

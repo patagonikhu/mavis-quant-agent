@@ -35,17 +35,29 @@ PROTECTED_PATHS = {
     "data/analysis_cache.db",
 }
 
+# 项目根 (tools/storage/safe_fs.py → 上溯 3 层) —— 受保护名单按**根相对路径**匹配
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 # 报告根目录: 删单个文件可以 (safe_delete 走 Trash), 但删整个目录要显式
 REPORT_ROOT = Path("docs")
 
 
 def _is_protected(path: Path) -> bool:
-    """检查是否在受保护名单里 (按项目相对路径匹配)"""
+    """检查是否在受保护名单里 (按项目相对路径匹配)
+
+    2026-11-09 收紧: 项目**根**的 data/analysis_cache.db 才受保护;
+    项目内嵌套的同名文件不再受保护 —— `tools/data/analysis_cache.db` 是个
+    500 行 sandbox 孤儿 (44 列, 带缠论 chan_1buy/chan_3buy 等已下线死列),
+    因为老规则用 endswith 匹配, 任意层级同名都被护住, 一直删不掉。
+    项目**外**的路径保持保守 (endswith 仍算受保护), 不降低安全边界。
+    """
     try:
-        rel = path.resolve().relative_to(Path.cwd().resolve())
+        rel = path.resolve().relative_to(_PROJECT_ROOT)
     except (ValueError, OSError):
-        rel = path
-    rel_str = str(rel)
+        rel = None
+    if rel is not None:
+        return str(rel) in PROTECTED_PATHS
+    rel_str = str(path)
     return any(rel_str == p or rel_str.endswith("/" + p) for p in PROTECTED_PATHS)
 
 
