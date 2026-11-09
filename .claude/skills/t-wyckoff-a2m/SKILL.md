@@ -38,23 +38,43 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 > 任何 flag 关/换门槛都用 `--help` 看当前默认 + 含义,不要凭记忆。
 
 > 📋 **每次跑开头会自动打印「本次运行生效条件」** (2026-10-29 加):
-> scope / lookback / 5 步过滤链各自 ON-OFF + 实际门槛 / V13 严判 4 条 / 输出设置,
+> scope / lookback / 公共前置 2 步 + standard 档门槛 3 项各自 ON-OFF + 实际门槛 / V13 严判 5 条 / 输出档位,
 > 全部直接读 `args` 打印 —— 这是**唯一可靠的条件来源**, 因为下面的表格是手写的, 会漂移。
 > 用户问"现在的条件是啥"→ 看这段打印, 不要背文档。
 > 同样一份条件也会写进 `docs/wyckoff-a2m.md` 头部的「本次生效条件」表, 便于事后追溯。
 
-## 过滤链 (2026-10-28 收紧后再放宽)
+## 过滤链 (2026-11-10 重排: 公共前置 + 两档分档)
 
-5 步前置过滤, 全部 1 次 SQL/步, 0 网络:
+**公共前置** (候选池阶段, 两档都生效, 1 次 SQL/步):
 
-| 步 | 过滤 | 默认 | 剩余 (2026-11-05 实测) |
+| 步 | 过滤 | 默认 | 剩余 (2026-11-10 实测) |
 |---|---|---|---|
-| 0 | 原始候选 (全市场) | — | 5818 |
-| 1 | `exclude-st` ST/*ST | 开 | 5621 |
-| 2 | `exclude-pe` PE 上限 | **60** | 4205 |
-| 3 | `with-quality basic` (营收yoy>0 + 净利yoy>0) + `min-roe 5` + `min-gross-margin 20` | basic/5/20 | 577 |
-| 4 | `max-net-debt-ratio` 净负债/市值 | **0.5** | 548 |
-| 5 | V13 严判 A→M | lookback=5 | **19 命中** (17.7s) |
+| 0 | 原始候选 (全市场) | — | 5459 |
+| 1 | `exclude-st` ST/*ST | 开 | 5265 |
+| 2 | `exclude-loss` 亏损股 (PE_TTM 算不出 = TTM 亏损) | 开 | 3610 |
+| 3 | V13 严判 A→M | lookback=5 | **31 命中** (112s) |
+
+**命中后分档** (两档互斥, 一只票只进一档):
+
+| 档 | 定义 | 命中 (2026-11-10) |
+|---|---|---|
+| **standard** | 全过 standard 门槛: PE≤60 + quality(basic: 营收/净利yoy>0 + ROE>5% + 毛利>20%) + 净负债/市值<0.5 | 4 |
+| **loose** | 命中 A→M 但**不满足** standard 门槛 (md 里标出「差在哪」: PE / 质量 / 杠杆) | 27 |
+
+> ⚠️ **为什么门槛放命中后而不是候选池**: 放前面 loose 栏永远是空的 ——
+> 被门槛剔掉的票压根不会被扫到, 分不出「命中了但质量不够」这一批。
+> 代价 (2026-11-10 实测): 候选池 557 → 3610, 扫描 18s → 112s。
+
+**档位定义在代码内** —— `tools/batch/wyckoff_a2m_scan.py::FILTER_TIERS`, 改门槛改那个字典。
+细 flag (`--exclude-pe` / `--with-quality` / `--min-growth` / `--min-roe` /
+`--min-gross-margin` / `--max-net-debt-ratio`) 显式传了就覆盖字典, 没传就用字典的值。
+
+**`--tier` 选输出哪档**: `standard` (只达标) / `loose` (只不达标) / `both` (两档都出, 默认)。
+
+**亏损股怎么认** (`DataStore.filter_codes_by_finance`): **PE_TTM 算不出 = 亏损股**。
+⚠️ 全库 5588 只 **PE 恒为正, 没有一只 <= 0** —— Tushare 对算不出估值的票写 NULL,
+所以判 NULL 不判 <=0。全库 A/B (ground truth = financials 净利率<0, 1502 只亏损股):
+旧口径 (只剔 PE>60) 只剔 38 只 = 召回 2.5%; 新口径剔 1398 只 = 召回 93.1%。
 
 > ⚠️ **2026-11-05 修了两处上游口径** (命中数 12 → 19 就是这两处的直接后果, 不是过拟合):
 > 1. **财务季动态取** (原来写死 2026Q2+2025Q4, 等 2026Q3 落盘后还在用落后一季的数据)。
@@ -81,12 +101,15 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 **效果**: 22 只 → 10 只, 10 只**全部**是"便宜 + 干净"那批 (PE 15-51 / ROE 5.3-9.6% / 毛利 30-81% / 杠杆<0.2),
 被砍的全是贵 / 重债 / 亏损. 扫描耗时 44s → 11s.
 
-**放宽**: `--exclude-pe 0 --min-growth 0 --min-roe 0 --min-gross-margin 0 --max-net-debt-ratio 0` 回旧默认.
+**放宽 standard 门槛**: `--exclude-pe 0 --min-growth 0 --min-roe 0 --min-gross-margin 0 --max-net-debt-ratio 0`
+(全放开 → 所有命中都算 standard 档, loose 栏为空)。
+
+**看 loose 档**: `--tier loose` 只输出不达标那批 (复盘用); `--tier both` 两档都出 (默认)。
 
 ## 跑流程
 
-1. **step 1 — 扫描**: 全市场过 `_filter_by_st` → `DataStore.filter_codes_by_pe` → `DataStore.filter_codes_by_quality` (+ROE/毛利率) → `DataStore.filter_codes_by_leverage` → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`),复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
-2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/`
+1. **step 1 — 扫描**: 全市场过公共前置 (`_filter_by_st` → `DataStore.filter_codes_by_finance` 剔亏损) → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`) → 命中后按 standard 门槛分 standard / loose 两档,复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
+2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/` (只出 `--tier` 选中的档)
 
 ### step 2 两种模式 (2026-10-29 加 `--refresh`, **2026-11-02 起 `--refresh` 是默认**)
 
@@ -132,7 +155,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ## 数据特性 (这是必须知道的)
 
 - **0 网络**, 走 duckdb daily parquet
-- 全市场 ~18s (2026-11-05 实测 548 票扫描 17.7s), ~5818 → ST 排 → PE>60 排 → quality+ROE+毛利 排 → 杠杆排 → **548 票**
+- 全市场 ~112s (2026-11-10 实测 3610 票扫描), 5459 → ST 排 → 亏损排 → **3610 票** → 命中后分 standard / loose 两档
 - 单只扫描瓶颈 = `scan_sub_events` 内部 9 detector Python loop 序列 (GIL 锁死, ThreadPool 0 加速)
 - mp.spawn 详报 1.5-2.6x 加速(起步小批量 ≤8 收益最高, worker 太多被启动开销拖累)
 - ⚠️ **不能用 mp.fork** (duckdb fork 后死锁)

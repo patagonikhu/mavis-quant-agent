@@ -163,6 +163,56 @@ from tools.batch.a2m_report_common import (  # noqa: E402
 )
 
 
+# ── 过滤链档位 (2026-11-10 加) ─────────────────────────────────────────
+# 公共前置 (两档都生效, 候选池阶段就剔):
+#     ① ST/*ST 退市风险        ② 亏损股 (PE_TTM 算不出 = TTM 亏损)
+# 命中后分档 (两档互斥):
+#     standard → 全过 standard 门槛 (PE / 质量 / 杠杆)
+#     loose    → 命中 A→M 但不满足 standard 门槛 (md 里标出差在哪一项)
+#
+# 为什么门槛放命中后而不是候选池: 放前面 loose 栏永远是空的 ——
+# 被门槛剔掉的票压根不会被扫到, 分不出「命中了但质量不够」这一批。
+# 代价 (2026-11-10 实测): 候选池 557 → 3610, 扫描 18s → 112s。
+#
+# 改门槛改这个字典 (代码内, 跟过滤链放一起)。
+FILTER_TIERS: dict[str, dict] = {
+    # standard 档: PE / 质量 / 杠杆 三道门槛 (2026-10-28 调参后的固化口径)
+    "standard": {
+        "exclude_pe": 60.0,           # PE > 这个值 → 不达标 (0 = 不限)
+        "with_quality": "basic",     # off / basic(yoy>0) / strong(yoy>10) / elite(yoy>20)
+        "min_growth": None,          # 覆盖 yoy 门槛 (None = 用 with_quality 档位默认)
+        "min_roe": 5.0,              # ROE 下限 % (0 = 不限)
+        "min_gross_margin": 20.0,    # 毛利率下限 % (0 = 不限)
+        "max_net_debt_ratio": 0.5,   # 净负债/总市值上限 (0 = 不限)
+    },
+    # loose 档: standard 的补集 (命中 A→M 但不达标), 无额外门槛
+    "loose": {},
+}
+
+# 细 flag → 门槛字段 的映射 (显式传了才覆盖 FILTER_TIERS, None = 没传)
+TIER_OVERRIDE_KEYS = (
+    "exclude_pe", "with_quality", "min_growth",
+    "min_roe", "min_gross_margin", "max_net_debt_ratio",
+)
+
+
+def _hit_row(r: dict, basic: dict, args, miss_col: bool) -> str:
+    """命中票的一行 md (PE / PE_TTM 两列恒有, loose 档多一列「差在哪」)"""
+    code = r['code']
+    name, industry = basic.get(code, (code, "—"))
+    stages_str = "/".join(s[0] for s in r['trans_stages'][-(args.lookback + 1):])
+    chg = (r['last_close'] / r['trans_close'] - 1) * 100
+    pe, pe_ttm = r.get('pe'), r.get('pe_ttm')
+    pe_s = f"{pe:.1f}" if isinstance(pe, (int, float)) else "—"
+    pe_ttm_s = f"{pe_ttm:.1f}" if isinstance(pe_ttm, (int, float)) else "—"
+    row = (f"| **T-{r['trans_idx']}** | `{code}` | {name} | {industry} | "
+           f"{r['trans_date']} | ¥{r['trans_close']:.2f} | ¥{r['last_close']:.2f} | "
+           f"{chg:+.1f}% |")
+    if miss_col:
+        row += " " + (" + ".join(r.get('miss') or []) or "—") + " |"
+    return f"{row} {pe_s} | {pe_ttm_s} | {stages_str} |"
+
+
 def _worker(code: str, df: pd.DataFrame) -> dict | None:
     """单只票检测当前威科夫 M 阶段 (df 来自 _load_all_klines 一次 SQL 预加载)"""
     try:
@@ -235,33 +285,38 @@ def _print_effective_conditions(args) -> None:
     else:
         st_desc = "❌ OFF (不排除 ST)"
 
-    if args.exclude_pe > 0:
-        pe_desc = f"✅ ON  PE > {args.exclude_pe:.0f} 排除"
+    thr = args.tier_thr
+
+    if thr["exclude_pe"] > 0:
+        pe_desc = f"✅ ON  PE > {thr['exclude_pe']:.0f} 排除"
     else:
         pe_desc = "❌ OFF (--exclude-pe 0, 不限 PE)"
 
-    quality_thr = {"basic": 0, "strong": 10, "elite": 20}.get(args.with_quality, 0)
-    if args.min_growth is not None:
-        quality_thr = args.min_growth
+    quality_thr = {"basic": 0, "strong": 10, "elite": 20}.get(thr["with_quality"], 0)
+    if thr["min_growth"] is not None:
+        quality_thr = thr["min_growth"]
         growth_note = "(--min-growth 覆盖档位)"
     else:
         growth_note = "(档位默认值)"
-    if args.with_quality != "off":
+    if thr["with_quality"] != "off":
         q_parts = [f"营收yoy>{quality_thr:g}%", f"净利yoy>{quality_thr:g}%"]
-        if args.min_roe > 0:
-            q_parts.append(f"ROE>{args.min_roe:g}%")
-        if args.min_gross_margin > 0:
-            q_parts.append(f"毛利率>{args.min_gross_margin:g}%")
+        if thr["min_roe"] > 0:
+            q_parts.append(f"ROE>{thr['min_roe']:g}%")
+        if thr["min_gross_margin"] > 0:
+            q_parts.append(f"毛利率>{thr['min_gross_margin']:g}%")
         q_desc = "✅ ON  " + " + ".join(q_parts)
     else:
         q_desc = "❌ OFF (--with-quality off)"
 
-    if args.max_net_debt_ratio > 0:
-        lv_desc = f"✅ ON  净负债/市值 < {args.max_net_debt_ratio:g}"
+    if thr["max_net_debt_ratio"] > 0:
+        lv_desc = f"✅ ON  净负债/市值 < {thr['max_net_debt_ratio']:g}"
     else:
         lv_desc = "❌ OFF (--max-net-debt-ratio 0, 不限杠杆)"
 
-    fin_desc = "✅ ON  剔除亏损股 (PE_TTM 缺失/<=0)" if args.with_finance else "❌ OFF (--with-finance 未开)"
+    if args.include_loss:
+        fin_desc = "❌ OFF (--include-loss 显式包含亏损股)"
+    else:
+        fin_desc = "✅ ON  剔除亏损股 (PE_TTM 缺失/<=0)"
 
     print("\n" + "=" * 72)
     print("  本次运行生效条件 (Effective Conditions)")
@@ -271,15 +326,21 @@ def _print_effective_conditions(args) -> None:
     print(f"    lookback         : 最近 {args.lookback} 根 K 线")
     print(f"    V13 判定窗口     : 固定 40 根 (硬编码, 不可调)")
 
-    print(f"\n  【前置过滤链】(按执行顺序)")
+    print(f"\n  【公共前置】(候选池阶段, 两档都生效)")
     print(f"    1. exclude-st        : {st_desc}")
-    print(f"    2. exclude-pe        : {pe_desc}")
-    print(f"    3. with-quality      : {q_desc}")
-    if args.with_quality != "off":
-        print(f"         └ 档位={args.with_quality}, yoy 门槛={quality_thr:g}% {growth_note}")
+    print(f"    2. exclude-loss      : {fin_desc}")
+
+    print(f"\n  【standard 档门槛】(命中后分档用, 不满足 → 进 loose 档)")
+    print(f"    3. exclude-pe        : {pe_desc}")
+    print(f"    4. with-quality      : {q_desc}")
+    if thr["with_quality"] != "off":
+        print(f"         └ 档位={thr['with_quality']}, yoy 门槛={quality_thr:g}% {growth_note}")
         print(f"         └ ⚠️ 毛利率门槛作用在 grossprofit_margin (水平值/绝对%), 不是毛利率同比增速")
-    print(f"    4. max-net-debt-ratio: {lv_desc}")
-    print(f"    5. with-finance      : {fin_desc}")
+    print(f"    5. max-net-debt-ratio: {lv_desc}")
+
+    tier_desc = {"standard": "只输出 standard 档", "loose": "只输出 loose 档",
+                 "both": "两档都输出"}[args.tier]
+    print(f"\n  【输出档位】: {args.tier} ({tier_desc})")
 
     print(f"\n  【V13 严判】(硬编码, 无 flag 可调)")
     print(f"    ① 当前 K 线 stage == Markup            (必须)")
@@ -340,29 +401,47 @@ def main():
                     help="--refresh 时, C 类不刷新数据, 只标注状态")
     ap.add_argument("--stale-only", action="store_true",
                     help="只刷新 C 类 (历史留档), 不跑本次命中票的详报")
+    ap.add_argument("--tier", choices=["standard", "loose", "both"], default="both",
+                    help="输出档位: standard(只达标) / loose(只不达标) / both(两档都出, 默认)")
+    ap.add_argument("--exclude-loss", action="store_true", default=True,
+                    help="排除亏损股 (PE_TTM 算不出) — 公共前置, 默认 True")
+    ap.add_argument("--include-loss", action="store_true",
+                    help="包含亏损股 (覆盖 --exclude-loss)")
     ap.add_argument("--with-finance", action="store_true",
-                    help="加 finance 过滤: 剔除亏损股 (PE_TTM 缺失或 <= 0) + PE>500 异常")
-    ap.add_argument("--with-quality", choices=["off", "basic", "strong", "elite"], default="basic",
-                    help="quality 过滤: off/basic(yoy>0)/strong(yoy>10)/elite(yoy>20) (默认 basic)")
+                    help="[已废弃] 亏损股现在是公共前置默认就剔, 想保留用 --include-loss")
+    ap.add_argument("--with-quality", choices=["off", "basic", "strong", "elite"], default=None,
+                    help="standard 档质量门槛: off/basic(yoy>0)/strong(yoy>10)/elite(yoy>20)"
+                         " (默认取 FILTER_TIERS.standard = basic)")
     ap.add_argument("--exclude-st", action="store_true", default=True,
                     help="排除 ST/*ST 股 (默认 True)")
     ap.add_argument("--include-st", action="store_true",
                     help="包含 ST/*ST 股 (覆盖 --exclude-st)")
-    ap.add_argument("--exclude-pe", type=float, default=60.0,
-                    help="前置 PE 过滤上限 (排除 pe > N; 0=不限, 默认 60)")
+    ap.add_argument("--exclude-pe", type=float, default=None,
+                    help="standard 档 PE 上限 (排除 pe > N; 0=不限, 默认取 FILTER_TIERS = 60)")
     ap.add_argument("--min-growth", type=float, default=None,
                     help="营收/净利 yoy 门槛 %%, 覆盖 --with-quality 档位门槛 (默认 None=用档位)")
-    ap.add_argument("--min-roe", type=float, default=5.0,
-                    help="ROE 绝对值下限 %% (默认 5, 0=不限)")
-    ap.add_argument("--min-gross-margin", type=float, default=20.0,
-                    help="毛利率绝对值下限 %% (默认 20, 0=不限)")
-    ap.add_argument("--max-net-debt-ratio", type=float, default=0.5,
-                    help="净负债/总市值上限 (默认 0.5, 0=不限)")
+    ap.add_argument("--min-roe", type=float, default=None,
+                    help="standard 档 ROE 下限 %% (默认取 FILTER_TIERS = 5, 0=不限)")
+    ap.add_argument("--min-gross-margin", type=float, default=None,
+                    help="standard 档毛利率下限 %% (默认取 FILTER_TIERS = 20, 0=不限)")
+    ap.add_argument("--max-net-debt-ratio", type=float, default=None,
+                    help="standard 档净负债/总市值上限 (默认取 FILTER_TIERS = 0.5, 0=不限)")
     ap.add_argument("--workers", type=int, default=0,
                     help="详报多进程 worker 数 (默认 0=os.cpu_count(), 1=单进程)")
     ap.add_argument("--bench-report", nargs="?", const=12, type=int,
                     help="跳过扫描, 只跑 N 个固定代码详报测试不同 workers")
     args = ap.parse_args()
+
+    # 门槛解析: FILTER_TIERS.standard 打底, 显式传的细 flag 覆盖 (None = 没传)
+    tier_thr = dict(FILTER_TIERS["standard"])
+    for _k in TIER_OVERRIDE_KEYS:
+        _v = getattr(args, _k, None)
+        if _v is not None:
+            tier_thr[_k] = _v
+    args.tier_thr = tier_thr
+    if args.with_finance:
+        print("⚠️  --with-finance 已废弃: 亏损股现在是公共前置默认就剔 "
+              "(想保留亏损股用 --include-loss)")
 
     _print_effective_conditions(args)
 
@@ -417,53 +496,18 @@ def main():
             print("❌ ST 过滤后无代码可跑", file=sys.stderr)
             sys.exit(1)
 
-    if args.exclude_pe > 0:
+    # 公共前置②: 剔亏损股 (PE_TTM 算不出 = TTM 亏损)
+    if args.exclude_loss and not args.include_loss:
         before_n = len(codes)
-        kept = DataStore.filter_codes_by_pe(codes, args.exclude_pe)
-        print(f"  exclude-pe (PE>{args.exclude_pe:.0f} 高估值): {before_n} → {len(kept)} 票", flush=True)
-        funnel.append(("step2 exclude-pe", f"PE>{args.exclude_pe:.0f}", before_n, len(kept)))
+        kept, _pe_map = DataStore.filter_codes_by_finance(codes, pe_max=500.0)
+        print(f"  exclude-loss (亏损股 PE_TTM 算不出): {before_n} → {len(kept)} 票", flush=True)
+        funnel.append(("step2 exclude-loss", "亏损股 + PE>500 异常", before_n, len(kept)))
         codes = kept
         if not codes:
-            print(f"❌ PE>{args.exclude_pe:.0f} 过滤后无代码可跑", file=sys.stderr)
+            print("❌ 亏损股过滤后无代码可跑", file=sys.stderr)
             sys.exit(1)
 
-    if args.with_quality != "off":
-        quality_thr = {"basic": 0, "strong": 10, "elite": 20}[args.with_quality]
-        if args.min_growth is not None:
-            quality_thr = args.min_growth
-        before_n = len(codes)
-        kept_codes = DataStore.filter_codes_by_quality(
-            codes, or_yoy_min=quality_thr, np_yoy_min=quality_thr,
-            roe_min=args.min_roe, gm_min=args.min_gross_margin)
-        extra = []
-        if args.min_roe is not None:
-            extra.append(f"ROE>{args.min_roe:.0f}%")
-        if args.min_gross_margin is not None:
-            extra.append(f"毛利>{args.min_gross_margin:.0f}%")
-        extra_s = " + " + " + ".join(extra) if extra else ""
-        print(f"  quality={args.with_quality} (营收yoy>{quality_thr}% + 净利yoy>{quality_thr}%"
-              f"{extra_s}): {before_n} → {len(kept_codes)} 票", flush=True)
-        funnel.append((f"step3 with-quality={args.with_quality}",
-                       f"营收yoy/净利yoy>{quality_thr}%" + (f" + {' + '.join(extra)}" if extra else ""),
-                       before_n, len(kept_codes)))
-        codes = kept_codes
-        if not codes:
-            print("❌ 过滤后无代码可跑", file=sys.stderr)
-            sys.exit(1)
-
-    if args.max_net_debt_ratio > 0:
-        before_n = len(codes)
-        kept = DataStore.filter_codes_by_leverage(codes, args.max_net_debt_ratio)
-        print(f"  max-net-debt-ratio (净负债/市值>{args.max_net_debt_ratio:.2f}): "
-              f"{before_n} → {len(kept)} 票", flush=True)
-        funnel.append((f"step4 max-net-debt-ratio", f"净负债/市值<{args.max_net_debt_ratio:.2f}",
-                       before_n, len(kept)))
-        codes = kept
-        if not codes:
-            print("❌ 杠杆过滤后无代码可跑", file=sys.stderr)
-            sys.exit(1)
-
-    funnel.append(("step5 wyckoff_a2m 扫描", f"lookback={args.lookback}", len(codes), len(codes)))
+    funnel.append(("step3 wyckoff_a2m 扫描", f"lookback={args.lookback}", len(codes), len(codes)))
 
     basic = load_stock_basic()
     print(f"=== Wyckoff A→M 扫描 (scope: {scope}, lookback: {args.lookback}) ===")
@@ -500,20 +544,53 @@ def main():
 
     hits.sort(key=lambda x: (x['trans_idx'], x['code']))
 
-    if args.with_finance and hits:
-        hit_codes_list = [h['code'] for h in hits]
-        kept_finance, pe_map = DataStore.filter_codes_by_finance(hit_codes_list, pe_max=500.0)
-        kept_set = set(kept_finance)
-        before = len(hits)
-        hits = [h for h in hits if h['code'] in kept_set]
+    # ── 分档: standard (全过门槛) vs loose (命中但不达标, 两档互斥) ──
+    thr = args.tier_thr
+    hit_codes_list = [h['code'] for h in hits]
+    if hit_codes_list:
+        pe_ok = (set(DataStore.filter_codes_by_pe(hit_codes_list, thr["exclude_pe"]))
+                 if thr["exclude_pe"] > 0 else set(hit_codes_list))
+        if thr["with_quality"] != "off":
+            q_thr = {"basic": 0, "strong": 10, "elite": 20}[thr["with_quality"]]
+            if thr["min_growth"] is not None:
+                q_thr = thr["min_growth"]
+            q_ok = set(DataStore.filter_codes_by_quality(
+                hit_codes_list, or_yoy_min=q_thr, np_yoy_min=q_thr,
+                roe_min=thr["min_roe"], gm_min=thr["min_gross_margin"]))
+        else:
+            q_ok = set(hit_codes_list)
+        lev_ok = (set(DataStore.filter_codes_by_leverage(
+            hit_codes_list, thr["max_net_debt_ratio"]))
+            if thr["max_net_debt_ratio"] > 0 else set(hit_codes_list))
+
+        standard_hits, loose_hits = [], []
+        for h in hits:
+            miss = []
+            if h['code'] not in pe_ok:
+                miss.append("PE")
+            if h['code'] not in q_ok:
+                miss.append("质量")
+            if h['code'] not in lev_ok:
+                miss.append("杠杆")
+            h['miss'] = miss
+            (standard_hits if not miss else loose_hits).append(h)
+
+        # PE 列回填 (两档都显示 PE / PE_TTM)
+        _, pe_map = DataStore.filter_codes_by_finance(hit_codes_list, pe_max=500.0)
         for h in hits:
             info = pe_map.get(h['code'])
             if info:
                 h['pe'] = info.get('pe')
                 h['pe_ttm'] = info.get('pe_ttm')
-        funnel.append(("step6 with-finance", "剔亏损股(PE_TTM缺失/<=0) + PE>500", before, len(hits)))
-        print(f"\n=== finance 过滤: {before} → {len(hits)} 只 "
-              f"(剔除 {before - len(hits)} 只亏损/异常) ===\n")
+
+        print(f"\n=== 分档: standard {len(standard_hits)} 只 / loose {len(loose_hits)} 只 "
+              f"(共 {len(hits)} 命中) ===\n")
+    else:
+        standard_hits, loose_hits = [], []
+
+    # --tier 决定输出哪档 (both = 全出)
+    tier_hits = {"standard": standard_hits, "loose": loose_hits,
+                 "both": standard_hits + loose_hits}[args.tier]
 
     sub_dir = Path(f"docs/{args.report_subdir}")
     existing = _scan_existing_reports(sub_dir) if args.refresh else {}
@@ -537,23 +614,25 @@ def main():
     lines.append("|---|---|")
     lines.append(f"| scope | {scope} |")
     lines.append(f"| lookback | 最近 {args.lookback} 根 K 线 |")
-    lines.append(f"| ① exclude-st | {'ON (排除 ST/*ST)' if (args.exclude_st and not args.include_st) else 'OFF'} |")
-    lines.append(f"| ② exclude-pe | {f'ON (PE>{args.exclude_pe:.0f} 排除)' if args.exclude_pe > 0 else 'OFF (不限)'} |")
-    if args.with_quality != "off":
-        _thr = {"basic": 0, "strong": 10, "elite": 20}.get(args.with_quality, 0)
-        if args.min_growth is not None:
-            _thr = args.min_growth
-        _q = f"ON (营收yoy>{_thr:g}% + 净利yoy>{_thr:g}%"
-        if args.min_roe > 0:
-            _q += f" + ROE>{args.min_roe:g}%"
-        if args.min_gross_margin > 0:
-            _q += f" + 毛利率>{args.min_gross_margin:g}%"
+    _thr = args.tier_thr
+    lines.append(f"| ① exclude-st (公共前置) | {'ON (排除 ST/*ST)' if (args.exclude_st and not args.include_st) else 'OFF'} |")
+    lines.append(f"| ② exclude-loss (公共前置) | {'ON (剔亏损股 PE_TTM 缺失)' if (args.exclude_loss and not args.include_loss) else 'OFF'} |")
+    if _thr["with_quality"] != "off":
+        _t = {"basic": 0, "strong": 10, "elite": 20}.get(_thr["with_quality"], 0)
+        if _thr["min_growth"] is not None:
+            _t = _thr["min_growth"]
+        _q = f"ON (营收yoy>{_t:g}% + 净利yoy>{_t:g}%"
+        if _thr["min_roe"] > 0:
+            _q += f" + ROE>{_thr['min_roe']:g}%"
+        if _thr["min_gross_margin"] > 0:
+            _q += f" + 毛利率>{_thr['min_gross_margin']:g}%"
         _q += ")"
     else:
         _q = "OFF"
-    lines.append(f"| ③ with-quality | {_q} |")
-    lines.append(f"| ④ max-net-debt-ratio | {f'ON (净负债/市值<{args.max_net_debt_ratio:g})' if args.max_net_debt_ratio > 0 else 'OFF (不限)'} |")
-    lines.append(f"| ⑤ with-finance | {'ON (剔除亏损股)' if args.with_finance else 'OFF'} |")
+    lines.append(f"| ③ exclude-pe (standard 门槛) | {f'ON (PE>{_thr['exclude_pe']:.0f} 排除)' if _thr['exclude_pe'] > 0 else 'OFF (不限)'} |")
+    lines.append(f"| ④ with-quality (standard 门槛) | {_q} |")
+    lines.append(f"| ⑤ max-net-debt-ratio (standard 门槛) | {f'ON (净负债/市值<{_thr['max_net_debt_ratio']:g})' if _thr['max_net_debt_ratio'] > 0 else 'OFF (不限)'} |")
+    lines.append(f"| 输出档位 | {args.tier} ({'两档都出' if args.tier == 'both' else ('只 standard' if args.tier == 'standard' else '只 loose')}) |")
     lines.append(f"| V13 严判 | 当前 M + 最近 40 根 M 占比<10% + 转折在 lookback 根内 + 单日涨跌<20% + K线≥11根 |")
     lines.append("")
 
@@ -562,7 +641,9 @@ def main():
     lines.append("|---|---|---|---|---|")
     for idx, (step_name, params, before_n, after_n) in enumerate(funnel):
         lines.append(f"| {step_name} | {params or '—'} | — | {before_n} → {after_n} | {after_n} |")
-    lines.append(f"| **A→M 命中** | V13 严判 | lookback={args.lookback} | {len(codes)} → {len(hits)} | **{len(hits)}** |\n")
+    lines.append(f"| **A→M 命中** | V13 严判 | lookback={args.lookback} | {len(codes)} → {len(hits)} | **{len(hits)}** |")
+    lines.append(f"| ├ standard 档 | 全过 PE/质量/杠杆门槛 | — | {len(hits)} → {len(standard_hits)} | **{len(standard_hits)}** |")
+    lines.append(f"| └ loose 档 | 命中但不达标 (差在哪见下表) | — | {len(hits)} → {len(loose_hits)} | **{len(loose_hits)}** |\n")
 
     if args.refresh and existing:
         stale_codes = sorted(c for c in existing if c not in hit_codes)
@@ -577,33 +658,21 @@ def main():
             lines.append("")
 
     if hits:
-        if args.with_finance:
+        lines.append("## 命中清单\n")
+        if args.tier in ("standard", "both"):
+            lines.append(f"### standard 档 ({len(standard_hits)} 只) — 全过 PE / 质量 / 杠杆门槛\n")
             lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | PE | PE_TTM | 阶段序列 |")
             lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
-        else:
-            lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | 阶段序列 |")
-            lines.append("|---|---|---|---|---|---|---|---|---|")
-        for r in hits:
-            code = r['code']
-            name, industry = basic.get(code, (code, "—"))
-            stages_str = "/".join(s[0] for s in r['trans_stages'][-(args.lookback + 1):])
-            chg = (r['last_close'] / r['trans_close'] - 1) * 100
-            if args.with_finance:
-                pe = r.get('pe', '')
-                pe_ttm = r.get('pe_ttm', '')
-                pe_s = f"{pe:.1f}" if isinstance(pe, (int, float)) else "—"
-                pe_ttm_s = f"{pe_ttm:.1f}" if isinstance(pe_ttm, (int, float)) else "—"
-                lines.append(
-                    f"| **T-{r['trans_idx']}** | `{code}` | {name} | {industry} | "
-                    f"{r['trans_date']} | ¥{r['trans_close']:.2f} | ¥{r['last_close']:.2f} | "
-                    f"{chg:+.1f}% | {pe_s} | {pe_ttm_s} | {stages_str} |"
-                )
-            else:
-                lines.append(
-                    f"| **T-{r['trans_idx']}** | `{code}` | {name} | {industry} | "
-                    f"{r['trans_date']} | ¥{r['trans_close']:.2f} | ¥{r['last_close']:.2f} | "
-                    f"{chg:+.1f}% | {stages_str} |"
-                )
+            for r in standard_hits:
+                lines.append(_hit_row(r, basic, args, miss_col=False))
+            lines.append("")
+        if args.tier in ("loose", "both"):
+            lines.append(f"### loose 档 ({len(loose_hits)} 只) — 命中 A→M 但不满足 standard 门槛\n")
+            lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | 差在哪 | PE | PE_TTM | 阶段序列 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+            for r in loose_hits:
+                lines.append(_hit_row(r, basic, args, miss_col=True))
+            lines.append("")
 
     out_path = Path(args.output)
     if args.write_md:
@@ -621,7 +690,7 @@ def main():
     if args.refresh and args.full_report:
         tasks: list = []
         if not args.stale_only:
-            for r in hits:
+            for r in tier_hits:
                 code = r['code']
                 nm = basic.get(code, (code, "—"))[0]
                 try:
@@ -650,7 +719,7 @@ def main():
             print("  无任务可跑")
             return
     elif args.full_report and hits:
-        target_hits = hits[:args.report_top] if args.report_top > 0 else hits
+        target_hits = tier_hits[:args.report_top] if args.report_top > 0 else tier_hits
         if sub_dir.exists() and args.clean and not args.no_clean:
             old_mds = list(sub_dir.glob("*.md"))
             trash = Path.home() / ".Trash" / f"mavis-a2m-{args.report_subdir}-{int(time.time())}"
