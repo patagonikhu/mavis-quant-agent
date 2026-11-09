@@ -1,31 +1,36 @@
 """
-analysis_cache.py — AnalysisResult SQLite 缓存
+analysis_cache.py — 威科夫阶段 SQLite 缓存
 
-Schema (2026-11-09 瘦身: 25 列 → 11 列):
-  保留 (11):
-    code / date_str / kline_hash / updated_at (4)
-    MA 斜率 (1: ma20_slope 5日斜率%)
-    动量 (4: rsi6/macd_dif/macd_dea/macd_bar_delta)
-    量能 (1: vol_ratio 当日量/MA5)
-    威科夫 (1: wy_stage — 阶段判定, batch_backtest 唯一消费方)
+Schema (2026-11-09 瘦身: 25 列 → 5 列, 442MB → 6.7MB):
+  保留 (5):
+    code / date_str            (2: 主键)
+    kline_hash                 (1: 完整性哈希, 复权/数据修正后能识别过期)
+    wy_stage                   (1: 威科夫阶段 — 唯一有价值的内容)
+    updated_at                 (1: meta)
 
-  2026-11-09 删 14 列 (全仓 0 引用 / 数据恒空):
+  **cache 只为威科夫而存在** —— 用户 2026-11-09 明示「只关心威科夫和简单的财务信息」。
+  (财务不在本 db: 走 data/history/financials/*.parquet + DataStore, 与 cache 无关)
+
+  2026-11-09 删 20 列 (全仓 0 引用 / 数据恒空):
     威科夫 12 列: wy_score / wy_sub_event_count / wy_30d_pct / wy_has_{spring,lps,evr,sos,
       compression,trend_pullback,markup_entry,distribution_start,utad}
-      → 全仓 0 引用; 且 warmup 只跑 TechnicalStrategy → raw 里没有 wyckoff key,
-        这 12 列自 2026-10-19 写入起就全是 '?'/0 垃圾值 (96.8% 行)
-      → 唯一读方 batch_backtest 的子事件信号 (Spring/LPS/...) 依赖它们,
-        已一并下线 (传参即报错, 不再静默 0 命中)
-    估值 2 列: roc / ey
-      → 全表 276 万行 0 非空 (backfill_roc_ey_cache.py 从没成功跑过);
-        唯一读方 tools/btf/ 随本档一并删除
+      → 唯一读方 batch_backtest 的子事件信号依赖它们, 已一并下线 (传参即报错)
+    估值 2 列: roc / ey → 全表 276 万行 0 非空, 唯一读方 tools/btf/ 已删
+    技术指标 6 列: ma20_slope / rsi6 / macd_dif / macd_dea / macd_bar_delta / vol_ratio
+      → 全仓 0 引用: 报告里的这些值走实时 compute_factor_history, 不读 cache;
+        cache 唯一消费方 batch_backtest 只读 wy_stage
 
   另删冗余索引 uq_code_date (PRIMARY KEY (code,date_str) 已自动建同列唯一索引)
+
+  **warmup 改跑 WyckoffStrategy** (2026-11-09): 之前只跑 TechnicalStrategy →
+  raw 里没有 wyckoff key → wy_stage 恒写 '?' (实测 96.8% 行是垃圾, 只有 87,830 行真值,
+  冻结在 2024-12~2026-10)。改跑威科夫后每行都有真 stage。
+  实测单票 1204 根 K 线: Wyckoff 0.09s vs Technical 0.01s; 全市场 ≈ 8.4 分钟单线程。
 
   历史: 2026-09-22 删 26 列 (10 wy_* + 11 信号列 + 3 ma_dev + 2 boll_*)
         2026-10-19 用户做威科夫胜率回测, 加回 13 列 (sub_event 9 + 主 stage/score/count/30d)
         2026-11-06 DROP 5 个死列: obv / obv5 / obv_trend + peg / dcf_l
-        2026-11-09 DROP 14 列 + 冗余索引 (见上), 442MB → 324MB
+        2026-11-09 DROP 20 列 + 冗余索引 (见上), 442MB → 324MB → 6.7MB
 """
 from __future__ import annotations
 
@@ -47,19 +52,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS analysis_cache (
     code            TEXT NOT NULL,
     date_str        TEXT NOT NULL,
-    kline_hash      TEXT NOT NULL,
-
-    -- MA 斜率
-    ma20_slope      REAL,        -- MA20 5日斜率 % = (ma0 - ma5ago) / ma5ago / 5 * 100
-
-    -- 动量
-    rsi6            REAL,        -- 6日 Wilder RSI (0-100)
-    macd_dif        REAL,        -- MACD DIF (EMA12-EMA26)
-    macd_dea        REAL,        -- MACD DEA (EMA9 of DIF)
-    macd_bar_delta  REAL,        -- MACD 红/绿柱日变化 = bar_t - bar_{t-1}
-
-    -- 量能
-    vol_ratio       REAL,        -- 当日量 / MA5 量 (1.0=平, >1.5=放量)
+    kline_hash      TEXT NOT NULL,   -- 完整性哈希 (复权/数据修正后能识别过期)
 
     -- 威科夫阶段 (2026-10-19 加, 2026-11-09 只留这一列)
     -- 用途: 威科夫阶段回测 (batch_backtest.py 唯一消费方)
@@ -99,13 +92,6 @@ def _init():
         # 自动迁移：加新列（若已存在则忽略）
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
         for col, typedef in [
-                             # 2026-09-22 加: 技术指标 6 列 (RSI6/MACD/量比/MA20 斜率)
-                             ("ma20_slope", "REAL"),    # MA20 5日斜率 %
-                             ("rsi6",          "REAL"), # 6日 Wilder RSI
-                             ("macd_dif",      "REAL"), # MACD DIF
-                             ("macd_dea",      "REAL"), # MACD DEA
-                             ("macd_bar_delta","REAL"), # MACD 柱日变化
-                             ("vol_ratio",     "REAL"), # 当日量 / MA5 量
                              # 2026-10-19 加: 威科夫阶段列 (2026-11-09 只留这一列)
                              ("wy_stage",                  "TEXT"),
                              ]:
@@ -118,6 +104,9 @@ def _init():
         # 2026-11-09: 再删 14 列 (威科夫 12 列 + 估值 2 列) + 冗余索引 uq_code_date
         #   威科夫 12 列: 全仓 0 引用, 且 warmup 只跑 TechnicalStrategy → 写入值恒 '?'/0
         #   估值 2 列: 全表 276 万行 0 非空 (回填脚本从没成功跑过), 唯一读方 tools/btf/ 已删
+        # 2026-11-09 再删 6 列技术指标 (ma20_slope/rsi6/macd_dif/macd_dea/
+        #   macd_bar_delta/vol_ratio): 全仓 0 引用 —— 报告走实时 compute_factor_history,
+        #   cache 唯一消费方 batch_backtest 只读 wy_stage。删完 cache 只剩「威科夫 + 哈希」
         _dead_columns = (
             "obv", "obv5", "obv_trend", "peg", "dcf_l",
             "roc", "ey",
@@ -125,6 +114,8 @@ def _init():
             "wy_has_spring", "wy_has_lps", "wy_has_evr", "wy_has_sos",
             "wy_has_compression", "wy_has_trend_pullback", "wy_has_markup_entry",
             "wy_has_distribution_start", "wy_has_utad",
+            "ma20_slope", "rsi6", "macd_dif", "macd_dea",
+            "macd_bar_delta", "vol_ratio",
         )
         for col in _dead_columns:
             if col in existing:
@@ -148,25 +139,6 @@ def _kline_hash(kline: list[dict]) -> str:
 #   get_boll_bpct / get_boll_bpct_all 同步删 (下游已替换为实时算)
 
 
-def _ma20_slope(kline: list[dict]) -> float | None:
-    """MA20 5日斜率 % = (MA20[-1] - MA20[-6]) / MA20[-6] / 5 * 100
-
-    2026-09-22 加: 同算法与 analysis_result_signals.py:114-134 一致
-    (MA20 通过 close / (1 + 0) 即直接拿 close[-(i+20)] 的均值估)
-    不足 25 根 K 线返回 None (需 20 根算 MA20 + 5 根往前)
-    """
-    if not kline or len(kline) < 25:
-        return None
-    closes = [k.get("close", 0) for k in kline if k.get("close")]
-    if len(closes) < 25:
-        return None
-    ma0 = sum(closes[-20:]) / 20
-    ma5 = sum(closes[-25:-5]) / 20
-    if ma5 <= 0:
-        return None
-    return round((ma0 - ma5) / ma5 / 5 * 100, 4)
-
-
 # 2026-11-09 删: 威科夫 12 列提取 (score / sub_event_count / 30d_pct / 9 个 has_* flag)
 #   原因: 全仓 0 引用; 且 warmup 只跑 TechnicalStrategy → raw 里没有 wyckoff key,
 #         写入值恒为 '?'/0 (实测 96.8% 行是垃圾值) —— 属于「恒定坏档」该删不是该修
@@ -174,13 +146,25 @@ def _ma20_slope(kline: list[dict]) -> float | None:
 
 
 def _extract_wyckoff(result) -> dict:
-    """从 AnalysisResult.raw 提威科夫阶段 (只留 wy_stage)
+    """从分析结果提威科夫阶段 (只留 wy_stage)
 
-    Args:
-        result: AnalysisResult 对象 (有 .raw 属性)
+    **两种结果形状都要认** (2026-11-09 修):
+    - `analyze()` 返回 AnalysisResult 对象 → 阶段在 `result.raw["wyckoff"]["stage"]`
+    - `analyze_history()` 返回**普通 dict** → 阶段在**顶层** `result["stage"]`
+      (见 analysis_engine.py:287-294: `results[date] = {score, signals, summary, **daily_out, ...}`,
+       daily_out 就是日线 wyckoff_judge 的输出, stage 在最外层, **没有 wyckoff 嵌套层**)
+
+    之前只认 .raw → analyze_history 的结果全被当成 "?" (实测 96.8% 行是垃圾值)。
+    判定仍在生产侧算 (wyckoff_judge), 这里只读不算。
     """
-    raw = getattr(result, "raw", None) or (result.get("raw", {}) if isinstance(result, dict) else {})
-    wy = raw.get("wyckoff", {}) or {}
+    # 1) analyze_history 的 dict 形状: 顶层 stage
+    if isinstance(result, dict) and result.get("stage"):
+        return {"wy_stage": result["stage"]}
+    # 2) AnalysisResult 对象: raw["wyckoff"]["stage"]
+    raw = getattr(result, "raw", None)
+    if raw is None and isinstance(result, dict):
+        raw = result.get("raw")
+    wy = (raw or {}).get("wyckoff", {}) or {}
     # stage (日线, 跟 /t-wyckoff-a2m 一致); raw 无 wyckoff key 时为 "?"
     return {"wy_stage": wy.get("stage", "?")}
 
@@ -191,28 +175,16 @@ def _result_to_row(code: str, date_str: str,
     # 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 只存技术指标 + 估值
     # 2026-10-19 改: 重新加 wy_* 13 列 (用户回测威科夫 A→M 胜率, cache 必须能查)
     # 2026-11-09 改: 只留 wy_stage 一列 (其余 12 列全仓 0 引用 + 写入值恒垃圾)
-    raw = getattr(result, "raw", None) or (result.get("raw", {}) if isinstance(result, dict) else {})
-
-    # 技术指标 (来自 TechnicalStrategy, 已写入 raw['technical'])
-    tech = raw.get("technical", {}) or {}
-
-    # 威科夫阶段 (batch_backtest 阶段回测用)
+    # 2026-11-09 再改: 删 6 个技术指标列 (ma20_slope/rsi6/macd_*/vol_ratio)
+    #   → 全仓 0 引用: 报告里的这些值走实时 compute_factor_history, 不读 cache;
+    #     cache 唯一消费方 batch_backtest 只读 wy_stage。删完 cache 只剩「威科夫 + 完整性哈希」
     wy = _extract_wyckoff(result)
 
     return {
         "code": code,
         "date_str": date_str,
         "kline_hash": _kline_hash(kline),
-        # MA 斜率 (仅存的 MA 列)
-        "ma20_slope":  _ma20_slope(kline),
-        # 动量 (2026-09-22 加 4 列, 从 raw['technical'] 取; 红/绿柱从 bar_delta 推导)
-        "rsi6":          tech.get("rsi6"),
-        "macd_dif":      tech.get("macd_dif"),
-        "macd_dea":      tech.get("macd_dea"),
-        "macd_bar_delta":tech.get("macd_bar_delta"),
-        # 量能 (2026-09-22 加)
-        "vol_ratio":     tech.get("vol_ratio"),
-        # 威科夫阶段 (2026-11-09 只留 wy_stage)
+        # 威科夫阶段 (batch_backtest 阶段回测用)
         **wy,
         "updated_at": time.time(),
     }
@@ -402,15 +374,17 @@ def _calc_signals_for_code(code: str, full: bool, batch_size: int):
         compute_dates = all_dates[buf_start : last_stale_idx + 1]
 
         from tools.analysis.analysis_engine import (
-            AnalysisEngine, TechnicalStrategy,
+            AnalysisEngine, WyckoffStrategy,
         )
-        # 2026-09-22 改: 只跑真存 db 的 strategy
-        #   Wyckoff/Chan/Structure/Fflow/Finance 字段已 9-22 删列
-        #   跳过 5 个 strategy 省 60-70% 时间
-        # 2026-10-27: OBV strategy 已删除, 只剩 TechnicalStrategy
-        # 2026-11-09: 估值列 (roc/ey) 已整档删除; wy_stage 因 warmup 无 wyckoff raw
-        #   恒写 '?' → 也只留 WyckoffStrategy 之外的 Technical (wy_stage 恒 '?', 见 _extract_wyckoff)
-        history = AnalysisEngine(strategies=[TechnicalStrategy]) \
+        # 2026-09-22 改: 只跑真存 db 的 strategy (跳过 5 个省 60-70% 时间)
+        # 2026-10-27: OBV strategy 已删除
+        # 2026-11-09 改: 改成**只跑 WyckoffStrategy**
+        #   原因: cache 只剩 wy_stage 一列有用 (技术指标列已删), 而 TechnicalStrategy
+        #   不产 wyckoff raw → 之前写的 wy_stage 恒 '?' (实测 96.8% 行是垃圾)。
+        #   实测单票 1204 根 K 线: Wyckoff 0.09s / Technical 0.01s,
+        #   全市场 5591 只 ≈ 8.4 分钟单线程 (4 并发 ~2-3 分钟) —— 换真数据完全值得。
+        #   判定口径与生产一致 (raw['wyckoff']['stage'] = 日线阶段), 规则下沉。
+        history = AnalysisEngine(strategies=[WyckoffStrategy]) \
                           .analyze_history(ctx, compute_dates)
         stale_set = set(stale_dates)
         to_write = {}
