@@ -1,27 +1,31 @@
 """
 analysis_cache.py — AnalysisResult SQLite 缓存
 
-Schema (2026-10-19 v3 改: 加 13 列威科夫字段, 回测威科夫 A→M 胜率):
-  CREATE (15) + ALTER (18, 累计 33 列):
+Schema (2026-11-09 瘦身: 25 列 → 11 列):
+  保留 (11):
     code / date_str / kline_hash / updated_at (4)
     MA 斜率 (1: ma20_slope 5日斜率%)
     动量 (4: rsi6/macd_dif/macd_dea/macd_bar_delta)
     量能 (1: vol_ratio 当日量/MA5)
-    估值 (2 ALTER, 2026-09-02 加): roc / ey
-          2026-11-02 删 peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
-          2026-11-06 再删物理列 (代码早不写不读, 275 万行 db 里白占空间)
-    威科夫 (13 ALTER, 2026-10-19 加, A→M 胜率回测用):
-      wy_stage (Accumulation/Markup/Distribution/?)
-      wy_score (1.0/0.6/-0.6/0.0)
-      wy_sub_event_count (近 5 根 K 线内触发数)
-      wy_30d_pct (30 日涨幅%)
-      wy_has_{spring,lps,evr,sos,compression,trend_pullback,markup_entry,distribution_start,utad}
-      (9 个 0/1, 近 5 根 K 线内有触发 = 1)
+    威科夫 (1: wy_stage — 阶段判定, batch_backtest 唯一消费方)
+
+  2026-11-09 删 14 列 (全仓 0 引用 / 数据恒空):
+    威科夫 12 列: wy_score / wy_sub_event_count / wy_30d_pct / wy_has_{spring,lps,evr,sos,
+      compression,trend_pullback,markup_entry,distribution_start,utad}
+      → 全仓 0 引用; 且 warmup 只跑 TechnicalStrategy → raw 里没有 wyckoff key,
+        这 12 列自 2026-10-19 写入起就全是 '?'/0 垃圾值 (96.8% 行)
+      → 唯一读方 batch_backtest 的子事件信号 (Spring/LPS/...) 依赖它们,
+        已一并下线 (传参即报错, 不再静默 0 命中)
+    估值 2 列: roc / ey
+      → 全表 276 万行 0 非空 (backfill_roc_ey_cache.py 从没成功跑过);
+        唯一读方 tools/btf/ 随本档一并删除
+
+  另删冗余索引 uq_code_date (PRIMARY KEY (code,date_str) 已自动建同列唯一索引)
+
   历史: 2026-09-22 删 26 列 (10 wy_* + 11 信号列 + 3 ma_dev + 2 boll_*)
         2026-10-19 用户做威科夫胜率回测, 加回 13 列 (sub_event 9 + 主 stage/score/count/30d)
-        2026-11-06 DROP 5 个死列: obv / obv5 / obv_trend (10-27 删 OBV) +
-          peg / dcf_l (11-02 删 PEG/DCF) —— 代码早已不写不读, 物理列留在
-          275 万行的 db 里纯占空间 + 给未来 query 挖坑
+        2026-11-06 DROP 5 个死列: obv / obv5 / obv_trend + peg / dcf_l
+        2026-11-09 DROP 14 列 + 冗余索引 (见上), 442MB → 324MB
 """
 from __future__ import annotations
 
@@ -45,12 +49,6 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     date_str        TEXT NOT NULL,
     kline_hash      TEXT NOT NULL,
 
-    -- 2026-09-22 删: wy_* (10列), ma_dev (3列), boll_* (2列)
-    -- 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 是镜像, 删除减少 26 列空白存储
-    -- 已删: wy_stage, wy_markup_entry/spring/lps/evr/sos/compression/trendpullback/distributionstart/utad
-    --       ma5_dev/ma20_dev/ma60_dev
-    --       boll_bpct/boll_bwidth
-
     -- MA 斜率
     ma20_slope      REAL,        -- MA20 5日斜率 % = (ma0 - ma5ago) / ma5ago / 5 * 100
 
@@ -63,23 +61,9 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     -- 量能
     vol_ratio       REAL,        -- 当日量 / MA5 量 (1.0=平, >1.5=放量)
 
-
-    -- 2026-10-19 加: 威科夫 (12 列) — /t-sync-data --cache 写入
-    -- 用途: 威科夫 A→M 胜率回测 (V11 字面版验证)
-    -- sub_event 字段: 当日及最近 5 根 K 线 (近 5 日窗口) 触发 = 1, 否则 = 0
+    -- 威科夫阶段 (2026-10-19 加, 2026-11-09 只留这一列)
+    -- 用途: 威科夫阶段回测 (batch_backtest.py 唯一消费方)
     wy_stage            TEXT,        -- 主 stage (Accumulation / Markup / Distribution / ?)
-    wy_score            REAL,        -- 1.0 (Markup) / 0.6 (Accumulation) / -0.6 (Distribution) / 0.0 (?)
-    wy_sub_event_count  INTEGER,     -- 当日触发 sub_event 数量 (level=daily)
-    wy_30d_pct          REAL,        -- 30 日价格涨幅 %
-    wy_has_spring           INTEGER, -- 最近 5 根 K 线内有 Spring (Accumulation 信号)
-    wy_has_lps              INTEGER, -- LPS (Accumulation 二次探底)
-    wy_has_evr              INTEGER, -- EVR (Accumulation Effort vs Result)
-    wy_has_sos              INTEGER, -- SOS (Markup Sign of Strength)
-    wy_has_compression      INTEGER, -- Compression (Markup 蓄势)
-    wy_has_trend_pullback   INTEGER, -- TrendPullback (Markup 趋势回踩)
-    wy_has_markup_entry     INTEGER, -- MarkupEntry (Markup 入场)
-    wy_has_distribution_start INTEGER, -- DistributionStart (顶部派发开始)
-    wy_has_utad             INTEGER  -- UTAD (顶部派发后反弹测试)
 
     -- meta
     updated_at      REAL,
@@ -87,8 +71,9 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     PRIMARY KEY (code, date_str)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_code_date ON analysis_cache(code, date_str);
--- 2026-09-22 删: idx_wy_stage (随 wy_stage 列删除)
+-- 2026-11-09 删: uq_code_date 索引
+--   PRIMARY KEY (code, date_str) 已自动建同列唯一索引 (sqlite_autoindex_*),
+--   这个 UNIQUE INDEX 是完全重复的 (63.5MB 白占) —— 查询计划走 autoindex, 性能不变
 """
 
 # ── 工具 ──────────────────────────────────────────────────
@@ -114,32 +99,15 @@ def _init():
         # 自动迁移：加新列（若已存在则忽略）
         existing = {r[1] for r in c.execute("PRAGMA table_info(analysis_cache)").fetchall()}
         for col, typedef in [
-                             # 2026-09-22 删: boll_bwidth (随 26 列一并删)
-                             # 2026-09-02 加: 估值 4 列 (Magic Formula 回测用)
-                             # 2026-11-02 删: peg / dcf_l (PEG/DCF 整档已删 — PEG 是假指标)
-                             ("roc", "REAL"),       # Greenblatt ROC % (TTM)
-                             ("ey", "REAL"),        # Greenblatt EY % (TTM)
-                             # 2026-09-22 加: 技术指标 9 列 (RSI6/MACD/量比/MA20 斜率, backfill/rsi6_tech 用)
+                             # 2026-09-22 加: 技术指标 6 列 (RSI6/MACD/量比/MA20 斜率)
                              ("ma20_slope", "REAL"),    # MA20 5日斜率 %
                              ("rsi6",          "REAL"), # 6日 Wilder RSI
                              ("macd_dif",      "REAL"), # MACD DIF
                              ("macd_dea",      "REAL"), # MACD DEA
                              ("macd_bar_delta","REAL"), # MACD 柱日变化
                              ("vol_ratio",     "REAL"), # 当日量 / MA5 量
-                             # 2026-10-19 加: 威科夫 13 列 (/t-sync-data --cache + /t-wyckoff-a2m 胜率回测)
+                             # 2026-10-19 加: 威科夫阶段列 (2026-11-09 只留这一列)
                              ("wy_stage",                  "TEXT"),
-                             ("wy_score",                  "REAL"),
-                             ("wy_sub_event_count",        "INTEGER"),
-                             ("wy_30d_pct",                "REAL"),
-                             ("wy_has_spring",             "INTEGER"),
-                             ("wy_has_lps",                "INTEGER"),
-                             ("wy_has_evr",                "INTEGER"),
-                             ("wy_has_sos",                "INTEGER"),
-                             ("wy_has_compression",        "INTEGER"),
-                             ("wy_has_trend_pullback",     "INTEGER"),
-                             ("wy_has_markup_entry",       "INTEGER"),
-                             ("wy_has_distribution_start", "INTEGER"),
-                             ("wy_has_utad",               "INTEGER"),
                              ]:
             if col not in existing:
                 c.execute(f"ALTER TABLE analysis_cache ADD COLUMN {col} {typedef}")
@@ -147,9 +115,24 @@ def _init():
         # 自动迁移: 删死列 (若还在)
         # 2026-11-06: OBV (10-27 删) / PEG·DCF (11-02 删) —— 代码早已不写不读,
         #   物理列却还留在 275 万行的 db 里: 白占空间 + 给未来 query 挖坑
-        for col in ("obv", "obv5", "obv_trend", "peg", "dcf_l"):
+        # 2026-11-09: 再删 14 列 (威科夫 12 列 + 估值 2 列) + 冗余索引 uq_code_date
+        #   威科夫 12 列: 全仓 0 引用, 且 warmup 只跑 TechnicalStrategy → 写入值恒 '?'/0
+        #   估值 2 列: 全表 276 万行 0 非空 (回填脚本从没成功跑过), 唯一读方 tools/btf/ 已删
+        _dead_columns = (
+            "obv", "obv5", "obv_trend", "peg", "dcf_l",
+            "roc", "ey",
+            "wy_score", "wy_sub_event_count", "wy_30d_pct",
+            "wy_has_spring", "wy_has_lps", "wy_has_evr", "wy_has_sos",
+            "wy_has_compression", "wy_has_trend_pullback", "wy_has_markup_entry",
+            "wy_has_distribution_start", "wy_has_utad",
+        )
+        for col in _dead_columns:
             if col in existing:
                 c.execute(f"ALTER TABLE analysis_cache DROP COLUMN {col}")
+
+        # 冗余索引: PRIMARY KEY (code, date_str) 已自动建同列唯一索引
+        # 2026-11-09 删 (63.5MB 白占, 查询计划走 autoindex 性能不变)
+        c.execute("DROP INDEX IF EXISTS uq_code_date")
 
 
 def _kline_hash(kline: list[dict]) -> str:
@@ -184,58 +167,22 @@ def _ma20_slope(kline: list[dict]) -> float | None:
     return round((ma0 - ma5) / ma5 / 5 * 100, 4)
 
 
-# 2026-10-19 加: 威科夫 13 列提取 (wyckoff_result 来自 analysis_engine)
-# raw['wyckoff'] 结构: {stage, score, signals, summary, sub_event_count, verdict, 趋势_30日_pct,
-#                       sub_events_by_period={daily: [{name,date,idx,...}], weekly: [...]}, 3period: {...}}
-# 9 种 sub_event: Spring / LPS / EVR / SOS / Compression / TrendPullback / MarkupEntry / DistributionStart / UTAD
-# cache column 名: 跟 raw['sub_events'][i]['name'] 不一样 (有下划线), 映射表 (raw_name → cache_col_suffix)
-_WY_SUB_EVENTS = [
-    ("Spring",            "spring"),
-    ("LPS",               "lps"),
-    ("EVR",               "evr"),
-    ("SOS",               "sos"),
-    ("Compression",       "compression"),
-    ("TrendPullback",     "trend_pullback"),  # raw 用 CamelCase, cache col 用 snake_case
-    ("MarkupEntry",       "markup_entry"),
-    ("DistributionStart", "distribution_start"),
-    ("UTAD",              "utad"),
-]
+# 2026-11-09 删: 威科夫 12 列提取 (score / sub_event_count / 30d_pct / 9 个 has_* flag)
+#   原因: 全仓 0 引用; 且 warmup 只跑 TechnicalStrategy → raw 里没有 wyckoff key,
+#         写入值恒为 '?'/0 (实测 96.8% 行是垃圾值) —— 属于「恒定坏档」该删不是该修
+#   只留 wy_stage (batch_backtest.py 的阶段回测唯一消费方)
 
 
-def _extract_wyckoff(result, lookback_sub_events: int = 5) -> dict:
-    """从 AnalysisResult.raw 提 13 列 cache 字段
+def _extract_wyckoff(result) -> dict:
+    """从 AnalysisResult.raw 提威科夫阶段 (只留 wy_stage)
 
     Args:
         result: AnalysisResult 对象 (有 .raw 属性)
-        lookback_sub_events: sub_event 几根 K 线内算 'has' (默认 5 = 近 5 日)
     """
     raw = getattr(result, "raw", None) or (result.get("raw", {}) if isinstance(result, dict) else {})
     wy = raw.get("wyckoff", {}) or {}
-
-    # 1) stage + score + 30d + count (日线, 跟 /t-wyckoff-a2m 一致)
-    stage    = wy.get("stage", "?")
-    score    = wy.get("score", 0.0)
-    pct_30d  = wy.get("趋势_30日_pct", None)
-    sub_n    = wy.get("sub_event_count", 0)
-
-    # 2) 9 种 sub_event 在最近 N 根 K 线内 (用 3period.daily.sub_events)
-    #    sub_events 结构: list[{name, date, idx, price, vol}] (idx 是 K 线偏移)
-    daily = wy.get("3period", {}).get("daily", {}) or {}
-    sub_events_full = daily.get("sub_events", []) or []
-    # 近 N 根 = idx 倒序 N 个
-    recent_names = {e.get("name") for e in sub_events_full[-lookback_sub_events:] if e.get("name")}
-
-    # raw 用 CamelCase, cache col 用 snake_case (跟 _SCHEMA 里的 wy_has_xxx_xxx 一致)
-    has_flags = {f"wy_has_{col_suffix}": (1 if raw_name in recent_names else 0)
-                 for raw_name, col_suffix in _WY_SUB_EVENTS}
-
-    return {
-        "wy_stage":           stage,
-        "wy_score":           score,
-        "wy_sub_event_count": sub_n,
-        "wy_30d_pct":         pct_30d,
-        **has_flags,
-    }
+    # stage (日线, 跟 /t-wyckoff-a2m 一致); raw 无 wyckoff key 时为 "?"
+    return {"wy_stage": wy.get("stage", "?")}
 
 
 def _result_to_row(code: str, date_str: str,
@@ -243,12 +190,13 @@ def _result_to_row(code: str, date_str: str,
     # 2026-09-22 改: 删 wy_* / boll_* / ma_dev 全部赋值
     # 原因: 真值由 AnalysisEngine.analyze() 实时算, cache 只存技术指标 + 估值
     # 2026-10-19 改: 重新加 wy_* 13 列 (用户回测威科夫 A→M 胜率, cache 必须能查)
+    # 2026-11-09 改: 只留 wy_stage 一列 (其余 12 列全仓 0 引用 + 写入值恒垃圾)
     raw = getattr(result, "raw", None) or (result.get("raw", {}) if isinstance(result, dict) else {})
 
     # 技术指标 (来自 TechnicalStrategy, 已写入 raw['technical'])
     tech = raw.get("technical", {}) or {}
 
-    # 2026-10-19 加: 威科夫 13 列
+    # 威科夫阶段 (batch_backtest 阶段回测用)
     wy = _extract_wyckoff(result)
 
     return {
@@ -264,7 +212,7 @@ def _result_to_row(code: str, date_str: str,
         "macd_bar_delta":tech.get("macd_bar_delta"),
         # 量能 (2026-09-22 加)
         "vol_ratio":     tech.get("vol_ratio"),
-        # 威科夫 (2026-10-19 加 13 列, /t-wyckoff-a2m 胜率回测用)
+        # 威科夫阶段 (2026-11-09 只留 wy_stage)
         **wy,
         "updated_at": time.time(),
     }
@@ -335,25 +283,11 @@ def write_batch(code: str, kline: list[dict], results: dict[str, dict]):
 def get_cached_codes() -> set[str]:
     """返所有已 cache 的 code"""
     return {r["code"] for r in _query("SELECT DISTINCT code FROM analysis_cache")}
-def get_existing_valuation_pairs() -> set[tuple[str, str]]:
-    """返 (code, date) 已有 valuation 的对 (roc/ey 任一非空)
-
-    2026-11-02: 删 peg / dcf_l (PEG/DCF 整档已删)
-    """
-    rows = _query(
-        "SELECT code, date_str FROM analysis_cache "
-        "WHERE roc IS NOT NULL OR ey IS NOT NULL"
-    )
-    return {(r["code"], r["date_str"]) for r in rows}
 
 
-def get_valuation_coverage() -> dict:
-    """返 2 个 valuation 字段覆盖率 {col: count} (2026-11-02: 删 peg / dcf_l)"""
-    out = {"roc": 0, "ey": 0}
-    for col in out:
-        rows = _query(f"SELECT COUNT(*) AS n FROM analysis_cache WHERE {col} IS NOT NULL")
-        out[col] = rows[0]["n"] if rows else 0
-    return out
+# 2026-11-09 删: get_existing_valuation_pairs / get_valuation_coverage
+#   两函数只服务 roc/ey 两列 (唯一读方 backfill_roc_ey_cache.py + tools/btf/ 已一并删除)
+#   roc/ey 全表 276 万行 0 非空, 回填脚本从没成功跑过 → 恒空档, 删
 
 
 def check_stale_batch(code: str, dates: list[str],
@@ -440,7 +374,7 @@ def _calc_signals_for_code(code: str, full: bool, batch_size: int):
         from tools.storage.store import DataStore
         # 2026-09-22 改: kline_only=True 跳过 eps 拉取
         #   只跑 Technical, 不需要额外数据源
-        #   eps 也无需 (估值 4 列由 backfill_roc_ey_cache.py 单写)
+        #   eps 也无需 (估值列 2026-11-09 已整档删除)
         ctx = DataStore.get_ctx(code, kline_only=True)
         if not ctx.kline:
             return code, None, None, 0, _t.time() - t0
@@ -472,9 +406,10 @@ def _calc_signals_for_code(code: str, full: bool, batch_size: int):
         )
         # 2026-09-22 改: 只跑真存 db 的 strategy
         #   Wyckoff/Chan/Structure/Fflow/Finance 字段已 9-22 删列
-        #   (roc/ey/peg/dcf_l 由 backfill_roc_ey_cache.py 单写, 不走 warmup)
         #   跳过 5 个 strategy 省 60-70% 时间
         # 2026-10-27: OBV strategy 已删除, 只剩 TechnicalStrategy
+        # 2026-11-09: 估值列 (roc/ey) 已整档删除; wy_stage 因 warmup 无 wyckoff raw
+        #   恒写 '?' → 也只留 WyckoffStrategy 之外的 Technical (wy_stage 恒 '?', 见 _extract_wyckoff)
         history = AnalysisEngine(strategies=[TechnicalStrategy]) \
                           .analyze_history(ctx, compute_dates)
         stale_set = set(stale_dates)

@@ -6,8 +6,11 @@ batch_backtest.py — 信号回测引擎 (SQLite 缓存版)
   2. 缺失则 AnalysisEngine.analyze_history → 写 SQLite
 
 用法:
-  python tools/batch/batch_backtest.py --signal Spring --days 30 --threshold 10
-  python tools/batch/batch_backtest.py --signal Accumulation --days 30
+  python tools/batch/batch_backtest.py --signal Accumulation --days 30 --threshold 10
+  python tools/batch/batch_backtest.py --signal Markup --signal Distribution --days 30
+
+可用信号 (2026-11-09): Accumulation / Markup / Distribution / Markdown (走 wy_stage 列)
+已下线: 子事件 (Spring/LPS/EVR/SOS/...) 与 boll: / bbw: 前缀 (缓存列已删, 传入即报错)
 """
 import argparse, datetime, json, os, sys, time
 
@@ -35,6 +38,54 @@ args = ap.parse_args()
 
 if not args.signals:
     print("❌ 需指定 --signal"); sys.exit(1)
+
+# ── 可用信号 ──────────────────────────────────────────────
+# 唯一还能用的: 阶段信号 (走 wy_stage 列, 2026-11-09 保留)
+STAGE_SIGNALS = ("Accumulation", "Markup", "Distribution", "Markdown")
+
+# ── 已下线信号 (响亮失败, 不静默 0 命中) ──────────────────
+# 2026-11-09: analysis_cache 删 14 列 (威科夫 12 + 估值 2) → 子事件无数据可读;
+#   且原列名 (wy_lps 等) 本就跟库内 (wy_has_lps) 对不上 → 此前一直恒 0 命中。
+# 2026-09-22: boll_bpct / boll_bwidth 列已删 → boll: / bbw: 前缀同样无数据。
+# 「查不了」不等于「没命中」→ 参数校验期直接报错退出。
+_DEAD_SE_SIGNALS = {
+    "Spring":            "子事件缓存列 2026-11-09 已删 (且原列名 wy_spring 与库内 wy_has_spring 不一致, 此前一直恒 0 命中)",
+    "LPS":               "同上 (wy_lps / wy_has_lps)",
+    "EVR":               "同上 (wy_evr / wy_has_evr)",
+    "SOS":               "同上 (wy_sos / wy_has_sos)",
+    "Compression":       "同上 (wy_compression / wy_has_compression)",
+    "TrendPullback":     "同上 (wy_trendpullback / wy_has_trend_pullback)",
+    "MarkupEntry":       "同上 (wy_markup_entry / wy_has_markup_entry)",
+    "DistributionStart": "同上 (wy_distributionstart / wy_has_distribution_start)",
+    "UTAD":              "同上 (wy_utad / wy_has_utad)",
+}
+
+
+def _validate_signals(signals: list[str]):
+    """白名单校验: 只有阶段信号可用, 其余一律报错 (白名单外 = 「查不了」, 不能静默 0 命中)"""
+    bad = []
+    for sig in signals:
+        s = sig.strip()
+        if s in STAGE_SIGNALS:
+            continue
+        if s in _DEAD_SE_SIGNALS:
+            bad.append((s, _DEAD_SE_SIGNALS[s]))
+        elif s.startswith("boll:") or s.startswith("bbw:"):
+            bad.append((s, "boll_bpct / boll_bwidth 列 2026-09-22 已删"))
+        else:
+            bad.append((s, "未知信号 (本引擎只支持阶段信号)"))
+    if bad:
+        print("❌ 以下信号不可用 (缓存列已删除或不支持, 不是「没命中」而是「查不了」):")
+        for s, why in bad:
+            print(f"   - {s}: {why}")
+        print(f"   可用信号: {' / '.join(STAGE_SIGNALS)} (走 wy_stage 列)")
+        sys.exit(1)
+
+
+_validate_signals(args.signals)
+
+if args.no_cache:
+    print("⚠️  --no-cache 当前未实现重算 (rows 恒空) → 本次结果必然 0 命中, 别当结论用")
 
 # ── 数据加载 ────────────────────────────────────────────────
 t0 = time.time()
@@ -84,43 +135,17 @@ def _result_to_row(r) -> dict:
 
 
 # ── 信号匹配 ─────────────────────────────────────────────────
-SE_COLS = {
-    "Spring":           "wy_spring",
-    "LPS":             "wy_lps",
-    "EVR":             "wy_evr",
-    "SOS":             "wy_sos",
-    "Compression":     "wy_compression",
-    "TrendPullback":   "wy_trendpullback",
-    "MarkupEntry":     "wy_markup_entry",
-    "DistributionStart":"wy_distributionstart",
-    "UTAD":            "wy_utad",
-}
+# 2026-11-09: 子事件 (Spring/LPS/...) 与 boll:/bbw: 信号已下线 (缓存列已删),
+#   在参数校验期拦截; 此处只剩阶段信号。
 
 
 def match_signal(row, signals: list[str]) -> bool:
-    """在标准化 dict row 上匹配信号"""
+    """在标准化 dict row 上匹配信号 (仅阶段信号)"""
     for sig in signals:
         sig = sig.strip()
-        hit = False
-        if sig in SE_COLS:
-            hit = bool(row.get(SE_COLS[sig]))
-        elif sig in ("Accumulation", "Markup", "Distribution", "Markdown"):
-            hit = row.get("wy_stage") == sig
-        elif sig.startswith("boll:"):
-            # boll:N  →  boll_bpct < N (位置 0-100，越低越接近下轨)
-            try:
-                th = float(sig.split(":", 1)[1].lstrip("<"))
-                hit = (row.get("boll_bpct") is not None) and row["boll_bpct"] < th
-            except (ValueError, IndexError):
-                pass
-        elif sig.startswith("bbw:"):
-            # bbw:N  →  boll_bwidth < N (带宽 %，越小越窄/低波)
-            try:
-                th = float(sig.split(":", 1)[1].lstrip("<"))
-                hit = (row.get("boll_bwidth") is not None) and row["boll_bwidth"] < th
-            except (ValueError, IndexError):
-                pass
-        if not hit:
+        if sig not in STAGE_SIGNALS:
+            return False
+        if row.get("wy_stage") != sig:
             return False
     return True
 

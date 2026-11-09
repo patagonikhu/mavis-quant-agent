@@ -15,10 +15,10 @@ allowed-tools:
 
 ```bash
 # 单信号
-... --signal Spring / Accumulation / Markup / UTAD
+... --signal Accumulation / Markup / Distribution / Markdown
 
 # 组合 (AND)
-... --signal Spring --signal 趋势1买
+... --signal Markup --signal Distribution
 
 # 关键参数
 ... --days 30 --threshold 10  # 持仓 30 天, 涨幅阈值 10%

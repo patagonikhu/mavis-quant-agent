@@ -116,11 +116,16 @@ Type: fact
   → 2026-11-06 删除: 内容恒 0 (roc/ey 两列从未回填), 跑 `tools/btf/run_1year.py` 可重新生成
 - `handbook/finance-glossary.md`: 术语表 / 估值口径速查
 
-**⚠️ 已知遗留 (跟 PEG/OBV 无关, 但会让估值链路失效):**
-`analysis_cache` 的 `roc` / `ey` 两列**全表 0 行非空** — `backfill_roc_ey_cache.py` 从没成功跑过。
-后果: `tools/btf/run_1year.py` 的 EY8 / ROC25 / ROC25+EY8 三个策略**选不出任何票** (收益恒 0),
-`/t-finance-roc-ey` 的 ROC/EY 列也拿不到历史值。
-修法: `python -m tools.batch.backfill_roc_ey_cache` 回填后重跑。
+**⚠️ 已知遗留 → 2026-11-09 已终局删除:**
+`analysis_cache` 的 `roc` / `ey` 两列曾**全表 0 行非空** (`backfill_roc_ey_cache.py` 从没成功跑过),
+导致 `tools/btf/run_1year.py` 的 EY8 / ROC25 / ROC25+EY8 三个策略选不出任何票 (收益恒 0)。
+2026-11-09 判定「恒定坏档该删不是该修」, 已删列 + 删唯一读方:
+- `analysis_cache` 删 `roc` / `ey` 两列 (25 列 → 11 列, 442MB → 324MB)
+- 删 `tools/btf/` 整个目录 (4 文件 920 行, 唯一读方 roc/ey; 3 个 Magic 策略本就选不出票)
+- 删 `tools/batch/backfill_roc_ey_cache.py` (roc/ey 唯一写入者)
+- 删 `get_existing_valuation_pairs()` / `get_valuation_coverage()` (只服务这两列)
+→ **估值口径不受影响**: 报告里的 ROC / EY 由 `tools/analysis/analysis_engine.py` 从财报实时算,
+  不走 cache; 删的只是 cache 里的历史冗余列。**不要复活 roc/ey 缓存列。**
 
 **apply when:** 任何"加个量能指标"/"加个估值指标"/"把 PEG 拿回来"的提议 — 先看这条。
 新增量能/估值维度前, 必须先跑回测证明超额 > 0, 否则不进决策链 (4 类等权投票)。
