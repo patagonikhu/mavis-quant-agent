@@ -125,6 +125,9 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 - `当前 K 线 stage == Markup` (必须)
 - 最近 **40** 根 K 线 `M 占比 < 10%` (允许 ≤ 3 根, 排除"反复 M"假突破)
+  - **豁免**: 当前**周线 stage == Markup** 时跳过此检查 (大级别趋势已确认, 日线反复震荡不算假突破)
+  - 周线由日线合成 (`_synthesize_weekly`), 0 网络, 单独跑一次 `wyckoff_judge`
+  - 输出表新增「周线」列: `M★` = 豁免命中 / `M` = 正常命中 / 其他首字母
 - 单日涨跌 > 20% 跳过 (除权 / 复牌)
 - K 线长度 ≥ 11 根
 

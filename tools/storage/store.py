@@ -1951,6 +1951,154 @@ class DataStore:
         d["last_updated"] = datetime.now().strftime("%Y-%m-%d")
         return cls.save_watchlist(d)
 
+    # ── 批量过滤 (全市场扫描用, 0 网络) ────────────────────────────────────
+
+    @classmethod
+    def filter_codes_by_pe(cls, codes: list[str], pe_max: float) -> list[str]:
+        """剔除 PE > pe_max 的票 (per-code latest stk_factor)。
+
+        PE <= 0 或数据缺失的票放行。pe_max <= 0 直接返回原列表。
+
+        Args:
+            codes: 6 位纯数字 code 列表
+            pe_max: PE 上限
+
+        Returns:
+            过滤后 code 列表 (保留原顺序)
+        """
+        if not codes or pe_max <= 0:
+            return codes
+        files = sorted(STK_FACTOR_DIR.glob("*.parquet"))
+        if not files:
+            return codes
+        glob_expr = "[" + ", ".join(f"'{f}'" for f in files[-2:]) + "]"
+        in_clause = ",".join(f"'{c}.SZ', '{c}.SH', '{c}.BJ'" for c in codes)
+        df = _conn().execute(f"""
+            WITH latest AS (
+                SELECT ts_code, pe,
+                       ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) rn
+                FROM read_parquet({glob_expr})
+                WHERE ts_code IN ({in_clause})
+            )
+            SELECT ts_code FROM latest
+            WHERE rn = 1 AND pe > {pe_max} AND pe > 0
+        """).df()
+        expensive = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
+        return [c for c in codes if c not in expensive]
+
+    @classmethod
+    def filter_codes_by_quality(cls, codes: list[str],
+                                or_yoy_min: float = 0.0,
+                                np_yoy_min: float | None = None,
+                                roe_min: float | None = None,
+                                gm_min: float | None = None) -> list[str]:
+        """剔除财务质量不达标的票 (最新季 financials, 上一季兜底)。
+
+        各阈值 None = 不限。全部阈值为 None/0 时直接返回原列表。
+
+        Args:
+            codes: 6 位纯数字 code 列表
+            or_yoy_min: 营收 yoy 下限 (%)
+            np_yoy_min: 净利 yoy 下限 (%, None=不限)
+            roe_min: ROE 下限 (%, None=不限)
+            gm_min: 毛利率下限 (%, 绝对值, None=不限)
+
+        Returns:
+            过滤后 code 列表 (保留原顺序)
+        """
+        if not codes:
+            return []
+        files = sorted(FIN_DIR.glob("*.parquet")) if FIN_DIR.exists() else []
+        if not files:
+            return []
+        in_clause = ",".join(f"'{c}.SZ', '{c}.SH', '{c}.BJ'" for c in codes)
+        q1, q1_label = str(files[-1]), files[-1].stem
+        np_clause  = f"AND netprofit_yoy > {np_yoy_min}" if np_yoy_min is not None else ""
+        roe_clause = f"AND roe > {roe_min}"              if roe_min  is not None else ""
+        gm_clause  = f"AND grossprofit_margin > {gm_min}" if gm_min  is not None else ""
+        fallback_sql = ""
+        if len(files) > 1:
+            q2 = str(files[-2])
+            fallback_sql = f"""
+                UNION ALL
+                SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe
+                FROM read_parquet('{q2}')
+                WHERE ts_code IN ({in_clause})
+                  AND ts_code NOT IN (
+                      SELECT ts_code FROM read_parquet('{q1}') WHERE fetch_status = 'ok'
+                  )
+            """
+        df = _conn().execute(f"""
+            SELECT ts_code FROM (
+                SELECT ts_code, grossprofit_margin, or_yoy, netprofit_yoy, roe
+                FROM read_parquet('{q1}')
+                WHERE ts_code IN ({in_clause}) AND fetch_status = 'ok'
+                {fallback_sql}
+            )
+            WHERE or_yoy > {or_yoy_min}
+              {np_clause}
+              {roe_clause}
+              {gm_clause}
+        """).df()
+        passed = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
+        return [c for c in codes if c in passed]
+
+    @classmethod
+    def filter_codes_by_leverage(cls, codes: list[str], max_nd_ratio: float) -> list[str]:
+        """剔除净负债/总市值 > max_nd_ratio 的重债票。
+
+        净现金票 (netdebt < 0) 和数据缺失的票放行。max_nd_ratio <= 0 直接返回原列表。
+
+        Args:
+            codes: 6 位纯数字 code 列表
+            max_nd_ratio: 净负债/市值上限
+
+        Returns:
+            过滤后 code 列表 (保留原顺序)
+        """
+        if not codes or max_nd_ratio <= 0:
+            return codes
+        files = sorted(FIN_DIR.glob("*.parquet")) if FIN_DIR.exists() else []
+        if not files:
+            return codes
+        sf_files = sorted(STK_FACTOR_DIR.glob("*.parquet"))
+        if not sf_files:
+            return codes
+        in_clause = ",".join(f"'{c}.SZ', '{c}.SH', '{c}.BJ'" for c in codes)
+        q1 = str(files[-1])
+        sf_glob = "[" + ", ".join(f"'{f}'" for f in sf_files[-2:]) + "]"
+        fin_sql = f"""
+            SELECT ts_code, netdebt FROM read_parquet('{q1}', union_by_name=true)
+            WHERE ts_code IN ({in_clause}) AND fetch_status = 'ok'
+        """
+        if len(files) > 1:
+            q2 = str(files[-2])
+            fin_sql += f"""
+                UNION ALL
+                SELECT ts_code, netdebt FROM read_parquet('{q2}', union_by_name=true)
+                WHERE ts_code IN ({in_clause})
+                  AND ts_code NOT IN (
+                      SELECT ts_code FROM read_parquet('{q1}', union_by_name=true)
+                      WHERE fetch_status = 'ok'
+                  )
+            """
+        df = _conn().execute(f"""
+            WITH sf AS (
+                SELECT ts_code, total_mv FROM (
+                    SELECT ts_code, total_mv,
+                           ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) rn
+                    FROM read_parquet({sf_glob})
+                ) WHERE rn = 1
+            ),
+            fin AS ({fin_sql})
+            SELECT fin.ts_code
+            FROM fin JOIN sf ON sf.ts_code = fin.ts_code
+            WHERE fin.netdebt IS NOT NULL AND sf.total_mv > 0
+              AND (fin.netdebt / 1e8) / (sf.total_mv / 1e4) > {max_nd_ratio}
+        """).df()
+        overleveraged = {r['ts_code'].split('.')[0] for r in df.to_dict('records')}
+        return [c for c in codes if c not in overleveraged]
+
 
 # ============================================================
 # CLI 入口
