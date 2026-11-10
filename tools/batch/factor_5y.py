@@ -32,10 +32,11 @@
 输出:
   - 汇总 (按范围批量, 默认):
     docs/factor-5y/_summary-{scope}.md
-    └─ 1 张表: 每只 1 行 (5 年累计% / 最大回撤% / 当前RSI6 / 5年最低RSI6 / 阶段(日/周) / 阶段转变数 / 行数)
+    └─ 1 张表: 每只 1 行 (代码 / 名称 / **行业** / 5 年累计% / 最大回撤% / 当前RSI6 /
+                5年最低RSI6 / 阶段(日/周) / 阶段转变数 / 最近A→M/M→D / 行数)
   - 逐只 (点名, 或批量加 --write-md-all):
     docs/factor-5y/analyze-{code}-{name}-5y.md (每只 1 个 md)
-    └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样 step=N"
+    └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样 step=N" + "**行业**" (2026-11-11 加, 用户要按行业看)
     └─ 📈 因子历史走势 (20 列 GFM 表)
     └─ 🗒 5 年阶段摘要 (5 年累计, MA20 偏离段)
 
@@ -123,6 +124,7 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
             f"# 因子历史走势 (5 年) — {code} {ctx.name or name}\n\n"
             f"> 数据范围: {first_d} ~ {last_d} ({len(ctx.kline)} 日 ≈ {len(ctx.kline)/252:.1f} 年)\n"
             f"> 采样: step={step} (每 {step} 个交易日 1 行, 共 {rows_n} 行)\n"
+            f"> 行业: {ctx.industry or '—'}\n"
             f"> list_type: {list_type_label}\n"
             f"> 数据源: DataStore (本地 K 线, 0 网络)\n\n"
         )
@@ -156,6 +158,7 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
 
         return {
             "ok": True, "code": code, "name": ctx.name or name,
+            "industry": ctx.industry or "",
             "rows": rows_n, "out": str(out_path) if out_path else "",
             "msgs": len(dates), "first": first_d, "last": last_d,
             "metrics": _summarize_metrics(data.factor_history_rows),
@@ -232,8 +235,8 @@ def _write_summary_md(results: list[dict], output_dir: Path,
         "> 数据源: DataStore (本地 K 线, 0 网络)",
         "> 逐只详细表: `python -m tools.batch.factor_5y --code <代码>`",
         "",
-        "| 代码 | 名称 | 5年累计% | 最大回撤% | 当前RSI6 | 5年最低RSI6 | 阶段(日/周) | 5年阶段转变 | 最近A→M/M→D | 行数 |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| 代码 | 名称 | 行业 | 5年累计% | 最大回撤% | 当前RSI6 | 5年最低RSI6 | 阶段(日/周) | 5年阶段转变 | 最近A→M/M→D | 行数 |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in sorted(ok, key=lambda x: x.get("code", "")):
         m = r.get("metrics") or {}
@@ -244,7 +247,7 @@ def _write_summary_md(results: list[dict], output_dir: Path,
         stage = f"{m.get('stage_daily', '?')}/{m.get('stage_weekly', '?')}"
         turns = f"{m.get('buy_count', 0)}A→M/{m.get('sell_count', 0)}M→D"
         last_turns = f"{m.get('last_buy_date', '') or '—'}/{m.get('last_sell_date', '') or '—'}"
-        lines.append(f"| {r['code']} | {r.get('name', '')} | {cum} | {mdd} | {rsi_now} | "
+        lines.append(f"| {r['code']} | {r.get('name', '')} | {r.get('industry') or '—'} | {cum} | {mdd} | {rsi_now} | "
                      f"{rsi_min} | {stage} | {turns} | {last_turns} | {r.get('rows', 0)} |")
 
     output_dir.mkdir(parents=True, exist_ok=True)
