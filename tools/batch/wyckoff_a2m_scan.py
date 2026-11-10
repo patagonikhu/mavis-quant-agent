@@ -22,7 +22,6 @@ import time
 import duckdb
 import multiprocessing as mp
 import os
-import shutil
 import pandas as pd
 from pathlib import Path
 from tools.storage.store import DataStore
@@ -390,7 +389,10 @@ def main():
     ap.add_argument("--report-top", type=int, default=100,
                     help="--full-report 时只详报前 N 只 (默认 100, 0=全部)")
     ap.add_argument("--report-subdir", default="wyckoff-a2m",
-                    help="详报输出子目录 (默认 wyckoff-a2m)")
+                    help="standard 档详报输出子目录 (默认 wyckoff-a2m)")
+    ap.add_argument("--loose-report-subdir", default=None,
+                    help="loose 档详报输出子目录 (默认 <report-subdir>-loose, "
+                         "如 docs/wyckoff-a2m-loose/)")
     ap.add_argument("--no-clean", action="store_true",
                     help="不清理 docs/<subdir> 已有 md")
     ap.add_argument("--clean", action="store_true",
@@ -439,6 +441,8 @@ def main():
         if _v is not None:
             tier_thr[_k] = _v
     args.tier_thr = tier_thr
+    if args.loose_report_subdir is None:
+        args.loose_report_subdir = f"{args.report_subdir}-loose"
     if args.with_finance:
         print("⚠️  --with-finance 已废弃: 亏损股现在是公共前置默认就剔 "
               "(想保留亏损股用 --include-loss)")
@@ -591,9 +595,13 @@ def main():
     # --tier 决定输出哪档 (both = 全出)
     tier_hits = {"standard": standard_hits, "loose": loose_hits,
                  "both": standard_hits + loose_hits}[args.tier]
+    std_hit_codes = {r['code'] for r in standard_hits}
+    loose_hit_codes = {r['code'] for r in loose_hits}
 
     sub_dir = Path(f"docs/{args.report_subdir}")
-    existing = _scan_existing_reports(sub_dir) if args.refresh else {}
+    sub_dir_loose = Path(f"docs/{args.loose_report_subdir}")
+    existing = _scan_existing_reports(sub_dir)
+    existing_loose = _scan_existing_reports(sub_dir_loose)
     hit_codes = {r['code'] for r in hits}
     lines = []
     lines.append(f"# Wyckoff A→M 转变扫描 ({scope})\n")
@@ -645,16 +653,21 @@ def main():
     lines.append(f"| ├ standard 档 | 全过 PE/质量/杠杆门槛 | — | {len(hits)} → {len(standard_hits)} | **{len(standard_hits)}** |")
     lines.append(f"| └ loose 档 | 命中但不达标 (差在哪见下表) | — | {len(hits)} → {len(loose_hits)} | **{len(loose_hits)}** |\n")
 
-    if args.refresh and existing:
-        stale_codes = sorted(c for c in existing if c not in hit_codes)
-        if stale_codes:
+    if args.refresh and (existing or existing_loose):
+        std_stale = sorted(c for c in existing
+                           if c not in std_hit_codes and c not in loose_hit_codes)
+        loose_stale = sorted(c for c in existing_loose
+                             if c not in loose_hit_codes and c not in std_hit_codes)
+        if std_stale or loose_stale:
             lines.append("## 历史留档 (曾命中, 本次未命中)\n")
             lines.append(f"> 目录里有但本次扫描没命中的票 —— 可能已被 PE/质量/杠杆过滤, 或威科夫阶段已离开 Markup.")
             lines.append(f"> `--refresh` 下这些票的详报**会一并刷新到最新交易日**, 文件头标 ⚠️。\n")
-            lines.append("| 代码 | 名称 | 状态 |")
-            lines.append("|---|---|---|")
-            for c in stale_codes:
-                lines.append(f"| `{c}` | {existing[c]['name']} | ⚠️ 本次未命中 (留档) |")
+            lines.append("| 目录 | 代码 | 名称 | 状态 |")
+            lines.append("|---|---|---|---|")
+            for c in std_stale:
+                lines.append(f"| `docs/{args.report_subdir}/` | `{c}` | {existing[c]['name']} | ⚠️ 本次未命中 (留档) |")
+            for c in loose_stale:
+                lines.append(f"| `docs/{args.loose_report_subdir}/` | `{c}` | {existing_loose[c]['name']} | ⚠️ 本次未命中 (留档) |")
             lines.append("")
 
     if hits:
@@ -668,6 +681,7 @@ def main():
             lines.append("")
         if args.tier in ("loose", "both"):
             lines.append(f"### loose 档 ({len(loose_hits)} 只) — 命中 A→M 但不满足 standard 门槛\n")
+            lines.append(f"> 详报目录: `docs/{args.loose_report_subdir}/` (standard 档在 `docs/{args.report_subdir}/`)\n")
             lines.append("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | 差在哪 | PE | PE_TTM | 阶段序列 |")
             lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
             for r in loose_hits:
@@ -689,8 +703,9 @@ def main():
 
     if args.refresh and args.full_report:
         tasks: list = []
-        if not args.stale_only:
-            for r in tier_hits:
+
+        def _add_hits(rows, subdir):
+            for r in rows:
                 code = r['code']
                 nm = basic.get(code, (code, "—"))[0]
                 try:
@@ -702,47 +717,91 @@ def main():
                 except Exception:
                     _sg = ""
                 note = f" — 转变日 {r.get('trans_date', '?')}, 涨幅 {_chg:+.1f}%, 阶段 {_sg}"
-                tasks.append((code, nm, args.report_subdir, "hit", note))
-        stale_list = [c for c in existing if c not in hit_codes]
+                if r.get('miss'):
+                    note += f", 未达标: {' + '.join(r['miss'])}"
+                tasks.append((code, nm, subdir, "hit", note))
+
+        if not args.stale_only:
+            _add_hits(standard_hits, args.report_subdir)
+            _add_hits(loose_hits, args.loose_report_subdir)
+
+        # 历史留档: 两个目录各自算 (graduated 的票 —— 从 loose 升到 standard ——
+        # 在 loose 目录标 stale 说明"已升入 standard 档", 不算漏)
+        # 两个目录的票集合互斥: loose 命中的票不在 standard 目录留档, 反之亦然
+        stale_list = [c for c in existing if c not in std_hit_codes and c not in loose_hit_codes]
+        stale_list_loose = [c for c in existing_loose if c not in loose_hit_codes and c not in std_hit_codes]
         if not args.keep_stale:
             for code in stale_list:
                 nm = existing[code]["name"]
                 tasks.append((code, nm, args.report_subdir, "stale", ""))
+            for code in stale_list_loose:
+                nm = existing_loose[code]["name"]
+                note = "已升入 standard 档" if code in std_hit_codes else ""
+                tasks.append((code, nm, args.loose_report_subdir, "stale", note))
         n_hit_tasks = len([t for t in tasks if t[3] == "hit"])
         n_stale_tasks = len([t for t in tasks if t[3] == "stale"])
-        print(f"\n=== step 2 [--refresh]: 刷新/生成详报 (→ docs/{args.report_subdir}/) ===")
-        print(f"  A. 本次命中 (刷新+生成): {n_hit_tasks} 只")
+        print(f"\n=== step 2 [--refresh]: 刷新/生成详报 ===")
+        print(f"  standard 档 → docs/{args.report_subdir}/")
+        print(f"  loose 档    → docs/{args.loose_report_subdir}/")
+        print(f"  A. 本次命中 (刷新+生成): {n_hit_tasks} 只 "
+              f"(standard {len(std_hit_codes)} + loose {len(loose_hit_codes)})")
         print(f"  C. 历史留档 (本次未命中): {n_stale_tasks} 只"
               + ("  [已跳过刷新, 只标注]" if args.keep_stale else "  [会刷新数据]"))
-        print(f"  目录现有: {len(existing)} 份 → 跑完预计: {len(existing) + len(hit_codes - set(existing))} 份")
+        print(f"  standard 目录现有: {len(existing)} 份 → 跑完预计: "
+              f"{len(existing) + len(std_hit_codes - set(existing))} 份")
+        print(f"  loose 目录现有: {len(existing_loose)} 份 → 跑完预计: "
+              f"{len(existing_loose) + len(loose_hit_codes - set(existing_loose))} 份")
         if not tasks:
             print("  无任务可跑")
             return
     elif args.full_report and hits:
         target_hits = tier_hits[:args.report_top] if args.report_top > 0 else tier_hits
-        if sub_dir.exists() and args.clean and not args.no_clean:
-            old_mds = list(sub_dir.glob("*.md"))
-            trash = Path.home() / ".Trash" / f"mavis-a2m-{args.report_subdir}-{int(time.time())}"
-            trash.mkdir(parents=True, exist_ok=True)
-            for p in old_mds:
-                try:
-                    shutil.move(str(p), str(trash / p.name))
-                except Exception:
-                    p.unlink()
-            print(f"\n=== step 2: 跑 /t-analyze 详报 ({len(target_hits)} 只 → docs/{args.report_subdir}/) ===")
-            print(f"  ⚠️ 清空旧 md: {len(old_mds)} 份 (--clean 显式指定, 已移到 {trash})")
+        if args.clean and not args.no_clean:
+            from tools.storage.safe_fs import safe_delete
+            for _d, _sub in ((sub_dir, args.report_subdir),
+                             (sub_dir_loose, args.loose_report_subdir)):
+                if not _d.exists():
+                    continue
+                for p in _d.glob("analyze-*.md"):
+                    safe_delete(p, reason=f"--clean a2m {_sub}")
+                print(f"  ⚠️ 清空旧 md: {_sub}/ (--clean 显式指定, 已移到回收站)")
+            print(f"\n=== step 2: 跑 /t-analyze 详报 ({len(target_hits)} 只) ===")
         else:
-            print(f"\n=== step 2: 跑 /t-analyze 详报 ({len(target_hits)} 只 → docs/{args.report_subdir}/) ===")
+            print(f"\n=== step 2: 跑 /t-analyze 详报 ({len(target_hits)} 只) ===")
+            print(f"  standard 档 → docs/{args.report_subdir}/")
+            print(f"  loose 档    → docs/{args.loose_report_subdir}/")
             if args.clean:
                 print(f"  子目录不存在, 无需清空")
             elif args.no_clean:
                 print(f"  --no-clean: 保留历史详报")
             else:
                 print(f"  保留历史详报 (默认不清理, 加 --clean 才清空)")
-        tasks = [(r['code'], basic.get(r['code'], (r['code'], "—"))[0], args.report_subdir)
+        def _dir_of(r):
+            return (args.loose_report_subdir if r.get('miss')
+                    else args.report_subdir)
+        tasks = [(r['code'], basic.get(r['code'], (r['code'], "—"))[0], _dir_of(r))
                  for r in target_hits]
     else:
         tasks = []
+
+    # ── 档位迁移清理 ──
+    # 一只票换档 (standard ↔ loose) 时, 旧目录里那份副本要挪走,
+    # 否则同一票会在两个目录各留一份 (详报内容一样, 但档位标注不同)。
+    from tools.storage.safe_fs import safe_delete
+    _moved = 0
+    for _c in loose_hit_codes:
+        _old = existing.get(_c)
+        if _old and _old["path"].exists():
+            if safe_delete(_old["path"], reason="A→M 换档 → loose 目录"):
+                _moved += 1
+    for _c in std_hit_codes:
+        _old = existing_loose.get(_c)
+        if _old and _old["path"].exists():
+            if safe_delete(_old["path"], reason="A→M 换档 → standard 目录"):
+                _moved += 1
+    if _moved:
+        print(f"  ♻️  换档迁移: {_moved} 份旧副本已移到回收站 "
+              f"(loose {len(loose_hit_codes)} / standard {len(std_hit_codes)})")
 
     if tasks:
         n_workers = args.workers if args.workers > 0 else (os.cpu_count() or 4)
@@ -766,7 +825,8 @@ def main():
                     if st == "hit":
                         stamped_hit += _stamp_report_status(Path(path_or_err), "hit", note)
                     else:
-                        stamped_stale += _stamp_report_status(Path(path_or_err), "stale")
+                        stamped_stale += _stamp_report_status(
+                            Path(path_or_err), "stale", stale_note=note or None)
                     print(f"  ✅ {code_r} → {path_or_err} ({elapsed:.2f}s)", flush=True)
                 else:
                     print(f"  ⚠️  {code_r} 失败: {path_or_err} ({elapsed:.2f}s)", flush=True)
@@ -787,7 +847,8 @@ def main():
                             if t[3] == "hit":
                                 stamped_hit += _stamp_report_status(Path(path_or_err), "hit", t[4])
                             else:
-                                stamped_stale += _stamp_report_status(Path(path_or_err), "stale")
+                                stamped_stale += _stamp_report_status(
+                                    Path(path_or_err), "stale", stale_note=t[4] or None)
             print()
         print(f"\n=== step 2 完成 {ok_n}/{len(_tasks_wrapped)} ({ok_n/len(_tasks_wrapped)*100:.0f}%), {time.time()-rt0:.0f}s "
               f"(workers={n_workers}) ===")

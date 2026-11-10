@@ -109,14 +109,17 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ## 跑流程
 
 1. **step 1 — 扫描**: 全市场过公共前置 (`_filter_by_st` → `DataStore.filter_codes_by_finance` 剔亏损) → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`) → 命中后按 standard 门槛分 standard / loose 两档,复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
-2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),落到 `docs/wyckoff-a2m/` (只出 `--tier` 选中的档)
+2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),按档位落**两个独立目录**:
+   - standard 档 → `docs/wyckoff-a2m/` (`--report-subdir`)
+   - loose 档 → `docs/wyckoff-a2m-loose/` (`--loose-report-subdir`, 默认 `<report-subdir>-loose`)
+   只出 `--tier` 选中的档。两个目录的**票集合互斥** —— 一只票换档时旧副本自动移到回收站 (`safe_delete`)。
 
 ### step 2 两种模式 (2026-10-29 加 `--refresh`, **2026-11-02 起 `--refresh` 是默认**)
 
 | 模式 | 行为 | 用 flag |
 |---|---|---|
 | **刷新 (默认)** | **不清空**, 分 3 类处理 | (无, 默认开) |
-| **清空** | 先清空 `docs/wyckoff-a2m/`,再生成命中的详报 | `--clean` |
+| **清空** | 先清空 `docs/wyckoff-a2m/` + `docs/wyckoff-a2m-loose/`,再生成命中的详报 (走 `safe_delete` → 回收站) | `--clean` |
 
 > ⚠️ **2026-11-02 变更**: 清空从默认改成 opt-in (`--clean`)。
 > 原因: 旧逻辑用 `p.unlink()` **直接删除**, 不进回收站, 而 `docs/` 被 `.gitignore` 排除 → **删了就没了, 恢复不了**。
@@ -159,8 +162,9 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 - 单只扫描瓶颈 = `scan_sub_events` 内部 9 detector Python loop 序列 (GIL 锁死, ThreadPool 0 加速)
 - mp.spawn 详报 1.5-2.6x 加速(起步小批量 ≤8 收益最高, worker 太多被启动开销拖累)
 - ⚠️ **不能用 mp.fork** (duckdb fork 后死锁)
-- 2026-11-02 起默认**不清空** `docs/wyckoff-a2m/` (--refresh 默认开); `--clean` 才清空 (不可恢复)
+- 2026-11-02 起默认**不清空** `docs/wyckoff-a2m/` (--refresh 默认开); `--clean` 才清空 (走回收站, 可恢复)
 - 详报目录跟 watchlist 完全隔离,不污染自选
+- 详报分两个目录 (standard / loose), 票集合互斥; 换档时旧副本自动挪到回收站
 - 数据日期 = parquet 最新 trade_date,不是 wall clock
 
 ## 🚫 本 skill 不做什么 (越界 = 违规)
@@ -173,8 +177,8 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 | **不跑 ETF 版** | ETF 走独立 skill `/t-etf-wyckoff-a2m` (过滤链不同), 别混着跑 |
 | **不改过滤链 / V13 严判** | 过滤链是调参后的固化口径, 想调 → 报告给用户 |
 | **不跑 `/t-analyze --all` 全量** | 只对**命中**票出详报; 股票全量详报是 `/t-analyze --all` 的活 |
-| **不碰 watchlist** | 详报落 `docs/wyckoff-a2m/`, 与自选池**完全隔离**, 不污染 watchlist |
-| **不加 `--clean` 除非用户明说** | `--clean` 清空 `docs/wyckoff-a2m/` **不可恢复** |
+| **不碰 watchlist** | 详报落 `docs/wyckoff-a2m/` + `docs/wyckoff-a2m-loose/`, 与自选池**完全隔离**, 不污染 watchlist |
+| **不加 `--clean` 除非用户明说** | `--clean` 清空两个详报目录 (走回收站, 可恢复) |
 
 > 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
 
@@ -208,7 +212,8 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 ```bash
 # 详报全列
-ls docs/wyckoff-a2m/analyze-*.md | wc -l
+ls docs/wyckoff-a2m/analyze-*.md | wc -l          # standard 档
+ls docs/wyckoff-a2m-loose/analyze-*.md | wc -l    # loose 档
 
 # lint 单个详报 (数据完整性)
 bash tools/with_venv.sh python -m tools.render.report_linter docs/wyckoff-a2m/analyze-605189-富春染织.md all
