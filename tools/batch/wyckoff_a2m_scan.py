@@ -188,6 +188,11 @@ FILTER_TIERS: dict[str, dict] = {
     "loose": {},
 }
 
+# 🔴 契约 (2026-11-10 用户明确要求): 默认必须 **standard + loose 两档都跑**。
+# 单档只是「本次只看一档」的视图, 不是「默认只跑一档」。
+# 有回归测试锁这个默认值 (tests/unit/test_a2m_filter_tiers.py), 改之前先问用户。
+DEFAULT_TIER = "both"
+
 # 细 flag → 门槛字段 的映射 (显式传了才覆盖 FILTER_TIERS, None = 没传)
 TIER_OVERRIDE_KEYS = (
     "exclude_pe", "with_quality", "min_growth",
@@ -403,7 +408,7 @@ def main():
                     help="--refresh 时, C 类不刷新数据, 只标注状态")
     ap.add_argument("--stale-only", action="store_true",
                     help="只刷新 C 类 (历史留档), 不跑本次命中票的详报")
-    ap.add_argument("--tier", choices=["standard", "loose", "both"], default="both",
+    ap.add_argument("--tier", choices=["standard", "loose", "both"], default=DEFAULT_TIER,
                     help="输出档位: standard(只达标) / loose(只不达标) / both(两档都出, 默认)")
     ap.add_argument("--exclude-loss", action="store_true", default=True,
                     help="排除亏损股 (PE_TTM 算不出) — 公共前置, 默认 True")

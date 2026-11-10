@@ -34,7 +34,11 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ```
 
-> 默认过滤链(全开):`exclude-st` → `exclude-pe 60` → `with-quality basic` (营收/净利 yoy>0) + `ROE>5%` + `毛利率>20%` → `净负债/市值<0.5`.
+> **默认 = standard + loose 两档都跑** (2026-11-10 用户明确要求, 代码里 `DEFAULT_TIER` 常量 + 回归测试锁住):
+> 公共前置 `exclude-st` → `exclude-loss` (剔亏损股) → V13 严判扫描 → 命中后按 standard 门槛
+> (PE≤60 + quality basic 营收/净利yoy>0 + ROE>5% + 毛利>20% + 净债<0.5) 分成 standard / loose 两档。
+> 详报落**两个目录**: `docs/wyckoff-a2m/` (standard) + `docs/wyckoff-a2m-loose/` (loose)。
+> `--tier standard|loose` 只是「本次只看一档」的视图, **不是默认行为**。
 > 任何 flag 关/换门槛都用 `--help` 看当前默认 + 含义,不要凭记忆。
 
 > 📋 **每次跑开头会自动打印「本次运行生效条件」** (2026-10-29 加):
@@ -183,7 +187,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 > 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
 
 **📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
-- stdout 只有「命中 N 只」+ 过滤漏斗 (每个 step 前后剩余数)
+- stdout 有「命中 N 只」+ 过滤漏斗 (每个 step 前后剩余数) + 末尾「分档: standard N 只 / loose N 只」
 - **命中清单在 `docs/wyckoff-a2m.md`** —— 要清单 grep 那个文件, **别重扫一遍**
 
 ## 命名沿革 (关键节点)

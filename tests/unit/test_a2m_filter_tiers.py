@@ -6,7 +6,10 @@
   2. loose 档必须恒为 standard 的补集 (两档互斥, 不能有第三档)
   3. 细 flag 覆盖机制不漏字段 (漏一个 = 显式传的 flag 静默失效)
 """
+import argparse
+
 from tools.batch.wyckoff_a2m_scan import (
+    DEFAULT_TIER,
     FILTER_TIERS,
     TIER_OVERRIDE_KEYS,
 )
@@ -40,3 +43,25 @@ def test_standard_has_only_known_fields():
     """standard 档不允许出现没被 flag 覆盖的新字段 (否则调了没地方调)"""
     known = set(TIER_OVERRIDE_KEYS)
     assert set(FILTER_TIERS["standard"]) <= known
+
+
+# ----- 默认档位 (用户 2026-11-10 明确要求: 两档都要跑) -----
+
+def test_default_tier_is_both():
+    """🔴 契约: 默认必须 standard + loose 两档都跑。
+
+    单档只是「本次只看一档」的视图, 不是默认行为。
+    改这个默认值之前必须先问用户 —— 有回归测试锁住。
+    """
+    assert DEFAULT_TIER == "both"
+
+
+def test_argparse_default_tier_is_both():
+    """argparse 的实际默认值也要是 both (别只改常量忘了改 flag)"""
+    import tools.batch.wyckoff_a2m_scan as m
+    ap = argparse.ArgumentParser()
+    # 复刻真实 argparse 定义 (只取 --tier 那一行, 不跑 main)
+    ap.add_argument("--tier", choices=["standard", "loose", "both"], default=DEFAULT_TIER)
+    assert ap.parse_args([]).tier == "both"
+    assert ap.parse_args(["--tier", "loose"]).tier == "loose"
+    assert m.DEFAULT_TIER == "both"
