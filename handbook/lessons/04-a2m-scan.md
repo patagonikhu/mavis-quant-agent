@@ -418,3 +418,56 @@ Type: rule
 修法: `if args.refresh and args.full_report:`。
 **apply when:** 打印的"生效条件"跟实际行为对不上 → 优先怀疑 flag 分支没判那个参数
 (本项目铁律: SKILL.md 写的每个 flag 都必须在代码里兑现)。
+
+---
+
+## ⚡ 性能: 扫描阶段 104s → 15s (2026-11-10, mp.spawn 并行)
+
+用户反馈 `/t-wyckoff-a2m` "有点慢" (原 193s = 扫描 104s + 详报 89s)。
+
+### 定位 (先 profile, 别拍脑袋)
+
+`cProfile` 5 只采样 → `_process_one` 66ms/只:
+- `scan_sub_events` 占 **65%** (内部 9 个 detector 逐根 K 线 Python loop)
+- `build_kline_features` 占 25%
+→ **单只已无算法空间, 唯一杠杆是并行**。
+
+### 修法 1: 扫描阶段 mp.spawn 并行 (`--scan-workers`, 默认 8)
+
+⚠️ **原注释 "scan_sub_events GIL 锁死, ThreadPool 0 加速" 只对 ThreadPool 成立** ——
+**mp.spawn 是新进程, GIL 管不着**。SKILL.md 里那句 "ThreadPool 无效" 被误读成 "多进程也没用"。
+
+- worker 自己读 parquet (`scan_batch_worker`, 顶层函数才能 pickle)
+- **不要把 DataFrame 传给子进程** (pickle 500 万行比重读 parquet 还慢)
+- ⚠️ **不能用 fork** —— duckdb fork 后死锁
+
+实测: 串行 104.2s → 8 进程 **15.2s (6.8x)**, 命中集合**逐只比对零差异** (standard 3 + loose 27)。
+
+### 修法 2: per-code 函数别读全市场 (`DataStore.get_market_cap_near_dates`)
+
+它按**一只票**查 4 个季末的市值, 却 `load_all_daily_basic()` 读**全市场 635 万行**再过滤。
+每只票的详报都调一次 → 90 份详报 = 90 次全市场读 = 详报阶段最大单点耗时 (1.2s/只)。
+
+修法: SQL 层 `WHERE ts_code = 'xxx'` (635 万行 → 该票 ~1500 行)。
+实测 **1.2s → 10ms (100x)**, 4 个季末市值**值完全一致**。详报阶段 89s → **6s**。
+
+**总耗时 193s → 21s (9x)**。
+
+### ⛔ 小样本验证「窗口能不能砍」会骗人
+
+先试「K 线 limit 2000 → 250」: 200 只采样下命中集合**完全一致**, 扫描快 8.4x。
+**全市场 3607 只实测: limit=500 漏 3 多 2, limit=250 漏 3 多 5, 还有 10 只「同票但判定不同」**
+(转变日 / M 占比都变了) → **砍窗口会改口径, 这条路封死**。
+
+**教训: 性能优化里的「等价性验证」必须全市场跑**。
+小样本只能用来**定位瓶颈** (profile), 不能用来**证明等价** (等价性)。
+这跟「db schema 兼容性 5 只采样看不到真实效果」是同一个病根。
+
+### ⛔ 单测别把实时值写死
+
+`tests/unit/test_verify_tool.py::test_parse_real_scan_md` 原来断言 `hits == 31` ——
+命中数是**实时值**, 每次扫描跑到新数据就变 (31→30), 测试当场红, 把 `tools.verify` 拖成红的。
+修法: 只校验**结构自洽** (`standard + loose == hits`, `pool >= hits`, 代码是 6 位数字), 不校验具体数值。
+
+**apply when:** 任何"这个 skill 有点慢"的反馈 (先 profile 再动手);
+任何在单测里断言"扫描命中数 / 命中代码"的写法; 任何 per-code 函数里调全市场读的地方。

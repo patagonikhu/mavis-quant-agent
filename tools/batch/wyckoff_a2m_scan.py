@@ -225,6 +225,34 @@ def _worker(code: str, df: pd.DataFrame) -> dict | None:
         return {"code": code, "error": f"{type(e).__name__}: {e}"}
 
 
+def scan_batch_worker(task: tuple) -> list[dict]:
+    """扫描一批票的 worker (跑在 mp.spawn 子进程, 顶层函数才能 pickle)
+
+    自己从 parquet 读 K 线 (只读本地, 0 网络), 不走主进程传 DataFrame ——
+    传 DataFrame 要 pickle 500 万行, 比重读一遍 parquet 还慢。
+
+    Args:
+        task: (codes, lookback, limit_per_code) 三元组
+
+    Returns:
+        命中列表 (每项是 _process_one 的返回 dict, 含 error 键表示该票异常)
+    """
+    codes, lookback, limit = task
+    kline_map = _load_all_klines(codes, limit_per_code=limit)
+    out: list[dict] = []
+    for code, df in kline_map.items():
+        if df is None or len(df) < 220:
+            continue
+        try:
+            r = _process_one(code, df, lookback=lookback)
+        except Exception as e:
+            out.append({"code": code, "error": f"{type(e).__name__}: {e}"})
+            continue
+        if r is not None:
+            out.append(r)
+    return out
+
+
 def load_codes_all_market() -> list[str]:
     """全市场 codes (data/history/daily 有数据的, 排除北交所 .BJ)"""
     df = duckdb.execute(
@@ -435,6 +463,8 @@ def main():
                     help="standard 档净负债/总市值上限 (默认取 FILTER_TIERS = 0.5, 0=不限)")
     ap.add_argument("--workers", type=int, default=0,
                     help="详报多进程 worker 数 (默认 0=os.cpu_count(), 1=单进程)")
+    ap.add_argument("--scan-workers", type=int, default=8,
+                    help="扫描并发进程数 (mp.spawn, 默认 8; 0 = 串行)")
     ap.add_argument("--bench-report", nargs="?", const=12, type=int,
                     help="跳过扫描, 只跑 N 个固定代码详报测试不同 workers")
     args = ap.parse_args()
@@ -520,33 +550,57 @@ def main():
 
     basic = load_stock_basic()
     print(f"=== Wyckoff A→M 扫描 (scope: {scope}, lookback: {args.lookback}) ===")
-    print(f"  任务: {len(codes)} 只, 单进程顺序 (scan_sub_events GIL 锁死, ThreadPool 0 加速)")
+    print(f"  任务: {len(codes)} 只, "
+          + (f"{max(0, args.scan_workers)} 进程并行 (mp.spawn)" if max(0, args.scan_workers) > 0
+             else "单进程顺序 (scan_sub_events 是纯 Python 循环, ThreadPool 无效)"))
     print(f"  链路: DataStore → AnalysisEngine(WyckoffStrategy) → compute_factor_history")
     print(f"  复用跟 /t-analyze 同源, 0 网络\n")
 
     t0 = time.time()
-    print(f"  1) 加载全市场 K 线 (1 次 SQL) ...", flush=True)
-    kline_map = _load_all_klines(codes, limit_per_code=2000)
-    print(f"  1) 完成: {len(kline_map)} 票 ({time.time()-t0:.2f}s)", flush=True)
-
     t1 = time.time()
     hits = []
     errors = []
     completed = 0
-    for code in codes:
-        df = kline_map.get(code)
-        if df is None or len(df) < 220:
-            continue
-        r = _process_one(code, df, lookback=args.lookback)
-        if r is None:
-            pass
-        elif 'error' not in r:
-            hits.append(r)
-        else:
-            errors.append(r)
-        completed += 1
-        if completed % 500 == 0 or completed == len(codes):
-            print(f"  2) {completed}/{len(codes)} done, {len(hits)} hits, {len(errors)} errs, {time.time()-t1:.0f}s", flush=True)
+    n_workers = max(0, args.scan_workers)
+    if n_workers > 0 and len(codes) > n_workers:
+        # 并行扫描: mp.spawn 绕开 GIL (ThreadPool 不行, scan_sub_events 是纯 Python 循环)
+        # 不能用 fork —— duckdb fork 后死锁
+        chunks = [codes[i::n_workers] for i in range(n_workers)]
+        print(f"  2) 并行扫描 ({n_workers} workers, mp.spawn) ...", flush=True)
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            for part in pool.imap_unordered(
+                scan_batch_worker,
+                [(ch, args.lookback, 2000) for ch in chunks],
+            ):
+                for r in part:
+                    if 'error' in r:
+                        errors.append(r)
+                    else:
+                        hits.append(r)
+                completed += len(part)
+                print(f"  2) {completed}/{len(codes)} done, {len(hits)} hits, "
+                      f"{len(errors)} errs, {time.time()-t1:.0f}s", flush=True)
+    else:
+        # 串行扫描 (--scan-workers 0)
+        print(f"  1) 加载全市场 K 线 (1 次 SQL) ...", flush=True)
+        kline_map = _load_all_klines(codes, limit_per_code=2000)
+        print(f"  1) 完成: {len(kline_map)} 票 ({time.time()-t0:.2f}s)", flush=True)
+        for code in codes:
+            df = kline_map.get(code)
+            if df is None or len(df) < 220:
+                continue
+            r = _process_one(code, df, lookback=args.lookback)
+            if r is None:
+                pass
+            elif 'error' not in r:
+                hits.append(r)
+            else:
+                errors.append(r)
+            completed += 1
+            if completed % 500 == 0 or completed == len(codes):
+                print(f"  2) {completed}/{len(codes)} done, {len(hits)} hits, "
+                      f"{len(errors)} errs, {time.time()-t1:.0f}s", flush=True)
 
     elapsed = time.time() - t0
     print(f"\n=== 完成 {len(hits)}/{len(codes)} 命中 ({len(errors)} errors), {elapsed:.1f}s ===\n")
@@ -618,7 +672,9 @@ def main():
         last_trade_date = hits[0]['last_date'] if hits else 'N/A'
     lines.append(f"> 数据日期: {last_trade_date} (lookback={args.lookback} 根 K 线)")
     lines.append(f"> 命中: {len(hits)} 只 / {len(codes)} ({len(hits)/len(codes)*100:.1f}%)")
-    lines.append(f"> 扫描耗时: {elapsed:.1f}s (单进程顺序)")
+    lines.append(f"> 扫描耗时: {elapsed:.1f}s ("
+                 + (f"{max(0, args.scan_workers)} 进程并行 (mp.spawn)" if max(0, args.scan_workers) > 0
+                    else "单进程顺序") + ")")
     lines.append(f"> 数据源: AnalysisEngine + compute_factor_history (跟 /t-analyze 同源, 0 网络)")
     lines.append(f"> 判定: **V13 严判** — 当前 M + 最近 40 根 K 线 M 占比 < 10% (排除\"反复 M 假突破\")\n")
 

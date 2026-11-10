@@ -30,6 +30,9 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --no-full-report
 # 只扫 watchlist
 bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --watchlist-only
 
+# 扫描并发数 (默认 8, 0 = 串行; 详报并发是另一个 flag --workers)
+bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --scan-workers 12
+
 # 默认就是刷新模式 (不清空目录, 刷新已有 + 补充新增 + 留档标注)
 bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ```
@@ -56,7 +59,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 | 0 | 原始候选 (全市场) | — | 5459 |
 | 1 | `exclude-st` ST/*ST | 开 | 5265 |
 | 2 | `exclude-loss` 亏损股 (PE_TTM 算不出 = TTM 亏损) | 开 | 3610 |
-| 3 | V13 严判 A→M | lookback=5 | **31 命中** (112s) |
+| 3 | V13 严判 A→M | lookback=5 | **30 命中** (15s, 8 进程并行) |
 
 **命中后分档** (两档互斥, 一只票只进一档):
 
@@ -67,7 +70,8 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 > ⚠️ **为什么门槛放命中后而不是候选池**: 放前面 loose 栏永远是空的 ——
 > 被门槛剔掉的票压根不会被扫到, 分不出「命中了但质量不够」这一批。
-> 代价 (2026-11-10 实测): 候选池 557 → 3610, 扫描 18s → 112s。
+> 代价 (2026-11-10 实测): 候选池 557 → 3610, 扫描 18s → 104s。
+> ⚠️ 这个代价已经用**并行扫描**摊掉: 2026-11-10 改 mp.spawn 8 进程后 → **15s** (命中集合零差异)。
 
 **档位定义在代码内** —— `tools/batch/wyckoff_a2m_scan.py::FILTER_TIERS`, 改门槛改那个字典。
 细 flag (`--exclude-pe` / `--with-quality` / `--min-growth` / `--min-roe` /
@@ -162,9 +166,13 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ## 数据特性 (这是必须知道的)
 
 - **0 网络**, 走 duckdb daily parquet
-- 全市场 ~112s (2026-11-10 实测 3610 票扫描), 5459 → ST 排 → 亏损排 → **3610 票** → 命中后分 standard / loose 两档
-- 单只扫描瓶颈 = `scan_sub_events` 内部 9 detector Python loop 序列 (GIL 锁死, ThreadPool 0 加速)
-- mp.spawn 详报 1.5-2.6x 加速(起步小批量 ≤8 收益最高, worker 太多被启动开销拖累)
+- 全市场 **15s** (2026-11-10 改并行后实测 3610 票扫描), 5459 → ST 排 → 亏损排 → **3607 票** → 命中 30 只 → 分 standard / loose 两档
+- **扫描阶段走 mp.spawn 并行** (`--scan-workers`, 默认 8): `scan_sub_events` 是纯 Python 循环, **ThreadPool 无效 (GIL), mp.spawn 能绕开**
+  → 实测 串行 104s → 8 进程 15s (**6.8x**), 命中集合逐只比对**零差异**
+- **详报阶段 6s** (90 份, 12 worker): 靠修掉 `DataStore.get_market_cap_near_dates` 的全市场读
+  (per-code 函数却读 635 万行 daily_basic → 改成 SQL 层按 ts_code 过滤, 1.2s/只 → 10ms)
+- ⚠️ **别用小样本验证 K 线窗口能不能砍**: 200 只采样显示 limit 2000→250 命中完全一致,
+  全市场 3607 只实测**漏 3 多 5 还有 10 只判定不同** → 砍窗口会改口径, 只能走并行
 - ⚠️ **不能用 mp.fork** (duckdb fork 后死锁)
 - 2026-11-02 起默认**不清空** `docs/wyckoff-a2m/` (--refresh 默认开); `--clean` 才清空 (走回收站, 可恢复)
 - 详报目录跟 watchlist 完全隔离,不污染自选
@@ -216,7 +224,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 > ⚡ **默认跑 `bash tools/with_venv.sh python -m tools.verify` (9.4s)** —— py_compile 全仓 +
 > 19 模块批量 import + pytest + guardrail 4 项 + 命名规范 grep。
-> 加 `--full` 才叠全市场扫描 (112s)。验证预算表见 `handbook/AGENT_MEMORY.md`。
+> 加 `--full` 才叠全市场扫描 (15s)。验证预算表见 `handbook/AGENT_MEMORY.md`。
 
 ```bash
 # 详报全列

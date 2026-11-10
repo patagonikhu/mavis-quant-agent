@@ -1874,12 +1874,18 @@ class DataStore:
         try:
             import pandas as pd
             ts_code = _to_ts_code(code)
-            df = cls.load_all_daily_basic()
-            if df.empty or not end_dates:
+            if not end_dates:
                 return {ed: 0.0 for ed in end_dates}
-            df = df[df["ts_code"] == ts_code][["trade_date", "total_mv"]].copy()
+            # 2026-11-10 性能修: 原来读全市场 daily_basic (635 万行) 再过滤出一只票 ——
+            # 每只票的详报都要调一次, 是 /t-analyze 详报阶段的最大单点耗时 (1.6s/只)。
+            # 改成 SQL 层按 ts_code 过滤, 读的行数从 635 万 → 该票 ~1500 行。
+            df = _conn().execute(
+                f"SELECT trade_date, total_mv FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet') "
+                f"WHERE ts_code = '{ts_code}'"
+            ).df()
             if df.empty:
                 return {ed: 0.0 for ed in end_dates}
+            df = df.copy()
             out = {}
             for ed in end_dates:
                 # 找 [ed, ed+days_after] 内最大 trade_date

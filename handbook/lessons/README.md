@@ -1,7 +1,7 @@
 # 项目专属教训 — 索引
 
 > 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
-> 共 **73 条**教训 (拆 47 + 后续新增 26)。
+> 共 **74 条**教训 (拆 47 + 后续新增 27)。
 > **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
 
@@ -12,7 +12,7 @@
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 12 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 5 |
-| [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 15 |
+| [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 16 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 21 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
 
