@@ -210,6 +210,10 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 ## 跑后验证
 
+> ⚡ **默认跑 `bash tools/with_venv.sh python -m tools.verify` (9.4s)** —— py_compile 全仓 +
+> 19 模块批量 import + pytest + guardrail 4 项 + 命名规范 grep。
+> 加 `--full` 才叠全市场扫描 (112s)。验证预算表见 `handbook/AGENT_MEMORY.md`。
+
 ```bash
 # 详报全列
 ls docs/wyckoff-a2m/analyze-*.md | wc -l          # standard 档
