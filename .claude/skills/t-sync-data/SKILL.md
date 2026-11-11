@@ -60,6 +60,7 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-force
     不会悄悄自己算 (所以分析侧永远单线程写, 不用文件锁)
   - 机器强制: 守门员第 5 项 `cache-writer` 扫全仓, 除 sync 外碰写入口 = 违规
   - 补算触发时机: `--sw-index` 跑完 (无论有没有数据缺口) 都会补一遍缺的日期
+  - **cache 概况每跑必打** (行数 / 行业数 / 数据区间 / 最新交易日 / 每行业天数)
 
 ## 🚫 本 skill 不做什么 (越界 = 违规)
 
@@ -77,6 +78,9 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-force
 
 **📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
 - stdout 末尾已有「🌐 网络请求统计」+「📊 本地数据新鲜度」
+- **📊 行业威科夫 cache** 块 (2026-11-12 加): 行数 / 行业数 / **数据区间 (起止日期)** /
+  **最新交易日 (含跟行业 K线 和今天的对比)** / 每行业天数分布 —— 缺数据一眼看得出
+- `--status` 同样带这个块 (看现状不拉数据时用)
 - **不用再跑 `--status` 复查** —— 那是重复劳动
 - `stk_factor_pro` 当日返空是正常的 T-1 滞后, 不要再单独 retry
 

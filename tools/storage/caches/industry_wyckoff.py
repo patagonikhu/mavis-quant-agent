@@ -118,6 +118,59 @@ def cache_max_date() -> str:
     return best
 
 
+def cache_summary() -> dict:
+    """cache 概况 (给 /t-sync-data 末尾总结用)
+
+    Returns:
+        {rows, industries, year_files, date_min, date_max,
+         days_min, days_median, days_max, least_code, least_days}
+        空 cache → 所有字段给 0 / ""
+    """
+    from collections import Counter
+
+    if not INDUSTRY_WYCKOFF_DIR.exists():
+        return {"rows": 0, "industries": 0, "year_files": [], "date_min": "", "date_max": "",
+                "days_min": 0, "days_median": 0, "days_max": 0,
+                "least_code": "", "least_days": 0}
+
+    import pandas as pd
+
+    per_code: Counter = Counter()
+    rows = 0
+    d_min = d_max = ""
+    files = sorted(INDUSTRY_WYCKOFF_DIR.glob("*.parquet"))
+    for f in files:
+        try:
+            df = pd.read_parquet(f, columns=["ts_code", "trade_date"])
+        except Exception:
+            continue
+        if df.empty:
+            continue
+        rows += len(df)
+        df["trade_date"] = df["trade_date"].astype(str)
+        lo, hi = str(df["trade_date"].min()), str(df["trade_date"].max())
+        d_min = min(d_min, lo) if d_min else lo
+        d_max = max(d_max, hi) if d_max else hi
+        per_code.update(df["ts_code"].value_counts().to_dict())
+
+    days = sorted(per_code.values())
+    least_code, least_days = ("", 0)
+    if per_code:
+        least_code, least_days = min(per_code.items(), key=lambda kv: kv[1])
+    return {
+        "rows": rows,
+        "industries": len(per_code),
+        "year_files": [f.stem for f in files],
+        "date_min": d_min,
+        "date_max": d_max,
+        "days_min": days[0] if days else 0,
+        "days_median": days[len(days) // 2] if days else 0,
+        "days_max": days[-1] if days else 0,
+        "least_code": least_code,
+        "least_days": least_days,
+    }
+
+
 def cached_dates_by_code() -> dict[str, set[str]]:
     """{ts_code: 已缓存日期集合} —— 批量版 (sync 补 cache 时用)
 

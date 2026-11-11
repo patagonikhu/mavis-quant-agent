@@ -2592,6 +2592,85 @@ def main():
     print_status_report()
 
 
+def print_industry_wyckoff_cache_summary(kline_max: str = "") -> None:
+    """行业威科夫 cache 概况 (2026-11-12 加, 用户要求"跑完要总结 cache 的信息")
+
+    说清三件事:
+      1. 最新数据到哪一天 (cache 最新 vs 行业 K线 最新 → 落后没)
+      2. cache 覆盖的时间段 (起止日期 + 大约几年)
+      3. 覆盖完整不完整 (每行业天数分布 + 数据最少的是谁)
+
+    放 store.py 是因为 `--status` 和 sync 跑完的末尾总结都要用同一份。
+    """
+    from datetime import datetime
+
+    from tools.storage.caches import industry_wyckoff as cache
+
+    s = cache.cache_summary()
+    if not s["rows"]:
+        print("\n📊 行业威科夫 cache: (空) → 跑 --sw-index 补算")
+        return
+
+    # 行业代码 → 名称 (sw_index.parquet = 行业分类表)
+    name_of: dict[str, str] = {}
+    n_catalog = 0
+    try:
+        import pandas as pd
+        idx = SW_INDEX_HISTORY_DIR / "sw_index.parquet"
+        if idx.exists():
+            df_idx = pd.read_parquet(idx)
+            n_catalog = len(df_idx)
+            for _, r in df_idx.iterrows():
+                name_of[str(r.get("index_code"))] = str(r.get("industry_name") or "")
+    except Exception:
+        pass
+
+    least = s["least_code"]
+    least_label = f"{least} {name_of.get(least, '')}".strip()
+
+    # 覆盖了多少个行业 (分类表里没数据的那几个不在 cache 里)
+    n_missing_ind = max(0, n_catalog - s["industries"]) if n_catalog else 0
+    ind_note = f" / 分类表 {n_catalog} 个"
+    if n_missing_ind:
+        ind_note += f" → {n_missing_ind} 个申万没发数据 (在无数据名单里)"
+
+    # 时间段跨度
+    span = ""
+    try:
+        d0 = datetime.strptime(s["date_min"], "%Y%m%d")
+        d1 = datetime.strptime(s["date_max"], "%Y%m%d")
+        span = f" ({(d1 - d0).days / 365.25:.1f} 年)"
+    except Exception:
+        pass
+
+    # cache 最新 vs 行业 K线 最新 vs 今天
+    today = datetime.now().strftime("%Y%m%d")
+    fresh = ""
+    if s["date_max"] >= today:
+        fresh = " (就是今天)"
+    elif kline_max and kline_max != "—":
+        if s["date_max"] >= kline_max:
+            fresh = f" (行业 K线也是 {kline_max} → 不落后; 今天 {today})"
+        else:
+            try:
+                stale_days = (datetime.strptime(kline_max, "%Y%m%d")
+                              - datetime.strptime(s["date_max"], "%Y%m%d")).days
+                fresh = f" ⚠️ 落后行业 K线 {kline_max} 共 {stale_days} 天 → 跑 --sw-index 补算"
+            except Exception:
+                fresh = f" (行业 K线 {kline_max}, 今天 {today})"
+    else:
+        fresh = f" (今天 {today})"
+
+    print("\n📊 行业威科夫 cache (data/cache/industry_wyckoff):")
+    print(f"   行数       : {s['rows']:,}    年份文件: {len(s['year_files'])} 个 "
+          f"({s['year_files'][0] if s['year_files'] else '—'}~{s['year_files'][-1] if s['year_files'] else '—'})")
+    print(f"   行业       : {s['industries']} 个{ind_note}")
+    print(f"   数据区间   : {s['date_min']} ~ {s['date_max']}{span}")
+    print(f"   最新交易日 : {s['date_max']}{fresh}")
+    print(f"   每行业天数 : 最少 {s['days_min']:,} ({least_label}) / "
+          f"中位 {s['days_median']:,} / 最多 {s['days_max']:,}")
+
+
 def print_status_report() -> None:
     """sync 完后打印 4 块 parquet 的最新日期 / 行数 / 状态分布"""
     import duckdb
@@ -2669,6 +2748,20 @@ def print_status_report() -> None:
             print(f"  financials:  (空)")
     except Exception as e:
         print(f"  financials: ⚠️ {e}")
+
+    # 5. 行业威科夫 cache (2026-11-12 加: 用户要求总结 cache 的信息)
+    try:
+        kline_max = ""
+        kfiles = list(SW_INDEX_KLINE_DIR.glob("*.parquet"))
+        if kfiles:
+            expr = ", ".join(f"'{f}'" for f in kfiles)
+            df = _conn().execute(
+                f"SELECT MAX(trade_date) FROM read_parquet([{expr}])"
+            ).fetchone()
+            kline_max = str(df[0]) if df and df[0] else ""
+        print_industry_wyckoff_cache_summary(kline_max=kline_max)
+    except Exception as e:
+        print(f"  行业威科夫 cache: ⚠️ {e}")
 
 
 if __name__ == "__main__":

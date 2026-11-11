@@ -909,10 +909,15 @@ def print_data_freshness_summary() -> None:
     # 2026-11-11 加: 申万行业指数 (给行业算威科夫 stage 用)
     #   注意不能用 _max_date (它对目录只读 mtime 最新的 1 个文件);
     #   这里是 134 个行业各 1 文件 → 必须全扫
-    print(f"  申万行业指数        : {_max_date_all_files(Path('data/history/sw_index/kline'))}")
+    kline_max = _max_date_all_files(Path('data/history/sw_index/kline'))
+    print(f"  申万行业指数        : {kline_max}")
     # stock_basic 特殊: 没有 trade_date, 看 mtime
     sb_path = Path("data/history/stock_basic/stock_basic.parquet")
     print(f"  stock_basic (静态) : mtime {_file_mtime(sb_path)}")
+
+    # 2026-11-12 加: 行业威科夫 cache 概况 (用户要求"跑完要总结 cache 的信息")
+    from .store import print_industry_wyckoff_cache_summary
+    print_industry_wyckoff_cache_summary(kline_max=kline_max)
     return 0
 
 
