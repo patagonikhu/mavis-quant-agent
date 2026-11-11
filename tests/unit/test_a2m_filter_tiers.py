@@ -23,9 +23,10 @@ def test_strict_tier_thresholds_pinned():
 
     2026-11-12: 门槛从 PE/质量/杠杆 六项 → **一项** (行业内市值分位上限 %)。
     市值分位是静态快照, 不随 lookback 窗口漂移。
+    2026-11-12 当天: 10% → **30%** (用户放宽; 前 10% 只剩 2 只, 太严)
     """
     strict = FILTER_TIERS["strict"]
-    assert strict["industry_pos_pctile"] == 10.0   # 行业内市值分位 ≤ 10% → strict
+    assert strict["industry_pos_pctile"] == 30.0   # 行业内市值分位 ≤ 30% → strict
 
 
 def test_strict_tier_has_no_finance_gates():

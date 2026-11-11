@@ -180,9 +180,9 @@ from tools.batch.a2m_report_common import (  # noqa: E402
 #
 # 改门槛改这个字典 (代码内, 跟过滤链放一起)。
 FILTER_TIERS: dict[str, dict] = {
-    # strict 档: 行业内市值分位前 N% (2026-11-12 用户定调)
+    # strict 档: 行业内市值分位前 N% (2026-11-12 用户定调 10%, 当天放宽到 30%)
     "strict": {
-        "industry_pos_pctile": 10.0,   # 市值分位 ≤ 这个值 → strict (0 = 不限, 全进)
+        "industry_pos_pctile": 30.0,   # 市值分位 ≤ 这个值 → strict (0 = 不限, 全进)
     },
     # loose 档: strict 的补集 (命中 A→M 但位置不够), 无额外门槛
     "loose": {},
@@ -440,7 +440,7 @@ def main():
                     help="包含 ST/*ST 股 (覆盖 --exclude-st)")
     ap.add_argument("--industry-pos-pctile", type=float, default=None,
                     help="strict 档门槛: 行业内市值分位上限 %% (≤ 该值 → strict; "
-                         "0=不限, 默认取 FILTER_TIERS = 10)")
+                         "0=不限, 默认取 FILTER_TIERS = 30)")
     ap.add_argument("--workers", type=int, default=0,
                     help="详报多进程 worker 数 (默认 0=os.cpu_count(), 1=单进程)")
     ap.add_argument("--scan-workers", type=int, default=8,
