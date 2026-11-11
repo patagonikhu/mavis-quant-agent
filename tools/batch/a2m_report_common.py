@@ -117,7 +117,8 @@ def stamp_report_status(
         ]
     else:
         if stale_note is None:
-            stale_note = ("可能已被 PE/质量/杠杆过滤, 或威科夫阶段已离开 Markup。"
+            # 2026-11-12: 分档口径换市值, PE/质量/杠杆 三闸已整档作废 → 不能再提这些闸
+            stale_note = ("可能威科夫阶段已离开 Markup, 或已跌出 A→M 命中集。"
                           "数据已刷新到最新交易日。")
         block = [
             f"<!-- {marker} stale -->",
