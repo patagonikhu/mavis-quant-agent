@@ -794,3 +794,40 @@ python -m tools.batch.t_analyze_all --sw
 
 **apply when:** 加新的报告维度 (ETF / 行业 / 指数) 时; 任何 mp.spawn + 入口转发的组合;
 任何"新报告类型的 section 集合跟现有不同"的场景 (linter / schema 要一起改)。
+
+### 下线一个 report section: 8 处连带 + 产物全量重生成 (2026-11-12)
+Type: rule
+> **摘要:** 用户要删「MA 均线」段 —— 改 renderer 只是一处, 连带 schema/linter/两个渲染器/
+> 产物/文档, 少一处就留下"看起来还在用"的死路径。
+
+**触发场景:** 用户贴了 md 里的 MA 均线表, 说「这个 section 从 md 里面删掉, render 里不需要,
+所有的 md 都不需要」。
+
+**连带清单 (这次实际动了 8 处):**
+1. **主渲染器** —— `report_renderer.render_report` 模板里的 `## MA 均线` 块 + `_section_ma()` 函数本身
+2. **行业渲染器** —— `industry_renderer.render_industry_report` 里的同名块 + 它的 import
+   (两个渲染器各自一份, 只删一个 = 另一个还在出)
+3. **schema 个股清单** —— `REPORT_SECTIONS` 里的 `ma_indicators` (不删 → linter 报「缺 section」)
+4. **schema 行业清单** —— `INDUSTRY_SECTIONS` 里的同一条 (同上)
+5. **linter 关键数据检查** —— `KEY_DATA_PATTERNS["MA 表格"]` + 对应的 warning
+   (那张表只有 MA 段有 → 删段后必报「未找到 MA 表格」)
+6. **产物** —— **356 份 md 全部重生成** (个股 126 + 行业 125 + A→M 105 + 汇总 md)
+7. **文档计数** —— CLAUDE.md / SKILL.md 的「8 section」→「7 section」
+8. **数据本身别删** —— `RenderData.ma_table` **继续算** (完整度表的 "MA" 行要用),
+   只是正文不再单独出这张表 → 「删展示」≠「删计算」
+
+**⚠️ 产物重生成会漏网, 必须复查:**
+`grep -l '## MA 均线' docs/**/*.md` 实测漏了 4 份:
+- 2 份是**重名副本** (`analyze-600261-阳光照明 1.md`) —— 批量入口按 code 生成规范名,
+  重名副本不会被覆盖 → 单独同步内容
+- 2 份是 **blowout 里非 M 阶段**的票 —— `t_analyze_all` 只刷新 M 阶段的, 它们不落 md
+  → 单独用 `t_analyze_one --output-subdir blowout` 刷
+→ **判据: 按"生成入口覆盖了谁"来想, 别假设批量跑一遍 = 全部刷新**。
+
+**教训:**
+1. 删 section = renderer + **两个** renderer + 两个 schema 清单 + linter 的 pattern + warning + 产物 + 文档
+2. linter 的"关键数据"检查是按**内容特征**匹配的, 删了段就必须删对应检查, 否则 linter 反过来报警
+3. 「删展示」≠「删计算」: ma_table 还要算 (完整度表在用), 只是不再单独成段
+4. 产物重生成后一定要 `grep` 一遍**全目录**确认没漏网, 别信"批量跑过了"
+
+**apply when:** 任何"删掉报告里的某一段"的需求; 任何 schema 清单增删; 任何批量产物刷新后的一致性复查。

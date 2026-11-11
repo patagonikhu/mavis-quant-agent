@@ -82,7 +82,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --sw --code 801012.S
 
 - **0 网络**, 走 `DataStore.get_ctx()` + `AnalysisEngine.analyze()`, 详见 architecture.md §4
 - **缺数据**: 报"请先 /t-sync-data", 不兜底拉
-- **报告 8 section** (2026-11-11 加「🏆 行业地位 (龙头判定)」): schema 在 `tools/render/report_schema.py`, 改这里不要散到 batch/*.py
+- **报告 7 section** (2026-11-11 加「🏆 行业地位 (龙头判定)」, 2026-11-12 删「MA 均线」): schema 在 `tools/render/report_schema.py`, 改这里不要散到 batch/*.py
 
 ## 🚫 本 skill 不做什么 (越界 = 违规)
 

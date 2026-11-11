@@ -24,7 +24,6 @@ from tools.render.report_renderer import (
     _section_data_sources,
     _section_factor_history,
     _section_factor_matrix,
-    _section_ma,
     _section_weekly,
     _section_xgboost,
 )
@@ -209,11 +208,6 @@ def render_industry_report(data, sector: str = "—") -> str:
 ## 👑 行业内龙头榜 (市值前 10 + 涨幅前 10)
 {_section_sw_leaders(data)}
 
----
-
-<!-- id:ma_indicators -->
-## MA 均线
-{_section_ma(data)}
 
 ---
 

@@ -13,7 +13,7 @@
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 16 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 21 |
-| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 23 |
+| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 24 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
 
 ## 威科夫 / Markup / fallback 判定体系
@@ -135,6 +135,7 @@
 | 21 | 测试套件瘦身: 先分「测死代码」还是「测活代码」 | 「测试都没用」通常 = 测试在测**已废弃的并行实现** (192 个用例里 155 个在测 app/ 死包) —— 先数消费者再删 |
 | 22 | **「刷新」≠「删除」: 批量入口的清理副作用必须 opt-in** | 跑生产批量入口前先读它到底会做什么; 删是不可逆动作, 必须显式 flag |
 | 23 | **行业版报告: 复用整条链路, 只换不适用的段** | 能复用的段一行不改; 入口转发必须 os.execvp (mp.spawn 会让子进程重跑父模块) |
+| 24 | **下线一个 report section: 8 处连带 + 产物全量重生成** | 删段要动两个渲染器 + 两个 schema 清单 + linter 的 pattern; 产物重生成后 grep 全目录查漏网 |
 
 ## 历史十倍股启动特征 / walk-forward 筛子验证
 

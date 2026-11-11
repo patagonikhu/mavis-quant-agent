@@ -112,6 +112,9 @@ refresh 字段说明 (2026-07-24 加入, 方案 B 核心):
 
 # 报告 section 顺序 (硬编码, 不可改)
 # 严格按 CLAUDE.md 1️⃣-7️⃣ 顺序
+#
+# 2026-11-12: 「MA 均线」段**整档删除** (用户指令) —— 均线数据还在算 (完整度表用),
+#   但报告正文不再单独出这张表。MA 偏离信息仍在「因子历史走势」表和「加分线」里。
 REPORT_SECTIONS = [
     # === 头部 (数据驱动, 每次重算) ===
     {
@@ -131,14 +134,6 @@ REPORT_SECTIONS = [
         "refresh": "REGEN",
         # 2026-11-04: id 从 eps_finance 改为 finance_quarterly (EPS 一致预期整档已删,
         #   section 现在只有「最近 4 季财务 + Magic 估值」1 张表)
-    },
-    {
-        "id": "ma_indicators",
-        "title": "MA 均线",
-        "category": "📋",
-        "render": "render_ma",
-        "required": True,
-        "refresh": "REGEN",
     },
     {
         # 2026-11-11 加: 行业地位 (龙头判定) — 市值排名 + 区间涨幅排名
@@ -425,14 +420,6 @@ INDUSTRY_SECTIONS = [
         "title": "👑 行业内龙头榜 (市值前 10 + 涨幅前 10)",
         "category": "📋",
         "render": "render_sw_leaders",
-        "required": True,
-        "refresh": "REGEN",
-    },
-    {
-        "id": "ma_indicators",
-        "title": "MA 均线",
-        "category": "📋",
-        "render": "render_ma",
         "required": True,
         "refresh": "REGEN",
     },

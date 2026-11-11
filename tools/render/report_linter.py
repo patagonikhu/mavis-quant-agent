@@ -57,7 +57,6 @@ REQUIRED_SECTIONS = get_section_titles()
 
 KEY_DATA_PATTERNS = {
     "价格": r"股价:\s*¥[\d.]+|当前价\s*[\|格]?\s*¥[\d.]+|¥[\d.]+\s*\|",  # 2026-07-24 改: 容忍"当前价格"和"价格"列
-    "MA 表格": r"\|\s*MA(5|20|60|120)\s*\|",
     # 2026-11-02 删: "PEG 数值" / "DCF L 数值" / "L/可达利润" (PEG 是假指标, 整档已删)
     # 2026-11-04 删: "EPS 表格" (EPS 机构一致预期整档已删)
     "板块 MA20 偏离": r"MA20\s*偏离.*[\+\-]?[\d.]+%",
@@ -158,8 +157,6 @@ def lint_report(md_path: str) -> dict[str, Any]:
         warnings.append(f"🔴 缺 {len(missing)} 个 section: {', '.join(missing)}")
     if not key_data["价格"]:
         warnings.append("⚠️ 未找到价格 (实时价可能没拉到)")
-    if not key_data["MA 表格"]:
-        warnings.append("⚠️ 未找到 MA 表 (K线可能不够)")
     # 2026-11-02 删: PEG / DCF 数值检查 (整档已删)
 
     # ===== 因子 × 2 周期 矩阵 必填校验 (2026-11-06: 3 周期 → 2 周期) =====

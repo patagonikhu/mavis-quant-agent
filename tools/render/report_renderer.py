@@ -231,30 +231,6 @@ def _section_industry_position(data: RenderData) -> str:
     return "\n".join(lines)
 
 
-def _section_ma(data: RenderData) -> str:
-    if not data.ma_table:
-        return "> **数据状态:** ❌ MA 未计算 (K线不足)\n"
-    rows = ["| 均线 | 数值 | 偏离 |", "|---|---|---|"]
-    for r in data.ma_table:
-        emoji = "🟠" if abs(r.deviation) > 20 else "✅"
-        rows.append(f"| {r.period} | ¥{r.value} | {r.deviation:+.1f}% {emoji} |")
-    # MA 排列
-    if len(data.ma_table) >= 4:
-        vals = [r.value for r in data.ma_table]
-        current = data.current_price or 0
-        if current > vals[0] > vals[1] > vals[2] > vals[3]:
-            arrange = "🟢 多头排列 (MA5>MA20>MA60>MA120)"
-        elif current < vals[0] < vals[1] < vals[2] < vals[3]:
-            arrange = "🔴 空头排列"
-        else:
-            arrange = "⚠️ 混乱排列"
-    elif len(data.ma_table) >= 2:
-        arrange = f"⚠️ 仅 {len(data.ma_table)} 条 MA (K线不足 120 天，无法判断完整排列)"
-    else:
-        arrange = "❓ MA 数据不足"
-    return "\n".join(rows) + f"\n\n**MA 排列:** {arrange}"
-
-
 def _section_xgboost(data: RenderData) -> str:
     if data.xgboost_prob is not None:
         return f"""- **启动概率:** {data.xgboost_prob:.2f}
@@ -1581,10 +1557,6 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 ## 🏆 行业地位 (龙头判定)
 {_section_industry_position(data)}
 
----
-
-## MA 均线
-{_section_ma(data)}
 
 ---
 
