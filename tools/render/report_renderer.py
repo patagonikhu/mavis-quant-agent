@@ -140,6 +140,97 @@ def _section_finance_quarterly(data: RenderData) -> str:
     return _section_quarterly_table(data)
 
 
+def _section_industry_position(data: RenderData) -> str:
+    """行业地位 (龙头判定) section — 2026-11-11 加
+
+    数据由 tools.analysis.industry_position.compute_industry_position() 算好
+    存在 data.industry_position (规则下沉: 判定在分析层, 渲染器只读)。
+
+    回答"这只票是不是板块龙头":
+      - 存量地位 = 总市值 / 流通市值 行业排名
+      - 动能地位 = 区间涨幅 行业排名 (**龙头主要看这个**)
+      - 实测 205 只十倍股: 起涨时市值行业中位第 85 名, 但涨幅 47.3% 排行业第 1
+        → 市值大 ≠ 龙头, 涨得快才是
+    """
+    pos = getattr(data, "industry_position", None)
+    if not pos:
+        return "> **行业地位:** ❌ 无行业数据 (ETF / 未建档 / 行业市值缺失)\n"
+
+    industry = pos.get("industry", "—")
+    peer_total = pos.get("peer_total", 0)
+    start_date = pos.get("start_date", "")
+    end_date = pos.get("end_date", "")
+    trading_days = pos.get("trading_days", 120)
+
+    mv_rank = pos.get("market_value_rank")
+    mv_total = pos.get("market_value_rank_total") or peer_total
+    mv_pct = pos.get("market_value_percentile")
+    cmv_rank = pos.get("circulating_value_rank")
+    cmv_total = pos.get("circulating_value_rank_total") or mv_total
+    gain_pct = pos.get("gain_pct")
+    gain_rank = pos.get("gain_rank")
+    gain_total = pos.get("gain_rank_total") or 0
+    gain_pctile = pos.get("gain_percentile")
+    ind_gain = pos.get("industry_gain_pct")
+    excess = pos.get("excess_pct")
+
+    def _size_read(pct):
+        if pct is None:
+            return "—"
+        if pct <= 10:
+            return "行业前列"
+        if pct <= 33:
+            return "中上"
+        return "偏小"
+
+    def _gain_read(pct, ex):
+        if pct is None:
+            return "—"
+        if pct <= 10:
+            return "⚡ 动能强"
+        if ex is not None and ex < 0:
+            return "跑输行业"
+        return "跟随行业"
+
+    lines = [
+        f"**行业:** {industry} ({peer_total} 家) | **窗口:** {start_date} ~ {end_date} ({trading_days} 个交易日)",
+        "",
+        "| 维度 | 本股 | 行业位置 | 解读 |",
+        "|---|---|---|---|",
+    ]
+
+    mv_yi = pos.get("market_value_yi")
+    mv_val = f"{mv_yi:.0f} 亿" if mv_yi is not None else "—"
+    mv_pos = f"第 {mv_rank} / {mv_total} (前 {mv_pct:.1f}%)" if mv_rank and mv_pct is not None else "—"
+    lines.append(f"| 总市值 | {mv_val} | {mv_pos} | {_size_read(mv_pct)} |")
+
+    cmv_yi = pos.get("circulating_value_yi")
+    cmv_val = f"{cmv_yi:.0f} 亿" if cmv_yi is not None else "—"
+    cmv_pos = f"第 {cmv_rank} / {cmv_total}" if cmv_rank else "—"
+    lines.append(f"| 流通市值 | {cmv_val} | {cmv_pos} | — |")
+
+    gain_val = f"{gain_pct:+.1f}%" if gain_pct is not None else "—"
+    gain_pos = f"第 {gain_rank} / {gain_total} (前 {gain_pctile:.1f}%)" if gain_rank and gain_pctile is not None else "—"
+    lines.append(f"| 区间涨幅 | {gain_val} | {gain_pos} | {_gain_read(gain_pctile, excess)} |")
+
+    ind_val = f"{ind_gain:+.1f}%" if ind_gain is not None else "—"
+    ex_val = f"{excess:+.1f}%" if excess is not None else "—"
+    lines.append(f"| 行业等权涨幅 | — | {ind_val} | 超额 {ex_val} |")
+
+    lines.append("")
+    lines.append(f"**龙头判定:** {pos.get('verdict', '—')}")
+
+    start_rank = pos.get("market_value_rank_start")
+    if start_rank and mv_rank:
+        arrow = "↑" if mv_rank < start_rank else ("↓" if mv_rank > start_rank else "→")
+        lines.append(f"**市值排名变化:** 第 {start_rank} → {mv_rank} 名 ({arrow})")
+
+    lines.append("")
+    lines.append("> 口径: 行业 = stock_basic 细分行业; 区间收益 = 总市值变化 (含送转调整, 无股本变动时 ≡ 股价涨幅); "
+                 "排名分母 = 窗口末日仍有行情数据的同行家数")
+    return "\n".join(lines)
+
+
 def _section_ma(data: RenderData) -> str:
     if not data.ma_table:
         return "> **数据状态:** ❌ MA 未计算 (K线不足)\n"
@@ -1470,6 +1561,11 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
 ## 财务数据
 {_section_finance_quarterly(data)}
+
+---
+
+## 🏆 行业地位 (龙头判定)
+{_section_industry_position(data)}
 
 ---
 

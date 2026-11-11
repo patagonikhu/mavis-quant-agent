@@ -176,6 +176,11 @@ class RenderData:
     # 因子历史缓存 — 计算一次后由 render/_section_factor_history 复用，避免重复 analyze_history
     factor_history_rows: Optional[list] = field(default=None, repr=False)
 
+    # 2026-11-11 加: 行业内地位 (龙头判定) — 市值排名 + 涨幅排名
+    #   由 tools.analysis.industry_position.compute_industry_position() 算好传进来
+    #   (规则下沉: 判定在分析层算, 渲染器只读)
+    industry_position: Optional[dict] = field(default=None, repr=False)
+
     # v5.10.35: 派生字段兼容层 — render 读 data.<字段> 现在自动从 analysis 拿
     # 之前 v5.10.34 前: 这些字段从 dump 顶层读; 现在挪到 analysis 层
     # render 改读 data.analysis.<字段> 太散, 加 property 兼容老代码

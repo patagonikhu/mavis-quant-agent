@@ -50,7 +50,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 **网络**: **proxy 只给 GitHub 用** —— git push/pull 直接走 `http://proxy.sin.sap.corp:8080` (带 scheme, 直连慢 ~8s / 代理 ~2.2s); **其余一切 (数据 API / tushare / 网页 / 第三方接口) 一律直连, 永不加 proxy**
 **`config/watchlist.json`**: 手维护 (持仓 / 自选 / blowout 候选池三段)
 
-**报告**: 7 有效 section, 顺序与内容真源 = [`tools/render/report_schema.py`](tools/render/report_schema.py) (改 schema 别散到 `batch/*.py`)。
+**报告**: 8 有效 section (2026-11-11 加「🏆 行业地位 (龙头判定)」), 顺序与内容真源 = [`tools/render/report_schema.py`](tools/render/report_schema.py) (改 schema 别散到 `batch/*.py`)。
 **方向信号** = 威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离。
 
 ---

@@ -141,6 +141,17 @@ REPORT_SECTIONS = [
         "refresh": "REGEN",
     },
     {
+        # 2026-11-11 加: 行业地位 (龙头判定) — 市值排名 + 区间涨幅排名
+        #   动机: 用户问"怎么知道股票是不是龙头, 按市值排名行吗" → 实测 205 只十倍股
+        #   起涨时市值行业中位第 85 名, 涨幅却有 47.3% 排行业第 1 → 龙头看动能不看市值
+        "id": "industry_position",
+        "title": "🏆 行业地位 (龙头判定)",
+        "category": "📋",
+        "render": "render_industry_position",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
         "id": "tech_indicators",
         "title": "📊 技术指标 (8 种) ⭐",
         "category": "📋",

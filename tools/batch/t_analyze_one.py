@@ -106,6 +106,16 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         data.factor_history_rows = compute_factor_history(
             ctx, step=1, lookback=factor_history_lookback(code), history=history
         )
+        # 2026-11-11 加: 行业内地位 (龙头判定) — 行业排名 + 涨幅排名
+        #   ETF 无行业 → 返回 {} → 渲染成"无行业数据"
+        try:
+            from tools.analysis.industry_position import compute_industry_position
+            data.industry_position = compute_industry_position(
+                code, industry=getattr(ctx, "industry", None),
+                trading_days=max(factor_history_lookback(code), 120),
+            )
+        except Exception:
+            data.industry_position = None
         md = render_report(data, sector=sector if sector else "—")
 
         # 文件名: code 用 6 位 (去掉 .SZ/.SH 后缀), name 中文
