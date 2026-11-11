@@ -129,7 +129,7 @@ all_dates = [k["trade_date"].replace("-", "")[:8] for k in ctx.kline]
 dates = all_dates[-480:]  # 跟 /t-analyze 同源
 engine = AnalysisEngine(strategies=[WyckoffStrategy])
 history = engine.analyze_history(ctx, dates)
-rows = compute_factor_history(ctx, step=1, lookback=lookback + 10, history=history)
+rows = compute_factor_history(ctx, lookback=lookback + 10, history=history)
 stage = row["wyckoff_daily"]  # 跟 /t-analyze 详报 100% 一致
 ```
 

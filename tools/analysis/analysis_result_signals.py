@@ -2,7 +2,7 @@
 analysis_result_signals.py - 历史因子计算 + 信号 diff
 
 核心函数:
-  compute_factor_history(ctx, step, lookback) → list[dict]
+  compute_factor_history(ctx, lookback) → list[dict]
   diff_rows(prev, curr)                       → dict  变化摘要
 
 render 和回测都调 compute_factor_history，保证一致性。
@@ -46,19 +46,24 @@ def factor_history_lookback(code: str) -> int:
     return FACTOR_HISTORY_LOOKBACK
 
 
-def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
+def compute_factor_history(ctx, lookback: int = 60,
                            history=None) -> list[dict]:
     """把 AnalysisResult 列表转成 flat dict 列表 (拼装, 不调 analyze_history)
 
     Args:
         ctx:         RawContext，含完整 K 线
-        step:        采样间隔（render 用 5，回测用 1）
         lookback:    回看天数（默认 60 = 3个月）
         history:     必填, dict[date, AnalysisResult], 调用方预算好传进来
                      (不传会 raise, 强制避免重跑 analyze_history)
 
     Returns:
         list[dict]，按日期升序
+
+    2026-11-11 删: step 参数 (降采样开关)
+      用户定调: "step 这个本来就没意义" —— 因子历史表永远日度全量,
+      少一行就少一个数据点, 没有任何场景值得为省体积牺牲信息。
+      历史包袱: 曾经 render 用 step=5, 回测用 step=1, 2026-10-12 用户要日度 PE 数据
+      后统一成 1, 到 2026-11-11 干脆把开关本身删掉。
     """
     if history is None:
         raise ValueError(
@@ -67,7 +72,7 @@ def compute_factor_history(ctx, step: int = 1, lookback: int = 60,
 
     kline = ctx.kline
     start = max(0, len(kline) - lookback)
-    dates = [kline[i]["trade_date"] for i in range(start, len(kline), step)]
+    dates = [kline[i]["trade_date"] for i in range(start, len(kline))]
 
     # 预建索引，避免 for-loop 里 O(n) 查找
     date_to_ki    = {k["trade_date"].replace("-","")[:8]: i for i, k in enumerate(kline)}

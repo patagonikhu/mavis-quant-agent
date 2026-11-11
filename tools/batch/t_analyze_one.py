@@ -104,7 +104,7 @@ def process_one(code: str, name: str | None = None, output_subdir: str | None = 
         # 2026-11-05: lookback 按标的类型取 (ETF 200 / 股票 120) —— 真源在
         #              analysis_result_signals.factor_history_lookback()
         data.factor_history_rows = compute_factor_history(
-            ctx, step=1, lookback=factor_history_lookback(code), history=history
+            ctx, lookback=factor_history_lookback(code), history=history
         )
         # 2026-11-11 加: 行业内地位 (龙头判定) — 行业排名 + 涨幅排名
         #   ETF 无行业 → 返回 {} → 渲染成"无行业数据"

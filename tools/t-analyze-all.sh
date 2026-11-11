@@ -83,7 +83,7 @@ def _scan_one(s):
         dates = all_dates[-_LOOKBACK:]
         history = AnalysisEngine().analyze_history(ctx, dates)
         if len(history) < 2: return None
-        rows = compute_factor_history(ctx, step=1, lookback=_LOOKBACK, history=history)
+        rows = compute_factor_history(ctx, lookback=_LOOKBACK, history=history)
         if len(rows) < 2: return None
         # 复用 render 的 20 列单行渲染 (跟 _section_factor_history 同一份真源, 斜率已预算)
         row_md = _format_factor_row(rows, idx=len(rows) - 1)

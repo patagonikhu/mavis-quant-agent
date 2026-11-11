@@ -8,7 +8,7 @@ allowed-tools:
 > 📐 代码组织: [`architecture.md`](../../architecture.md)
 > 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
 
-> **单一事实源:** 5 年窗口 / `--step` 语义 / 复用链路 / 命名沿革 / 输出格式 全部在 `tools/batch/factor_5y.py` 模块顶部 docstring + `--help`。SKILL.md 只保留"啥时候用 + 跑 + 数据特性"。
+> **单一事实源:** 5 年窗口 / 采样口径 / 复用链路 / 命名沿革 / 输出格式 全部在 `tools/batch/factor_5y.py` 模块顶部 docstring + `--help`。SKILL.md 只保留"啥时候用 + 跑 + 数据特性"。
 
 ## 啥时候用
 
@@ -31,9 +31,6 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --watchlist-types 持仓
 # 批量 + 逐只落 md (会清掉不在本次范围内的旧 md)
 bash tools/with_venv.sh python -m tools.batch.factor_5y --write-md-all
 
-# 紧凑视图 (1250/5=250 行)
-bash tools/with_venv.sh python -m tools.batch.factor_5y --step 5
-
 # 所有 flag + 默认值 (单一事实源)
 bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 ```
@@ -49,7 +46,7 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 > ⚠️ 批量**不要**逐只落 md: 21 只 × 约 290KB, 164 只 ≈ 49MB, 目录直接被撑爆,
 > 而且批量场景的用途是"多只横向对比找穿越牛熊的票" —— 对比看**汇总表**才有用。
 > 2026-11-06 事故: 验证列序时顺手 `--watchlist-types 持仓,自选` 跑了 164 只 → 目录堆了 168 份 md.
-> (例外: 用户明确要求"每只都要 md"时才落 —— **但 `--step` 保持默认 1 (日度全量), 不要为控体积擅自降采样**)
+> (例外: 用户明确要求"每只都要 md"时才落 —— **采样永远日度全量, 没有降采样开关**)
 
 ## 数据特性
 
@@ -66,7 +63,7 @@ bash tools/with_venv.sh python -m tools.batch.factor_5y --help
 | ❌ 别做 | 为什么 |
 |---|---|
 | **不落逐只 md** | 默认只出 1 份汇总表 (`_summary-{scope}.md`)。逐只 md 要显式 `--write-md-all` —— 用户没要就不加 |
-| **不擅自改 `--step`** | 默认 **1 = 日度全量** (2026-10-12 用户要日度 PE 数据)。想省体积降采样 → **报告给用户问**, 别自己换。2026-11-11 事故: 205 只批量时 driver 里硬写 `STEP=5`, 用户要日度全量, 205 份 md 重跑 |
+| **不擅自降采样** | 采样永远日度全量 (2026-11-11 已删 `--step` 开关, 没有第二个选项)。2026-11-11 事故: 205 只批量时 driver 里硬写 `STEP=5`, 用户要日度全量, 205 份 md 重跑 |
 | **不跑 `/t-analyze`** | 因子历史表 ≠ 7 section 详报。用户想看详报 → 让用户自己调 `/t-analyze` |
 | **不改 lookback / 窗口** | 5 年窗口是硬编码 `lookback=1250`, 别为了让结果好看去动 |
 | **不因为"结果有异常"就调参重跑** | 异常 → 报告给用户, 等判断 |

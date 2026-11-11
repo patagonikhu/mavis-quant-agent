@@ -19,9 +19,11 @@
 数据特性:
   - 0 网络, 走 DataStore parquet
   - 5 年窗口硬编码: lookback=1250 (≈ 252 交易日 × 5 年 = 1260, 1250 是项目默认)
-  - `--step` 控制采样密度: step=1 默认(每天 1 行, 2026-10-12 改:用户要日度 PE 数据)
-                                step=5 紧凑视图(每 5 个交易日 1 行, 1250/5=250 行)
-                                step=N 推荐 >= 1 大表降采样
+  - **采样: 每个交易日 1 行 (日度全量, 无降采样开关)**
+    2026-11-11 删 `--step` 参数 (用户定调: "step 这个本来就没意义"):
+    少一行就少一个数据点, 没有场景值得为省体积牺牲信息。
+    历史: render 曾用 step=5 紧凑视图, 回测用 step=1 → 2026-10-12 统一成 1
+    → 2026-11-11 连开关一起删, 调用方不再有传错的机会。
   - 批量按 `--workers` 并发 (默认 4), 21 只持仓 ~20 秒
 
 复用基础:
@@ -36,7 +38,7 @@
                 5年最低RSI6 / 阶段(日/周) / 阶段转变数 / 最近A→M/M→D / 行数)
   - 逐只 (点名, 或批量加 --write-md-all):
     docs/factor-5y/analyze-{code}-{name}-5y.md (每只 1 个 md)
-    └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样 step=N" + "**行业**" (2026-11-11 加, 用户要按行业看)
+    └─ 头部:"数据范围 ~1250 日 ≈ 5.0 年" + "采样: 每个交易日 1 行" + "**行业**" (2026-11-11 加, 用户要按行业看)
     └─ 📈 因子历史走势 (20 列 GFM 表)
     └─ 🗒 5 年阶段摘要 (5 年累计, MA20 偏离段)
 
@@ -51,7 +53,6 @@
   bash tools/with_venv.sh python -m tools.batch.factor_5y --write-md-all        # 批量 + 逐只 md
   bash tools/with_venv.sh python -m tools.batch.factor_5y --watchlist-types 持仓,blowout
   bash tools/with_venv.sh python -m tools.batch.factor_5y --all-market
-  bash tools/with_venv.sh python -m tools.batch.factor_5y --step 5              # 紧凑 250 行
   bash tools/with_venv.sh python -m tools.batch.factor_5y --codes 600089 000792  # 多只 (逐只出 md)
 """
 from __future__ import annotations
@@ -82,7 +83,7 @@ def load_codes_from_watchlist(types: list[str] | None) -> list[tuple[str, str]]:
     return out
 
 
-def process_one(code: str, name: str, step: int, output_dir: Path,
+def process_one(code: str, name: str, output_dir: Path,
                 list_type_label: str = "持仓", write_md: bool = True) -> dict:
     """单只跑 5 年因子历史
 
@@ -111,7 +112,7 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
         result = history[dates[-1]]
         data = RenderData.from_result(ctx, result)
         data.factor_history_rows = compute_factor_history(
-            ctx, step=step, lookback=1250, history=history
+            ctx, lookback=1250, history=history
         )
 
         section = _section_factor_history(data)
@@ -123,7 +124,7 @@ def process_one(code: str, name: str, step: int, output_dir: Path,
         header = (
             f"# 因子历史走势 (5 年) — {code} {ctx.name or name}\n\n"
             f"> 数据范围: {first_d} ~ {last_d} ({len(ctx.kline)} 日 ≈ {len(ctx.kline)/252:.1f} 年)\n"
-            f"> 采样: step={step} (每 {step} 个交易日 1 行, 共 {rows_n} 行)\n"
+            f"> 采样: 每个交易日 1 行 (共 {rows_n} 行)\n"
             f"> 行业: {ctx.industry or '—'}\n"
             f"> list_type: {list_type_label}\n"
             f"> 数据源: DataStore (本地 K 线, 0 网络)\n\n"
@@ -225,13 +226,13 @@ def _summarize_metrics(rows: list[dict]) -> dict:
 
 
 def _write_summary_md(results: list[dict], output_dir: Path,
-                       scope_label: str, step: int) -> Path:
+                       scope_label: str) -> Path:
     """写批量汇总 md (每只 1 行, 便于横向对比)"""
     ok = [r for r in results if r.get("ok")]
     lines = [
         "# 5 年因子历史 — 批量汇总",
         "",
-        f"> 范围: {scope_label} ({len(ok)} 只) | 窗口: 1250 个交易日 ≈ 5.0 年 | 采样 step={step}",
+        f"> 范围: {scope_label} ({len(ok)} 只) | 窗口: 1250 个交易日 ≈ 5.0 年 | 采样: 每个交易日 1 行",
         "> 数据源: DataStore (本地 K 线, 0 网络)",
         "> 逐只详细表: `python -m tools.batch.factor_5y --code <代码>`",
         "",
@@ -264,7 +265,6 @@ def main():
     ap.add_argument("--all-market", action="store_true", help="全市场扫 (默认 watchlist 持仓)")
     ap.add_argument("--watchlist-types", default="持仓",
                     help="watchlist 类型过滤, 逗号分隔 (默认 持仓)")
-    ap.add_argument("--step", type=int, default=1, help="采样间隔, 每 N 个交易日采 1 行 (默认 1=每天 1 行, 推荐 step=5 看紧凑 250 行)")
     ap.add_argument("--output-dir", default="docs/factor-5y", help="md 输出目录 (默认 docs/factor-5y)")
     ap.add_argument("--write-md-all", action="store_true",
                     help="按范围批量时也逐只落 md (默认只出 1 份汇总 md)")
@@ -295,7 +295,7 @@ def main():
     # 点名 (--code/--codes) → 逐只出 md; 按范围批量 → 默认只出汇总 md
     write_md = (not scope_mode) or args.write_md_all
 
-    print(f"=== 5 年因子历史 (scope: {types_label}, step={args.step}) ===")
+    print(f"=== 5 年因子历史 (scope: {types_label}) ===")
     print(f"  输出: {output_dir}/")
     print(f"  并发: {args.workers}")
     print(f"  任务: {len(codes)} 只")
@@ -304,7 +304,7 @@ def main():
     results = []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futs = {
-            pool.submit(process_one, code, name, args.step, output_dir, types_label,
+            pool.submit(process_one, code, name, output_dir, types_label,
                         write_md): (code, name)
             for code, name in codes
         }
@@ -324,7 +324,7 @@ def main():
 
     summary_path = None
     if scope_mode and ok_n:
-        summary_path = _write_summary_md(results, output_dir, types_label, args.step)
+        summary_path = _write_summary_md(results, output_dir, types_label)
         print(f"📊 汇总: {summary_path}")
 
     if scope_mode and write_md:
