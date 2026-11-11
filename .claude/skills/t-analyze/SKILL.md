@@ -28,7 +28,16 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --code 600177 --outp
 
 # 全 watchlist 批量 (复用 t_analyze_all, 4 worker 并发)
 T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
+
+# 显式清理「不在 watchlist.json 里的历史孤儿 md」 (2026-11-12 起默认**不删**)
+T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all --prune-orphans
 ```
+
+> ⚠️ **批量入口默认不删任何 md** (2026-11-12 用户纠错后改的):
+> 用户让「刷新 docs/watchlist 下的 md」, 老默认把 65 份不在 `watchlist.json` 里的
+> 历史孤儿 md 当成垃圾清掉了 —— 用户要的是**重新生成**, 不是删除。
+> 现在孤儿清理改成 **opt-in** (`--prune-orphans`), 默认全部保留, 只打印提示。
+> **删是不可逆动作, 不能藏在刷新路径里。**
 
 > 批量跑**只含持仓 + 自选**。blowout 候选池**只跑威科夫 M 阶段的票** (2026-11-09 改):
 > 先用 `tools/batch/blowout_markup_screen.py` 筛出当前**日线 stage == Markup** 的票,

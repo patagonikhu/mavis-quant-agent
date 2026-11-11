@@ -45,8 +45,16 @@ from tools.render.report_renderer import render_report
 # === CLI 参数 ===
 # 2026-11-06 删 --no-etf flag (ETF MACD 扫描整段下线, 见下方注释)
 #   保留 parse_known_args 兼容老调用 `python -m ... t_analyze_all --all` (未知参数一律忽略)
+# 2026-11-12 加 --prune-orphans: 孤儿 md 清理改成 **opt-in** (默认保留)
+#   事故: 2026-11-12 用户让"刷新 docs/watchlist 下的 md", 跑本脚本默认把 65 份
+#   不在 watchlist.json 的历史详报当成"孤儿"清掉了 —— 用户要的是重新生成, 不是删除。
+#   孤儿清理本身有价值 (2026-09-15 加的), 但必须是**显式意图**, 不能是默认副作用。
 _arg_parser = argparse.ArgumentParser(description="t-analyze --all 批量分析")
-_, _unknown = _arg_parser.parse_known_args()
+_arg_parser.add_argument("--prune-orphans", action="store_true",
+                          help="清理 docs/{portfolio,watchlist,blowout}/ 里不在 watchlist.json "
+                               "的历史孤儿 md (默认不删, 全部保留)")
+_args, _unknown = _arg_parser.parse_known_args()
+PRUNE_ORPHANS = _args.prune_orphans
 
 
 wl = DataStore.load_watchlist()['stocks']
@@ -121,6 +129,10 @@ for _s in blowout_stocks:
     _expected_by_sub['blowout'].add(_name_for_file(_s))
 
 for sub in ('portfolio', 'watchlist', 'blowout'):
+    if not PRUNE_ORPHANS:
+        # 2026-11-12: 孤儿清理改 opt-in —— 默认**一律保留**历史详报
+        #   (用户要"刷新 md", 不是"删 md"; 删是不可逆动作, 必须是显式意图)
+        continue
     d = Path(f'docs/{sub}')
     if not d.exists():
         continue
@@ -132,6 +144,15 @@ for sub in ('portfolio', 'watchlist', 'blowout'):
                 removed += 1
     if removed:
         print(f'  🧹 docs/{sub}: 清理 {removed} 个孤儿 md (不在 watchlist.json)', flush=True)
+
+if not PRUNE_ORPHANS:
+    _orphan_n = sum(len(list(Path(f'docs/{s}').glob('analyze-*.md'))) -
+                    len(_expected_by_sub[s])
+                    for s in ('portfolio', 'watchlist', 'blowout')
+                    if Path(f'docs/{s}').exists())
+    if _orphan_n > 0:
+        print(f'  ℹ️  发现 {_orphan_n} 份历史孤儿 md (不在 watchlist.json) —— 已保留 '
+              f'(要清理加 --prune-orphans)', flush=True)
 
 buy_rows, sell_rows, all_table_rows = [], [], []
 md_written = 0

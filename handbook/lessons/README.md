@@ -13,7 +13,7 @@
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 16 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 21 |
-| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 21 |
+| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 22 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
 
 ## 威科夫 / Markup / fallback 判定体系
@@ -133,6 +133,7 @@
 | 19 | 下线档案: 因子矩阵投票 + 多市场共振 res | 投票逻辑**整块删除** (不是降阈值); res 那一票早已恒 0 —— 方向信号只走威科夫阶段 + sub-event + MA 偏离 |
 | 20 | 压缩文档只能删过程叙述, 不能删硬事实 token | 反引号里的函数名/flag/阈值/路径/commit **一个都不能少** —— 那些就是结论本身; 压缩后必跑 token diff 校验 |
 | 21 | 测试套件瘦身: 先分「测死代码」还是「测活代码」 | 「测试都没用」通常 = 测试在测**已废弃的并行实现** (192 个用例里 155 个在测 app/ 死包) —— 先数消费者再删 |
+| 22 | **「刷新」≠「删除」: 批量入口的清理副作用必须 opt-in** | 跑生产批量入口前先读它到底会做什么; 删是不可逆动作, 必须显式 flag |
 
 ## 历史十倍股启动特征 / walk-forward 筛子验证
 
