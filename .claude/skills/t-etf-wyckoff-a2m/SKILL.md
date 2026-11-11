@@ -19,9 +19,8 @@ allowed-tools:
 | 过滤 | 股票版 | ETF 版 |
 |---|---|---|
 | exclude-st | ✅ | ❌ ETF 无退市风险标记 |
-| exclude-pe | ✅ PE≤60 | ❌ **ETF 无市盈率** (指数基金没盈利) |
-| with-quality | ✅ yoy/ROE/毛利 | ❌ **无营收/净利/毛利率/ROE** |
-| max-net-debt | ✅ 净负债/市值 | ❌ **无资产负债表** |
+| exclude-loss | ✅ 剔 PE_TTM 算不出的亏损股 | ❌ **ETF 无市盈率** (指数基金没盈利) |
+| 行业市值分位分档 | ✅ SW2021 二级行业 | ❌ **ETF 无行业成分表归属** |
 | **fund_type** | — | ✅ **唯一有效过滤** |
 
 ETF 唯一需要的过滤 = **fund_type**: 排除 `债券型` / `货币型` / `REITs` / `其他`

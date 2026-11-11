@@ -130,6 +130,78 @@ def _complete_window(trading_days: int) -> tuple[int, int]:
     return _WINDOW_CACHE[trading_days]
 
 
+def compute_industry_market_cap_ranks(codes: list[str],
+                                      trading_days: int = 120) -> dict[str, dict]:
+    """一批票的行业内**市值排名** (批量版, 供 /t-wyckoff-a2m 分档用)
+
+    跟 compute_industry_position **同口径** (同窗口 / 同市值源 / 同分位算法),
+    区别只在效率: **按行业只算一次** —— 同行业的票共用一次市值快照, 不重复算。
+    (per-stock 版每只票都重算一遍全行业排名, 30 只命中跨 20 个行业 = 20 倍浪费)
+
+    Args:
+        codes:       6 位股票代码列表
+        trading_days: 窗口交易日数 (默认 120 = 跟报告 🏆行业地位 同窗口 → 同口径)
+
+    Returns:
+        {code: {industry, market_value_rank, market_value_rank_total,
+                market_value_percentile}}
+        不在成分表 / 窗口末日没市值数据 → 该 code **不在返回里** (调用方当"判定不了")
+    """
+    if not codes:
+        return {}
+
+    import pandas as pd
+
+    # 1. code → l2_code (SW2021 成分表唯一真源)
+    by_ind: dict[str, tuple[str, list[str]]] = {}
+    for c in codes:
+        l2_code, l2_name = _lookup_industry(c)
+        if l2_code:
+            by_ind.setdefault(l2_code, (l2_name, []))[1].append(c)
+    if not by_ind:
+        return {}
+
+    # 2. 窗口首末日 (全局一次)
+    start_date, end_date = _complete_window(trading_days)
+    if not end_date:
+        return {}
+
+    # 3. 所有涉及行业的成员 → 一次 SQL 拿市值快照
+    all_members: set[str] = set()
+    for l2_code in by_ind:
+        all_members.update(_industry_members(l2_code))
+    if not all_members:
+        return {}
+    rows = _fetch_member_snapshot(sorted(all_members), start_date, end_date)
+    if not rows:
+        return {}
+    df = pd.DataFrame(rows)
+
+    # 4. 每个行业按窗口末日市值排序 → rank (停牌/退市自然出局)
+    out: dict[str, dict] = {}
+    end_all = df[df["trade_date"] == end_date]
+    for l2_code, (l2_name, group) in by_ind.items():
+        members = set(_industry_members(l2_code))
+        sub = end_all[end_all["ts_code"].isin(members)].sort_values(
+            "total_mv", ascending=False)
+        if sub.empty:
+            continue
+        peer_total = len(sub)
+        rank_map = {ts: i for i, ts in enumerate(sub["ts_code"].tolist(), 1)}
+        for c in group:
+            ts = _to_ts_code(c)
+            rank = rank_map.get(ts)
+            if not rank:
+                continue
+            out[c] = {
+                "industry": l2_name,
+                "market_value_rank": rank,
+                "market_value_rank_total": peer_total,
+                "market_value_percentile": rank / peer_total * 100,
+            }
+    return out
+
+
 def compute_industry_position(code: str, industry: str | None = None,
                               trading_days: int = 120) -> dict:
     """算单只票的行业内地位 (龙头判定)

@@ -37,15 +37,15 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan --scan-workers 12
 bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ```
 
-> **默认 = standard + loose 两档都跑** (2026-11-10 用户明确要求, 代码里 `DEFAULT_TIER` 常量 + 回归测试锁住):
-> 公共前置 `exclude-st` → `exclude-loss` (剔亏损股) → V13 严判扫描 → 命中后按 standard 门槛
-> (PE≤60 + quality basic 营收/净利yoy>0 + ROE>5% + 毛利>20% + 净债<0.5) 分成 standard / loose 两档。
-> 详报落**两个目录**: `docs/wyckoff-a2m/` (standard) + `docs/wyckoff-a2m-loose/` (loose)。
-> `--tier standard|loose` 只是「本次只看一档」的视图, **不是默认行为**。
+> **默认 = strict + loose 两档都跑** (2026-11-10 用户明确要求, 代码里 `DEFAULT_TIER` 常量 + 回归测试锁住):
+> 公共前置 `exclude-st` → `exclude-loss` (剔亏损股) → V13 严判扫描 → 命中后按**行业内市值分位**分档。
+> **strict** = 行业内市值分位 ≤ 10% (行业地位前 10%); **loose** = 命中 A→M 但位置不在前 10%。
+> 详报落**两个目录**: `docs/wyckoff-a2m/` (strict) + `docs/wyckoff-a2m-loose/` (loose)。
+> `--tier strict|loose` 只是「本次只看一档」的视图, **不是默认行为**。
 > 任何 flag 关/换门槛都用 `--help` 看当前默认 + 含义,不要凭记忆。
 
 > 📋 **每次跑开头会自动打印「本次运行生效条件」** (2026-10-29 加):
-> scope / lookback / 公共前置 2 步 + standard 档门槛 3 项各自 ON-OFF + 实际门槛 / V13 严判 5 条 / 输出档位,
+> scope / lookback / 公共前置 2 步 + strict 档门槛 (市值分位上限) / 行业位置口径 / V13 严判 5 条 / 输出档位,
 > 全部直接读 `args` 打印 —— 这是**唯一可靠的条件来源**, 因为下面的表格是手写的, 会漂移。
 > 用户问"现在的条件是啥"→ 看这段打印, 不要背文档。
 > 同样一份条件也会写进 `docs/wyckoff-a2m.md` 头部的「本次生效条件」表, 便于事后追溯。
@@ -63,21 +63,20 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 
 **命中后分档** (两档互斥, 一只票只进一档):
 
-| 档 | 定义 | 命中 (2026-11-10) |
+| 档 | 定义 | 命中 (2026-11-11 实测) |
 |---|---|---|
-| **standard** | 全过 standard 门槛: PE≤60 + quality(basic: 营收/净利yoy>0 + ROE>5% + 毛利>20%) + 净负债/市值<0.5 | 4 |
-| **loose** | 命中 A→M 但**不满足** standard 门槛 (md 里标出「差在哪」: PE / 质量 / 杠杆) | 27 |
+| **strict** | **行业内市值分位 ≤ 10%** (行业地位前 10%, SW2021 二级行业 · 总市值排名 · 120 交易日窗口) | 2 |
+| **loose** | 命中 A→M 但市值位置不在前 10% (含**判定不了位置**的票: 不在成分表 / 窗口末日无市值) | 32 |
 
 > ⚠️ **为什么门槛放命中后而不是候选池**: 放前面 loose 栏永远是空的 ——
-> 被门槛剔掉的票压根不会被扫到, 分不出「命中了但质量不够」这一批。
+> 被门槛剔掉的票压根不会被扫到, 分不出「命中了但位置不够」这一批。
 > 代价 (2026-11-10 实测): 候选池 557 → 3610, 扫描 18s → 104s。
 > ⚠️ 这个代价已经用**并行扫描**摊掉: 2026-11-10 改 mp.spawn 8 进程后 → **15s** (命中集合零差异)。
 
 **档位定义在代码内** —— `tools/batch/wyckoff_a2m_scan.py::FILTER_TIERS`, 改门槛改那个字典。
-细 flag (`--exclude-pe` / `--with-quality` / `--min-growth` / `--min-roe` /
-`--min-gross-margin` / `--max-net-debt-ratio`) 显式传了就覆盖字典, 没传就用字典的值。
+细 flag `--industry-pos-pctile` 显式传了就覆盖字典, 没传就用字典的值 (默认 10 = 10%)。
 
-**`--tier` 选输出哪档**: `standard` (只达标) / `loose` (只不达标) / `both` (两档都出, 默认)。
+**`--tier` 选输出哪档**: `strict` (只达标) / `loose` (只其余) / `both` (两档都出, 默认)。
 
 **亏损股怎么认** (`DataStore.filter_codes_by_finance`): **PE_TTM 算不出 = 亏损股**。
 ⚠️ 全库 5588 只 **PE 恒为正, 没有一只 <= 0** —— Tushare 对算不出估值的票写 NULL,
@@ -92,33 +91,35 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 > 2. **stk_factor 用每股最新** (原来取全局 MAX(trade_date), Tushare 当天陆续发布 → 半拉日 3185 只查不到 → 杠杆闸漏检)。
 >    全市场高杠杆票 219 → **525 只** (新增捕获 306, 零漏)。
 
-**为什么这样定** (2026-10-28 用全市场分布 + 22 只命中票反推, 逐档实测):
+**为什么改成市值口径** (2026-11-12 用户定调, 原 PE/质量/杠杆 三闸**整档作废**):
 
-- `exclude-pe 80 → 40 → 60`: 全市场 PE 中位 38.3 / P75 85.4. 80 放进来的芯联集成(176.8)/晶华新材(91.7)/创维数字(46.7) 全是"贵 + ROE<3% + 毛利<20%"的差票; 40 又误伤 PE 46.7 的科远智慧等 → 最终 60
-- `min-roe 5`: 全市场 ROE 中位仅 **2.29%** / P75 4.89%, 所以 5% 已经砍掉一半. 专治"低基数假增长" (创维数字 yoy +202% 但 ROE 2.5%)
-- `min-gross-margin 20`: 全市场毛利率中位 24.28%. 专治薄利行业 (中创物流 6.7% / 立中集团 10.5%)
-- `max-net-debt-ratio 0.5`: 专治重债 (瀚蓝环境净负债 320 亿 > 市值 224 亿). PE 低但重债不算便宜。
-  全市场口径: 525/5581 ≈ 9.4% 命中该闸 (修 per-code latest 前的旧口径只判出 219 只 = 3.9%, **明显偏低**)
-- 营收/净利 yoy 门槛 **0**: 调参轨迹 0 → 10 → 5 → 0. 10 误伤基蛋生物 (营收 yoy 8.3% 但净利 +69.4%); 5 砍掉零增长但 PE 便宜的稳健票 (云南白药 PE 18.5 / 净利 yoy 1.9%); 回 0 后新增 5 只全是 PE 便宜、无差票
+用户原话「现在的逻辑效果不好」—— 财务三闸筛出来的是「便宜且干净」的票, 不是「行业地位靠前」的票,
+跟 A→M 抄底**行业龙头**的初衷不对口。改用行业内市值分位:
 
-> ⚠️ **语义澄清**: `with-quality` 档位门槛作用在 `grossprofit_margin` 上, 那是**毛利率水平值 (绝对 %)**,
-> 不是毛利率同比增速 — financials 表没有毛利率 yoy 字段. yoy 维度只由 `or_yoy` / `netprofit_yoy` 承担.
-> 所以 `strong=10` 的真实含义是 "毛利率 > 10%", 不是文档旧版写的 "毛利率增速 > 10%".
-> 营收/净利 yoy 门槛可用 `--min-growth` 单独覆盖 (0=不限).
+| | 旧 (standard, 已作废) | 新 (strict, 当前) |
+|---|---|---|
+| 门槛 | PE≤60 + 营收/净利yoy>0 + ROE>5% + 毛利>20% + 净债<0.5 (五项) | 行业内市值分位 ≤ 10% (一项) |
+| 性质 | 财务质量 + 估值 | **行业地位** (龙头判定) |
+| 34 只命中集实测 | 4 / 30 | **2 / 32** |
 
-**效果**: 22 只 → 10 只, 10 只**全部**是"便宜 + 干净"那批 (PE 15-51 / ROE 5.3-9.6% / 毛利 30-81% / 杠杆<0.2),
-被砍的全是贵 / 重债 / 亏损. 扫描耗时 44s → 11s.
+理由:
+- **市值分位是静态的** (窗口末日快照), 不像涨幅分位那样对「刚启动」的票天然吃亏
+- 跟报告 🏆行业地位 的市值排名**同口径同窗口** (120 交易日) → 两处数字能对上
+- 代价: 小行业 (≤10 家) 几乎不可能有票进 strict (第 1 名分位也 > 10%)
 
-**放宽 standard 门槛**: `--exclude-pe 0 --min-growth 0 --min-roe 0 --min-gross-margin 0 --max-net-debt-ratio 0`
-(全放开 → 所有命中都算 standard 档, loose 栏为空)。
+⚠️ **已知代价**: 旧 standard 档 4 只的行业位置**全是 follower** (市值分位 25%~73%),
+与新 strict 档 (前 10%) **零重叠** —— 两套口径选出来的是完全不同的票, 不是同一集合的宽严。
 
-**看 loose 档**: `--tier loose` 只输出不达标那批 (复盘用); `--tier both` 两档都出 (默认)。
+**放宽 strict 门槛**: `--industry-pos-pctile 0` (不限 → 所有命中都算 strict 档, loose 栏为空)。
+**收紧**: `--industry-pos-pctile 5` (只留前 5%)。
+
+**看 loose 档**: `--tier loose` 只输出位置不够那批 (复盘用); `--tier both` 两档都出 (默认)。
 
 ## 跑流程
 
-1. **step 1 — 扫描**: 全市场过公共前置 (`_filter_by_st` → `DataStore.filter_codes_by_finance` 剔亏损) → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`) → 命中后按 standard 门槛分 standard / loose 两档,复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
+1. **step 1 — 扫描**: 全市场过公共前置 (`_filter_by_st` → `DataStore.filter_codes_by_finance` 剔亏损) → V13 严判 (`tools/batch/wyckoff_a2m_scan.py::_process_one`) → 命中后按**行业内市值分位**分 strict / loose 两档,复用 AnalysisEngine + compute_factor_history,跟 `/t-analyze` 100% 一致
 2. **step 2 — 详报**: 命中后逐只跑 `/t-analyze <code>` (默认前 100, 0=全部),按档位落**两个独立目录**:
-   - standard 档 → `docs/wyckoff-a2m/` (`--report-subdir`)
+   - strict 档 → `docs/wyckoff-a2m/` (`--report-subdir`)
    - loose 档 → `docs/wyckoff-a2m-loose/` (`--loose-report-subdir`, 默认 `<report-subdir>-loose`)
    只出 `--tier` 选中的档。两个目录的**票集合互斥** —— 一只票换档时旧副本自动移到回收站 (`safe_delete`)。
 
@@ -166,7 +167,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ## 数据特性 (这是必须知道的)
 
 - **0 网络**, 走 duckdb daily parquet
-- 全市场 **15s** (2026-11-10 改并行后实测 3610 票扫描), 5459 → ST 排 → 亏损排 → **3607 票** → 命中 30 只 → 分 standard / loose 两档
+- 全市场 **15s** (2026-11-10 改并行后实测 3610 票扫描), 5459 → ST 排 → 亏损排 → **3607 票** → 命中 30 只 → 分 strict / loose 两档
 - **扫描阶段走 mp.spawn 并行** (`--scan-workers`, 默认 8): `scan_sub_events` 是纯 Python 循环, **ThreadPool 无效 (GIL), mp.spawn 能绕开**
   → 实测 串行 104s → 8 进程 15s (**6.8x**), 命中集合逐只比对**零差异**
 - **详报阶段 6s** (90 份, 12 worker): 靠修掉 `DataStore.get_market_cap_near_dates` 的全市场读
@@ -176,7 +177,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 - ⚠️ **不能用 mp.fork** (duckdb fork 后死锁)
 - 2026-11-02 起默认**不清空** `docs/wyckoff-a2m/` (--refresh 默认开); `--clean` 才清空 (走回收站, 可恢复)
 - 详报目录跟 watchlist 完全隔离,不污染自选
-- 详报分两个目录 (standard / loose), 票集合互斥; 换档时旧副本自动挪到回收站
+- 详报分两个目录 (strict / loose), 票集合互斥; 换档时旧副本自动挪到回收站
 - 数据日期 = parquet 最新 trade_date,不是 wall clock
 
 ## 🚫 本 skill 不做什么 (越界 = 违规)
@@ -195,7 +196,7 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 > 通用原则见 CLAUDE.md「Skill 越界铁律」: 不改代码只报告 / 不追加用户没要的 flag / 不自己跑 sync。
 
 **📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
-- stdout 有「命中 N 只」+ 过滤漏斗 (每个 step 前后剩余数) + 末尾「分档: standard N 只 / loose N 只」
+- stdout 有「命中 N 只」+ 过滤漏斗 (每个 step 前后剩余数) + 末尾「分档: strict N 只 / loose N 只」
 - **命中清单在 `docs/wyckoff-a2m.md`** —— 要清单 grep 那个文件, **别重扫一遍**
 
 ## 命名沿革 (关键节点)
@@ -223,12 +224,12 @@ bash tools/with_venv.sh python -m tools.batch.wyckoff_a2m_scan
 ## 跑后验证
 
 > ⚡ **默认跑 `bash tools/with_venv.sh python -m tools.verify` (9.4s)** —— py_compile 全仓 +
-> 19 模块批量 import + pytest + guardrail 4 项 + 命名规范 grep。
+> 19 模块批量 import + pytest + guardrail 5 项 + 命名规范 grep。
 > 加 `--full` 才叠全市场扫描 (15s)。验证预算表见 `handbook/AGENT_MEMORY.md`。
 
 ```bash
 # 详报全列
-ls docs/wyckoff-a2m/analyze-*.md | wc -l          # standard 档
+ls docs/wyckoff-a2m/analyze-*.md | wc -l          # strict 档
 ls docs/wyckoff-a2m-loose/analyze-*.md | wc -l    # loose 档
 
 # lint 单个详报 (数据完整性)

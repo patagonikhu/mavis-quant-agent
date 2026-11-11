@@ -43,7 +43,8 @@ def load_candidate_codes():
     codes = DataStore.filter_codes_by_pe(codes, 60.0)
     codes = DataStore.filter_codes_by_quality(codes, or_yoy_min=0, np_yoy_min=0,
                               roe_min=5.0, gm_min=20.0)
-    # 生产默认 --max-net-debt-ratio 0.5 (462 → 443), 必须补上以对齐生产池
+    # ⚠️ 2026-11-12: 生产已**不再**有 PE/质量/杠杆闸 (分档口径换成行业内市值分位),
+    # 这里保留这四步只是为了让本脚本的历史结论可复现, 不要再当成生产候选池口径。
     codes = DataStore.filter_codes_by_leverage(codes, 0.5)
     return codes
 

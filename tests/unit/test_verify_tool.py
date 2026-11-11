@@ -24,7 +24,7 @@ def test_parse_real_scan_md():
         md = (
             "| 原始候选 (scope=全市场) | — | — | 5459 → 5459 | 5459 |\n"
             "| **A→M 命中** | V13 严判 | lookback=5 | 3610 → 31 | **31** |\n"
-            "| ├ standard 档 | 全过 | — | 31 → 4 | **4** |\n"
+            "| ├ strict 档 | 行业内市值分位 ≤ 10% | — | 31 → 4 | **4** |\n"
             "| └ loose 档 | 不达标 | — | 31 → 27 | **27** |\n"
             "| **T-38** | `002946` | 新乳业 | ... |\n"
         )
@@ -33,9 +33,9 @@ def test_parse_real_scan_md():
 
     d = parse_scan_md(md)
     assert isinstance(d["hits"], int), f"命中数没解析出来: {d}"
-    assert isinstance(d["standard"], int), f"standard 解析错: {d}"
+    assert isinstance(d["strict"], int), f"strict 解析错: {d}"
     assert isinstance(d["loose"], int), f"loose 解析错: {d}"
-    assert d["standard"] + d["loose"] == d["hits"], f"两档之和 ≠ 命中数: {d}"
+    assert d["strict"] + d["loose"] == d["hits"], f"两档之和 ≠ 命中数: {d}"
     assert d["pool"] >= d["hits"], f"命中数 > 候选池: {d}"
     assert d["codes"], f"代码没抠出来: {d['codes'][:5]}"
     assert all(len(c) == 6 and c.isdigit() for c in d["codes"]), f"代码格式不对: {d['codes'][:5]}"

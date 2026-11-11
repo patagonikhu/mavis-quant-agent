@@ -12,7 +12,7 @@
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 16 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
-| [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 16 |
+| [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 21 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 21 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
 
@@ -89,16 +89,22 @@
 | 3 | /t-wyckoff-a2m: 1 次 SQL 全市场 K 线 + 1 次 sub_events 全段扫 + 缓存 | 性能基线: 1 次 SQL + 全段扫 + 缓存 → 全市场 ~30s |
 | 4 | /t-wyckoff-a2m: 走 WyckoffStageFactor.compute() 直调会数据漂移, 必须用 AnalysisEngine | 必须用 AnalysisEngine, 直调 compute() 会数据漂移 |
 | 5 | /t-wyckoff-a2m v8: scan_sub_events 全段扫是物理下界瓶颈 | 再优化也快不过它, 优化前先看这条 |
-| 6 | /t-wyckoff-a2m 过滤链收紧 | ST/PE/质量/杠杆各档阈值 + 实测命中数 (调参时对着看) |
-| 8 | A→M 判定必须用生产函数跑, 不能信历史 md 里的 A2M_STATUS 标记 | 不能信历史 md 里的 A2M_STATUS 标记 —— 那是上次扫描时打的 |
-| 9 | ETF A→M: 去重必须用收益率相关性, 纯 benchmark 字符串匹配会漏 | 元数据 (benchmark/名称) 不可信 —— 用**价格序列相关性**判同指数, 阈值要有实测断层依据 |
-| 10 | ETF 详报: report 的 sector 参数要显式传 | `render_report` 的 sector 默认恒 "—", ETF 要显式传跟踪指数 |
-| 11 | watchlist note 决策铁律 | 持仓/加仓/清仓结论的写法铁律, 见对应章节 |
-| 12 | ETF 候选池: 删手工白名单后要收敛到「数据源 + fund_type 过滤」 | 手工名单必然过期; 候选池口径单一真源 (etf_universe.py), 扫描器不能各写各的 |
-| 13 | 全市场扫描器: 两段式 (批量预筛 + 只对命中深扫) | 逐只深扫 2000 只要 16 分钟 → 预筛 1.5s + 只深扫命中, 全流程 10s |
-| 14 | ETF 扫描: 命中后必须按跟踪指数去重 | 200 命中 → 72 个不同标的 (34 组重复), 不去重报告目录全是同一指数 |
-| 15 | 口径一致性验证: 预筛值必须跟深扫值逐只比对 | 改动扫描口径后跑逐只 diff, 不能只看"跑通了" (本次 72 只零漂移) |
-| 16 | 扫描器取数: 用「每股最新」不用「全局最新那一天」 | Tushare 当天陆续发布 → 全局 MAX(trade_date) 半拉日漏检 3185 只, 杠杆闸零漏检变漏检 306 |
+| 6 | /t-wyckoff-a2m 过滤链收紧 (2026-10-28, **已作废**) | ST/PE/质量/杠杆各档阈值 + 实测命中数 (历史记录, 口径已被第 21 条取代) |
+| 7 | A→M 判定必须用生产函数跑, 不能信历史 md 里的 A2M_STATUS 标记 | 不能信历史 md 里的 A2M_STATUS 标记 —— 那是上次扫描时打的 |
+| 8 | ETF A→M: 去重必须用收益率相关性, 纯 benchmark 字符串匹配会漏 | 元数据 (benchmark/名称) 不可信 —— 用**价格序列相关性**判同指数, 阈值要有实测断层依据 |
+| 9 | ETF 详报: report 的 sector 参数要显式传 | `render_report` 的 sector 默认恒 "—", ETF 要显式传跟踪指数 |
+| 10 | watchlist note 决策铁律 | 持仓/加仓/清仓结论的写法铁律, 见对应章节 |
+| 11 | ETF 候选池: 删手工白名单后要收敛到「数据源 + fund_type 过滤」 | 手工名单必然过期; 候选池口径单一真源 (etf_universe.py), 扫描器不能各写各的 |
+| 12 | 全市场扫描器: 两段式 (批量预筛 + 只对命中深扫) | 逐只深扫 2000 只要 16 分钟 → 预筛 1.5s + 只深扫命中, 全流程 10s |
+| 13 | ETF 扫描: 命中后必须按跟踪指数去重 | 200 命中 → 72 个不同标的 (34 组重复), 不去重报告目录全是同一指数 |
+| 14 | 口径一致性验证: 预筛值必须跟深扫值逐只比对 | 改动扫描口径后跑逐只 diff, 不能只看"跑通了" (本次 72 只零漂移) |
+| 15 | 扫描器取数: 用「每股最新」不用「全局最新那一天」 | Tushare 当天陆续发布 → 全局 MAX(trade_date) 半拉日漏检 3185 只, 杠杆闸零漏检变漏检 306 |
+| 16 | 性能: 扫描阶段 104s → 15s (mp.spawn 并行) | 先 profile 再动手; ThreadPool 无效 (GIL), 不能用 mp.fork (duckdb 死锁) |
+| 17 | 性能: per-code 函数别读全市场 | `DataStore.get_market_cap_near_dates` 全市场读 → SQL 层按 ts_code 过滤, 1.2s/只 → 10ms |
+| 18 | ⛔ 小样本验证「窗口能不能砍」会骗人 | 小样本只能**定位瓶颈**, 不能**证明等价**; 砍窗口只能走全市场实测 |
+| 19 | ⛔ 单测别把实时值写死 | 命中数是实时值, 断言写死会让 verify 变红; 只校验结构自洽 |
+| 20 | 性能定位: 先 profile, 别拍脑袋 | 瓶颈在 `scan_sub_events` 全段扫 (纯 Python 循环), 优化前先量化 |
+| 21 | **分档口径换市值: strict = 行业内市值分位 ≤ 10%** | 财务三闸整档作废; 换口径会同时踩 3 个 bug (KeyError / 落错目录 / verify 静默失效) |
 
 ## 报告渲染 / linter / 文档一致性
 

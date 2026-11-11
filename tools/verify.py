@@ -207,7 +207,7 @@ def parse_scan_md(md: str) -> dict:
     return {
         "pool": _grab(r"原始候选.*?\|\s*(\d+)\s*→"),
         "hits": _grab(r"\*\*A→M 命中\*\*.*?\*\*(\d+)\*\*"),
-        "standard": _grab(r"standard 档.*?\*\*(\d+)\*\*"),
+        "strict": _grab(r"strict 档.*?\*\*(\d+)\*\*"),
         "loose": _grab(r"loose 档.*?\*\*(\d+)\*\*"),
         "codes": re.findall(r"\| `(\d{6})` \|", md),
     }
@@ -229,7 +229,7 @@ def l3_scan() -> tuple[bool, str]:
         return False, f"读不到 md: {e}"
     d = parse_scan_md(md)
     return True, (f"候选池 {d['pool']} / 命中 {d['hits']}"
-                  f" (standard {d['standard']} + loose {d['loose']})")
+                  f" (strict {d['strict']} + loose {d['loose']})")
 
 
 LAYERS = [
