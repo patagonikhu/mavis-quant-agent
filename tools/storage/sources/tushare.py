@@ -381,6 +381,26 @@ def get_sw_index(level: str = "L2") -> tuple[list[dict] | None, str]:
     return data, "OK"
 
 
+def get_index_member_all() -> tuple[list[dict] | None, str]:
+    """申万行业成分表 (Tushare.index_member_all) —— 谁属于哪个行业
+
+    2026-11-11 实测:
+      - **不带参数** → 一次返回全市场 5,916 行 (31 个 L1 / 131 个 L2 / 346 个 L3),
+        每行带 l1_code / l2_code / l3_code + ts_code, 0.3 秒 1 次请求
+      - 带 l1_code / index_code 会**过滤**(但 index_code 过滤似乎被忽略, 仍返全量)
+      - 本地 stock_basic.industry 是**申万旧版** 110 个, 跟 SW2021 (134 个) 只对上 25 个
+        → 这张表是"个股 → 新版行业"的唯一可靠来源
+
+    字段: l1_code, l1_name, l2_code, l2_name, l3_code, l3_name,
+          ts_code, name, in_date, out_date, is_new
+    """
+    data, status = _safe_call("index_member_all")
+    if not data:
+        return None, status
+    data.sort(key=lambda x: x.get("ts_code", ""))
+    return data, "OK"
+
+
 def get_sw_daily(ts_code: str = "", trade_date: str = "",
                   start_date: str = "", end_date: str = "") -> tuple[list[dict] | None, str]:
     """申万行业指数日线 (Tushare.sw_daily)

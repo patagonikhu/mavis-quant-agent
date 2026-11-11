@@ -1212,10 +1212,10 @@ def _section_factor_matrix(data: RenderData) -> str:
 
 
 # ============================================================
-# 因子历史走势 (24 → 20 列)
+# 因子历史走势 (24 → 23 列, 2026-11-11 加行业威科夫 3 列)
 # ============================================================
 
-# 因子历史走势 — 20 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
+# 因子历史走势 — 23 列 header / sep, 单一真源, t-analyze-all 等 batch 入口直接复用
 # 2026-09-08 加 6 列: MACD/RSI/KDJ/ATR/量比/MACD状态 (TechnicalStrategy 时序, v6.2.8)
 # 2026-09-08 删 2 列: ROC% / EY% (季报粒度, 跨季才变, 跟"## 财务数据" section 的 4 季财务 + Magic 表重复)
 # 2026-10-08 删 2 列: 胜率%/中位成本 (cyq_perf, 跟 RSI/MA 同步, 没新信息, 删除)
@@ -1227,21 +1227,21 @@ def _section_factor_matrix(data: RenderData) -> str:
 # 2026-11-06 删 1 列: 「变化」列 (用户指令) —— 相邻两行的 diff 摘要。
 #   diff_rows / extract_signals **不动** (仍供 signals_active + 汇总表「信号」列用),
 #   只删这个表里的展示列。
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 行业威科夫(日/周) | 行业强度 | 行业子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
 
 
 def _format_factor_row(rows: list[dict], idx: int) -> str | None:
-    """单行因子历史 markdown 表格行 (20 列, header 跟 _section_factor_history 完全一致)
+    """单行因子历史 markdown 表格行 (23 列, header 跟 _section_factor_history 完全一致)
 
     Args:
         rows: compute_factor_history 输出, 按日期升序 (含 ma20_slope 字段)
         idx:  当前行索引
 
     Returns:
-        "| date | ¥close | ... | 20 列" markdown 行 (无错位防护, 调用方负责)
+        "| date | ¥close | ... | 23 列" markdown 行 (无错位防护, 调用方负责)
         数据不足返 None
     """
     if not rows or idx < 0 or idx >= len(rows):
@@ -1349,9 +1349,20 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
 
     close_v = row['close']
     close_fmt = f"{close_v:.3f}" if close_v is not None and float(close_v) < 10 else f"{close_v:.1f}"
+
+    # 行业威科夫 3 列 (2026-11-11 加) —— 跟个股同一套记法, 放个股威科夫右边
+    #   判定在生产侧算好 (compute_factor_history 塞 ind_* 字段), 渲染器只读不算。
+    ind_d = row.get('ind_stage_daily')
+    ind_w = row.get('ind_stage_weekly')
+    ind_wy = f"{(ind_d[0] if ind_d else '—')}/{(ind_w[0] if ind_w else '—')}"
+    ind_strength_s = (f"{_tok(ind_d, row.get('ind_strength_daily'), row.get('ind_channel_daily'))}"
+                      f"/{_tok(ind_w, row.get('ind_strength_weekly'), row.get('ind_channel_weekly'))}")
+    ind_se = f"{se_short(row.get('ind_sub_event_daily'))}/{se_short(row.get('ind_sub_event_weekly'))}"
+
     line = (
         f"| {row['date']} | ¥{close_fmt} "
         f"| {wy} | {strength_s} | {se} "
+        f"| {ind_wy} | {ind_strength_s} | {ind_se} "
         f"| {rsi6_s} | {macd_s} | {dif_str} | {dea_str} | {bar_d_s} | {vol_s} "
         f"| {slope_s} | {ma_s} "
     )

@@ -416,3 +416,32 @@ Type: fact
 
 **apply when:** 任何申万行业指数 / 行业 stage 相关活。还有: `stock_basic.industry` 是**申万旧版 110 个**,
 跟 SW2021 (134 个) 只直接对上 25 个 (元器件 vs 元件 / 汽车配件 vs 汽车零部件) → 接回 md 需要一张映射表。
+
+
+### 行业威科夫: 复用个股同一套 + parquet cache (2026-11-11)
+Type: fact
+> **摘要:** 行业指数 K 线 → 拼 RawContext → **直接调** `AnalysisEngine().analyze_history()`,
+> 跟个股**同一套** WyckoffStrategy, 零改动。判定是**因果**的 → 可按 (行业, 日期) 永久缓存。
+
+**实测**: 120 日 0.28s / 全历史 1696 日 0.24s (1 个行业)。预热 124 行业 × 120 日 = 26.5s。
+
+**复用能成立的原因**: `build_kline_features` 全是**回看型**滚动窗口, `scan_sub_events` 自带
+`as_of_idx` 语义 → 某日判定只依赖该日之前的数据 → **新数据不影响旧行的判定** (cache 长期有效)。
+
+**3 个坑 (踩过):**
+
+1. **vol → volume**: `sw_index` 落盘字段是 `vol`, 威科夫扫描器读 `k["volume"]`
+   → 不改名则成交量恒为 0, 量能类判定全废 (**静默出错, 不报错**)。
+   → store.get_sw_index_bars() 在 DAO 层做别名 (跟个股同口径)。
+2. **行业映射**: 本地 `stock_basic.industry` 是申万**旧版** 110 个, 跟 SW2021 (134 个) 只对上 25 个
+   → 用 `index_member_all()` (1 请求 0.3s, 5916 行) 落 `industry_member.parquet` (60 天缓存),
+   覆盖本地 5577 只 **100%**。**不用建映射表**。
+3. **缓存判空**: `if cached is not None` 里用空 dict 当"已加载"标记 → 永远返空。
+   → 缓存未加载必须用 `None` 标记 (空 dict 是"已加载但没数据")。
+
+**cache 设计**: `data/cache/industry_wyckoff/{YYYY}.parquet` (按年份, 不按行业)
+key = (ts_code, trade_date) → stage/strength/channel/sub_event (日+周)。
+**只增不删** (用户要求)。写盘 = **文件锁 + 读改写 + 原子替换** (临时文件 + os.replace) ——
+批量分析是 4 线程并发, 不加锁会写坏文件 (项目有前车之鉴: EPS parquet 并发写损坏)。
+
+**apply when:** 任何"行业维度"要复用个股分析逻辑的活 (行业 stage / 行业强弱 / 行业分位)。

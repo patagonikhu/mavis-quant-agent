@@ -62,7 +62,7 @@ from tools.analysis.analysis_engine import AnalysisEngine
 from tools.analysis.analysis_result_signals import (
     compute_factor_history, diff_rows, extract_signals, format_signals_for_render,
 )
-# 复用 report_renderer 的 20 列单行渲染 + 20 列 header/sep
+# 复用 report_renderer 的 23 列单行渲染 + 23 列 header/sep (2026-11-11 加行业威科夫 3 列)
 # MA20 斜率在 compute_factor_history 末尾已经算进每行 row['ma20_slope'], 0 重算
 from tools.render.report_renderer import (
     _format_factor_row, FACTOR_HISTORY_HEADER, FACTOR_HISTORY_SEP,
@@ -85,7 +85,7 @@ def _scan_one(s):
         if len(history) < 2: return None
         rows = compute_factor_history(ctx, lookback=_LOOKBACK, history=history)
         if len(rows) < 2: return None
-        # 复用 render 的 20 列单行渲染 (跟 _section_factor_history 同一份真源, 斜率已预算)
+        # 复用 render 的 23 列单行渲染 (跟 _section_factor_history 同一份真源, 斜率已预算)
         row_md = _format_factor_row(rows, idx=len(rows) - 1)
         if row_md is None: return None
         # 信号列表 (buy/sell) 走原本的 diff_rows + extract_signals
@@ -116,8 +116,8 @@ for code, name, d in sell_rows:
     lines.append(f"| {code} | {name} | {d} |\n")
 
 # 📈 因子历史走势 — 列跟 _section_factor_history 完全对齐 (复用 FACTOR_HISTORY_HEADER 真源)
-# 拼接 22 列: 代码 | 名称 + 20 列因子
-#   注意 header[1:] 是**字符串**切片, 只去掉开头的 "|", 20 列一个不少 (别当成列表切片去首列)
+# 拼接 25 列: 代码 | 名称 + 23 列因子
+#   注意 header[1:] 是**字符串**切片, 只去掉开头的 "|", 23 列一个不少 (别当成列表切片去首列)
 header_factor = FACTOR_HISTORY_HEADER
 sep_factor    = FACTOR_HISTORY_SEP
 lines += [

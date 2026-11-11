@@ -32,6 +32,7 @@
 
 申万行业指数 (2026-11-11 加, --sw-index):
   行业分类: index_classify(src='SW2021', level='L2' → 134 个二级行业) → data/history/sw_index/sw_index.parquet
+  行业成分: index_member_all() → data/history/sw_index/industry_member.parquet (60 天缓存, 1 次请求)
   行业日线: sw_daily(ts_code='801xxx.SI') → data/history/sw_index/kline/<YYYY>.parquet (1 年 1 文件)
   同步逻辑: 检测缺口 (本地 min/max, 0 网络) → 批量拉 1 次 (不带 ts_code, 服务端给最近 10 交易日 × 全部 439 指数)
             → 校验覆盖 → 没被批量覆盖的按 ts_code 单独补 (1 行业 1 次)
@@ -479,6 +480,8 @@ SW_INDEX_HISTORY_START = "20191113"
 SW_NO_DATA_RETRY_DAYS = 30
 # 指数停更判定: 本地最新日期落后今天超过 N 天 → 认定停更, 记 "可得上限"
 SW_STOPPED_DAYS = 30
+# 行业成分表 (index_member_all) 缓存天数 — 成分表几乎不变 (新股上市/调级才动)
+SW_MEMBER_CACHE_DAYS = 60
 
 
 def _sw_meta_path() -> Path:
@@ -518,6 +521,7 @@ def action_sw_index(level: str = "L2") -> int:
 
     2026-11-11 加. **单一逻辑, 没有"首次/以后"两套** (用户明确要求):
       1. 行业分类: index_classify(SW2021, level) → L2 134 个二级行业 (30 天缓存)
+      1+. 行业成分表: index_member_all() → 个股 → SW2021 行业映射 (60 天缓存)
       2. 检测缺口 (本地 min/max, 0 网络) → 每个行业缺哪段
       3. 批量拉 1 次 (sw_daily 不带 ts_code → 服务端给最近 10 交易日 × 全部 439 指数)
       4. 重新算缺口 → 批量没覆盖的 (历史没拉全 / 服务端缺 / 停更) 按 ts_code 单独补
@@ -525,13 +529,14 @@ def action_sw_index(level: str = "L2") -> int:
 
     请求数: 日常增量 1 次 / 首次或大缺口 1+N 次
     落盘:   data/history/sw_index/sw_index.parquet (行业分类)
+            data/history/sw_index/industry_member.parquet (成分表)
             data/history/sw_index/kline/<YYYY>.parquet (1 年 1 文件)
     """
     import pandas as pd
     from datetime import datetime
     from .store import (SW_INDEX_HISTORY_DIR, SW_INDEX_KLINE_DIR,
                         _append_records_by_year, migrate_sw_index_kline_to_year)
-    from .sources.tushare import get_sw_index, get_sw_daily
+    from .sources.tushare import get_sw_index, get_sw_daily, get_index_member_all
 
     today = datetime.now().strftime("%Y%m%d")
     meta = _sw_meta_load()
@@ -566,6 +571,30 @@ def action_sw_index(level: str = "L2") -> int:
             idx_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_parquet(idx_path, index=False)
             print(f"  ✅ 行业分类: {len(df)} 个 (level={level})")
+
+    # ---------- 行业成分表 (60 天缓存) ----------
+    #   个股 → SW2021 行业的唯一可靠映射 (本地 stock_basic.industry 是申万旧版, 对不上)
+    from .store import SW_INDEX_MEMBER_PARQUET
+    member_age = 0.0
+    need_member = True
+    if SW_INDEX_MEMBER_PARQUET.exists():
+        member_age = (time.time() - SW_INDEX_MEMBER_PARQUET.stat().st_mtime) / 86400
+        need_member = member_age >= SW_MEMBER_CACHE_DAYS
+    if need_member:
+        print(f"  📋 拉申万行业成分表 (index_member_all, 缓存 {SW_MEMBER_CACHE_DAYS} 天)")
+        m_rows, m_status = get_index_member_all()
+        if not m_rows:
+            print(f"  ⚠️ index_member_all 失败: {m_status}")
+            if not SW_INDEX_MEMBER_PARQUET.exists():
+                print("  ⚠️ 没有本地成分表 → 行业威科夫列无法计算")
+        else:
+            m_df = pd.DataFrame(m_rows)
+            m_df["sync_date"] = today
+            SW_INDEX_MEMBER_PARQUET.parent.mkdir(parents=True, exist_ok=True)
+            m_df.to_parquet(SW_INDEX_MEMBER_PARQUET, index=False)
+            print(f"  ✅ 行业成分表: {len(m_df)} 行 (覆盖 {m_df['l2_code'].nunique()} 个二级行业)")
+    else:
+        print(f"  ⏭ 行业成分表 {member_age:.0f} 天内已刷 (缓存 {SW_MEMBER_CACHE_DAYS} 天)")
 
     idx_df = pd.read_parquet(idx_path)
     codes = idx_df["index_code"].astype(str).tolist()

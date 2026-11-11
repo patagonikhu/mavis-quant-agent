@@ -181,7 +181,55 @@ def compute_factor_history(ctx, lookback: int = 60,
         except (ZeroDivisionError, TypeError):
             row['ma20_slope'] = None
 
+    # 2026-11-11 加: 行业威科夫 3 列 (行业 stage / 强度 / 子事件)
+    #   判定在生产侧算好塞进行数据 (规则下沉) —— 渲染器只读不算。
+    #   行业判定复用个股**同一套** analyze_history, 结果按 (行业, 日期) 缓存到
+    #   data/cache/industry_wyckoff/ (只增不删) → 5,000 只票不会重复算 134 个行业。
+    _inject_industry_wyckoff(ctx, rows)
+
     return rows
+
+
+# 行业威科夫字段名 → factor history row 里的 key
+_IND_FIELDS = (
+    "stage_daily", "stage_weekly",
+    "strength_daily", "strength_weekly",
+    "channel_daily", "channel_weekly",
+    "sub_event_daily", "sub_event_weekly",
+)
+
+
+def _inject_industry_wyckoff(ctx, rows: list[dict]) -> None:
+    """给每行补行业威科夫字段 (没行业/没数据 → 全 None, 渲染成 "—")
+
+    只读本地 parquet + cache, **0 网络**。
+    """
+    if not rows:
+        return
+    # 先把 key 铺好 (即使没行业也要有 key, 渲染器不用判存在性)
+    for row in rows:
+        for f in _IND_FIELDS:
+            row[f"ind_{f}"] = None
+
+    try:
+        from tools.analysis.industry_stage import industry_of_stock, industry_wyckoff_rows
+        ind_code = industry_of_stock(getattr(ctx, "code", "") or "")
+        if not ind_code:
+            return
+        dates = [str(r.get("date", "")).replace("-", "")[:8] for r in rows]
+        ind_rows = industry_wyckoff_rows(ind_code, dates)
+        if not ind_rows:
+            return
+        for row in rows:
+            d = str(row.get("date", "")).replace("-", "")[:8]
+            hit = ind_rows.get(d)
+            if not hit:
+                continue
+            for f in _IND_FIELDS:
+                row[f"ind_{f}"] = hit.get(f)
+    except Exception:
+        # 行业列是增强信息, 算不了不该拖垮整张表 → 保持 None
+        pass
 
 
 def _extract_row(result, date: str, close: float) -> dict:

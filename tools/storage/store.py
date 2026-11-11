@@ -71,6 +71,16 @@ SW_INDEX_HISTORY_DIR = Path("data/history/sw_index")
 SW_INDEX_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 SW_INDEX_KLINE_DIR = SW_INDEX_HISTORY_DIR / "kline"
 SW_INDEX_KLINE_DIR.mkdir(parents=True, exist_ok=True)
+# 行业成分表 (index_member_all): 每只票 → SW2021 一/二/三级行业
+#   本地 stock_basic.industry 是申万旧版 110 个, 跟 SW2021 对不上 → 这张表是唯一可靠映射来源
+SW_INDEX_MEMBER_PARQUET = SW_INDEX_HISTORY_DIR / "industry_member.parquet"
+
+# 进程内缓存: 行业日线 {ts_code: bars} / 行业归属 {ts_code: l2_code}
+#   批量分析时同一行业被反复用 (5000 只票 → 134 个行业) → 缓存住, 别反复读盘
+#   ⚠️ None = 还没加载 (空 dict 也是"已加载, 但没数据" → 不能拿它当未加载的标记)
+_SW_INDEX_BARS_CACHE: dict[str, list[dict]] = {}
+_SW_INDEX_FRAME = None            # 全量行业 K 线 DataFrame (按年份文件拼一次)
+_INDUSTRY_MEMBER_CACHE: dict[str, str] | None = None
 
 # 2026-11-11: THS 同花顺概念板块 —— --ths 已删 (白名单源 2026-10-14 起不存在, 死段)
 #   data/history/ths/ 里 18 份概念数据停在 2026-10-08, 纯存档不再更新;
@@ -1724,6 +1734,102 @@ class DataStore:
             industry=industry,
             code=code, name=name,
         )
+
+    @classmethod
+    def _sw_index_frame(cls):
+        """全量行业 K 线 DataFrame (按年份文件拼一次, 进程内缓存)"""
+        global _SW_INDEX_FRAME
+        if _SW_INDEX_FRAME is not None:
+            return _SW_INDEX_FRAME
+
+        import pandas as pd
+        files = sorted(SW_INDEX_KLINE_DIR.glob("*.parquet")) if SW_INDEX_KLINE_DIR.exists() else []
+        frames = []
+        for f in files:
+            try:
+                frames.append(pd.read_parquet(f))
+            except Exception:
+                continue
+        if frames:
+            df = pd.concat(frames, ignore_index=True)
+            df["trade_date"] = df["trade_date"].astype(str)
+            df = df.sort_values(["ts_code", "trade_date"]).reset_index(drop=True)
+        else:
+            df = pd.DataFrame()
+        _SW_INDEX_FRAME = df
+        return _SW_INDEX_FRAME
+
+    @classmethod
+    def get_sw_index_bars(cls, ts_code: str) -> list[dict]:
+        """申万行业指数日线 (1 个行业), 字段跟个股 ctx 一致
+
+        数据源: data/history/sw_index/kline/{YYYY}.parquet (按年份分文件, 2026-11-11 改)
+
+        ⚠️ vol → volume 别名**在这里做** (跟个股 _read_kline 同口径):
+           威科夫扫描器读 k["volume"], 不转的话成交量恒为 0 → 量能判定全废 (静默出错)。
+
+        Args:
+            ts_code: 行业代码 (801012.SI)
+
+        Returns:
+            list[dict] (按 trade_date 升序), 没数据返 []
+        """
+        if not ts_code:
+            return []
+        code = str(ts_code)
+        if code in _SW_INDEX_BARS_CACHE:
+            return _SW_INDEX_BARS_CACHE[code]
+
+        df = cls._sw_index_frame()
+        if df.empty:
+            _SW_INDEX_BARS_CACHE[code] = []
+            return []
+        sub = df[df["ts_code"] == code]
+        if sub.empty:
+            _SW_INDEX_BARS_CACHE[code] = []
+            return []
+
+        bars = []
+        for r in sub.to_dict("records"):
+            r["trade_date"] = str(r.get("trade_date", "")).replace("-", "")[:8]
+            if "vol" in r and "volume" not in r:
+                r["volume"] = r.get("vol")
+            r["volume"] = r.get("volume") or 0.0
+            r["amount"] = r.get("amount") or 0.0
+            r["pct_chg"] = r.get("pct_chg") or 0.0
+            r["pre_close"] = r.get("close")     # sw_daily 没有 pre_close → 用 close 兜底
+            bars.append(r)
+        _SW_INDEX_BARS_CACHE[code] = bars
+        return bars
+
+    @classmethod
+    def get_industry_member_map(cls) -> dict[str, str]:
+        """{ts_code: l2_code} —— 申万 2021 二级行业归属
+
+        数据源: data/history/sw_index/industry_member.parquet (index_member_all, 60 天缓存)
+
+        为什么不用 stock_basic.industry: 那是申万**旧版** 110 个, 跟 SW2021 (134 个)
+        只直接对上 25 个 (元器件 vs 元件 / 汽车配件 vs 汽车零部件) → 对不上。
+        """
+        global _INDUSTRY_MEMBER_CACHE
+        if _INDUSTRY_MEMBER_CACHE is not None:
+            return _INDUSTRY_MEMBER_CACHE
+
+        mapping: dict[str, str] = {}
+        if SW_INDEX_MEMBER_PARQUET.exists():
+            try:
+                df = _conn().execute(
+                    f"SELECT ts_code, l2_code FROM read_parquet('{SW_INDEX_MEMBER_PARQUET}')"
+                ).df()
+                for rec in df.to_dict("records"):
+                    code = str(rec.get("ts_code") or "")
+                    l2 = str(rec.get("l2_code") or "")
+                    if code and l2:
+                        mapping[code] = l2
+            except Exception as e:
+                print(f"  ⚠️ get_industry_member_map 失败: {e}", file=sys.stderr)
+        _INDUSTRY_MEMBER_CACHE = mapping
+        return mapping
 
     @classmethod
     def get_financials(cls, code: str, lookback_quarters: int = 4) -> list[dict]:
