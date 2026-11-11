@@ -80,7 +80,7 @@ SW_INDEX_MEMBER_PARQUET = SW_INDEX_HISTORY_DIR / "industry_member.parquet"
 #   ⚠️ None = 还没加载 (空 dict 也是"已加载, 但没数据" → 不能拿它当未加载的标记)
 _SW_INDEX_BARS_CACHE: dict[str, list[dict]] = {}
 _SW_INDEX_FRAME = None            # 全量行业 K 线 DataFrame (按年份文件拼一次)
-_INDUSTRY_MEMBER_CACHE: dict[str, str] | None = None
+_INDUSTRY_MEMBER_INFO: dict | None = None   # {ts_code: {l1_code, l2_code, l2_name, ...}}
 
 # 2026-11-11: THS 同花顺概念板块 —— --ths 已删 (白名单源 2026-10-14 起不存在, 死段)
 #   data/history/ths/ 里 18 份概念数据停在 2026-10-08, 纯存档不再更新;
@@ -1142,7 +1142,11 @@ def _fin_load_existing(period: str) -> dict[str, dict]:
 
 
 def _fin_load_industry_map(codes: list[str]) -> dict[str, str]:
-    """从 stock_basic.parquet 取 industry, 返 {code: industry}
+    """取 industry, 返 {code: industry}
+
+    2026-11-11 改: 行业口径统一到 **SW2021** —— 优先取 index_member_all 的 l2_name,
+    成分表没覆盖的回退到 stock_basic.industry (申万旧版)。
+    (这列会显示在报告的估值段「**行业:**」, 跟 🏆行业地位 的行业名必须同口径)
 
     缓存到本次进程 (sync_financials 调用一次, 批量 fetch_one 共享)
     """
@@ -1150,8 +1154,19 @@ def _fin_load_industry_map(codes: list[str]) -> dict[str, str]:
         return {}
     try:
         import duckdb
+        # SW2021 (唯一真源)
+        sw_map = {}
+        if SW_INDEX_MEMBER_PARQUET.exists():
+            try:
+                df_m = _conn().execute(
+                    f"SELECT ts_code, l2_name FROM read_parquet('{SW_INDEX_MEMBER_PARQUET}')"
+                ).df()
+                sw_map = {str(r["ts_code"]).split(".")[0]: str(r.get("l2_name") or "")
+                          for _, r in df_m.iterrows() if r.get("l2_name")}
+            except Exception:
+                sw_map = {}
         if not STOCK_BASIC_PARQUET.exists():
-            return {}
+            return {c: sw_map.get(c, "") for c in codes}
         # 取 codes 子集, 减少扫描
         codes_str = ", ".join(f"'{c}'" for c in codes)
         df = _conn().execute(
@@ -1160,7 +1175,11 @@ def _fin_load_industry_map(codes: list[str]) -> dict[str, str]:
             WHERE code IN ({codes_str})
             """
         ).df()
-        return {str(r["code"]): str(r.get("industry", "") or "") for _, r in df.iterrows()}
+        out = {}
+        for _, r in df.iterrows():
+            c = str(r["code"])
+            out[c] = sw_map.get(c) or str(r.get("industry", "") or "")
+        return out
     except Exception:
         return {}
 
@@ -1719,7 +1738,12 @@ class DataStore:
         #   ETF 没有"行业"概念, 但有**跟踪指数** —— 拿它当"板块"显示最贴切
         #   (e.g. "沪深300指数")。
         name = _INDEX_NAMES.get(code) or sb.get("name", "")
-        industry = sb.get("industry", "")
+        # 2026-11-11 改: 行业口径统一到 **SW2021** (申万新版 134 个)
+        #   来源: index_member_all 落的 industry_member.parquet (唯一真源)
+        #   之前用 stock_basic.industry = 申万**旧版** 110 个 → 跟 sw_index 指数、
+        #   factor-5y 头部、🏆行业地位 的同行分组 口径不一致。
+        #   ETF 不在成分表里 → 留空, 下面的 ETF 分支会用跟踪指数名填。
+        industry = cls.get_industry_info(code).get("l2_name") or sb.get("industry", "")
         if not name:
             eb = cls.get_etf_basic(code)
             if eb:
@@ -1803,6 +1827,29 @@ class DataStore:
         return bars
 
     @classmethod
+    def _industry_member_info(cls) -> dict:
+        """{ts_code: {l1_code, l1_name, l2_code, l2_name, l3_code, l3_name}} —— 进程内缓存"""
+        global _INDUSTRY_MEMBER_INFO
+        if _INDUSTRY_MEMBER_INFO is not None:
+            return _INDUSTRY_MEMBER_INFO
+
+        info: dict = {}
+        if SW_INDEX_MEMBER_PARQUET.exists():
+            try:
+                df = _conn().execute(
+                    f"SELECT ts_code, l1_code, l1_name, l2_code, l2_name, l3_code, l3_name "
+                    f"FROM read_parquet('{SW_INDEX_MEMBER_PARQUET}')"
+                ).df()
+                for rec in df.to_dict("records"):
+                    code = str(rec.get("ts_code") or "")
+                    if code:
+                        info[code] = rec
+            except Exception as e:
+                print(f"  ⚠️ _industry_member_info 失败: {e}", file=sys.stderr)
+        _INDUSTRY_MEMBER_INFO = info
+        return info
+
+    @classmethod
     def get_industry_member_map(cls) -> dict[str, str]:
         """{ts_code: l2_code} —— 申万 2021 二级行业归属
 
@@ -1811,25 +1858,44 @@ class DataStore:
         为什么不用 stock_basic.industry: 那是申万**旧版** 110 个, 跟 SW2021 (134 个)
         只直接对上 25 个 (元器件 vs 元件 / 汽车配件 vs 汽车零部件) → 对不上。
         """
-        global _INDUSTRY_MEMBER_CACHE
-        if _INDUSTRY_MEMBER_CACHE is not None:
-            return _INDUSTRY_MEMBER_CACHE
+        return {code: str(r.get("l2_code") or "")
+                for code, r in cls._industry_member_info().items() if r.get("l2_code")}
 
-        mapping: dict[str, str] = {}
-        if SW_INDEX_MEMBER_PARQUET.exists():
-            try:
-                df = _conn().execute(
-                    f"SELECT ts_code, l2_code FROM read_parquet('{SW_INDEX_MEMBER_PARQUET}')"
-                ).df()
-                for rec in df.to_dict("records"):
-                    code = str(rec.get("ts_code") or "")
-                    l2 = str(rec.get("l2_code") or "")
-                    if code and l2:
-                        mapping[code] = l2
-            except Exception as e:
-                print(f"  ⚠️ get_industry_member_map 失败: {e}", file=sys.stderr)
-        _INDUSTRY_MEMBER_CACHE = mapping
-        return mapping
+    @classmethod
+    def get_industry_members_by_l2(cls, l2_code: str) -> list[str]:
+        """某个 SW2021 二级行业的全部成员 ts_code
+
+        数据源: index_member_all 落的 industry_member.parquet
+        """
+        if not l2_code:
+            return []
+        code = str(l2_code)
+        return [ts for ts, rec in cls._industry_member_info().items()
+                if str(rec.get("l2_code") or "") == code]
+
+    @classmethod
+    def get_industry_info(cls, ts_code: str) -> dict:
+        """某只票的 SW2021 行业归属 (一级/二级/三级), 没有返 {}
+
+        Args:
+            ts_code: '300274' / '300274.SZ' 都行
+        """
+        if not ts_code:
+            return {}
+        code = str(ts_code).strip()
+        if "." not in code:
+            code = _to_ts_code(code)
+        rec = cls._industry_member_info().get(code)
+        if not rec:
+            return {}
+        return {
+            "l1_code": str(rec.get("l1_code") or ""),
+            "l1_name": str(rec.get("l1_name") or ""),
+            "l2_code": str(rec.get("l2_code") or ""),
+            "l2_name": str(rec.get("l2_name") or ""),
+            "l3_code": str(rec.get("l3_code") or ""),
+            "l3_name": str(rec.get("l3_name") or ""),
+        }
 
     @classmethod
     def get_financials(cls, code: str, lookback_quarters: int = 4) -> list[dict]:

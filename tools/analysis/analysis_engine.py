@@ -689,7 +689,10 @@ class FinanceStrategy:
             "roc":       latest_magic.get("roc"),
             "ey":        latest_magic.get("ey"),
             "ev_yi":     latest_magic.get("ev_yi"),
-            "industry":  latest_magic.get("industry"),
+            # 2026-11-11 改: 行业名取 ctx (SW2021 唯一真源), 不用 Magic 行里的 industry
+            #   —— financials parquet 的 industry 列是**写盘时**的快照 (旧版申万 110 个),
+            #   存量 parquet 里还是旧名 → 报告里会跟 🏆行业地位 撞口径
+            "industry":  ctx.industry or latest_magic.get("industry"),
             "ebit_yi":   latest_magic.get("ebit_yi"),
             "capital_yi":latest_magic.get("capital_yi"),
             "netdebt_yi":latest_magic.get("netdebt_yi"),

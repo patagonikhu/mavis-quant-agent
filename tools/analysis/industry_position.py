@@ -4,15 +4,17 @@
   1. 这只票在板块里算不算龙头? → 市值排名 (存量地位) + 区间涨幅排名 (动能地位)
   2. 龙头是"市值大"还是"涨得快"?  → 两者几乎不相关, 必须分开看
 
-**为什么市值排名不能单独当龙头依据** (实测 205 只近两年十倍股):
-  - 起涨日市值行业中位第 85 名 (中位分位 66%) → 十倍股起涨时基本都不是市值龙头
-  - 但区间涨幅有 47.3% 在行业涨幅第 1 名, 89.8% 在前 10 名
-  - 市值分位 vs 涨幅分位 Spearman = -0.095 (无关)
+**为什么市值排名不能单独当龙头依据** (实测 205 只近两年十倍股, **SW2021 口径**):
+  - 起涨日市值分位中位 67.6% (高点日才降到 12.5%) → 十倍股起涨时基本都不是市值龙头
+  - 但区间涨幅分位中位 2.3%, 92.2% 在行业涨幅前 10%
+  - 市值分位 vs 涨幅分位 Spearman = -0.126 (无关, 旧版口径 -0.095)
   → 结论: 龙头 = **动能领先** (涨幅排名), 市值只是存量地位参考
 
 数据 (0 网络, 全本地 parquet):
   - stk_factor:    total_mv / circ_mv (万元) / close / total_share, 6,021 只 × 1,174 日
-  - stock_basic:   industry (110 个细分行业)
+  - 行业归属/同行分组: industry_member.parquet (index_member_all, **SW2021 134 个二级行业**)
+    ⚠️ 2026-11-11 换口径: 之前用 stock_basic.industry = 申万**旧版** 110 个 →
+       「电气设备」348 家把光伏/电机/电网混一锅, 涨幅排名被稀释 (光伏设备实为 75 家)
 
 **区间收益口径 = total_mv 变化** (不是不复权 close):
   送转股日 close 会从 104 跳到 66 (假跌 37%), 但 total_mv 不变 (股东财富没变)。
@@ -49,14 +51,32 @@ def _to_ts_code(code: str) -> str:
     return f"{c}.SZ"
 
 
-def _industry_members(industry: str) -> list[str]:
-    """该行业的全部成员 ts_code"""
+def _industry_members(l2_code: str, l2_name: str = "") -> list[str]:
+    """该行业的全部成员 ts_code
+
+    2026-11-11 改: 行业口径统一到 **SW2021** (申万新版 134 个二级行业)
+      - 同行组来自 index_member_all 落的 industry_member.parquet (唯一真源)
+      - 之前用 stock_basic.industry = 申万**旧版** 110 个 → 「电气设备」348 家
+        把光伏/电机/电网设备混一锅, 涨幅排名被稀释 (光伏设备实为 75 家)
+
+    Args:
+        l2_code: SW2021 二级行业代码 (801735.SI); 空则用 l2_name 回退查旧版
+        l2_name: SW2021 二级行业名 (回退用)
+    """
     import duckdb
-    if not STOCK_BASIC_PARQUET.exists():
+
+    if l2_code:
+        from tools.storage.store import DataStore
+        members = DataStore.get_industry_members_by_l2(l2_code)
+        if members:
+            return members
+
+    # 回退: 申万旧版 (成分表没覆盖时)
+    if not l2_name or not STOCK_BASIC_PARQUET.exists():
         return []
     df = duckdb.connect().execute(
         f"""SELECT DISTINCT ts_code FROM read_parquet('{STOCK_BASIC_PARQUET}')
-            WHERE industry = '{industry.replace("'", "''")}'"""
+            WHERE industry = '{l2_name.replace("'", "''")}'"""
     ).df()
     return df["ts_code"].tolist() if not df.empty else []
 
@@ -126,23 +146,32 @@ def compute_industry_position(code: str, industry: str | None = None,
 
     Args:
         code:        6 位股票代码
-        industry:    行业名 (来自 stock_basic); None → 自动查
+        industry:    行业名 (兼容旧调用, 实际以 SW2021 成分表为准);
+                     None → 自动查
         trading_days: 区间交易日数 (默认 120 = 跟 /t-analyze 因子历史窗口一致)
 
     Returns:
         dict, 字段见下方; 无行业/无数据时返回 {} (调用方渲染成 "—")
+
+    2026-11-11: 行业口径统一到 SW2021 (申万新版 134 个二级行业)
+      - 行业归属 + 同行分组都走 index_member_all 落的 industry_member.parquet
+      - industry 参数只当回退 (成分表没覆盖时用旧版 stock_basic.industry)
     """
     import pandas as pd
 
     ts_code = _to_ts_code(code)
-    if not industry:
-        industry = _lookup_industry(ts_code)
-    if not industry:
-        return {}
 
-    members = _industry_members(industry)
+    # SW2021 行业归属 (唯一真源)
+    l2_code, l2_name = _lookup_industry(ts_code)
+    if not l2_code:
+        # 成分表没覆盖 → 回退旧版 (行业名由调用方传)
+        l2_name = industry or ""
+        if not l2_name:
+            return {}
+
+    members = _industry_members(l2_code, l2_name)
     if ts_code not in members:
-        # stock_basic 里没有这只 (ETF / 次新未建档) → 不出行业排名
+        # 成分表里没有这只 (ETF / 次新未建档) → 不出行业排名
         return {}
 
     start_date, end_date = _complete_window(trading_days)
@@ -211,7 +240,7 @@ def compute_industry_position(code: str, industry: str | None = None,
     verdict, verdict_level = _judge_leader(market_value_percentile, gain_percentile)
 
     return {
-        "industry": industry,
+        "industry": l2_name or industry or "",
         "peer_total": peer_total,
         "start_date": start_date,
         "end_date": end_date,
@@ -256,16 +285,14 @@ def _judge_leader(market_value_percentile: float | None,
     return ("🌱 跟随者 — 市值 + 涨幅都不在行业前 10%", "follower")
 
 
-def _lookup_industry(ts_code: str) -> str:
-    """查 stock_basic 的行业 (查不到返回空串)"""
-    import duckdb
-    if not STOCK_BASIC_PARQUET.exists():
-        return ""
-    df = duckdb.connect().execute(
-        f"""SELECT industry FROM read_parquet('{STOCK_BASIC_PARQUET}')
-            WHERE ts_code = '{ts_code}' LIMIT 1"""
-    ).df()
-    if df.empty:
-        return ""
-    val = df.iloc[0]["industry"]
-    return val if isinstance(val, str) else ""
+def _lookup_industry(ts_code: str) -> tuple[str, str]:
+    """查该股的 SW2021 二级行业 → (l2_code, l2_name), 查不到返回 ("", "")
+
+    数据源: index_member_all 落的 industry_member.parquet (唯一真源)
+    """
+    try:
+        from tools.storage.store import DataStore
+        info = DataStore.get_industry_info(ts_code)
+        return info.get("l2_code", ""), info.get("l2_name", "")
+    except Exception:
+        return "", ""

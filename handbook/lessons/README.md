@@ -10,7 +10,7 @@
 | 分册 | 主题 | 条数 |
 |---|---|---|
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
-| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 13 |
+| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 14 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 5 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 16 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 21 |
@@ -61,6 +61,7 @@
 | 11 | 同步 skill 只拉数据, 别顺手跑别的 skill | "SKILL.md 没禁止" ≠ "可以做" —— 指令范围外的动作先问用户, 不自己决定 |
 | 12 | 自动迁移是双刃剑: 旧代码跑一次就把删掉的列 ADD 回来 | `_init()` 同时 ADD + DROP → 用旧代码打开一次 db, 删掉的列就复活 (`git stash` 验证是重灾区) |
 | 13 | sw_daily 服务端行为: 批量只给最近 10 交易日 | 批量只给最近 10 交易日, 带 ts_code 才给全历史 → "批量 1 次 + 按 ts_code 补漏" 两段式 |
+| 14 | 行业口径统一到 SW2021 | 旧版 110 vs 新版 134 只对上 25 个 → 个股→行业一律走 index_member_all 落的 industry_member.parquet |
 
 ## 财务 / 估值口径
 
