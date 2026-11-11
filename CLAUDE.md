@@ -30,6 +30,11 @@
 **合法源只有 `tushare.pro`**。
 **WAF 拒接域 (严禁直连)**: `push2*.eastmoney.com` / `web.ifzq.gtimg.cn` / `qtimg`。
 
+**tushare 只允许出现在 sync 路径** (2026-11-12 固化, 守门员 AST 判定):
+`store.py` 的 `sync_*` 函数内可拉 (写盘原语), **同一文件其它函数出现 tushare = 违规**;
+`analysis` / `render` / `batch` 任何位置出现 tushare = 违规 (不靠 skill 推断, 未登记模块也报)。
+→ 详见 `handbook/lessons/02-data-sync.md` 第 17 条。
+
 ---
 
 ## 🏗️ 三层架构 (v6.2.x)

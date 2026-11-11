@@ -1,7 +1,7 @@
 # 项目专属教训 — 索引
 
 > 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
-> 共 **74 条**教训 (拆 47 + 后续新增 27)。
+> 共 **89 条**教训 (拆 47 + 后续新增 42)。
 > **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
 
@@ -10,7 +10,7 @@
 | 分册 | 主题 | 条数 |
 |---|---|---|
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
-| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 16 |
+| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 18 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 21 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 24 |
@@ -64,6 +64,7 @@
 | 14 | 行业口径统一到 SW2021 | 旧版 110 vs 新版 134 只对上 25 个 → 个股→行业一律走 index_member_all 落的 industry_member.parquet |
 | 15 | 删 stock_basic.industry: 省不了网络请求, 但值这个价 | 省不了请求 (1 次请求带多字段), 但旧名对不上 = **过滤静默失效**; 换口径后必须实测每个字符串参数的命中数 |
 | 16 | 派生 cache 的写路径要收归单一 owner | 「读时顺手写」逼出文件锁; 写归 /t-sync-data、读侧 miss 就不显示 → 锁直接删; 机器强制靠守门员 AST 扫描 + 运行时守卫 |
+| 17 | ⚠️ 守门员的 tushare 正则盲区: 相对/绝对路径 import 全漏 | 正则抓不到 `from .sources.tushare import ...` 和别名调用 → 改 AST 精确识别; **守门员规则本身要有人测** (造违规反向验证) |
 
 ## 财务 / 估值口径
 

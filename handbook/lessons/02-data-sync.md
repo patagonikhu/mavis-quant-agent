@@ -561,3 +561,55 @@ Type: rule
 
 **apply when:** 任何"派生缓存" (analysis_cache.db / 行业威科夫 cache / 因子历史 cache)。
 问一句: **谁写?** 答案必须是**一个**。多写者 = 迟早要上锁, 不如从架构上消灭并发写。
+
+---
+
+### ⚠️ 守门员的 tushare 正则盲区: 相对/绝对路径 import 全漏 (2026-11-12)
+Type: rule
+
+**摘要:** 网络隔离守门员的 tushare 检测原本只用正则, 漏过 `from .sources.tushare import ...`
+(相对路径) 和 `import tushare as ts` 后的别名调用 —— 安全是**调用链收敛**给的, 不是守门员给的。
+
+**原正则**:
+```python
+TUSHARE_NET = [
+    r"\bimport\s+tushare\b",
+    r"\bfrom\s+tushare\b",
+    r"\btushare\.(pro_api|pro|get_[a-z_]+|query_[a-z_]+)\b",
+]
+```
+**实测漏过 3 种写法** (2026-11-12):
+| 写法 | 正则 | 说明 |
+|---|---|---|
+| `from .sources.tushare import get_daily` | ❌ 漏 | 相对路径, `from` 后面是 `.sources.` 不是 `tushare` |
+| `from tools.storage.sources.tushare import X` | ❌ 漏 | 绝对路径同理 |
+| `ts.pro_api(token)` | ❌ 漏 | `import tushare as ts` 的别名调用 (import 行能抓到, 调用行抓不到) |
+
+**为什么今天没出事**: `store.py` 里那 7 处 `from .sources.tushare import ...` 都在
+`sync_*` 函数内, 且**只有 `tools/storage/sync.py` 调** —— 是调用链收敛救的, 不是守门员。
+哪天有人在 batch 里写 `from ..storage.sources.tushare import get_daily`, 守门员一声不吭。
+
+**修法 (2026-11-12 已落地)**: 改用 **AST 精确识别** (`_ast_tushare_lines()`)
+- `import` / `import ... as X` / `from ... import` / `from ... import ... as X` 全部覆盖
+- 相对路径: ast 的 `node.module` = `"sources.tushare"` (level 单独记), `endswith(".tushare")` 命中
+- 别名调用: 收集 alias 集合, 再扫 `alias.pro_api(...)` / `alias.get_*(...)`
+- 顺带拿到**行号 → 所在函数名**, 用来判定「sync_* 函数内」
+- docstring 里提到 tushare **不误报** (AST 只认真 import 语句)
+
+**判定规则 (同步改)**:
+| 位置 | 判定 |
+|---|---|
+| `sync.py` / `sources/tushare.py` / `guardrail.py` | allowed (白名单) |
+| `store.py` 的 **sync_\* 函数内** | allowed |
+| `store.py` 的**其它**函数内 | **violation** |
+| 其它任何地方 (含未登记的 batch 脚本) | **violation** (不再靠 skill 推断, 否则未登记模块会被降级成 warn 放过) |
+
+**配套**: 判定逻辑抽成 `classify_hit()` (可离线测) + `tests/unit/test_guardrail_network.py` (14 项),
+其中一条实况锁 = **`store.py` 的 tushare import 必须全部在 sync_* 函数内**。
+
+**通用教训**: **守门员的规则本身要有人测**。正则匹配"看起来像的写法"必然漏边界,
+凡是"依赖正则识别越界"的检查, 都要用**故意造违规**的方式反向验证过一次。
+—— 只跑一遍看"0 违规"证明不了任何事 (那正是本次盲区藏了这么久的原因)。
+
+**apply when:** 任何写「禁止 X」的静态检查 (network / parquet / cache-writer / safe-fs)。
+改完规则一定要: ① 造一个真违规样本 ② 确认被抓 ③ 再删样本。

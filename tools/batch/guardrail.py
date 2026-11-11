@@ -65,11 +65,24 @@ SUBPROCESS_NET = [
     r"subprocess\.(run|call|Popen|check_output|check_call).*ssh\b",
 ]
 # tushare 走网络 (tushare.pro_api 一定走)
+#
+# ⚠️ 2026-11-12: 原来的正则只认 `import tushare` / `from tushare import`,
+#    **漏过项目里最常见的两种写法** ——
+#      `from .sources.tushare import get_daily`          (相对路径, store.py 里 7 处)
+#      `from tools.storage.sources.tushare import ...`   (绝对路径)
+#    今天没出事纯粹是因为调用链收敛 (那 7 处只有 sync.py 调), 不是守门员抓出来的。
+#    → 现在改用 AST 精确识别 (见 _ast_tushare_lines), 正则只留「不带 import 的属性调用」兜底。
 TUSHARE_NET = [
-    r"\bimport\s+tushare\b",
-    r"\bfrom\s+tushare\b",
     r"\btushare\.(pro_api|pro|get_[a-z_]+|query_[a-z_]+)\b",
 ]
+
+# 哪些文件的「sync_* 函数内」允许出现 tushare (sync 路径的写盘原语)
+# 2026-11-12 加: store.py 里的 sync_incremental / sync_stock_basic / sync_financials 等
+#   必须在函数内部 `from .sources.tushare import ...`, 否则拉不到数据。
+#   只放行**函数名含 sync** 的那几处, 同一个文件的其它函数出现 tushare = 越界。
+SYNC_SCOPE_FILES = {
+    "tools/storage/store.py": "DataStore 的 sync_* 写盘原语 (只允许 sync_* 函数内拉网络)",
+}
 # DataStore / duckdb / pandas / 文件 IO (允许)
 WHITELIST_PATTERNS = [
     r"^.*DataStore\.",
@@ -108,6 +121,74 @@ ZERO_NET_SKILLS = {
 }
 
 
+def _ast_tushare_lines(content: str) -> tuple[set[int], dict[int, str]]:
+    r"""AST 精确识别 tushare 相关行。
+
+    Returns:
+        (tainted_lines, enclosing_func)
+          tainted_lines: 所有涉及 tushare 的行号 (import 行 + 别名调用行)
+          enclosing_func: 行号 → 该行所在的最内层函数名 (模块级 = "")
+
+    为什么不用正则 (2026-11-12 修):
+      正则 `\bfrom\s+tushare\b` 匹配不到 `from .sources.tushare import ...`
+      (相对路径带 `.sources.` 前缀), 也匹配不到 `import tushare as ts` 之后的
+      `ts.pro_api(...)` (别名调用)。这两种写法项目里都有, 正则是瞎的。
+
+    AST 能精确识别:
+      - `import tushare` / `import tushare as ts`
+      - `from tushare import pro_api`
+      - `from .sources.tushare import X`        (level=1, module="sources.tushare")
+      - `from tools.storage.sources.tushare import X`
+      - `from ..storage.sources import tushare`
+      - 别名后的 `ts.pro_api(...)` / `ts.get_daily(...)`
+    """
+    tainted: set[int] = set()
+    enclosing: dict[int, str] = {}
+    aliases: set[str] = set()
+
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return tainted, enclosing
+
+    def _is_tushare_mod(name: str) -> bool:
+        return name == "tushare" or name.endswith(".tushare")
+
+    # 1) import 语句 → 记行号 + 收集别名
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if _is_tushare_mod(a.name):
+                    tainted.add(node.lineno)
+                    aliases.add(a.asname or a.name.split(".")[-1])
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            if _is_tushare_mod(mod):
+                tainted.add(node.lineno)
+            for a in node.names:
+                if _is_tushare_mod(a.name):
+                    tainted.add(node.lineno)
+                    aliases.add(a.asname or a.name.split(".")[-1])
+
+    # 2) 别名调用 (ts.pro_api / ts.get_daily ...)
+    if aliases:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                f = node.func
+                if (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                        and f.value.id in aliases
+                        and f.attr.startswith(("pro_api", "pro", "get_", "query_"))):
+                    tainted.add(node.lineno)
+
+    # 3) 行号 → 所在函数 (取最内层)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for ln in range(node.lineno, (node.end_lineno or node.lineno) + 1):
+                enclosing[ln] = node.name
+
+    return tainted, enclosing
+
+
 def scan_file(filepath: Path) -> list[dict]:
     """扫描单个 .py 文件, 找出所有网络调用"""
     hits = []
@@ -117,6 +198,8 @@ def scan_file(filepath: Path) -> list[dict]:
         return hits
 
     lines = content.splitlines()
+    # 2026-11-12 加: AST 预扫 —— tushare 相关行 + 行号→所在函数
+    tushare_lines, enclosing_func = _ast_tushare_lines(content)
     for lineno, line in enumerate(lines, 1):
         # 跳过纯注释行 (整行 # 开头)
         stripped = line.strip()
@@ -168,18 +251,30 @@ def scan_file(filepath: Path) -> list[dict]:
                 })
                 break
 
-        # 4. tushare (一定走网络)
-        for pattern in TUSHARE_NET:
-            m = re.search(pattern, line)
-            if m:
-                hits.append({
-                    "lineno": lineno,
-                    "type": "tushare",
-                    "code": line.strip(),
-                    "severity": "violation",
-                    "matched": m.group(0),
-                })
-                break
+        # 4. tushare (一定走网络) — AST 精确识别 + 正则兜底
+        #    AST 能抓到相对/绝对路径 import 和别名调用 (正则抓不到, 见 _ast_tushare_lines)
+        if lineno in tushare_lines:
+            hits.append({
+                "lineno": lineno,
+                "type": "tushare",
+                "code": line.strip(),
+                "severity": "violation",
+                "matched": "tushare",
+                "enclosing_func": enclosing_func.get(lineno, ""),
+            })
+        else:
+            for pattern in TUSHARE_NET:
+                m = re.search(pattern, line)
+                if m:
+                    hits.append({
+                        "lineno": lineno,
+                        "type": "tushare",
+                        "code": line.strip(),
+                        "severity": "violation",
+                        "matched": m.group(0),
+                        "enclosing_func": enclosing_func.get(lineno, ""),
+                    })
+                    break
 
     return hits
 
@@ -657,6 +752,36 @@ def write_report_factor(violations, args):
     print(f"📝 报告: {out}")
 
 
+def classify_hit(file_path: str, hit: dict, skill_name: str, args) -> str:
+    """单条命中的严重性判定 → allowed / warn / violation
+
+    抽成独立函数 (2026-11-12) 是为了能写单元测试 —— 判定逻辑是「网络隔离」
+    的最后一道防线, 必须能离线验证, 不能只靠跑一遍看输出。
+
+    tushare 特判 (2026-11-12):
+      tushare 只能出现在 sync 路径。判定顺序:
+        1) 白名单文件 (sync.py / sources/tushare.py / guardrail.py) → allowed
+        2) SYNC_SCOPE_FILES 里**函数名含 sync** 的那几处 → allowed
+           (store.py 的 sync_incremental / sync_stock_basic / sync_financials ...)
+        3) 其余任何地方出现 tushare → violation (不依赖 skill 推断,
+           免得「未登记的 batch 脚本」被判成 warn 放过去)
+    """
+    if hit["type"] == "tushare" and file_path not in NETWORK_ALLOWED:
+        func = hit.get("enclosing_func", "")
+        if file_path in SYNC_SCOPE_FILES and "sync" in func:
+            return "allowed"
+        return "violation"
+    if file_path in NETWORK_ALLOWED:
+        return "allowed"
+    if args.skill and args.skill in ZERO_NET_SKILLS:
+        return "violation"  # 用户指定 skill, 严格检查
+    if skill_name == "t-sync-data":
+        return "allowed"
+    if skill_name and skill_name in ZERO_NET_SKILLS:
+        return "violation"
+    return "warn"
+
+
 def check_network(args):
     """网络守门员主函数 (2026-09-09 改自 tools/batch/network_guard.py)"""
     print("🛡️  守门员: network-guard (网络隔离检查)")
@@ -678,21 +803,14 @@ def check_network(args):
         # 推断 skill (从文件路径)
         skill_name = infer_skill(file_path)
         for hit in hits:
-            if file_path in NETWORK_ALLOWED:
-                severity = "allowed"
-            elif args.skill and args.skill in ZERO_NET_SKILLS:
-                severity = "violation"  # 用户指定 skill, 严格检查
-            elif skill_name == "t-sync-data":
-                severity = "allowed"
-            elif skill_name and skill_name in ZERO_NET_SKILLS:
-                severity = "violation"
-            else:
-                severity = "warn"
+            severity = classify_hit(file_path, hit, skill_name, args)
 
             entry = (file_path, hit)
             by_severity[severity].append(entry)
-            if severity == "violation" and skill_name:
-                skill_violations.setdefault(skill_name, []).append(entry)
+            # 2026-11-12: 不再因 skill_name 为空就丢掉违规 (tushare 越界判定
+            # 已经不依赖 skill 推断, 未登记的模块也得报出来)
+            if severity == "violation":
+                skill_violations.setdefault(skill_name or "(未登记模块)", []).append(entry)
 
     # 打印结果
     print(f"📊 扫描结果:")
@@ -708,9 +826,16 @@ def check_network(args):
         for file_path, hit in by_severity["allowed"]:
             if file_path not in seen:
                 seen.add(file_path)
-                reason = NETWORK_ALLOWED.get(file_path, "网络白名单")
+                reason = NETWORK_ALLOWED.get(file_path) or SYNC_SCOPE_FILES.get(file_path, "网络白名单")
                 print(f"   {file_path}")
                 print(f"     原因: {reason}")
+        # sync_* 函数内的 tushare (2026-11-12) 单独列出来, 让人一眼看到是哪些
+        sync_scoped = [(f, h) for f, h in by_severity["allowed"]
+                       if h["type"] == "tushare" and f in SYNC_SCOPE_FILES]
+        if sync_scoped:
+            print("   —— 以下为 sync_* 函数内的 tushare (合法, 只放行 sync 路径):")
+            for file_path, hit in sync_scoped:
+                print(f"      {file_path}:{hit['lineno']}  {hit.get('enclosing_func') or '(模块级)'}")
         print()
 
     # 警告
@@ -777,6 +902,8 @@ def write_report(by_severity, skill_violations, args):
     md.append("- ✅ **/t-sync-data**: 唯一允许网络的 skill (Tushare/datacenter API)")
     md.append("- ❌ **其他 7 个 skill**: 严格 0 网络, 全部走 DataStore (本地 parquet)")
     md.append("- ✅ **白名单工具**: `tools/storage/sync.py` + `tools/storage/sources/*`")
+    md.append("- ✅ **sync 原语**: `tools/storage/store.py` 的 `sync_*` 函数内可拉 tushare "
+              "(同一文件其它函数出现 tushare = 违规)")
     md.append("")
     md.append("## 扫描结果")
     md.append("")
