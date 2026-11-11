@@ -1,6 +1,6 @@
 ---
 name: t-sync-data
-description: 唯一数据同步入口. 7 个正交 flag. **--auto 默认行为 = 智能检测 stale, 只跑需跑的 (含 ETF)**, 显式传 flag = 强跑那一项. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务"、"sync cache"、"sync 一下".
+description: 唯一数据同步入口. 8 个正交 flag. **--auto 默认行为 = 智能检测 stale, 只跑需跑的 (含 ETF + 申万行业指数)**, 显式传 flag = 强跑那一项. **末尾输出 tushare 网络请求统计**. 触发词: "同步数据"、"拉K线/财务"、"sync cache"、"sync 一下".
 user-invocable: true
 allowed-tools:
   - Bash
@@ -9,7 +9,7 @@ allowed-tools:
 > 📐 决策框架: [`.claude/skills/_shared/analysis_framework.md`](../_shared/analysis_framework.md)
 > 📐 新 Strategy: [`strategy_recipe.md`](../../strategy_recipe.md)
 
-> **单一事实源:** 10 个正交 flag / 3 范围 flag / 3 行为 flag / ETF 数据说明 全部在 `tools/storage/sync.py` 模块顶部 docstring + `--help`。SKILL.md 只保留"啥时候用 + 跑最小例子 + 关键约束"。
+> **单一事实源:** 8 个正交 flag / 3 范围 flag / 3 行为 flag / ETF + 申万行业指数说明 全部在 `tools/storage/sync.py` 模块顶部 docstring + `--help`。SKILL.md 只保留"啥时候用 + 跑最小例子 + 关键约束"。
 
 ## 啥时候用
 
@@ -45,9 +45,15 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-force
 
 - **唯一允许网络的 skill**(其他全部 0 网络,走 DataStore)
 - **写盘唯一路径**: `tools.storage.sync`,业务层不直连 db/网络
-- **`--ths` 默认不拉**(显式才跑),ths_index 30 天缓存 1 刷,ths_daily 增量续存
+- **2026-11-11 删 `--ths`**: 白名单源已不存在(10-14 起死段), 18 份概念数据停在 2026-10-08 纯存档
 - **`--etf` 随 --auto 默认跑**(日增量幂等,已最新秒返回);fund_basic 月级缓存 30 天
 - `--auto` 是默认行为:不传任何 sync flag 时隐式走
+- **`--sw-index` 随 `--auto` 默认跑**(跟 `--etf` 同款):申万行业指数是行业威科夫 stage 的数据源, 每天都要更新
+  - 行业分类 `index_classify(SW2021, L2)` → 134 个二级行业;行业日线 `sw_daily` → 1 行业 1 parquet
+  - 同步逻辑 = **检测缺口 → 批量拉 1 次 → 校验覆盖 → 没覆盖的按 ts_code 单独补** (没有"首次/以后"两套)
+  - 日常增量 1 次请求;首次 1+N 次 (N=缺口行业数)
+  - 已知坑:134 个 L2 里只有 124 个在服务端批量覆盖内;9 个申万没发数据(记入无数据名单,30 天不重试);
+    `801011 林业Ⅱ` 2021-12 停更(按"该指数可得上限"判定,不会反复空拉)
 
 ## 🚫 本 skill 不做什么 (越界 = 违规)
 

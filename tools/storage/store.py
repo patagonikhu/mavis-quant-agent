@@ -62,6 +62,21 @@ ETF_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 ETF_KLINE_DIR = ETF_HISTORY_DIR / "kline"   # 季度文件: 2026Q3.parquet (跟个股同格式)
 ETF_KLINE_DIR.mkdir(parents=True, exist_ok=True)
 
+# 2026-11-11 加: 申万行业指数 (index_classify + sw_daily 走 tushare)
+#   用途: 给"行业"算威科夫 stage (行业自身在不在主升浪) —— 行业排名已有 (industry_position.py),
+#         行业阶段是新维度。
+#   结构跟 ths 同构: sw_index.parquet = 目录缓存 (30 天), kline/{index_code}.parquet = 1 行业 1 文件
+SW_INDEX_HISTORY_DIR = Path("data/history/sw_index")
+SW_INDEX_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+SW_INDEX_KLINE_DIR = SW_INDEX_HISTORY_DIR / "kline"
+SW_INDEX_KLINE_DIR.mkdir(parents=True, exist_ok=True)
+
+# 2026-11-11 补回: THS 同花顺概念板块目录
+#   ⚠️ 这两个名字 (THS_HISTORY_DIR / _append_records_target) 之前在 store.py 里被删了,
+#      但 sync.py 的 action_ths 还在 import → --ths 一跑就 ImportError (2026-11-11 发现)
+THS_HISTORY_DIR = Path("data/history/ths")
+THS_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # ============================================================
 # Config
@@ -264,6 +279,60 @@ def _append_records(records: list[dict]):
         )
         total += len(group)
 
+    return total
+
+
+def _append_records_target(records: list[dict], target_dir: Path,
+                            key: str = "ts_code") -> int:
+    """按 key 分文件写 parquet (1 个代码 1 个文件) —— ths 概念 / 申万行业共用
+
+    跟 _append_records (按季度分片) 的区别: 那个是**全市场一个季度一个文件**,
+    这个是**1 个代码 1 个文件**, 适合"按代码增量"的场景 (ths / sw_index):
+      - 每个文件独立读 max(trade_date) → 独立算缺口 → 独立增量
+      - 合并时按 (key, trade_date) 去重, 保留后来者
+
+    Args:
+        records:    记录列表 (dict), 必须含 key 列 + trade_date 列
+        target_dir: 落盘目录 (不存在会建)
+        key:        分文件用的键列名 (默认 ts_code)
+
+    Returns:
+        写入的记录数
+    """
+    if not records:
+        return 0
+
+    import pandas as pd
+
+    df = pd.DataFrame(records)
+    if key not in df.columns:
+        raise ValueError(f"_append_records_target: 缺列 {key}")
+    if "trade_date" not in df.columns:
+        raise ValueError("_append_records_target: 缺列 trade_date")
+
+    df["trade_date"] = df["trade_date"].astype(str)
+    for col in ["open", "high", "low", "close", "pre_close", "pct_chg", "change",
+                "vol", "amount", "turnover_rate", "pe", "pb", "avg_price"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    total = 0
+    for code, group in df.groupby(key):
+        path = target_dir / f"{code}.parquet"
+        if path.exists():
+            try:
+                old_df = pd.read_parquet(path)
+                combined = pd.concat([old_df, group], ignore_index=True)
+                combined = combined.drop_duplicates(subset=[key, "trade_date"], keep="last")
+                combined = combined.sort_values("trade_date").reset_index(drop=True)
+            except Exception:
+                # 旧文件读不了 (损坏/列变了) → 直接覆盖, 别让整段同步挂掉
+                combined = group.sort_values("trade_date").reset_index(drop=True)
+        else:
+            combined = group.sort_values("trade_date").reset_index(drop=True)
+        combined.to_parquet(path, index=False)
+        total += len(group)
     return total
 
 

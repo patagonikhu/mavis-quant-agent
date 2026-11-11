@@ -351,3 +351,105 @@ def get_fund_daily(trade_date: str = "", ts_code: str = "", start_date: str = ""
         return None, status
     data.sort(key=lambda x: x.get("trade_date", ""))
     return data, "OK"
+
+
+# ============================================================
+# 申万行业指数 (2026-11-11 加)
+# ============================================================
+
+def get_sw_index(level: str = "L2") -> tuple[list[dict] | None, str]:
+    """申万行业分类 (Tushare.index_classify, src='SW2021')
+
+    Args:
+        level: L1 (31 个一级) / L2 (134 个二级, 默认) / L3 (346 个三级)
+
+    Returns:
+        (rows, status) rows 字段: index_code (801xxx.SI), industry_name, parent_code, level
+
+    注意:
+      - src='SW' (2014 旧版) tushare 返空 → 只有 SW2021 一套
+      - 项目 stock_basic.industry 是**旧版**分类 (110 个), 跟 SW2021 (134 个) 对不上
+        (只直接对上 25 个) → 行业 stage 接回 md 需要一张映射表
+    """
+    data, status = _safe_call(
+        "index_classify", src="SW2021", level=level,
+        fields="index_code,industry_name,parent_code,level",
+    )
+    if not data:
+        return None, status
+    data.sort(key=lambda x: x.get("index_code", ""))
+    return data, "OK"
+
+
+def get_sw_daily(ts_code: str = "", trade_date: str = "",
+                  start_date: str = "", end_date: str = "") -> tuple[list[dict] | None, str]:
+    """申万行业指数日线 (Tushare.sw_daily)
+
+    2026-11-11 实测的服务端行为 (很重要, 决定同步策略):
+      1) **带 ts_code** → 一次返回该指数**全部历史** (实测 1905 行 / 20190102~20261111),
+         不受 4000 行上限限制
+      2) **不带 ts_code** → 一次返回**最近 10 个交易日 × 全部 439 个指数** (≈4000 行, 服务端硬顶),
+         请求区间再大也只给最近 10 天; `limit` 参数无效, 只能用 `offset` 往前翻页
+      3) 逗号多只 ts_code → 返空 (不支持)
+
+    所以同步策略 = 批量(不带 ts_code, 1 次拿全部行业最近 10 天) + 补漏(缺口 > 10 天的单独按 ts_code 拉)
+
+    字段 (实测 15 列): ts_code, trade_date, name, open, low, high, close,
+                        change, pct_change, vol, amount, pe, pb, float_mv, total_mv
+    """
+    kwargs = {}
+    if ts_code:
+        kwargs["ts_code"] = ts_code
+    if trade_date:
+        kwargs["trade_date"] = trade_date
+    if start_date:
+        kwargs["start_date"] = start_date
+    if end_date:
+        kwargs["end_date"] = end_date
+    data, status = _safe_call("sw_daily", **kwargs)
+    if not data:
+        return None, status
+    data.sort(key=lambda x: (x.get("ts_code", ""), x.get("trade_date", "")))
+    return data, "OK"
+
+
+# ============================================================
+# THS 同花顺概念板块 (2026-11-11 补回 —— sync.py 一直在 import 这两个, 但函数被删了)
+# ============================================================
+
+def get_ths_index(exchange: str = "", type: str = "") -> tuple[list[dict] | None, str]:
+    """同花顺概念/风格指数目录 (Tushare.ths_index)
+
+    字段: ts_code, name, count, exchange, list_date, type
+
+    ⚠️ 默认**不带任何过滤** → 返全量 (实测 2517 行: A 1666 + US 558 + HK 293,
+       type 分 N/I/TH/S/BB/R/ST)。加过滤会只拿到一部分, 覆盖掉本地目录文件。
+    """
+    kwargs = {}
+    if exchange:
+        kwargs["exchange"] = exchange
+    if type:
+        kwargs["type"] = type
+    data, status = _safe_call("ths_index", **kwargs)
+    if not data:
+        return None, status
+    return data, "OK"
+
+
+def get_ths_daily(ts_code: str = "", start_date: str = "",
+                  end_date: str = "") -> tuple[list[dict] | None, str]:
+    """同花顺指数日线 (Tushare.ths_daily)
+
+    字段: ts_code, trade_date, open, high, low, close, pre_close,
+          avg_price, change, pct_change, vol, turnover_rate
+    """
+    kwargs = {"ts_code": ts_code} if ts_code else {}
+    if start_date:
+        kwargs["start_date"] = start_date
+    if end_date:
+        kwargs["end_date"] = end_date
+    data, status = _safe_call("ths_daily", **kwargs)
+    if not data:
+        return None, status
+    data.sort(key=lambda x: x.get("trade_date", ""))
+    return data, "OK"

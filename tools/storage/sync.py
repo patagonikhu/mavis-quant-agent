@@ -5,7 +5,7 @@
       写盘唯一路径, 业务层禁止直连 db/网络.
 
 设计原则:
-  1. 唯一入口, 10 个正交 flag, 互不耦合
+  1. 唯一入口, 8 个正交 flag, 互不耦合
   2. 默认行为 = --auto: 智能检测 stale flag, 只跑需跑的 (解决"忘记 sync"问题)
   3. 显式传 flag = 强跑那一项 (无论 stale 不 stale)
   4. 范围: --watchlist (watchlist 全部) / --all (全市场, 默认) / --codes 002371 300750 (指定)
@@ -13,15 +13,31 @@
   6. 3 个 read-only skill (t-analyze/t-finance-earnings-blowout/t-factor-5y)
      缺数据时直接报"请先 /t-sync-data", 不再偷偷调 sync
 
-正交 flag (10 个, 全部默认关):
+正交 flag (8 个, 全部默认关):
   --kline         增量 K 线 + daily_basic + 6 指数 (每天)
   --stk-factor    stk_factor_pro 16 列估值因子 (5 季 1 次, 8 分钟)
   --stock-basic   股票基础信息 (行业/名称, 30 天 1 次)
   --financials    财务 5 季度 (fina_indicator_vip 全市场)
   --cache         signal_cache 缓存 (analysis_cache.db, 跑回测前)
-  --ths           THS 同花顺概念板块 K 线 (按 ths_whitelist, 默认 3 年回填)
   --etf           ETF 场内基金 (fund_basic 月级 + fund_daily 日增量, 默认随 --auto 跑)
+  --sw-index      申万行业指数 (index_classify + sw_daily, 给行业算威科夫 stage, 默认随 --auto 跑)
   --all-data      [一键] --kline --stock-basic --financials 一起跑 (最常用)
+
+2026-11-11 删 --ths (THS 同花顺概念板块):
+  - 死段: 2026-10-14 commit dcd0d8e 删了 config/ths_whitelist.json (改成动态推导),
+    但 --ths 还在找那个已删的文件 -> 白名单读不到, 什么也不拉
+  - 期间 store.py 重构又删了 THS_HISTORY_DIR / _append_records_target -> --ths 直接 ImportError
+  - data/history/ths/kline/ 里 18 份概念数据停在 2026-10-08 (纯存档, 不再更新)
+  - 需要题材(概念)维度时再用 tushare 的 ths_index/ths_daily (封装还在 sources/tushare.py)
+
+申万行业指数 (2026-11-11 加, --sw-index):
+  行业分类: index_classify(src='SW2021', level='L2' → 134 个二级行业) → data/history/sw_index/sw_index.parquet
+  行业日线: sw_daily(ts_code='801xxx.SI') → data/history/sw_index/kline/<index_code>.parquet (1 行业 1 文件)
+  同步逻辑: 检测缺口 (本地 min/max, 0 网络) → 批量拉 1 次 (不带 ts_code, 服务端给最近 10 交易日 × 全部 439 指数)
+            → 校验覆盖 → 没被批量覆盖的按 ts_code 单独补 (1 行业 1 次)
+  请求数:   日常增量 1 次 / 首次或大缺口 1+N 次
+  已知:     134 个 L2 里 124 个在 sw_daily 批量覆盖内; 10 个要单独拉, 其中 9 个申万没发数据 (记入无数据名单),
+            1 个 (801011 林业Ⅱ) 2021-12 就停更 (按"该指数可得上限"判定, 不会反复空拉)
 
 范围 flag (3 选 1, 默认 --all):
   --watchlist / --all / --codes CODE [CODE ...]
@@ -96,7 +112,45 @@ def _get_codes(codes_arg: list[str], all_market: bool) -> list[str]:
 
 
 # ============================================================
-# 7 个正交行为 (按 flag 调用)
+# parquet footer 快读 (2026-11-11 加, 申万行业指数缺口检测用)
+# ============================================================
+
+def _local_date_range(path: Path) -> tuple[str | None, str | None]:
+    """从 parquet footer 读 (min_trade_date, max_trade_date), 毫秒级.
+
+    只读 metadata 不读数据页 → 比 pd.read_parquet 快 100 倍以上.
+    文件不存在 / 没有 statistics / 读不了 → (None, None)
+    """
+    try:
+        import pyarrow.parquet as pq
+        meta = pq.read_metadata(path)
+        mins: list[str] = []
+        maxes: list[str] = []
+        for rg_idx in range(meta.num_row_groups):
+            rg = meta.row_group(rg_idx)
+            for c_idx in range(rg.num_columns):
+                col = rg.column(c_idx)
+                if col.path_in_schema != "trade_date":
+                    continue
+                if col.statistics is None:
+                    return None, None   # statistics disabled → 读不了
+                mins.append(str(col.statistics.min))
+                maxes.append(str(col.statistics.max))
+                break
+        if not mins:
+            return None, None
+        return min(mins), max(maxes)
+    except Exception:
+        return None, None
+
+
+def _local_max_trade_date(path: Path) -> str | None:
+    """本地 parquet 的 max(trade_date), 毫秒级 (只读 footer, 不读数据页)"""
+    return _local_date_range(path)[1]
+
+
+# ============================================================
+# 正交行为 (按 flag 调用)
 # ============================================================
 
 def action_kline(target_date: str | None = None) -> int:
@@ -105,137 +159,6 @@ def action_kline(target_date: str | None = None) -> int:
     n = sync_incremental(target_date=target_date)
     print(f"  ✅ K线: {n} 条新增")
     return n
-
-
-def action_ths(years_back: int = 3) -> int:
-    """同步 THS 同花顺概念板块 (按 watchlist.ths_whitelist, 默认 3 年历史)
-
-    2026-09-17 加: --ths flag 调用入口.
-
-    流程:
-      1. 拉 ths_index() 全量 → 写 data/history/ths/ths_index.parquet (1 次 API)
-      2. 对每个 ths_whitelist 条目:
-           a. 模糊匹配 ths_index 找 ts_code (找不到 warn)
-           b. 看 data/history/ths/kline/<code>.parquet 最大 trade_date
-           c. start_date = (没有 → today - years_back; 有 → max_local+1)
-           d. ths_daily(ts_code, start, today) → 拉增量
-           e. 写盘 (1 概念 1 parquet, 字段: OHLCV + avg_price + change + pct_change + turnover_rate)
-    """
-    import sys
-    import time
-    import pandas as pd
-    from datetime import datetime, timedelta
-    from .store import THS_HISTORY_DIR, _append_records_target
-    from .sources.tushare import get_ths_index, get_ths_daily
-
-    today = datetime.now().strftime("%Y%m%d")
-    full_backfill_start = (datetime.now() - timedelta(days=365 * years_back)).strftime("%Y%m%d")
-
-    # 1. ths_index 30 天缓存 (ths_index() 概念上线几乎不变, 避免重复网络)
-    index_path = THS_HISTORY_DIR / "ths_index.parquet"
-    index_rows = None
-    if index_path.exists():
-        age_days = (time.time() - index_path.stat().st_mtime) / 86400
-        if age_days < 30:
-            print(f"  ⏭ ths_index {age_days:.1f} 天内已刷, 用本地缓存 (避免重复网络)")
-            index_df = pd.read_parquet(index_path)
-            index_rows = index_df.to_dict("records")
-    if index_rows is None:
-        print("  📋 拉 ths_index 名码映射 (距上次 > 30 天 或 首次)")
-        index_rows, status = get_ths_index()
-        if not index_rows:
-            print(f"  ⚠️ ths_index 失败: {status}, 跳过")
-            return 0
-        index_df = pd.DataFrame(index_rows)
-        index_df["sync_date"] = today
-        index_path.parent.mkdir(parents=True, exist_ok=True)
-        index_df.to_parquet(index_path, index=False)
-        print(f"  ✅ ths_index: {len(index_rows)} 行, status=OK")
-
-    # 2. 读 ths_whitelist.json (2026-09-17 拆出独立文件)
-    wl_file = Path("config/ths_whitelist.json")
-    if not wl_file.exists():
-        # 兼容老路径 watchlist.json ths_whitelist 字段
-        fallback = Path("config/watchlist.json")
-        if fallback.exists():
-            wl = json.loads(fallback.read_text(encoding="utf-8"))
-            whitelist = wl.get("ths_whitelist", [])
-            if whitelist:
-                print(f"  ⚠️ ths_whitelist.json 不存在, 暂时从 watchlist.json 读 (老路径兼容)")
-            else:
-                whitelist = []
-        else:
-            whitelist = []
-    else:
-        wl = json.loads(wl_file.read_text(encoding="utf-8"))
-        # 字段从 ths_whitelist → concepts
-        whitelist = wl.get("concepts") or wl.get("ths_whitelist", [])
-
-    if not whitelist:
-        print(f"  ⚠️ ths_whitelist.json 没有 concepts 字段, 跳过")
-        return 0
-    print(f"  📌 白名单: {len(whitelist)} 个 THS 概念 (config/ths_whitelist.json)")
-
-    # 3. 反查 + 增量续存
-    total_pulled = 0
-    code_map = {}  # 本次 session 内 ths_index 反查缓存
-    for item in whitelist:
-        match_name = item.get("match", "")
-        if not match_name:
-            continue
-
-        # 模糊匹配 ths_index
-        if match_name not in code_map:
-            candidates = [r for r in index_rows if match_name in str(r.get("name", ""))]
-            if not candidates:
-                print(f"    ⚠️ 未找到: {match_name} (在 ths_index 里)")
-                code_map[match_name] = None
-                continue
-            # 优先 type=N (普通概念), 退而求其次 type=S 风格
-            prefer_n = [c for c in candidates if c.get("type") == "N"]
-            chosen = (prefer_n or candidates)[0]
-            code_map[match_name] = chosen["ts_code"]
-            print(f"    ✅ {match_name} → {chosen['ts_code']} ({chosen['name']}, type={chosen.get('type')})")
-
-        ts_code = code_map[match_name]
-        if not ts_code:
-            continue
-
-        # 看本地最大日期
-        kline_path = THS_HISTORY_DIR / "kline" / f"{ts_code}.parquet"
-        if kline_path.exists():
-            try:
-                local_df = pd.read_parquet(kline_path)
-                local_max = local_df["trade_date"].max()
-            except Exception:
-                local_max = None
-        else:
-            local_max = None
-
-        start_date = str(int(local_max) + 1) if local_max else full_backfill_start
-
-        # 关键: 提前判断, 无交易缺就不发网络
-        if int(start_date) > int(today):
-            print(f"    ⏭ {ts_code}: 本地最新 {local_max}, 无交易日缺, 跳过网络")
-            continue
-
-        records, _status = get_ths_daily(ts_code, start_date=start_date, end_date=today)
-        if not records:
-            print(f"    ⏭ {ts_code}: API 返空 (start={start_date}, end={today}, 无新数据)")
-            continue
-
-        # rename: pct_change → pct_chg (对齐 daily schema)
-        for r in records:
-            if "pct_change" in r:
-                r["pct_chg"] = r.pop("pct_change")
-
-        _append_records_target(records, THS_HISTORY_DIR / "kline")
-        total_pulled += len(records)
-        print(f"    ✅ {ts_code}: {len(records)} 根 (start={start_date}, end={today})")
-        time.sleep(0.3)  # 限频 200ms
-
-    print(f"  ✅ THS: {total_pulled} 条新增 (落盘 {len(list((THS_HISTORY_DIR / 'kline').glob('*.parquet')))} 个概念)")
-    return total_pulled
 
 
 # v6.2.4 加: stk_factor_pro 替代 daily_basic, 17 列 (含 ps/dv_ratio/free_float_turnover)
@@ -495,6 +418,238 @@ def action_cache(codes: list[str]) -> int:
 
 
 # ============================================================
+# 申万行业指数 (2026-11-11 加) —— --sw-index
+# ============================================================
+
+# 行业指数历史起点 (7 年, 跟项目其他数据源对齐)
+SW_INDEX_HISTORY_START = "20191113"
+# 申万没发数据的行业: 记入名单后 N 天内不重试 (省网络)
+SW_NO_DATA_RETRY_DAYS = 30
+# 指数停更判定: 本地最新日期落后今天超过 N 天 → 认定停更, 记 "可得上限"
+SW_STOPPED_DAYS = 30
+
+
+def _sw_meta_path() -> Path:
+    return Path("data/history/sw_index/sw_index_meta.json")
+
+
+def _sw_meta_load() -> dict:
+    """读 sw_index_meta.json → {no_data, history_start, history_max}
+
+    - no_data:       申万没发数据的行业 (记发现日期, 冷却期内不重试)
+    - history_start: 每个行业的"历史地板" = 想要/实际能拿到的最早日期 (缺口检测的下界)
+    - history_max:   停更指数的可得上限 (缺口检测的"天花板", 没有就是今天)
+    """
+    meta = {"no_data": {}, "history_start": {}, "history_max": {}}
+    p = _sw_meta_path()
+    if not p.exists():
+        return meta
+    try:
+        loaded = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            for k in meta:
+                if isinstance(loaded.get(k), dict):
+                    meta[k] = loaded[k]
+    except Exception:
+        pass
+    return meta
+
+
+def _sw_meta_save(meta: dict) -> None:
+    p = _sw_meta_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def action_sw_index(level: str = "L2") -> int:
+    """申万行业指数 (index_classify + sw_daily) —— 行业威科夫 stage 的数据源
+
+    2026-11-11 加. **单一逻辑, 没有"首次/以后"两套** (用户明确要求):
+      1. 行业分类: index_classify(SW2021, level) → L2 134 个二级行业 (30 天缓存)
+      2. 检测缺口 (本地 min/max, 0 网络) → 每个行业缺哪段
+      3. 批量拉 1 次 (sw_daily 不带 ts_code → 服务端给最近 10 交易日 × 全部 439 指数)
+      4. 重新算缺口 → 批量没覆盖的 (历史没拉全 / 服务端缺 / 停更) 按 ts_code 单独补
+      5. 落盘 meta (no_data / history_start / history_max)
+
+    请求数: 日常增量 1 次 / 首次或大缺口 1+N 次
+    落盘:   data/history/sw_index/sw_index.parquet (行业分类)
+            data/history/sw_index/kline/<index_code>.parquet (1 行业 1 文件)
+    """
+    import pandas as pd
+    from datetime import datetime
+    from .store import (SW_INDEX_HISTORY_DIR, SW_INDEX_KLINE_DIR,
+                        _append_records_target)
+    from .sources.tushare import get_sw_index, get_sw_daily
+
+    today = datetime.now().strftime("%Y%m%d")
+    meta = _sw_meta_load()
+    idx_path = SW_INDEX_HISTORY_DIR / "sw_index.parquet"
+
+    # ---------- 1. 行业分类 (30 天缓存) ----------
+    need_classify = True
+    if idx_path.exists():
+        age_days = (time.time() - idx_path.stat().st_mtime) / 86400
+        if age_days < 30:
+            try:
+                local_level = str(
+                    pd.read_parquet(idx_path, columns=["level"])["level"].iloc[0])
+                need_classify = (local_level != level)
+            except Exception:
+                need_classify = True
+    if need_classify:
+        print(f"  📋 拉申万行业分类 (SW2021, level={level})")
+        rows, status = get_sw_index(level=level)
+        if not rows:
+            print(f"  ⚠️ index_classify 失败: {status}")
+            if not idx_path.exists():
+                return 0
+        else:
+            df = pd.DataFrame(rows)
+            df["sync_date"] = today
+            idx_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(idx_path, index=False)
+            print(f"  ✅ 行业分类: {len(df)} 个 (level={level})")
+
+    idx_df = pd.read_parquet(idx_path)
+    codes = idx_df["index_code"].astype(str).tolist()
+    code_set = set(codes)
+    print(f"  📊 申万 {level} 行业: {len(codes)} 个")
+
+    # ---------- 2. 检测缺口 (0 网络) ----------
+    local_range: dict[str, tuple[str | None, str | None]] = {}
+    for code in codes:
+        rng = _local_date_range(SW_INDEX_KLINE_DIR / f"{code}.parquet")
+        if rng[0] or rng[1]:
+            local_range[code] = rng
+
+    # 自愈: 名单里但本地已有数据 → 移出 (801011 林业Ⅱ 曾被误标成"无数据")
+    for code in list(meta["no_data"]):
+        if code in local_range:
+            del meta["no_data"][code]
+
+    # meta 迁移 (2026-11-11): 早先版本把"本地最早日期"写进了 history_start,
+    #   导致头部缺口 (历史没拉全) 永远检测不到 → 拉回策略地板.
+    #   若该指数 API 真的没有更早的数据, 下一次全量拉会用真实起点覆盖回来 (只多 1 次请求).
+    for code, v in list(meta["history_start"].items()):
+        if v and str(v) > SW_INDEX_HISTORY_START:
+            meta["history_start"][code] = SW_INDEX_HISTORY_START
+
+    gaps: dict[str, tuple[str, str]] = {}   # code -> (start, end)
+    skipped = 0
+    for code in codes:
+        nd = meta["no_data"].get(code)
+        if nd:
+            try:
+                age = (datetime.now() - datetime.strptime(str(nd), "%Y%m%d")).days
+            except Exception:
+                age = SW_NO_DATA_RETRY_DAYS
+            if age < SW_NO_DATA_RETRY_DAYS:
+                skipped += 1
+                continue
+            meta["no_data"].pop(code, None)    # 过了冷却期 → 重试
+
+        ceiling = meta["history_max"].get(code)      # 停更指数的可得上限
+        end = ceiling or today
+        floor = meta["history_start"].get(code) or SW_INDEX_HISTORY_START
+        rng = local_range.get(code)
+        if not rng or not rng[1]:
+            gaps[code] = (floor, end)                # 全量
+            continue
+        lmin, lmax = rng
+        if lmax >= end and lmin <= floor:
+            continue                                  # 覆盖完整, 无缺口
+        start = floor if lmin > floor else str(int(lmax) + 1)
+        gaps[code] = (start, end)
+
+    if skipped:
+        print(f"  ⏭ {skipped} 个行业在无数据名单里 (冷却 {SW_NO_DATA_RETRY_DAYS} 天内), 跳过")
+
+    if not gaps:
+        print(f"  ✅ 申万行业指数已是最新 ({len(codes)} 个), 无缺口")
+        _sw_meta_save(meta)
+        return 0
+
+    print(f"  🔎 检出 {len(gaps)} 个行业有缺口:")
+    for code, (s, e) in list(gaps.items())[:8]:
+        print(f"     {code}: 缺 [{s} ~ {e}]")
+    if len(gaps) > 8:
+        print(f"     ... 还有 {len(gaps) - 8} 个")
+
+    # ---------- 3. 批量拉 1 次 (最近 10 交易日 × 全部指数) ----------
+    print("  📡 批量拉 sw_daily (1 次, 服务端给最近 10 交易日 × 全部指数)")
+    batch, bstatus = get_sw_daily()
+    batch_max = ""
+    n_batch = 0
+    if batch:
+        rows = []
+        for r in batch:
+            if r.get("ts_code") not in code_set:
+                continue
+            if "pct_change" in r:
+                r["pct_chg"] = r.pop("pct_change")
+            rows.append(r)
+        if rows:
+            n_batch = _append_records_target(rows, SW_INDEX_KLINE_DIR)
+            batch_max = max(r["trade_date"] for r in rows)
+            n_codes = len({r["ts_code"] for r in rows})
+            print(f"  ✅ 批量落盘 {n_batch} 行 (覆盖 {n_codes} 个行业, 最新 {batch_max})")
+    else:
+        print(f"  ⚠️ 批量拉取返空/失败: {bstatus}")
+
+    # ---------- 4. 批量没覆盖的 → 按 ts_code 单独补 ----------
+    n_single = 0
+    for code, (s, e) in gaps.items():
+        rng = _local_date_range(SW_INDEX_KLINE_DIR / f"{code}.parquet")
+        lmin, lmax = rng if rng else (None, None)
+        floor = meta["history_start"].get(code) or SW_INDEX_HISTORY_START
+        target = meta["history_max"].get(code) or (batch_max or e)
+        # 批量只能补最近 10 个交易日 → 头部缺口 (历史没拉全) 仍要单独拉
+        tail_ok = lmax is not None and lmax >= target
+        head_ok = lmin is not None and lmin <= floor
+        if tail_ok and head_ok:
+            continue                                  # 批量已补齐
+        start = s or SW_INDEX_HISTORY_START
+        rows, status = get_sw_daily(ts_code=code, start_date=start)
+        if not rows:
+            # start_date 过滤太狠 (常见于停更指数) → 退回全量再试一次
+            rows, status = get_sw_daily(ts_code=code)
+            if not rows:
+                print(f"    ⚠️ {code} 无数据 ({status}) → 记入无数据名单")
+                meta["no_data"][code] = today
+                continue
+        for r in rows:
+            if "pct_change" in r:
+                r["pct_chg"] = r.pop("pct_change")
+        n = _append_records_target(rows, SW_INDEX_KLINE_DIR)
+        n_single += n
+        new_max = max(r["trade_date"] for r in rows)
+        # 全量拉 (从策略地板起) → 用 API 真实起点校准 history_start
+        #   (若该指数本身没有更早的数据, 这里记的就是它的真实起点, 以后不再反复空拉)
+        if start <= SW_INDEX_HISTORY_START:
+            meta["history_start"][code] = min(r["trade_date"] for r in rows)
+        try:
+            stale_days = (datetime.now() - datetime.strptime(new_max, "%Y%m%d")).days
+        except Exception:
+            stale_days = 0
+        if stale_days > SW_STOPPED_DAYS:
+            # 指数已停更 → 记可得上限, 以后缺口检测按它算, 不再白拉
+            meta["history_max"][code] = new_max
+            print(f"    ⛔ {code} 停更 (最新 {new_max}, 落后 {stale_days} 天) → 记可得上限")
+        else:
+            print(f"    ✅ {code}: {n} 行 (最新 {new_max})")
+        time.sleep(0.3)                              # 限频 200ms
+
+    # ---------- 5. 落盘 meta ----------
+    _sw_meta_save(meta)
+
+    n_files = len(list(SW_INDEX_KLINE_DIR.glob("*.parquet")))
+    print(f"  ✅ 申万行业指数: 批量 {n_batch} 行 + 单拉 {n_single} 行 "
+          f"({n_files} 个行业文件, {len(meta['no_data'])} 个无数据, "
+          f"{len(meta['history_max'])} 个停更)")
+    return n_single
+
+
+# ============================================================
 # Status
 # ============================================================
 
@@ -554,10 +709,31 @@ def print_data_freshness_summary() -> None:
         mtime = path.stat().st_mtime
         return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
 
+    def _max_date_all_files(path: Path) -> str:
+        """目录里**所有** parquet 的 max(trade_date) (多文件目录用, 如 sw_index/kline)"""
+        if not path.exists():
+            return "—"
+        files = list(path.glob("*.parquet"))
+        if not files:
+            return "—"
+        try:
+            import duckdb
+            expr = ", ".join(f"'{f}'" for f in files)
+            df = duckdb.execute(
+                f"SELECT MAX(trade_date) FROM read_parquet([{expr}])"
+            ).fetchone()
+            return str(df[0]) if df and df[0] else "—"
+        except Exception as e:
+            return f"❌ {type(e).__name__}"
+
     print("\n📊 本地数据新鲜度 (最新一天):")
     print(f"  K线 (OHLCV)        : {_max_date(HISTORY_DIR)}")
     print(f"  stk_factor (估值)  : {_max_date(STK_FACTOR_DIR)}")
     print(f"  financials (季报)  : {_max_end_date(FIN_DIR)}")
+    # 2026-11-11 加: 申万行业指数 (给行业算威科夫 stage 用)
+    #   注意不能用 _max_date (它对目录只读 mtime 最新的 1 个文件);
+    #   这里是 134 个行业各 1 文件 → 必须全扫
+    print(f"  申万行业指数        : {_max_date_all_files(Path('data/history/sw_index/kline'))}")
     # stock_basic 特殊: 没有 trade_date, 看 mtime
     sb_path = Path("data/history/stock_basic/stock_basic.parquet")
     print(f"  stock_basic (静态) : mtime {_file_mtime(sb_path)}")
@@ -601,6 +777,7 @@ def detect_stale_flags() -> dict[str, bool]:
         "financials": False,    # 缺最新季
         "stk_factor": False,    # stk_factor 距今天 > 1 天 (2026-09-22 修 v6.2.4 重构漏接 auto)
         "etf": False,           # ETF K线距今天 > 1 天 (2026-10-14 加, SKILL.md 描述早就有但 sync.py 没接)
+        "sw_index": False,      # 申万行业指数距今天 > 1 天 (2026-11-11 加)
     }
 
     # 1. K线 (每天必跑, 距今天 > 1 天就拉)
@@ -749,6 +926,34 @@ def detect_stale_flags() -> dict[str, bool]:
     except Exception:
         flags["etf"] = True  # 异常保守拉
 
+    # 6. 申万行业指数 (2026-11-11 加, 跟 etf 同节奏: 距今天 > 1 天就拉)
+    #    额外查覆盖: 最新日期只有少数行业有数 → 半拉 → 仍要拉
+    try:
+        from .store import SW_INDEX_KLINE_DIR
+        files = list(SW_INDEX_KLINE_DIR.glob("*.parquet")) if SW_INDEX_KLINE_DIR.exists() else []
+        if not files:
+            flags["sw_index"] = True  # 没数据, 必拉
+        else:
+            maxes = []
+            for f in files:
+                m = _local_max_trade_date(f)
+                if m:
+                    maxes.append(str(m))
+            if not maxes:
+                flags["sw_index"] = True
+            else:
+                last = max(maxes)
+                last_dt = datetime.strptime(last, "%Y%m%d")
+                if (today - last_dt).days >= 1:
+                    flags["sw_index"] = True
+                else:
+                    n_last = sum(1 for m in maxes if m == last)
+                    if n_last < len(files) * 0.7:
+                        flags["sw_index"] = True
+                        print(f"  ⚠️ sw_index 最新日期 {last} 只有 {n_last}/{len(files)} 个行业有数 "
+                              f"→ 判定半拉 → 需重拉补齐")
+    except Exception:
+        flags["sw_index"] = True  # 异常保守拉
 
     return flags
 
@@ -804,6 +1009,10 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
         from .store import sync_etf_basic, sync_etf_incremental
         sync_etf_basic()
         sync_etf_incremental()
+    if flags["sw_index"]:
+        # 2026-11-11 加: 申万行业指数段 auto 接入 (行业 stage 每天都要更新)
+        print("  [5/7] --sw-index (auto 检测到 stale)")
+        action_sw_index()
     print_data_freshness_summary()
     _print_api_call_stats()
     return 0
@@ -839,9 +1048,9 @@ def main():
     scope.add_argument("--codes", nargs="+", metavar="CODE",
                        help="指定代码列表 (例: --codes 002371 300750)")
 
-    # 7 个正交 flag (全部默认关, 显式开才跑, 符合"正交控制"原则)
+    # 8 个正交 flag (全部默认关, 显式开才跑, 符合"正交控制"原则)
     # 但: 不传任何 sync flag → 默认走 --auto (智能检测 stale, 只跑需跑的)
-    actions = parser.add_argument_group("Sync 行为 (7 个正交, 全部默认关; 不传任何 flag → 自动检测)")
+    actions = parser.add_argument_group("Sync 行为 (8 个正交, 全部默认关; 不传任何 flag → 自动检测)")
     actions.add_argument("--kline", action="store_true",
                          help="增量 K 线 + daily_basic + 6 指数")
     actions.add_argument("--stk-factor", action="store_true",
@@ -852,10 +1061,12 @@ def main():
                          help="财务 5 季度 (fina_indicator_vip 全市场)")
     actions.add_argument("--cache", action="store_true",
                          help="signal_cache 缓存 (analysis_cache.db)")
-    actions.add_argument("--ths", action="store_true",
-                         help="[2026-09-17 加] THS 同花顺概念板块 K 线 (按 watchlist.ths_whitelist, 默认回填 3 年)")
     actions.add_argument("--etf", action="store_true",
                          help="[2026-10-14 加] ETF 场内基金 (fund_basic 月级 + fund_daily 日增量, 默认随 --auto 跑)")
+    actions.add_argument("--sw-index", action="store_true",
+                         help="[2026-11-11 加] 申万行业指数 (index_classify + sw_daily, 给行业算威科夫 stage, 默认随 --auto 跑)")
+    parser.add_argument("--sw-index-level", default="L2",
+                        help="申万行业层级: L1(31) / L2(134, 默认) / L3(346)")
     # 2026-09-09 删: --meta (板块/事件元数据, 引用不存在的 refresh_sectors, 死代码 + broken)
     actions.add_argument("--all-data", action="store_true",
                          help="[一键] --kline --stock-basic --financials 一起跑 (最常用)")
@@ -921,7 +1132,7 @@ def main():
     # 没传任何 sync flag + 不是 --status / --auto → 默认走 --auto (智能检测)
     any_sync_flag = any([
         args.kline, args.stk_factor, args.stock_basic, args.financials,
-        args.cache, args.all_data, args.ths, args.etf,
+        args.cache, args.all_data, args.etf, args.sw_index,
     ])
     if not any_sync_flag:
         print(f"=== Mavis sync_data (scope: {scope_label}) [默认 --auto 智能检测] ===")
@@ -958,11 +1169,6 @@ def main():
         print("\n[6/7] --cache (signal_cache)")
         action_cache(codes)
 
-    # 2026-09-17 加: --ths (THS 同花顺概念板块)
-    if args.ths:
-        print(f"\n[7/7] --ths (THS 概念板块)")
-        action_ths(years_back=3)
-
     # 2026-10-14 加: --etf (ETF 场内基金)
     if args.etf:
         print(f"\n[8/7] --etf (ETF 场内基金: basic 月级 + 日 K 增量)")
@@ -970,9 +1176,14 @@ def main():
         sync_etf_basic()
         sync_etf_incremental()
 
+    # 2026-11-11 加: --sw-index (申万行业指数, 给行业算威科夫 stage)
+    if args.sw_index:
+        print(f"\n[9/7] --sw-index (申万行业指数 level={args.sw_index_level})")
+        action_sw_index(level=args.sw_index_level)
+
     # 全部 flag 都没开 + 也不是 --status → 给个友好提示
     if not any([args.kline, args.stock_basic, args.financials,
-                args.cache, args.ths, args.etf]):
+                args.cache, args.etf, args.sw_index]):
         print("\n💡 没指定任何行为, 看 --help 选 flag")
         print("   最常用: python -m tools.sync --all-data")
 

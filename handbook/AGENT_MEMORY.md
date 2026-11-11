@@ -7,8 +7,8 @@
 ## 入口 (grep 验证过)
 
 - **项目根**: `/Users/I514959/workspace/mavis-quant-agent/`
-- **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic}/`
-- **同步**: `tools/storage/sync.py` (7 flag: kline/stk-factor/stock-basic/financials/cache/meta/all-data, 默认 --auto)
+- **数据**: DataStore (tools/storage/store.py, DAO 层) → `data/history/{daily,stk_factor,financials,stock_basic,etf,sw_index}/`
+- **同步**: `tools/storage/sync.py` (8 个正交 flag: kline/stk-factor/stock-basic/financials/cache/etf/sw-index/all-data, 默认 --auto)
 - **分析引擎**: `tools/analysis/analysis_engine.py` 3 个 strategy 类 (wyckoff/technical/finance)
 - **活 skill**: `.claude/skills/{t-analyze, t-sync-data, t-backtest, t-factor-5y, t-finance-earnings-blowout, t-wyckoff-a2m, t-etf-wyckoff-a2m, t-guardrail}/` (2026-11-02 删 t-near-low / t-finance-roc-ey; 2026-11-04 删 t-rsi6-tech; 2026-11-05 更正: t-concept-macd 从未存在, 实际是 t-factor-5y / t-wyckoff-a2m)
 - **已删 skill (禁止复活, 2026-11-02 批)**: `t-watchlist` / `t-monitor` / `t-sector` / `t-etf` / `t-chain` / `t-checklist` / `t-bottleneck` / `t-trigger` / `t-rotation` / `t-ranking` / `t-near-low` / `t-roc-ey`; 另 2026-11-04 删 `t-rsi6-tech`
