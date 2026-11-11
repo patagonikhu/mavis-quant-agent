@@ -65,15 +65,16 @@ ETF_KLINE_DIR.mkdir(parents=True, exist_ok=True)
 # 2026-11-11 加: 申万行业指数 (index_classify + sw_daily 走 tushare)
 #   用途: 给"行业"算威科夫 stage (行业自身在不在主升浪) —— 行业排名已有 (industry_position.py),
 #         行业阶段是新维度。
-#   结构跟 ths 同构: sw_index.parquet = 目录缓存 (30 天), kline/{index_code}.parquet = 1 行业 1 文件
+#   结构: sw_index.parquet = 行业分类目录 (30 天缓存), kline/{YYYY}.parquet = 1 年 1 文件
+#   2026-11-11 改: 原先 1 行业 1 文件 (134 个行业 → 125 个文件, 目录太长) → 按年份分 (8 个文件)
 SW_INDEX_HISTORY_DIR = Path("data/history/sw_index")
 SW_INDEX_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 SW_INDEX_KLINE_DIR = SW_INDEX_HISTORY_DIR / "kline"
 SW_INDEX_KLINE_DIR.mkdir(parents=True, exist_ok=True)
 
-# 2026-11-11 补回: THS 同花顺概念板块目录
-#   ⚠️ 这两个名字 (THS_HISTORY_DIR / _append_records_target) 之前在 store.py 里被删了,
-#      但 sync.py 的 action_ths 还在 import → --ths 一跑就 ImportError (2026-11-11 发现)
+# 2026-11-11: THS 同花顺概念板块 —— --ths 已删 (白名单源 2026-10-14 起不存在, 死段)
+#   data/history/ths/ 里 18 份概念数据停在 2026-10-08, 纯存档不再更新;
+#   这个常量只标位置, 将来要读存档时用 (拉数据的封装在 sources/tushare.py 的 get_ths_*)
 THS_HISTORY_DIR = Path("data/history/ths")
 THS_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -282,19 +283,20 @@ def _append_records(records: list[dict]):
     return total
 
 
-def _append_records_target(records: list[dict], target_dir: Path,
+def _append_records_by_year(records: list[dict], target_dir: Path,
                             key: str = "ts_code") -> int:
-    """按 key 分文件写 parquet (1 个代码 1 个文件) —— ths 概念 / 申万行业共用
+    """按**年份**分文件写 parquet (1 年 1 文件) —— 申万行业指数用
 
-    跟 _append_records (按季度分片) 的区别: 那个是**全市场一个季度一个文件**,
-    这个是**1 个代码 1 个文件**, 适合"按代码增量"的场景 (ths / sw_index):
-      - 每个文件独立读 max(trade_date) → 独立算缺口 → 独立增量
-      - 合并时按 (key, trade_date) 去重, 保留后来者
+    2026-11-11 改: 原先按 ts_code 分文件 (1 行业 1 文件 → 125 个文件, 目录太长),
+    改成按 trade_date 的年份分 (2019~2026 → 8 个文件)。
+
+    合并规则: 按 (key, trade_date) 去重, 保留后来者 (增量追加不会写坏已有行)。
+    排序: 按 (key, trade_date) —— 同一年同一行业的时间序, 便于后续按行业切片。
 
     Args:
         records:    记录列表 (dict), 必须含 key 列 + trade_date 列
         target_dir: 落盘目录 (不存在会建)
-        key:        分文件用的键列名 (默认 ts_code)
+        key:        去重用的键列名 (默认 ts_code)
 
     Returns:
         写入的记录数
@@ -306,34 +308,87 @@ def _append_records_target(records: list[dict], target_dir: Path,
 
     df = pd.DataFrame(records)
     if key not in df.columns:
-        raise ValueError(f"_append_records_target: 缺列 {key}")
+        raise ValueError(f"_append_records_by_year: 缺列 {key}")
     if "trade_date" not in df.columns:
-        raise ValueError("_append_records_target: 缺列 trade_date")
+        raise ValueError("_append_records_by_year: 缺列 trade_date")
 
     df["trade_date"] = df["trade_date"].astype(str)
     for col in ["open", "high", "low", "close", "pre_close", "pct_chg", "change",
-                "vol", "amount", "turnover_rate", "pe", "pb", "avg_price"]:
+                "vol", "amount", "turnover_rate", "pe", "pb", "avg_price",
+                "float_mv", "total_mv"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    df["_year"] = df["trade_date"].str[:4]
     target_dir.mkdir(parents=True, exist_ok=True)
     total = 0
-    for code, group in df.groupby(key):
-        path = target_dir / f"{code}.parquet"
+    for year, group in df.groupby("_year"):
+        path = target_dir / f"{year}.parquet"
         if path.exists():
             try:
                 old_df = pd.read_parquet(path)
                 combined = pd.concat([old_df, group], ignore_index=True)
                 combined = combined.drop_duplicates(subset=[key, "trade_date"], keep="last")
-                combined = combined.sort_values("trade_date").reset_index(drop=True)
+                combined = combined.sort_values([key, "trade_date"]).reset_index(drop=True)
             except Exception:
                 # 旧文件读不了 (损坏/列变了) → 直接覆盖, 别让整段同步挂掉
-                combined = group.sort_values("trade_date").reset_index(drop=True)
+                combined = group.sort_values([key, "trade_date"]).reset_index(drop=True)
         else:
-            combined = group.sort_values("trade_date").reset_index(drop=True)
+            combined = group.sort_values([key, "trade_date"]).reset_index(drop=True)
+        combined = combined.drop(columns=["_year"], errors="ignore")
         combined.to_parquet(path, index=False)
         total += len(group)
     return total
+
+
+def migrate_sw_index_kline_to_year(kline_dir: Path) -> tuple[int, int]:
+    """旧布局 (1 行业 1 文件) → 新布局 (1 年 1 文件) 幂等迁移
+
+    2026-11-11: 用户反馈 "sw_index/kline 下面文件太多了, 文件按年份来呀, 不要按行业分文件"
+    —— 134 个行业 = 125 个 parquet, 目录太长; 改成 2019~2026 共 8 个文件。
+
+    幂等: 没有旧格式文件 (文件名 stem 不是 4 位年份) → 直接返回 (0, 0), 不做任何事。
+
+    Returns:
+        (迁移的文件数, 迁移的行数)
+    """
+    legacy = [f for f in sorted(kline_dir.glob("*.parquet"))
+              if not (len(f.stem) == 4 and f.stem.isdigit())]
+    if not legacy:
+        return 0, 0
+
+    import pandas as pd
+    from .safe_fs import safe_delete
+
+    frames = []
+    for f in legacy:
+        try:
+            frames.append(pd.read_parquet(f))
+        except Exception:
+            continue
+    if not frames:
+        return 0, 0
+
+    df = pd.concat(frames, ignore_index=True)
+    df["trade_date"] = df["trade_date"].astype(str)
+    df = df.drop_duplicates(subset=["ts_code", "trade_date"], keep="last")
+    df["_year"] = df["trade_date"].str[:4]
+
+    n_rows = len(df)
+    for year, group in df.groupby("_year"):
+        path = kline_dir / f"{year}.parquet"
+        out = group.drop(columns=["_year"], errors="ignore")
+        out = out.sort_values(["ts_code", "trade_date"]).reset_index(drop=True)
+        if path.exists():
+            old = pd.read_parquet(path)
+            out = pd.concat([old, out], ignore_index=True)
+            out = out.drop_duplicates(subset=["ts_code", "trade_date"], keep="last")
+            out = out.sort_values(["ts_code", "trade_date"]).reset_index(drop=True)
+        out.to_parquet(path, index=False)
+
+    for f in legacy:
+        safe_delete(f, reason="2026-11-11 sw_index/kline 改按年份分文件, 迁移旧布局")
+    return len(legacy), n_rows
 
 
 def _read_kline(ts_code: str, start_date: str = "", end_date: str = "", limit: int = 0) -> list[dict]:

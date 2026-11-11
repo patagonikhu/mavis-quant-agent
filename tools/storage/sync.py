@@ -32,7 +32,7 @@
 
 申万行业指数 (2026-11-11 加, --sw-index):
   行业分类: index_classify(src='SW2021', level='L2' → 134 个二级行业) → data/history/sw_index/sw_index.parquet
-  行业日线: sw_daily(ts_code='801xxx.SI') → data/history/sw_index/kline/<index_code>.parquet (1 行业 1 文件)
+  行业日线: sw_daily(ts_code='801xxx.SI') → data/history/sw_index/kline/<YYYY>.parquet (1 年 1 文件)
   同步逻辑: 检测缺口 (本地 min/max, 0 网络) → 批量拉 1 次 (不带 ts_code, 服务端给最近 10 交易日 × 全部 439 指数)
             → 校验覆盖 → 没被批量覆盖的按 ts_code 单独补 (1 行业 1 次)
   请求数:   日常增量 1 次 / 首次或大缺口 1+N 次
@@ -147,6 +147,58 @@ def _local_date_range(path: Path) -> tuple[str | None, str | None]:
 def _local_max_trade_date(path: Path) -> str | None:
     """本地 parquet 的 max(trade_date), 毫秒级 (只读 footer, 不读数据页)"""
     return _local_date_range(path)[1]
+
+
+def _sw_index_year_files(kline_dir: Path) -> set[str]:
+    """年文件名集合 ({"2019", ..., "2026"}) —— 用来检测**整年文件缺失**
+
+    按年份分文件的新盲点: 整个年份文件没了, min/max 看不出来 (首尾日期都还在)
+    → 必须单独查年份连续性, 否则那一年 124 个行业的数据静默消失。
+    """
+    if not kline_dir.exists():
+        return set()
+    return {f.stem for f in kline_dir.glob("*.parquet")
+            if len(f.stem) == 4 and f.stem.isdigit()}
+
+
+def _sw_index_has_year_hole(rng: tuple[str, str] | None, years_present: set[str]) -> bool:
+    """该行业的历史里有没有**整年缺失** (年份文件没了)
+
+    min/max 看不出来: 少了 2024 全年, 首尾日期照样是 20191113 / 20261111。
+    所以按年份分文件后必须单独查年份连续性, 否则那一年 124 个行业的数据静默消失。
+    """
+    if not rng or not rng[0] or not rng[1]:
+        return False
+    y0, y1 = int(rng[0][:4]), int(rng[1][:4])
+    return any(str(y) not in years_present for y in range(y0, y1 + 1))
+
+
+def _sw_index_local_ranges(kline_dir: Path) -> dict[str, tuple[str, str]]:
+    """每个行业在本地数据的 (最早日期, 最新日期) —— 读年文件 2 列, 0 网络
+
+    按年份分文件后, 单个文件的 footer 只能给"全局"范围, 拿不到每个行业的边界 →
+    这里把 trade_date + ts_code 两列读出来 groupby 一次 (只读 2 列, 不读数据页)。
+    返回: {index_code: (min_trade_date, max_trade_date)}
+    """
+    import pandas as pd
+
+    out: dict[str, tuple[str, str]] = {}
+    if not kline_dir.exists():
+        return out
+    for f in sorted(kline_dir.glob("*.parquet")):
+        try:
+            df = pd.read_parquet(f, columns=["ts_code", "trade_date"])
+        except Exception:
+            continue
+        if df.empty:
+            continue
+        df["trade_date"] = df["trade_date"].astype(str)
+        g = df.groupby("ts_code")["trade_date"].agg(func=["min", "max"])
+        for code, row in g.iterrows():
+            lo, hi = str(row["min"]), str(row["max"])
+            prev = out.get(code)
+            out[code] = (min(prev[0], lo), max(prev[1], hi)) if prev else (lo, hi)
+    return out
 
 
 # ============================================================
@@ -473,17 +525,22 @@ def action_sw_index(level: str = "L2") -> int:
 
     请求数: 日常增量 1 次 / 首次或大缺口 1+N 次
     落盘:   data/history/sw_index/sw_index.parquet (行业分类)
-            data/history/sw_index/kline/<index_code>.parquet (1 行业 1 文件)
+            data/history/sw_index/kline/<YYYY>.parquet (1 年 1 文件)
     """
     import pandas as pd
     from datetime import datetime
     from .store import (SW_INDEX_HISTORY_DIR, SW_INDEX_KLINE_DIR,
-                        _append_records_target)
+                        _append_records_by_year, migrate_sw_index_kline_to_year)
     from .sources.tushare import get_sw_index, get_sw_daily
 
     today = datetime.now().strftime("%Y%m%d")
     meta = _sw_meta_load()
     idx_path = SW_INDEX_HISTORY_DIR / "sw_index.parquet"
+
+    # ---------- 0. 旧布局 (1 行业 1 文件) → 新布局 (1 年 1 文件) 幂等迁移 ----------
+    n_mig_files, n_mig_rows = migrate_sw_index_kline_to_year(SW_INDEX_KLINE_DIR)
+    if n_mig_files:
+        print(f"  🔄 迁移旧布局 → 按年份分文件: {n_mig_files} 个文件 / {n_mig_rows} 行")
 
     # ---------- 1. 行业分类 (30 天缓存) ----------
     need_classify = True
@@ -516,11 +573,8 @@ def action_sw_index(level: str = "L2") -> int:
     print(f"  📊 申万 {level} 行业: {len(codes)} 个")
 
     # ---------- 2. 检测缺口 (0 网络) ----------
-    local_range: dict[str, tuple[str | None, str | None]] = {}
-    for code in codes:
-        rng = _local_date_range(SW_INDEX_KLINE_DIR / f"{code}.parquet")
-        if rng[0] or rng[1]:
-            local_range[code] = rng
+    local_range = _sw_index_local_ranges(SW_INDEX_KLINE_DIR)
+    years_present = _sw_index_year_files(SW_INDEX_KLINE_DIR)
 
     # 自愈: 名单里但本地已有数据 → 移出 (801011 林业Ⅱ 曾被误标成"无数据")
     for code in list(meta["no_data"]):
@@ -556,6 +610,10 @@ def action_sw_index(level: str = "L2") -> int:
             gaps[code] = (floor, end)                # 全量
             continue
         lmin, lmax = rng
+        # 整年文件缺失 → 该行业历史有洞 (min/max 看不出来) → 全量重拉补齐
+        if _sw_index_has_year_hole(rng, years_present):
+            gaps[code] = (floor, end)
+            continue
         if lmax >= end and lmin <= floor:
             continue                                  # 覆盖完整, 无缺口
         start = floor if lmin > floor else str(int(lmax) + 1)
@@ -589,24 +647,33 @@ def action_sw_index(level: str = "L2") -> int:
                 r["pct_chg"] = r.pop("pct_change")
             rows.append(r)
         if rows:
-            n_batch = _append_records_target(rows, SW_INDEX_KLINE_DIR)
+            n_batch = _append_records_by_year(rows, SW_INDEX_KLINE_DIR)
             batch_max = max(r["trade_date"] for r in rows)
             n_codes = len({r["ts_code"] for r in rows})
             print(f"  ✅ 批量落盘 {n_batch} 行 (覆盖 {n_codes} 个行业, 最新 {batch_max})")
     else:
         print(f"  ⚠️ 批量拉取返空/失败: {bstatus}")
 
+    # 批量落盘后重算本地边界 (批量可能已经补上了某些行业的尾部)
+    if batch:
+        local_range = _sw_index_local_ranges(SW_INDEX_KLINE_DIR)
+        years_present = _sw_index_year_files(SW_INDEX_KLINE_DIR)
+
     # ---------- 4. 批量没覆盖的 → 按 ts_code 单独补 ----------
-    n_single = 0
+    #   落盘策略: 单拉的行先攒在内存里, 循环结束**一次性**写.
+    #   ⚠️ 不能每个行业写一次 —— 年文件是全行业全年的数据 (一个 2026.parquet ≈ 30K 行),
+    #      124 个行业各写一次 = 重写 124 × 8 个年文件, 直接跑到超时.
+    pending: list[dict] = []
     for code, (s, e) in gaps.items():
-        rng = _local_date_range(SW_INDEX_KLINE_DIR / f"{code}.parquet")
+        rng = local_range.get(code)
         lmin, lmax = rng if rng else (None, None)
         floor = meta["history_start"].get(code) or SW_INDEX_HISTORY_START
         target = meta["history_max"].get(code) or (batch_max or e)
-        # 批量只能补最近 10 个交易日 → 头部缺口 (历史没拉全) 仍要单独拉
+        # 批量只能补最近 10 个交易日 → 头部缺口 (历史没拉全) / 整年缺失 仍要单独拉
         tail_ok = lmax is not None and lmax >= target
         head_ok = lmin is not None and lmin <= floor
-        if tail_ok and head_ok:
+        hole = _sw_index_has_year_hole(rng, years_present)
+        if tail_ok and head_ok and not hole:
             continue                                  # 批量已补齐
         start = s or SW_INDEX_HISTORY_START
         rows, status = get_sw_daily(ts_code=code, start_date=start)
@@ -617,11 +684,18 @@ def action_sw_index(level: str = "L2") -> int:
                 print(f"    ⚠️ {code} 无数据 ({status}) → 记入无数据名单")
                 meta["no_data"][code] = today
                 continue
+            # ⚠️ 全量拉会带回地板之前的老数据 (实测 801012 能追到 20120801)
+            #   → 裁掉, 保证所有行业都是同一段历史 (7 年), 不多出一堆 2012~2018 年文件
+            rows = [r for r in rows
+                    if str(r.get("trade_date", "")) >= SW_INDEX_HISTORY_START]
+            if not rows:
+                print(f"    ⚠️ {code} 无数据 ({status}) → 记入无数据名单")
+                meta["no_data"][code] = today
+                continue
         for r in rows:
             if "pct_change" in r:
                 r["pct_chg"] = r.pop("pct_change")
-        n = _append_records_target(rows, SW_INDEX_KLINE_DIR)
-        n_single += n
+        pending.extend(rows)
         new_max = max(r["trade_date"] for r in rows)
         # 全量拉 (从策略地板起) → 用 API 真实起点校准 history_start
         #   (若该指数本身没有更早的数据, 这里记的就是它的真实起点, 以后不再反复空拉)
@@ -636,15 +710,17 @@ def action_sw_index(level: str = "L2") -> int:
             meta["history_max"][code] = new_max
             print(f"    ⛔ {code} 停更 (最新 {new_max}, 落后 {stale_days} 天) → 记可得上限")
         else:
-            print(f"    ✅ {code}: {n} 行 (最新 {new_max})")
+            print(f"    ✅ {code}: {len(rows)} 行 (最新 {new_max})")
         time.sleep(0.3)                              # 限频 200ms
+
+    n_single = _append_records_by_year(pending, SW_INDEX_KLINE_DIR) if pending else 0
 
     # ---------- 5. 落盘 meta ----------
     _sw_meta_save(meta)
 
     n_files = len(list(SW_INDEX_KLINE_DIR.glob("*.parquet")))
     print(f"  ✅ 申万行业指数: 批量 {n_batch} 行 + 单拉 {n_single} 行 "
-          f"({n_files} 个行业文件, {len(meta['no_data'])} 个无数据, "
+          f"({n_files} 个年份文件, {len(meta['no_data'])} 个无数据, "
           f"{len(meta['history_max'])} 个停更)")
     return n_single
 
@@ -930,28 +1006,30 @@ def detect_stale_flags() -> dict[str, bool]:
     #    额外查覆盖: 最新日期只有少数行业有数 → 半拉 → 仍要拉
     try:
         from .store import SW_INDEX_KLINE_DIR
-        files = list(SW_INDEX_KLINE_DIR.glob("*.parquet")) if SW_INDEX_KLINE_DIR.exists() else []
-        if not files:
+        ranges = _sw_index_local_ranges(SW_INDEX_KLINE_DIR)
+        if not ranges:
             flags["sw_index"] = True  # 没数据, 必拉
         else:
-            maxes = []
-            for f in files:
-                m = _local_max_trade_date(f)
-                if m:
-                    maxes.append(str(m))
-            if not maxes:
+            # 整年文件缺失 → 历史有洞 (min/max 看不出来) → 标 stale 让 sync 补
+            years_present = _sw_index_year_files(SW_INDEX_KLINE_DIR)
+            hole = False
+            for lo, hi in ranges.values():
+                if _sw_index_has_year_hole((lo, hi), years_present):
+                    hole = True
+                    break
+            if hole:
+                flags["sw_index"] = True
+                print("  ⚠️ sw_index 年份文件有缺失 → 判定历史有洞 → 需重拉补齐")
+            last = max(r[1] for r in ranges.values())
+            last_dt = datetime.strptime(last, "%Y%m%d")
+            if (today - last_dt).days >= 1:
                 flags["sw_index"] = True
             else:
-                last = max(maxes)
-                last_dt = datetime.strptime(last, "%Y%m%d")
-                if (today - last_dt).days >= 1:
+                n_last = sum(1 for r in ranges.values() if r[1] == last)
+                if n_last < len(ranges) * 0.7:
                     flags["sw_index"] = True
-                else:
-                    n_last = sum(1 for m in maxes if m == last)
-                    if n_last < len(files) * 0.7:
-                        flags["sw_index"] = True
-                        print(f"  ⚠️ sw_index 最新日期 {last} 只有 {n_last}/{len(files)} 个行业有数 "
-                              f"→ 判定半拉 → 需重拉补齐")
+                    print(f"  ⚠️ sw_index 最新日期 {last} 只有 {n_last}/{len(ranges)} 个行业有数 "
+                          f"→ 判定半拉 → 需重拉补齐")
     except Exception:
         flags["sw_index"] = True  # 异常保守拉
 
