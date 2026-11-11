@@ -287,18 +287,20 @@ _STOCK_BASIC_PATHS = (
 )
 
 def load_stock_basic() -> dict:
-    """code → (name, industry) 映射"""
-    for path in _STOCK_BASIC_PATHS:
-        try:
-            df = duckdb.execute(
-                f"SELECT ts_code, name, industry FROM read_parquet('{path}')"
-            ).fetchdf()
-            if len(df) > 0:
-                return {row['ts_code'].split('.')[0]: (row['name'], row['industry'])
-                        for _, row in df.iterrows()}
-        except Exception:
-            continue
-    return {}
+    """code → (name, industry) 映射
+
+    2026-11-12 改: 走 DataStore.load_stock_basic ——
+    stock_basic.parquet 里的 industry 列已删 (申万旧版), 由 SW2021 成员表 merge 回来。
+    """
+    try:
+        from tools.storage.store import DataStore
+        df = DataStore.load_stock_basic()
+        if df.empty:
+            return {}
+        return {str(r["ts_code"]).split(".")[0]: (r.get("name", ""), r.get("industry", ""))
+                for _, r in df.iterrows()}
+    except Exception:
+        return {}
 
 
 def _print_effective_conditions(args) -> None:

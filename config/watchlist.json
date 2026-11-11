@@ -357,15 +357,6 @@
       ]
     },
     {
-      "code": "300747",
-      "name": "锐科激光",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "300972",
       "name": "万辰集团",
       "list_type": "自选",
@@ -409,33 +400,6 @@
       ]
     },
     {
-      "code": "688700",
-      "name": "东威科技",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "000626",
-      "name": "远大控股",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "002008",
-      "name": "大族激光",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "002384",
       "name": "东山精密",
       "list_type": "blowout",
@@ -456,15 +420,6 @@
     {
       "code": "002436",
       "name": "兴森科技",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "002440",
-      "name": "闰土股份",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2",
@@ -498,24 +453,6 @@
       ]
     },
     {
-      "code": "002975",
-      "name": "博杰股份",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "300067",
-      "name": "安诺其",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "300223",
       "name": "君正股份",
       "list_type": "blowout",
@@ -536,15 +473,6 @@
     {
       "code": "300475",
       "name": "香农芯创",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "300503",
-      "name": "昊志机电",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2",
@@ -597,15 +525,6 @@
       ]
     },
     {
-      "code": "300741",
-      "name": "华宝股份",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "300857",
       "name": "协创数据",
       "list_type": "blowout",
@@ -633,35 +552,8 @@
       ]
     },
     {
-      "code": "301021",
-      "name": "英诺激光",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "301086",
       "name": "鸿富瀚",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "301200",
-      "name": "大族数控",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "301217",
-      "name": "铜冠铜箔",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2",
@@ -759,15 +651,6 @@
       ]
     },
     {
-      "code": "688025",
-      "name": "杰普特",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "688072",
       "name": "拓荆科技",
       "list_type": "blowout",
@@ -806,24 +689,6 @@
     {
       "code": "688575",
       "name": "亚辉龙",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "688577",
-      "name": "浙海德曼",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "688630",
-      "name": "芯碁微装",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q2",
@@ -1012,15 +877,6 @@
       ]
     },
     {
-      "code": "301377",
-      "name": "鼎泰高科",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q2",
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "301396",
       "name": "宏景科技",
       "list_type": "blowout",
@@ -1150,14 +1006,6 @@
       ]
     },
     {
-      "code": "002979",
-      "name": "雷赛智能",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "003009",
       "name": "中天火箭",
       "list_type": "blowout",
@@ -1206,22 +1054,6 @@
       ]
     },
     {
-      "code": "300432",
-      "name": "富临精工",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "300486",
-      "name": "东杰智能",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "300489",
       "name": "光智科技",
       "list_type": "blowout",
@@ -1230,24 +1062,8 @@
       ]
     },
     {
-      "code": "300499",
-      "name": "高澜股份",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "300504",
       "name": "天邑股份",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "300537",
-      "name": "广信材料",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q3"
@@ -1280,22 +1096,6 @@
     {
       "code": "300739",
       "name": "明阳电路",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "300757",
-      "name": "罗博特科",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "300798",
-      "name": "锦鸡股份",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q3"
@@ -1438,14 +1238,6 @@
       ]
     },
     {
-      "code": "600520",
-      "name": "三佳科技",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "600664",
       "name": "哈药股份",
       "list_type": "blowout",
@@ -1550,14 +1342,6 @@
       ]
     },
     {
-      "code": "603958",
-      "name": "哈森股份",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "605058",
       "name": "澳弘电子",
       "list_type": "blowout",
@@ -1574,24 +1358,8 @@
       ]
     },
     {
-      "code": "605566",
-      "name": "福莱蒽特",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "688008",
       "name": "澜起科技",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "688019",
-      "name": "安集科技",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q3"
@@ -1622,14 +1390,6 @@
       ]
     },
     {
-      "code": "688218",
-      "name": "江苏北人",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "688313",
       "name": "仕佳光子",
       "list_type": "blowout",
@@ -1640,22 +1400,6 @@
     {
       "code": "688370",
       "name": "丛麟科技",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "688518",
-      "name": "联赢激光",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
-      "code": "688596",
-      "name": "正帆科技",
       "list_type": "blowout",
       "tags": [
         "blowout-2026Q3"
@@ -1694,14 +1438,6 @@
       ]
     },
     {
-      "code": "920510",
-      "name": "丰光精密",
-      "list_type": "blowout",
-      "tags": [
-        "blowout-2026Q3"
-      ]
-    },
-    {
       "code": "300620",
       "name": "光库科技",
       "list_type": "blowout",
@@ -1723,6 +1459,30 @@
       "sector": "电气设备",
       "list_type": "自选",
       "tags": []
+    },
+    {
+      "code": "300483",
+      "name": "首华燃气",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q3"
+      ]
+    },
+    {
+      "code": "688235",
+      "name": "百济神州",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q3"
+      ]
+    },
+    {
+      "code": "688690",
+      "name": "纳微科技",
+      "list_type": "blowout",
+      "tags": [
+        "blowout-2026Q3"
+      ]
     }
   ]
 }

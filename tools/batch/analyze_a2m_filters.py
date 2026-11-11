@@ -40,6 +40,8 @@ pd.set_option("display.width", 250)
 pd.set_option("display.max_columns", 60)
 
 BASIC = "data/history/stock_basic/stock_basic.parquet"
+# 2026-11-12: stock_basic.industry 已删 (申万旧版), 行业改从 SW2021 成分表 join
+MEMBER = "data/history/sw_index/industry_member.parquet"
 
 
 def _stk_glob() -> str:
@@ -101,14 +103,17 @@ def load() -> pd.DataFrame:
         ) WHERE rn = 1
     ),
     sb AS (
-        SELECT ts_code, name, industry FROM read_parquet('{BASIC}')
+        SELECT ts_code, name FROM read_parquet('{BASIC}')
+    ),
+    im AS (
+        SELECT ts_code, l2_name AS industry FROM read_parquet('{MEMBER}')
     ),
     fin AS ({fin_sql}
     )
     SELECT
         split_part(sf.ts_code, '.', 1) AS code,
         sb.name AS name,
-        sb.industry AS industry,
+        im.industry AS industry,
         sf.pe, sf.pe_ttm, sf.pb, sf.total_mv,
         fin.grossprofit_margin AS gm,
         fin.or_yoy, fin.netprofit_yoy AS np_yoy,
@@ -116,6 +121,7 @@ def load() -> pd.DataFrame:
         fin.ebit, fin.fixed_assets, fin.networking_capital
     FROM sf
     LEFT JOIN sb ON sb.ts_code = sf.ts_code
+    LEFT JOIN im ON im.ts_code = sf.ts_code
     LEFT JOIN fin ON fin.ts_code = sf.ts_code
     """).fetchdf()
     # 净负债 / 市值 比率 (亿)

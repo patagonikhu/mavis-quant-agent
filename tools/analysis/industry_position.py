@@ -26,7 +26,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 STK_FACTOR_DIR = ROOT / "data" / "history" / "stk_factor"
-STOCK_BASIC_PARQUET = ROOT / "data" / "history" / "stock_basic" / "stock_basic.parquet"
 
 # 龙头判定阈值: 行业分位 (越小 = 越靠前)
 LEADER_TOP_PCTILE = 10.0        # 前 10% 算龙头
@@ -59,26 +58,17 @@ def _industry_members(l2_code: str, l2_name: str = "") -> list[str]:
       - 之前用 stock_basic.industry = 申万**旧版** 110 个 → 「电气设备」348 家
         把光伏/电机/电网设备混一锅, 涨幅排名被稀释 (光伏设备实为 75 家)
 
+    2026-11-12 改: 删掉申万旧版回退 —— stock_basic.industry 已删 (口径已废),
+      成分表没覆盖就是没覆盖, 不拿旧口径凑 (凑出来的组是错的)。
+
     Args:
-        l2_code: SW2021 二级行业代码 (801735.SI); 空则用 l2_name 回退查旧版
-        l2_name: SW2021 二级行业名 (回退用)
+        l2_code: SW2021 二级行业代码 (801735.SI); 空 → 返 []
+        l2_name: 兼容旧调用 (不再使用)
     """
-    import duckdb
-
-    if l2_code:
-        from tools.storage.store import DataStore
-        members = DataStore.get_industry_members_by_l2(l2_code)
-        if members:
-            return members
-
-    # 回退: 申万旧版 (成分表没覆盖时)
-    if not l2_name or not STOCK_BASIC_PARQUET.exists():
+    if not l2_code:
         return []
-    df = duckdb.connect().execute(
-        f"""SELECT DISTINCT ts_code FROM read_parquet('{STOCK_BASIC_PARQUET}')
-            WHERE industry = '{l2_name.replace("'", "''")}'"""
-    ).df()
-    return df["ts_code"].tolist() if not df.empty else []
+    from tools.storage.store import DataStore
+    return DataStore.get_industry_members_by_l2(l2_code)
 
 
 def _fetch_member_snapshot(members: list[str], start_date: int,
@@ -146,7 +136,7 @@ def compute_industry_position(code: str, industry: str | None = None,
 
     Args:
         code:        6 位股票代码
-        industry:    行业名 (兼容旧调用, 实际以 SW2021 成分表为准);
+        industry:    行业名 (兼容旧调用, **不再用作回退** —— 行业一律以 SW2021 成分表为准);
                      None → 自动查
         trading_days: 区间交易日数 (默认 120 = 跟 /t-analyze 因子历史窗口一致)
 
@@ -155,7 +145,8 @@ def compute_industry_position(code: str, industry: str | None = None,
 
     2026-11-11: 行业口径统一到 SW2021 (申万新版 134 个二级行业)
       - 行业归属 + 同行分组都走 index_member_all 落的 industry_member.parquet
-      - industry 参数只当回退 (成分表没覆盖时用旧版 stock_basic.industry)
+    2026-11-12: industry 参数的回退**也删了** —— stock_basic.industry 已删,
+      成分表没覆盖 → 返 {} (不出行业排名), 不拿旧口径凑
     """
     import pandas as pd
 
@@ -164,10 +155,7 @@ def compute_industry_position(code: str, industry: str | None = None,
     # SW2021 行业归属 (唯一真源)
     l2_code, l2_name = _lookup_industry(ts_code)
     if not l2_code:
-        # 成分表没覆盖 → 回退旧版 (行业名由调用方传)
-        l2_name = industry or ""
-        if not l2_name:
-            return {}
+        return {}
 
     members = _industry_members(l2_code, l2_name)
     if ts_code not in members:

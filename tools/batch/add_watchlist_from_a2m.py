@@ -25,8 +25,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import duckdb  # noqa: E402
-
 from tools.storage.safe_fs import atomic_write_json  # noqa: E402
 
 WL = Path("config/watchlist.json")
@@ -46,13 +44,12 @@ def main():
     stocks = d["stocks"]
     existing = {s["code"] for s in stocks}
 
-    # 行业从 stock_basic 拿 (单一事实源)
-    in_clause = ",".join(f"'{c}.SZ','{c}.SH','{c}.BJ'" for c in HITS)
-    df = duckdb.execute(f"""
-        SELECT ts_code, name, industry FROM read_parquet('data/history/stock_basic/stock_basic.parquet')
-        WHERE ts_code IN ({in_clause})
-    """).fetchdf()
-    info = {r["ts_code"].split(".")[0]: {"name": r["name"], "sector": r["industry"]} for _, r in df.iterrows()}
+    # 行业从 SW2021 成分表拿 (唯一真源)
+    # 2026-11-12 改: stock_basic.industry 已删 (申万旧版), 改走 DataStore
+    from tools.storage.store import DataStore
+    basic_df = DataStore.load_stock_basic()
+    info = {str(r["ts_code"]).split(".")[0]: {"name": r.get("name", ""), "sector": r.get("industry", "")}
+            for _, r in basic_df.iterrows()} if not basic_df.empty else {}
 
     added, skipped = [], []
     for code in HITS:

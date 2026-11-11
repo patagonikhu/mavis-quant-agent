@@ -10,8 +10,8 @@
 | 分册 | 主题 | 条数 |
 |---|---|---|
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
-| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 14 |
-| [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 5 |
+| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 15 |
+| [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 16 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 21 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
@@ -62,6 +62,7 @@
 | 12 | 自动迁移是双刃剑: 旧代码跑一次就把删掉的列 ADD 回来 | `_init()` 同时 ADD + DROP → 用旧代码打开一次 db, 删掉的列就复活 (`git stash` 验证是重灾区) |
 | 13 | sw_daily 服务端行为: 批量只给最近 10 交易日 | 批量只给最近 10 交易日, 带 ts_code 才给全历史 → "批量 1 次 + 按 ts_code 补漏" 两段式 |
 | 14 | 行业口径统一到 SW2021 | 旧版 110 vs 新版 134 只对上 25 个 → 个股→行业一律走 index_member_all 落的 industry_member.parquet |
+| 15 | 删 stock_basic.industry: 省不了网络请求, 但值这个价 | 省不了请求 (1 次请求带多字段), 但旧名对不上 = **过滤静默失效**; 换口径后必须实测每个字符串参数的命中数 |
 
 ## 财务 / 估值口径
 
@@ -74,6 +75,7 @@
 | 3 | 静态PE 年化 bug: q_str[5:10] 永远取不到 "06-30" | end_date 是 YYYYMMDD, `q_str[5:10]` **永远取不到 "06-30"** → PE 系统性虚高一倍 |
 | 4 | OBV / fflow / PEG / DCF 四个维度已彻底删除 | 已彻底删除禁止复活; 估值只看 PE(静态) + ROC/EY/毛利率/杠杆 |
 | 5 | stock_basic 股本兜底读已废弃的 daily_basic → 详报股本恒 0.00亿股 | 兜底不能读已废弃的 daily_basic, 否则详报股本恒 0.00 亿股 (已修 32d7d2b) |
+| 6 | 行业黑名单按旧版行业名写 → 银行/地产/公用一直漏网 | 旧名单 15 个名字只有 6 个真实存在 → 地产/公用 0 命中; 判定改按 l2_code, 且行业标签必须在**读取侧**覆盖 parquet 快照 |
 
 ## A→M 扫描 / watchlist
 

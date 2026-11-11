@@ -573,7 +573,7 @@ def action_sw_index(level: str = "L2") -> int:
             print(f"  ✅ 行业分类: {len(df)} 个 (level={level})")
 
     # ---------- 行业成分表 (60 天缓存) ----------
-    #   个股 → SW2021 行业的唯一可靠映射 (本地 stock_basic.industry 是申万旧版, 对不上)
+    #   个股 → SW2021 行业的唯一可靠映射 (stock_basic.industry 已删, 申万旧版对不上)
     from .store import SW_INDEX_MEMBER_PARQUET
     member_age = 0.0
     need_member = True

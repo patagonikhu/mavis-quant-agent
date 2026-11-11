@@ -368,8 +368,8 @@ def get_sw_index(level: str = "L2") -> tuple[list[dict] | None, str]:
 
     注意:
       - src='SW' (2014 旧版) tushare 返空 → 只有 SW2021 一套
-      - 项目 stock_basic.industry 是**旧版**分类 (110 个), 跟 SW2021 (134 个) 对不上
-        (只直接对上 25 个) → 行业 stage 接回 md 需要一张映射表
+      - stock_basic.industry 已于 2026-11-12 删除 (申万旧版 110 个, 跟 SW2021 对不上)
+        → 行业归属一律走 index_member_all 落的 industry_member.parquet
     """
     data, status = _safe_call(
         "index_classify", src="SW2021", level=level,
@@ -388,7 +388,7 @@ def get_index_member_all() -> tuple[list[dict] | None, str]:
       - **不带参数** → 一次返回全市场 5,916 行 (31 个 L1 / 131 个 L2 / 346 个 L3),
         每行带 l1_code / l2_code / l3_code + ts_code, 0.3 秒 1 次请求
       - 带 l1_code / index_code 会**过滤**(但 index_code 过滤似乎被忽略, 仍返全量)
-      - 本地 stock_basic.industry 是**申万旧版** 110 个, 跟 SW2021 (134 个) 只对上 25 个
+      - stock_basic.industry 已删 (申万旧版 110 个, 跟 SW2021 只对上 25 个)
         → 这张表是"个股 → 新版行业"的唯一可靠来源
 
     字段: l1_code, l1_name, l2_code, l2_name, l3_code, l3_name,

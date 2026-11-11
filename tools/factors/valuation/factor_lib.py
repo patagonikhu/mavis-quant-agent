@@ -22,7 +22,7 @@ Mavis 守门员 (t-guardrail) 规则: 所有 factor 统一放 1 个文件, 纯�
 
 # 内部工具
   - _ttm_ebit(financials)                        # TTM EBIT 拼装
-  - EXCLUDED_INDUSTRIES (8+5 类)                 # 行业黑名单
+  - EXCLUDED_INDUSTRIES_BY_CODE (12 个 SW2021 二级)  # 行业黑名单
 """
 from __future__ import annotations
 
@@ -32,12 +32,57 @@ from pathlib import Path
 # ============================================================
 # 行业黑名单 (ROC/EY 在这些行业失真)
 # ============================================================
-EXCLUDED_INDUSTRIES = {
-    "银行", "保险", "证券", "信托", "期货", "租赁",  # 金融
-    "房地产", "物业管理", "园区开发",               # 地产
-    "电力", "水务", "燃气", "热力", "环保",          # 公用
-    "多元金融",                                      # 金融子类
+# 2026-11-12 改: 口径从申万**旧版** (110 个二级) → **SW2021** (134 个二级)
+#
+# 为什么必须改: 旧名单 15 个名字里**只有 6 个真实存在**
+#   (银行42/证券48/保险5/多元金融23/水务15/园区开发14 = 147 只命中)
+#   其余 9 个在旧版二级行业里根本不存在 —— 实际叫
+#   「全国地产/区域地产/房产服务」(不是"房地产")、
+#   「火力发电/水力发电/新型电力」(不是"电力")、
+#   「供气供热」(不是"燃气")、「环境保护」(不是"环保")
+#   → 黑名单**一直漏了地产和公用**, 147 只命中里一只地产/公用都没有。
+#
+# 切 SW2021 后按 l2_code 判定 (代码比名字稳, 名字带 Ⅱ 后缀容易写错)。
+# 命中 503 只 (旧口径 147 只) —— 补回了漏掉的地产 + 公用。
+#
+# 两个易混行业**不排除** (SW2021 把运营/设备拆开了, 正好能分清):
+#   - 环保设备Ⅱ (28 只): 设备制造, ROC/EY 有效
+#   - 一般零售 (69 只): 零售, ROC/EY 有效 (旧版有 5 只错分进来, 不连坐)
+EXCLUDED_INDUSTRIES_BY_CODE = {
+    # 金融 — ROC 分母 (NWC+FA) 在银行/券商/保险资产负债表上完全失效
+    "801782.SI": "国有大型银行Ⅱ",
+    "801783.SI": "股份制银行Ⅱ",
+    "801784.SI": "城商行Ⅱ",
+    "801785.SI": "农商行Ⅱ",
+    "801193.SI": "证券Ⅱ",
+    "801194.SI": "保险Ⅱ",
+    "801191.SI": "多元金融",
+    # 地产 — 预售制 → 合同负债不进 NWC, 存货不进 FA → 投入资本算出来接近 0
+    #        → ROC 动辄几千倍 (假阳性)
+    "801181.SI": "房地产开发",
+    "801183.SI": "房地产服务",
+    # 公用 + 环保运营 — 重资产低毛利, ROC/EY 口径失真
+    "801161.SI": "电力",
+    "801163.SI": "燃气Ⅱ",
+    "801971.SI": "环境治理",
 }
+
+# 两个派生集合 (单一真源 = 上面的字典, 不手写第二份)
+EXCLUDED_INDUSTRY_CODES = frozenset(EXCLUDED_INDUSTRIES_BY_CODE)
+EXCLUDED_INDUSTRIES = frozenset(EXCLUDED_INDUSTRIES_BY_CODE.values())
+
+
+def _industry_excluded(row: dict) -> bool:
+    """行业黑名单判定: 优先 l2_code, 没 code 才回退 l2_name
+
+    Args:
+        row: 一行财务数据 (含 industry / industry_code)
+    """
+    code = str(row.get("industry_code") or "").strip()
+    if code:
+        return code in EXCLUDED_INDUSTRY_CODES
+    name = str(row.get("industry") or "").strip()
+    return name in EXCLUDED_INDUSTRIES
 
 
 # ============================================================
@@ -167,7 +212,7 @@ def compute_roc(financials: list[dict], min_capital_yi: float = 5) -> dict:
         return {"roc": None, "skip_reason": "no_data"}
 
     industry = (financials[-1].get("industry") or "").strip()
-    if industry in EXCLUDED_INDUSTRIES:
+    if _industry_excluded(financials[-1]):
         return {"roc": None, "industry": industry, "skip_reason": "industry_excluded"}
 
     # 2026-09-10 加: 质量退化过滤 (yoy 双暴跌 / 营业外巨亏)
@@ -223,7 +268,7 @@ def compute_ey(financials: list[dict], market_cap_wan: float) -> dict:
         return {"ey": None, "skip_reason": "no_data"}
 
     industry = (financials[-1].get("industry") or "").strip()
-    if industry in EXCLUDED_INDUSTRIES:
+    if _industry_excluded(financials[-1]):
         return {"ey": None, "industry": industry, "skip_reason": "industry_excluded"}
 
     # 2026-09-10 加: 质量退化过滤 (yoy 双暴跌 / 营业外巨亏)

@@ -11,7 +11,7 @@ tools/analysis/industry_stage.py — 行业威科夫 stage (2026-11-11 加)
 3 个必须记住的坑:
   1. **vol → volume**: store.get_sw_index_bars 已在 DAO 层做别名 (跟个股同口径);
      不转的话威科夫读到的成交量恒为 0, 量能类判定全废 (静默出错!)
-  2. **行业映射**: 本地 stock_basic.industry 是申万**旧版** 110 个, 跟 SW2021 对不上
+  2. **行业映射**: stock_basic.industry 已删 (申万**旧版** 110 个, 跟 SW2021 对不上)
      → 用 index_member_all 落的 industry_member.parquet (唯一可靠来源)
   3. **cache 有效性**: 判定是因果的 (build_kline_features 全回看型滚动窗口)
      → 某日结果只依赖该日之前的数据 → 可按 (行业, 日期) 永久缓存, 新数据不影响旧行

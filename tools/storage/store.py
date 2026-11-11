@@ -28,6 +28,7 @@ CLI:
 from __future__ import annotations
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -72,7 +73,7 @@ SW_INDEX_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 SW_INDEX_KLINE_DIR = SW_INDEX_HISTORY_DIR / "kline"
 SW_INDEX_KLINE_DIR.mkdir(parents=True, exist_ok=True)
 # 行业成分表 (index_member_all): 每只票 → SW2021 一/二/三级行业
-#   本地 stock_basic.industry 是申万旧版 110 个, 跟 SW2021 对不上 → 这张表是唯一可靠映射来源
+#   stock_basic.industry 已删 (申万旧版 110 个, 跟 SW2021 对不上) → 这张表是唯一可靠映射来源
 SW_INDEX_MEMBER_PARQUET = SW_INDEX_HISTORY_DIR / "industry_member.parquet"
 
 # 进程内缓存: 行业日线 {ts_code: bars} / 行业归属 {ts_code: l2_code}
@@ -967,6 +968,32 @@ def _get_etf_local_max_date() -> str | None:
         return None
 
 
+def migrate_stock_basic_drop_industry() -> bool:
+    """删掉 stock_basic.parquet 里的 industry 列 (申万旧版, 口径已废)
+
+    2026-11-12: 行业归属唯一真源 = industry_member.parquet (SW2021)。
+    stock_basic.industry 是 pre-2014 申万旧版 110 个名字 (全国地产/火力发电/供气供热…),
+    跟 SW2021 完全对不上 —— 留着它就是个雷 (任何拿它当行业口径的代码都会静默出错)。
+
+    幂等: 列不存在 → 返 False, 什么都不做。
+    """
+    if not STOCK_BASIC_PARQUET.exists():
+        return False
+    try:
+        import pandas as pd
+        df = pd.read_parquet(STOCK_BASIC_PARQUET)
+        if "industry" not in df.columns:
+            return False
+        out = df.drop(columns=["industry"])
+        tmp = STOCK_BASIC_PARQUET.with_name(STOCK_BASIC_PARQUET.stem + ".tmp.parquet")
+        out.to_parquet(tmp, index=False)
+        os.replace(tmp, STOCK_BASIC_PARQUET)
+        return True
+    except Exception as e:
+        print(f"  ⚠️ stock_basic 去 industry 列失败: {e}", file=sys.stderr)
+        return False
+
+
 def sync_stock_basic() -> int:
     """一次拉全市场 stock_basic，存 parquet。30天内不重拉。
 
@@ -974,8 +1001,13 @@ def sync_stock_basic() -> int:
 
     v6.2.4 修: 跨积分档 stock_basic 都不返 total_share/float_share, 落盘后读出 0
     解决: 落盘前用 stk_factor_pro (按 trade_date=最近 1 日) 补 total_share/float_share
+
+    2026-11-12: 落盘前先跑 migrate_stock_basic_drop_industry (老文件去掉 industry 列)
     """
     import pandas as pd
+
+    if migrate_stock_basic_drop_industry():
+        print("  🧹 stock_basic 已去掉 industry 列 (申万旧版, 口径已废)")
 
     if STOCK_BASIC_PARQUET.exists():
         age = time.time() - STOCK_BASIC_PARQUET.stat().st_mtime
@@ -985,15 +1017,20 @@ def sync_stock_basic() -> int:
 
     print("  📥 stock_basic 全市场建档...")
     from .sources.tushare import _safe_call
+    # 2026-11-12 改: 不取 industry —— 那是申万**旧版** (pre-2014) 110 个名字,
+    # 口径已废。行业归属唯一真源 = index_member_all 落的 industry_member.parquet (SW2021)。
+    # (省不了请求 —— stock_basic 是 1 次请求带多字段, industry 只是其中一列;
+    #  删它是**为了口径正确**, 不是为了省网络。)
     data, status = _safe_call(
         "stock_basic", exchange="", list_status="L",
-        fields="ts_code,name,industry,list_date,market,total_share,float_share",
+        fields="ts_code,name,list_date,market,total_share,float_share",
     )
     if not data:
         print(f"  ⚠️ stock_basic 拉取失败: {status}")
         return 0
 
     df = pd.DataFrame(data)
+    df = df.drop(columns=["industry"], errors="ignore")
     df["code"] = df["ts_code"].str.split(".").str[0]
 
     # 2026-09-04 修: 跨积分档 stock_basic 都不返 total_share, 用本地 stk_factor_pro parquet 兜底
@@ -1053,7 +1090,6 @@ def read_stock_basic(code: str) -> dict:
         row = result.iloc[0].to_dict()
         return {
             "name":        row.get("name", ""),
-            "industry":    row.get("industry", ""),
             "list_date":   str(row.get("list_date", "")),
             "market":      row.get("market", ""),
             "total_share": row.get("total_share", 0),
@@ -1141,20 +1177,35 @@ def _fin_load_existing(period: str) -> dict[str, dict]:
         return {}
 
 
+def _attach_industry(df: "pd.DataFrame") -> "pd.DataFrame":
+    """给 stock_basic df 挂上 SW2021 二级行业名 (列名 industry)
+
+    2026-11-12: industry 列已从 stock_basic.parquet 删除 (申万旧版, 口径已废),
+    这里从 index_member_all 落的 industry_member.parquet (SW2021) merge 回来。
+    对外返回列不变 → 所有下游 (sector 扫描 / 科技股池 / 周期股过滤) 不用改代码。
+    """
+    if df is None or df.empty or "ts_code" not in df.columns:
+        return df
+    name_map = DataStore.get_industry_name_map()
+    if not name_map:
+        return df
+    df = df.copy()
+    df["industry"] = df["ts_code"].map(name_map).fillna("")
+    return df
+
+
 def _fin_load_industry_map(codes: list[str]) -> dict[str, str]:
-    """取 industry, 返 {code: industry}
+    """取 SW2021 二级行业名, 返 {code: l2_name}
 
-    2026-11-11 改: 行业口径统一到 **SW2021** —— 优先取 index_member_all 的 l2_name,
-    成分表没覆盖的回退到 stock_basic.industry (申万旧版)。
-    (这列会显示在报告的估值段「**行业:**」, 跟 🏆行业地位 的行业名必须同口径)
-
+    2026-11-12 改: **不再回退** stock_basic.industry —— 那列是申万**旧版** 110 个名字,
+    口径已废且已从 stock_basic 删除。行业唯一真源 = index_member_all 落的
+    industry_member.parquet (SW2021)。落盘的 industry 列跟报告里「**行业:**」
+    和 🏆行业地位 的行业名必须同口径。
     缓存到本次进程 (sync_financials 调用一次, 批量 fetch_one 共享)
     """
     if not codes:
         return {}
     try:
-        import duckdb
-        # SW2021 (唯一真源)
         sw_map = {}
         if SW_INDEX_MEMBER_PARQUET.exists():
             try:
@@ -1165,23 +1216,9 @@ def _fin_load_industry_map(codes: list[str]) -> dict[str, str]:
                           for _, r in df_m.iterrows() if r.get("l2_name")}
             except Exception:
                 sw_map = {}
-        if not STOCK_BASIC_PARQUET.exists():
-            return {c: sw_map.get(c, "") for c in codes}
-        # 取 codes 子集, 减少扫描
-        codes_str = ", ".join(f"'{c}'" for c in codes)
-        df = _conn().execute(
-            f"""
-            SELECT code, industry FROM read_parquet('{STOCK_BASIC_PARQUET}')
-            WHERE code IN ({codes_str})
-            """
-        ).df()
-        out = {}
-        for _, r in df.iterrows():
-            c = str(r["code"])
-            out[c] = sw_map.get(c) or str(r.get("industry", "") or "")
-        return out
+        return {c: sw_map.get(c, "") for c in codes}
     except Exception:
-        return {}
+        return {c: "" for c in codes}
 
 
 def _fin_load_all_codes() -> list[str]:
@@ -1347,6 +1384,10 @@ def read_financials(code: str, lookback_quarters: int = 4) -> list[dict]:
 
     v6.2.7 改: 用 UNION ALL BY NAME 替代 glob — glob 在 schema 不一致时
     (Q1/Q3 只有 5 列, Q2/Q4 有 112 列) 会推断错 schema, 返 5 列。
+
+    2026-11-12 改: 行业标签用**当前** SW2021 成分表覆盖 parquet 里的快照。
+    parquet 的 industry 列是**写盘时**的值, 2026-11-11 之前写的行是申万旧版 110 个名字,
+    跟 SW2021 对不上 → 行业黑名单会漏判 (银行/券商会静默逃出 ROC/EY 筛选)。
     """
     try:
         import duckdb
@@ -1365,7 +1406,11 @@ def read_financials(code: str, lookback_quarters: int = 4) -> list[dict]:
             return []
         sub = df[(df["ts_code"] == ts_code) & (df["fetch_status"] == "ok")]
         sub = sub.sort_values("end_date", ascending=False).head(lookback_quarters)
-        return sub.sort_values("end_date", ascending=True).to_dict("records")
+        sub = sub.sort_values("end_date", ascending=True)
+        info = DataStore.get_industry_info(ts_code)
+        sub["industry"] = info.get("l2_name", "")
+        sub["industry_code"] = info.get("l2_code", "")
+        return sub.to_dict("records")
     except Exception:
         return []
 
@@ -1743,7 +1788,7 @@ class DataStore:
         #   之前用 stock_basic.industry = 申万**旧版** 110 个 → 跟 sw_index 指数、
         #   factor-5y 头部、🏆行业地位 的同行分组 口径不一致。
         #   ETF 不在成分表里 → 留空, 下面的 ETF 分支会用跟踪指数名填。
-        industry = cls.get_industry_info(code).get("l2_name") or sb.get("industry", "")
+        industry = cls.get_industry_info(code).get("l2_name") or ""
         if not name:
             eb = cls.get_etf_basic(code)
             if eb:
@@ -1855,11 +1900,21 @@ class DataStore:
 
         数据源: data/history/sw_index/industry_member.parquet (index_member_all, 60 天缓存)
 
-        为什么不用 stock_basic.industry: 那是申万**旧版** 110 个, 跟 SW2021 (134 个)
+        为什么不用 stock_basic.industry: 那列已删 (申万**旧版** 110 个, 跟 SW2021 (134 个)
         只直接对上 25 个 (元器件 vs 元件 / 汽车配件 vs 汽车零部件) → 对不上。
         """
         return {code: str(r.get("l2_code") or "")
                 for code, r in cls._industry_member_info().items() if r.get("l2_code")}
+
+    @classmethod
+    def get_industry_name_map(cls) -> dict[str, str]:
+        """{ts_code: l2_name} —— SW2021 二级行业**名**
+
+        判定 (黑名单) 用 l2_code → get_industry_member_map;
+        显示 / 分组用 l2_name → 本接口。
+        """
+        return {code: str(r.get("l2_name") or "")
+                for code, r in cls._industry_member_info().items() if r.get("l2_name")}
 
     @classmethod
     def get_industry_members_by_l2(cls, l2_code: str) -> list[str]:
@@ -1939,6 +1994,10 @@ class DataStore:
     def load_stock_basic(cls) -> "pd.DataFrame":
         """全市场 stock_basic 1 次 SQL (替代 boll_bbw 等散落)
 
+        2026-11-12 改: industry 列不再来自 stock_basic.parquet (已删除, 申万旧版),
+        改从 industry_member.parquet (SW2021) merge 回来 —— **对外返回列不变**,
+        但值统一到 SW2021, 下游 (sector 扫描 / 科技股池 / 周期股过滤) 零改动。
+
         Returns:
             DataFrame: columns = [ts_code, name, industry, ...]
         """
@@ -1947,9 +2006,10 @@ class DataStore:
             import pandas as pd
             if not STOCK_BASIC_PARQUET.exists():
                 return pd.DataFrame()
-            return _conn().execute(
+            df = _conn().execute(
                 f"SELECT * FROM read_parquet('{STOCK_BASIC_PARQUET}')"
             ).df()
+            return _attach_industry(df)
         except Exception:
             import pandas as pd
             return pd.DataFrame()
@@ -2569,12 +2629,14 @@ def print_status_report() -> None:
     # 3. stock_basic
     try:
         if STOCK_BASIC_PARQUET.exists():
-            df = _conn().execute(
-                f"SELECT COUNT(*), MAX(industry) FROM read_parquet('{STOCK_BASIC_PARQUET}')"
-            ).fetchone()
-            n, last_industry = df
+            n = _conn().execute(
+                f"SELECT COUNT(*) FROM read_parquet('{STOCK_BASIC_PARQUET}')"
+            ).fetchone()[0]
             age_days = (time.time() - STOCK_BASIC_PARQUET.stat().st_mtime) / 86400
-            print(f"  stock_basic: {n:>9} 只 | 上次更新 {age_days:.1f} 天前 | 行业示例: {last_industry}")
+            # 2026-11-12: industry 列已删 (申万旧版), 行业数改看 SW2021 成员表
+            name_map = DataStore.get_industry_name_map()
+            print(f"  stock_basic: {n:>9} 只 | 上次更新 {age_days:.1f} 天前 | "
+                  f"SW2021 行业 {len(set(name_map.values()))} 个")
         else:
             print(f"  stock_basic: (空)")
     except Exception as e:
