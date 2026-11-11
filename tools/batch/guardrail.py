@@ -23,6 +23,7 @@
   bash tools/with_venv.sh python -m tools.batch.guardrail --check parquet       # 业务层直读 parquet/duckdb
   bash tools/with_venv.sh python -m tools.batch.guardrail --check factor        # Factor class 包装违规
   bash tools/with_venv.sh python -m tools.batch.guardrail --check safe-fs       # 删用户数据/覆盖写配置
+  bash tools/with_venv.sh python -m tools.batch.guardrail --check cache-writer  # 行业威科夫 cache 只有 /t-sync-data 能写
   bash tools/with_venv.sh python -m tools.batch.guardrail --skill t-analyze     # 单 skill
   bash tools/with_venv.sh python -m tools.batch.guardrail --strict --write-md   # 严格 + 写 docs/guardrail-report.md
 """
@@ -203,8 +204,9 @@ def scan_path(path: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Mavis 守门员 — 扫描工具里的合规问题")
-    parser.add_argument("--check", choices=["network", "factor", "parquet", "safe-fs"], default="network",
-                        help="检查类型 (默认 network; factor 检查 Factor class 包装违规; parquet 检查业务层直读 parquet/duckdb/sqlite; safe-fs 检查直接删用户数据/覆盖写配置)")
+    parser.add_argument("--check", choices=["network", "factor", "parquet", "safe-fs", "cache-writer"],
+                        default="network",
+                        help="检查类型 (默认 network; factor 检查 Factor class 包装违规; parquet 检查业务层直读 parquet/duckdb/sqlite; safe-fs 检查直接删用户数据/覆盖写配置; cache-writer 检查除 /t-sync-data 外没人写行业威科夫 cache)")
     parser.add_argument("--skill", help="只检查指定 skill (例: t-analyze)")
     parser.add_argument("--strict", action="store_true", help="严格模式 (所有网络调用标红)")
     parser.add_argument("--write-md", action="store_true", help="写 docs/guardrail-report.md")
@@ -219,6 +221,8 @@ def main():
         check_parquet(args)
     elif args.check == "safe-fs":
         check_safe_fs(args)
+    elif args.check == "cache-writer":
+        check_cache_writer(args)
     else:
         parser.error(f"未实现的检查: {args.check}")
 
@@ -428,6 +432,115 @@ def check_safe_fs(args):
 
     if not violations and not info:
         print("✅ 没有违规 — 所有用户数据的删除/写入都走 safe_fs 安全层")
+        print()
+
+    if violations:
+        sys.exit(1)
+
+
+CACHE_WRITER_ALLOWED = {
+    "tools/storage/sync.py",                 # 唯一合法写者 (= /t-sync-data)
+    "tools/storage/caches/industry_wyckoff.py",   # cache 模块自身
+    "tools/batch/guardrail.py",              # 自身
+}
+
+
+def scan_source_cache_writer(rel, content):
+    """检测"非 sync 模块碰行业威科夫 cache 写入口" (AST, 纯函数, 可单测)
+
+    返回 violations 列表, 元素 (rel, lineno, msg)。
+
+    违规模式 (白名单外):
+      1. 调用 industry_wyckoff 的写入口 (write_rows / write_rows_for_sync)
+      2. 直接引用 cache 目录常量 INDUSTRY_WYCKOFF_DIR (绕过 API 写盘)
+
+    为什么用 AST 而不是 grep:
+      docstring 里写"原来这里会 cache.write_rows(rows)"是**说明**, 不是调用 ——
+      grep 会误报 (AST 的 docstring 是 Constant 节点, 天然跳过)。
+    """
+    import ast
+
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return []
+
+    violations = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            f = node.func
+            name = f.attr if isinstance(f, ast.Attribute) else (
+                f.id if isinstance(f, ast.Name) else "")
+            if name in ("write_rows", "write_rows_for_sync"):
+                violations.append((
+                    rel, node.lineno,
+                    f"调用行业威科夫 cache 写入口 {name}() —— "
+                    "只有 tools/storage/sync.py (/t-sync-data) 能写"))
+        elif isinstance(node, ast.Name) and node.id == "INDUSTRY_WYCKOFF_DIR":
+            violations.append((
+                rel, node.lineno,
+                "直接引用行业威科夫 cache 目录常量 —— "
+                "只有 tools/storage/sync.py (/t-sync-data) 能写"))
+        elif isinstance(node, ast.alias) and (node.name or "").endswith("INDUSTRY_WYCKOFF_DIR"):
+            violations.append((
+                rel, node.lineno,
+                "直接 import 行业威科夫 cache 目录常量 —— "
+                "只有 tools/storage/sync.py (/t-sync-data) 能写"))
+    return violations
+
+
+def check_cache_writer(args):
+    """行业威科夫 cache 写权限守门员 (2026-11-12 加)
+
+    铁律: `data/cache/industry_wyckoff/` **只有 /t-sync-data 能写**。
+    背景: 原来是「查 cache → 算 → 回写」的懒惰写盘, 批量分析时 4 worker 多进程
+    会同时写同一年 parquet → 必须上文件锁 (fcntl) + 读改写 + 原子替换。
+    写路径收归 sync 之后: 写永远单进程 → 不用锁, 逻辑简单很多;
+    读侧 (分析层) 只查表, miss 就内存现算, 不回写。
+
+    违规模式 (白名单外):
+      1. 调用 industry_wyckoff 的写入口 (write_rows / write_rows_for_sync)
+      2. 直接引用 INDUSTRY_WYCKOFF_DIR (绕过 API 写盘)
+
+    例外 (白名单):
+      - tools/storage/sync.py                      # 唯一合法写者
+      - tools/storage/caches/industry_wyckoff.py   # cache 模块自身
+      - tools/batch/guardrail.py                  # 自身
+    """
+    print("🛡️  守门员: cache-writer-guard (行业威科夫 cache 只有 /t-sync-data 能写)")
+    print(f"   扫描范围: {args.path}/")
+    print()
+
+    violations = []
+
+    for py_file in (ROOT / args.path).rglob("*.py"):
+        if "__pycache__" in str(py_file) or "/tests/" in str(py_file):
+            continue
+        rel = str(py_file.relative_to(ROOT))
+        if rel in CACHE_WRITER_ALLOWED:
+            continue
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        violations.extend(scan_source_cache_writer(rel, content))
+
+    print("📊 检查结果:")
+    print(f"   ❌ 违规 (非 sync 写行业威科夫 cache): {len(violations)}")
+    print()
+
+    if violations:
+        print("❌ 违规清单:")
+        for file_path, lineno, msg in violations:
+            print(f"   {file_path}:{lineno}")
+            print(f"     {msg}")
+        print()
+        print("   修法: 写盘交给 /t-sync-data (tools/storage/sync.py);")
+        print("         分析侧只读 —— 查不到就在内存现算, 不回写")
+        print()
+
+    if not violations:
+        print("✅ 没有违规 — 行业威科夫 cache 只有 /t-sync-data 一个写者")
         print()
 
     if violations:

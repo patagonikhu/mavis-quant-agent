@@ -16,6 +16,12 @@ tools/analysis/industry_stage.py — 行业威科夫 stage (2026-11-11 加)
   3. **cache 有效性**: 判定是因果的 (build_kline_features 全回看型滚动窗口)
      → 某日结果只依赖该日之前的数据 → 可按 (行业, 日期) 永久缓存, 新数据不影响旧行
 
+⚠️ **本模块只读 cache, 不写** (2026-11-12 用户定调):
+  行业威科夫 cache 的唯一写者是 `/t-sync-data` (tools/storage/sync.py)。
+  **查不到就不显示** (渲染成「—」), 不要悄悄自己算 ——
+  悄悄算的话用户看不出"这列数据其实没有", 空列本身就是"该跑 /t-sync-data"的信号。
+  写路径见 tools/storage/caches/industry_wyckoff.py。
+
 架构 (规则下沉):
   本模块 = 生产侧, 算好 stage/strength/channel/sub_event 塞进行数据
   渲染器只读不算 (渲染器不 import 本模块, 只读 row 里的字段)
@@ -23,6 +29,8 @@ tools/analysis/industry_stage.py — 行业威科夫 stage (2026-11-11 加)
 数据访问: 全部走 DataStore (tools/storage/store.py) —— 业务层禁直读 parquet (守门员规则)
 """
 from __future__ import annotations
+
+import sys
 
 
 # ============================================================
@@ -59,13 +67,35 @@ def industry_of_stock(ts_code: str) -> str | None:
 
 
 # ============================================================
-# 行业威科夫 (查 cache → 算 → 回写)
+# 行业威科夫 (**只读 cache**)
 # ============================================================
 
-def industry_wyckoff_rows(ts_code: str, dates: list[str]) -> dict[str, dict]:
-    """取行业在指定日期上的威科夫判定结果
+_MISS_WARNED = False
 
-    流程: 查 cache → 缺的算 (复用个股同一套 analyze_history) → 回写 cache → 返回
+
+def _warn_miss_once(n_missing: int, ts_code: str) -> None:
+    """cache 有缺口 → 每个进程提示一次 (用户要知道数据缺了, 去跑 /t-sync-data)
+
+    ⚠️ 2026-11-12 用户定调: **miss 就不显示**, 不要悄悄自己算 ——
+    悄悄算的话用户看不出"这列数据其实没有", 空列本身就是信号。
+    """
+    global _MISS_WARNED
+    if _MISS_WARNED:
+        return
+    _MISS_WARNED = True
+    print(f"  ⚠️ 行业威科夫 cache 缺 {n_missing} 行 (如行业 {ts_code}) → 该列显示「—」; "
+          f"跑 /t-sync-data (--sw-index) 补齐", file=sys.stderr)
+
+
+def industry_wyckoff_rows(ts_code: str, dates: list[str]) -> dict[str, dict]:
+    """取行业在指定日期上的威科夫判定结果 (**只读 cache, miss 就不显示**)
+
+    ⚠️ 2026-11-12 改 (用户定调): 原来查不到会**在内存现算**并回写 cache ——
+    那既逼出了文件锁 (多进程同时写), 又把"这列数据其实没有"藏起来了。
+    现在: **只查表, 没有就没有** → 渲染成「—」, 空列本身就是"cache 没同步"的信号,
+    用户看到就去跑 /t-sync-data。
+
+    写 cache 的活归 `/t-sync-data` (tools/storage/sync.py) —— 本模块**永不写**。
 
     Args:
         ts_code: 行业代码 (801xxx.SI)
@@ -73,7 +103,7 @@ def industry_wyckoff_rows(ts_code: str, dates: list[str]) -> dict[str, dict]:
 
     Returns:
         {trade_date: {stage_daily, stage_weekly, strength_daily, ...}}
-        没数据 / 没行业 → 返 {} (调用方渲染成 "—")
+        **只含 cache 里命中的日期**; 全 miss → 返 {} (调用方渲染成 "—")
     """
     if not ts_code or not dates:
         return {}
@@ -84,25 +114,23 @@ def industry_wyckoff_rows(ts_code: str, dates: list[str]) -> dict[str, dict]:
     want = [d for d in want if d]
 
     out: dict[str, dict] = {}
-    missing: list[str] = []
+    n_missing = 0
     for d in want:
         hit = cache.get_cached(ts_code, d)
         if hit is not None:
             out[d] = hit
         else:
-            missing.append(d)
-
-    if missing:
-        rows = _compute(ts_code, missing)
-        if rows:
-            cache.write_rows(rows)
-            for r in rows:
-                out[str(r["trade_date"])] = r
+            n_missing += 1
+    if n_missing:
+        _warn_miss_once(n_missing, ts_code)
     return out
 
 
-def _compute(ts_code: str, dates: list[str]) -> list[dict]:
-    """真算 —— 跟个股同一套 AnalysisEngine.analyze_history (零改动复用)"""
+def compute_industry_wyckoff_rows(ts_code: str, dates: list[str]) -> list[dict]:
+    """真算 —— 跟个股同一套 AnalysisEngine.analyze_history (零改动复用)
+
+    ⚠️ **纯计算**: 不读 cache, 不写 cache。写 cache 的活归 /t-sync-data。
+    """
     from tools.analysis.analysis_engine import AnalysisEngine, RawContext
     from tools.storage.sources.eastmoney import _synthesize_weekly
 

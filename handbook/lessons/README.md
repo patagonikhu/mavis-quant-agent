@@ -10,7 +10,7 @@
 | 分册 | 主题 | 条数 |
 |---|---|---|
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
-| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 15 |
+| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 16 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 16 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 21 |
@@ -63,6 +63,7 @@
 | 13 | sw_daily 服务端行为: 批量只给最近 10 交易日 | 批量只给最近 10 交易日, 带 ts_code 才给全历史 → "批量 1 次 + 按 ts_code 补漏" 两段式 |
 | 14 | 行业口径统一到 SW2021 | 旧版 110 vs 新版 134 只对上 25 个 → 个股→行业一律走 index_member_all 落的 industry_member.parquet |
 | 15 | 删 stock_basic.industry: 省不了网络请求, 但值这个价 | 省不了请求 (1 次请求带多字段), 但旧名对不上 = **过滤静默失效**; 换口径后必须实测每个字符串参数的命中数 |
+| 16 | 派生 cache 的写路径要收归单一 owner | 「读时顺手写」逼出文件锁; 写归 /t-sync-data、读侧 miss 就不显示 → 锁直接删; 机器强制靠守门员 AST 扫描 + 运行时守卫 |
 
 ## 财务 / 估值口径
 

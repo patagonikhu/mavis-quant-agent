@@ -8,7 +8,7 @@ tools/verify.py — 分层验证入口 (2026-11-10 加)
 
     19 脚本 import   单进程 0.55s   (之前用 19 次独立进程 = 57s)
     pytest           8.5s
-    guardrail 4 项    0.65s
+    guardrail 5 项    0.75s
     py_compile       0.27s
     ──────────────────────────────
     L0+L1+L2 合计     ~10s   ← 覆盖 80% 的问题
@@ -130,11 +130,11 @@ def l1_pytest() -> tuple[bool, str]:
 
 def l2_guardrail() -> tuple[bool, str]:
     bad = []
-    for kind in ("network", "factor", "parquet", "safe-fs"):
+    for kind in ("network", "factor", "parquet", "safe-fs", "cache-writer"):
         rc, out = _run(_py("-m", "tools.batch.guardrail", "--check", kind), timeout=180)
         if rc != 0:
             bad.append(f"{kind}: rc={rc}")
-    return (not bad), ("4 项 0 违规" if not bad else "; ".join(bad))
+    return (not bad), ("5 项 0 违规" if not bad else "; ".join(bad))
 
 
 def _changed_files() -> list[str]:
@@ -236,7 +236,7 @@ LAYERS = [
     ("L0", "py_compile 全仓", l0_compile),
     ("L0", f"批量 import {len(IMPORT_CHECK_MODULES)} 模块", l0_imports),
     ("L1", "pytest", l1_pytest),
-    ("L2", "guardrail 4 项", l2_guardrail),
+    ("L2", "guardrail 5 项", l2_guardrail),
     ("L2", "命名规范 grep", l2_naming),
 ]
 

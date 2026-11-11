@@ -54,6 +54,12 @@ bash tools/with_venv.sh python -m tools.storage.sync --auto-force
   - 日常增量 1 次请求;首次 1+N 次 (N=缺口行业数)
   - 已知坑:134 个 L2 里只有 124 个在服务端批量覆盖内;9 个申万没发数据(记入无数据名单,30 天不重试);
     `801011 林业Ⅱ` 2021-12 停更(按"该指数可得上限"判定,不会反复空拉)
+- **行业威科夫 cache 只有本 skill 能写** (2026-11-12):
+  - 落盘 `data/cache/industry_wyckoff/<YYYY>.parquet`;**唯一写者 = 本 skill 的 `_refresh_industry_wyckoff_cache()`**
+  - 其他 skill / 脚本**只读不写** —— **查不到就不显示** (渲染成「—」, 空列就是"cache 没同步"的信号),
+    不会悄悄自己算 (所以分析侧永远单线程写, 不用文件锁)
+  - 机器强制: 守门员第 5 项 `cache-writer` 扫全仓, 除 sync 外碰写入口 = 违规
+  - 补算触发时机: `--sw-index` 跑完 (无论有没有数据缺口) 都会补一遍缺的日期
 
 ## 🚫 本 skill 不做什么 (越界 = 违规)
 

@@ -40,6 +40,15 @@
   已知:     134 个 L2 里 124 个在 sw_daily 批量覆盖内; 10 个要单独拉, 其中 9 个申万没发数据 (记入无数据名单),
             1 个 (801011 林业Ⅱ) 2021-12 就停更 (按"该指数可得上限"判定, 不会反复空拉)
 
+行业威科夫 cache (2026-11-12 加, 唯一写者 = 本模块):
+  落盘:     data/cache/industry_wyckoff/<YYYY>.parquet (按年份, key = 行业代码 + 交易日)
+  写路径:   本模块的 _refresh_industry_wyckoff_cache() —— 行业威科夫 cache **只有 /t-sync-data 能写**
+            (原来是"分析时懒惰回写", 批量分析 4 worker 多进程会同时写同一年 parquet → 必须上文件锁;
+             写路径收归 sync 后写永远单进程 → 不用锁, 逻辑简单很多)
+  读路径:   任何 skill 只读不写 —— **查不到就不显示** (渲染成「—」, 空列 = "该跑 /t-sync-data"),
+            绝不悄悄自己算 (那会把"缺数据"藏起来)
+  机器强制: 守门员第 5 项 cache-writer 扫全仓 (除本模块外碰写入口 = 违规) + 写入口运行时守卫
+
 范围 flag (3 选 1, 默认 --all):
   --watchlist / --all / --codes CODE [CODE ...]
 
@@ -654,6 +663,7 @@ def action_sw_index(level: str = "L2") -> int:
     if not gaps:
         print(f"  ✅ 申万行业指数已是最新 ({len(codes)} 个), 无缺口")
         _sw_meta_save(meta)
+        _refresh_industry_wyckoff_cache(codes)
         return 0
 
     print(f"  🔎 检出 {len(gaps)} 个行业有缺口:")
@@ -751,7 +761,68 @@ def action_sw_index(level: str = "L2") -> int:
     print(f"  ✅ 申万行业指数: 批量 {n_batch} 行 + 单拉 {n_single} 行 "
           f"({n_files} 个年份文件, {len(meta['no_data'])} 个无数据, "
           f"{len(meta['history_max'])} 个停更)")
+    _refresh_industry_wyckoff_cache(codes)
     return n_single
+
+
+def _refresh_industry_wyckoff_cache(codes: list[str]) -> int:
+    """补齐行业威科夫 cache —— **本模块是唯一合法写者** (2026-11-12)
+
+    背景: 原来是「分析时懒惰回写 cache」—— 查不到就现算再写回去。批量分析时
+    4 worker 多进程 (mp.spawn) 会同时写同一年 parquet → 必须上文件锁 (fcntl) +
+    读改写 + 原子替换, 逻辑又绕又容易写坏文件。
+
+    改成「写路径收归 sync」之后:
+      - 写永远单进程 → **不用锁**, 逻辑简单很多
+      - 读侧 (tools/analysis/industry_stage.py) 只查表, miss 就内存现算, 不落盘
+
+    流程: 遍历本地有 K 线的行业 → 找 cache 里缺的日期 → 算 → 按年份攒内存 → 一次性写
+    (攒内存是关键: 年文件是全行业全年的数据, 每个行业各写一次 = 反复重写大文件)
+
+    Args:
+        codes: 申万行业代码列表 (L2, 如 801735.SI)
+
+    Returns:
+        实际写入 cache 的行数
+    """
+    from tools.analysis.industry_stage import compute_industry_wyckoff_rows
+    from tools.storage.caches import industry_wyckoff as cache
+    from .store import DataStore
+
+    n_locks = cache.cleanup_stale_locks()
+    if n_locks:
+        print(f"  🧹 清掉旧文件锁残留 {n_locks} 个 .lock (锁机制已废)")
+
+    cached_by_code = cache.cached_dates_by_code()
+    by_year: dict[str, list[dict]] = {}
+    n_industries = 0
+
+    for code in codes:
+        bars = DataStore.get_sw_index_bars(code)
+        if len(bars) < 30:
+            continue                       # 没数据 / 历史太短 (停更指数)
+        have = {b["trade_date"] for b in bars}
+        missing = sorted(have - cached_by_code.get(code, set()))
+        if not missing:
+            continue                       # 已缓存
+        rows = compute_industry_wyckoff_rows(code, missing)
+        if not rows:
+            continue
+        n_industries += 1
+        for r in rows:
+            by_year.setdefault(str(r["trade_date"])[:4], []).append(r)
+
+    if not by_year:
+        print("  ✅ 行业威科夫 cache 已是最新 (无需补算)")
+        return 0
+
+    written = 0
+    for year in sorted(by_year):
+        written += cache.write_rows_for_sync(by_year[year])
+    stats = cache.cache_stats()
+    print(f"  ✅ 行业威科夫 cache: 补算 {n_industries} 个行业 / 写入 {written} 行 "
+          f"({len(by_year)} 个年份文件, 累计 {stats['rows']} 行 / {stats['industries']} 个行业)")
+    return written
 
 
 # ============================================================
@@ -1059,6 +1130,16 @@ def detect_stale_flags() -> dict[str, bool]:
                     flags["sw_index"] = True
                     print(f"  ⚠️ sw_index 最新日期 {last} 只有 {n_last}/{len(ranges)} 个行业有数 "
                           f"→ 判定半拉 → 需重拉补齐")
+            # 行业威科夫 cache 落后于行业 K线 → 也要跑 (cache 只在 sync 里写)
+            try:
+                from tools.storage.caches import industry_wyckoff as _iw_cache
+                cache_max = _iw_cache.cache_max_date()
+                if cache_max < last:
+                    flags["sw_index"] = True
+                    print(f"  ⚠️ 行业威科夫 cache 最新 {cache_max or '(空)'} "
+                          f"落后行业 K线 {last} → 需补算")
+            except Exception:
+                flags["sw_index"] = True  # 异常保守拉
     except Exception:
         flags["sw_index"] = True  # 异常保守拉
 
