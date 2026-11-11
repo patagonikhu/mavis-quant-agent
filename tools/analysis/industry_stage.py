@@ -179,3 +179,128 @@ def _today_events(events: list[dict], date: str) -> str:
     names = sorted({e["name"] for e in events
                     if str(e.get("date", "")).replace("-", "")[:8] == date})
     return " ".join(names) if names else "—"
+
+
+# ============================================================
+# 行业 Markup 汇总 (2026-11-12 加, /t-analyze 跑完的汇总段)
+# ============================================================
+
+def summarize_markup_industries() -> dict:
+    """哪些行业当前在威科夫 Markup 阶段 (日线 / 周线)
+
+    **数据源: 行业威科夫 cache (只读)** —— 唯一写者是 `/t-sync-data`。
+    这里**不算**, 只查表: 跟个股报告「因子历史走势」表里的「行业威科夫」列**同源同数**,
+    两处不会打架。
+
+    "当前" = 每个行业**自己**最新的那一条 cache 记录
+    (行业停更的按它自己的末日算, 不跟全市场日期对齐 —— 对齐了它就是没数据)。
+
+    Returns:
+        {
+          "data_date": 全市场最新交易日 (YYYYMMDD),
+          "total_industries": cache 里的行业数,
+          "daily_markup":   [{code, name, l1_name, stage_daily, stage_weekly,
+                              strength_daily, trade_date, member_count}, ...],
+          "weekly_markup":  [同上],       # 周线在 Markup (日线可能还没转)
+          "both_markup":    [同上],       # 日线+周线都在 Markup
+          "stale":          [{code, name, trade_date}, ...],  # 数据日期落后的行业
+        }
+    """
+    from tools.storage.caches import industry_wyckoff as cache
+    from tools.storage.store import DataStore
+
+    dates_by_code = cache.cached_dates_by_code()
+    if not dates_by_code:
+        return {"data_date": "", "total_industries": 0, "daily_markup": [],
+                "weekly_markup": [], "both_markup": [], "stale": []}
+
+    max_date = max((d for ds in dates_by_code.values() for d in ds), default="")
+
+    level_map = DataStore.get_industry_level_map()
+    # 成分股数 (一次算全, 别逐行业扫成分表)
+    member_count: dict[str, int] = {}
+    for rec in DataStore._industry_member_info().values():
+        l2 = str(rec.get("l2_code") or "")
+        if l2:
+            member_count[l2] = member_count.get(l2, 0) + 1
+
+    daily, weekly, both, stale = [], [], [], []
+    for code, dates in dates_by_code.items():
+        if not dates:
+            continue
+        d = max(dates)
+        row = cache.get_cached(code, d)
+        if not row:
+            continue
+        meta = level_map.get(code, {})
+        item = {
+            "code": code,
+            "name": meta.get("l2_name") or code,
+            "l1_name": meta.get("l1_name") or "",
+            "stage_daily": row.get("stage_daily") or "?",
+            "stage_weekly": row.get("stage_weekly") or "?",
+            "strength_daily": row.get("strength_daily") or "—",
+            "trade_date": d,
+            "member_count": member_count.get(code, 0),
+        }
+        if item["stage_daily"] == "Markup":
+            daily.append(item)
+        if item["stage_weekly"] == "Markup":
+            weekly.append(item)
+            if item["stage_daily"] == "Markup":
+                both.append(item)
+        if d != max_date:
+            stale.append({"code": code, "name": item["name"], "trade_date": d})
+
+    # 排序: 成分股多的 (大行业) 排前面 → 优先看有体量的
+    daily.sort(key=lambda x: (-x["member_count"], x["name"]))
+    weekly.sort(key=lambda x: (-x["member_count"], x["name"]))
+    both.sort(key=lambda x: (-x["member_count"], x["name"]))
+    stale.sort(key=lambda x: x["trade_date"])
+
+    return {
+        "data_date": max_date,
+        "total_industries": len(dates_by_code),
+        "daily_markup": daily,
+        "weekly_markup": weekly,
+        "both_markup": both,
+        "stale": stale,
+    }
+
+
+def format_markup_summary(s: dict) -> str:
+    """行业 Markup 汇总 → 终端可读文本 (stdout 汇总段用)"""
+    if not s or not s.get("total_industries"):
+        return ("> ⚠️ 行业威科夫 cache 为空 —— 跑 `/t-sync-data --sw-index` 补齐后再看")
+
+    lines = [
+        f"=== 行业威科夫 Markup 汇总 ({len(s['daily_markup'])} 个行业日线在 Markup) ===",
+        f"  数据源: 行业威科夫 cache (只读, 唯一写者 /t-sync-data) · "
+        f"最新交易日 {s['data_date']} · 共 {s['total_industries']} 个行业",
+    ]
+
+    if s["daily_markup"]:
+        lines.append("")
+        lines.append("| 行业 | 代码 | 一级 | 日线 | 周线 | 强度 | 成分股 | 数据日期 |")
+        lines.append("|---|---|---|---|---|---|---|---|")
+        for it in s["daily_markup"]:
+            lines.append(
+                f"| {it['name']} | `{it['code'].replace('.SI', '')}` | {it['l1_name']} | "
+                f"{it['stage_daily']} | {it['stage_weekly']} | {it['strength_daily']} | "
+                f"{it['member_count']} | {it['trade_date']} |")
+    else:
+        lines.append("")
+        lines.append("  (当前没有行业处于日线 Markup)")
+
+    lines.append("")
+    lines.append(f"  日线+周线都在 Markup: {len(s['both_markup'])} 个"
+                 + (f" → {', '.join(it['name'] for it in s['both_markup'])}"
+                    if s["both_markup"] else ""))
+    lines.append(f"  周线在 Markup (日线还没转): "
+                 f"{len(s['weekly_markup']) - len(s['both_markup'])} 个")
+
+    if s.get("stale"):
+        lines.append(f"  ⚠️ 数据日期落后的行业 {len(s['stale'])} 个 "
+                     f"(停更或未同步): {', '.join(f'{x['name']}({x['trade_date']})' for x in s['stale'][:6])}"
+                     f"{' ...' if len(s['stale']) > 6 else ''}")
+    return "\n".join(lines)

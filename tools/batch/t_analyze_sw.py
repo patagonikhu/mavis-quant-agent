@@ -179,6 +179,18 @@ def main() -> int:
         for e in errs[:10]:
             print(f"     {e['code']}: {e.get('err')}")
     print(f"  📄 输出目录: docs/{args.output_subdir}/ ({len(list(out_dir.glob('analyze-*.md')))} 份)")
+
+    # 行业威科夫 Markup 汇总 (2026-11-12 加) —— 跟个股路径同一个数据源
+    try:
+        from tools.analysis.industry_stage import (
+            format_markup_summary,
+            summarize_markup_industries,
+        )
+        print()
+        print(format_markup_summary(summarize_markup_industries()))
+    except Exception as _e:
+        print(f"\n=== 行业威科夫 Markup 汇总 ===\n  ⚠️ 读取失败: {type(_e).__name__}: {_e}")
+
     return 0
 
 

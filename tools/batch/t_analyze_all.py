@@ -370,6 +370,19 @@ if blowout_stocks:
             print(f'  🔴 {code} {name} | {detail}')
 
 
+# === 行业威科夫 Markup 汇总 (2026-11-12 加, 用户要求"跑完总结哪些行业现在是 Markup") ===
+# 数据源: 行业威科夫 cache (只读) —— 跟个股报告「因子历史」里的行业威科夫列同源
+try:
+    from tools.analysis.industry_stage import (
+        format_markup_summary,
+        summarize_markup_industries,
+    )
+    print()
+    print(format_markup_summary(summarize_markup_industries()))
+except Exception as _e:
+    print(f'\n=== 行业威科夫 Markup 汇总 ===\n  ⚠️ 读取失败: {type(_e).__name__}: {_e}')
+
+
 # 2026-11-06 删 ETF MACD 扫描段 (整段下线)
 #   - tools/batch/etf_macd_scan.py 已删 (safe_delete → 回收站)
 #   - --no-etf flag 一并删 (没东西可跳了)

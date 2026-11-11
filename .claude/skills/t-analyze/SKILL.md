@@ -101,8 +101,15 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --sw --code 801012.S
 
 **📤 输出契约** (跑完 stdout 里就有, **别再去 grep md / 重算一遍**):
 - stdout 末尾已有「扫描 N 只 / MD生成 / 有今日信号」+ buy/sell 明细
+- **行业威科夫 Markup 汇总** (2026-11-12 加): 末尾一张表列出**当前哪些行业在 Markup**
+  (日线/周线 + 强度 + 成分股数 + 数据日期) —— 个股路径和 `--sw` 路径**都会出**
 - **不用再去 grep md 找信号清单** —— 明细就在 stdout
 - 逐只详报已落 `docs/{portfolio,watchlist,blowout}/`, 结论看 stdout 即可
+
+> 🏭 行业 Markup 汇总的**数据源 = 行业威科夫 cache (只读)** ——
+> 跟个股报告「因子历史走势」表里的「行业威科夫」列**同源同数**, 两处不会打架。
+> 唯一写者是 `/t-sync-data`; cache 缺数据时该表显示「⚠️ 数据日期落后的行业」,
+> **别自己算** (cache 是唯一真源, 缺就是缺)。
 
 ## 输出
 
