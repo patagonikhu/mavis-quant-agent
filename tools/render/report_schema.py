@@ -386,6 +386,101 @@ def get_section_ids() -> list:
     return [s["id"] for s in REPORT_SECTIONS if not s.get("_deprecated")]
 
 
+# ============================================================
+# 行业版报告 section (2026-11-12 加, /t-analyze --sw)
+# ============================================================
+# 个股版 8 个 section 里, 2 个对行业不适用:
+#   - finance_quarterly  → 行业指数没财报 → 换「行业估值 (PE/PB/市值)」
+#   - industry_position  → 行业自己没"行业地位" → 换「行业间地位」+「行业内龙头榜」
+# 其余段 (MA / 因子矩阵 / XGBoost / 数据源 / linter) **零改动复用**。
+#
+# linter 按报告里的 `<!-- report_type: industry -->` 标记切到这份清单。
+INDUSTRY_SECTIONS = [
+    {
+        "id": "data_completeness",
+        "title": "📊 数据完整性 (开篇即知, 一目了然)",
+        "category": "📋",
+        "render": "render_data_completeness",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "sw_valuation",
+        "title": "📈 行业估值 (PE / PB / 市值)",
+        "category": "📋",
+        "render": "render_sw_valuation",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "sw_industry_position",
+        "title": "🏆 行业间地位 (全行业排名)",
+        "category": "📋",
+        "render": "render_sw_industry_position",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "sw_leaders",
+        "title": "👑 行业内龙头榜 (市值前 10 + 涨幅前 10)",
+        "category": "📋",
+        "render": "render_sw_leaders",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "ma_indicators",
+        "title": "MA 均线",
+        "category": "📋",
+        "render": "render_ma",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "method_matrix",
+        "title": "🎯 因子 × 2 周期 矩阵 (威科夫)",
+        "category": "📋",
+        "render": "render_factor_matrix",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "xgboost",
+        "title": "🤖 XGBoost 校准",
+        "category": "📋",
+        "render": "render_xgboost",
+        "required": False,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "data_sources",
+        "title": "📡 数据源矩阵 (数据/主源/备源/单位/说明) — 固化不丢",
+        "category": "🔧",
+        "render": "render_data_sources",
+        "required": True,
+        "refresh": "REGEN",
+    },
+    {
+        "id": "linter",
+        "title": "🔍 Linter 校验报告 (增强模式自动追加)",
+        "category": "🔧",
+        "render": "render_linter",
+        "required": True,
+        "refresh": "REGEN",
+    },
+]
+
+
+def get_industry_section_ids() -> list:
+    """行业版 section ID 列表 (linter 行业模式用)"""
+    return [s["id"] for s in INDUSTRY_SECTIONS if not s.get("_deprecated")]
+
+
+def get_industry_section_titles() -> list:
+    """行业版 section 标题列表 (linter 行业模式用)"""
+    return [s["title"] for s in INDUSTRY_SECTIONS if not s.get("_deprecated")]
+
+
 def get_section_titles() -> list:
     """返回所有 section 标题 (用于 linter 校验)
 

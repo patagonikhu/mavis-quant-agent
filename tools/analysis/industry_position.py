@@ -324,6 +324,117 @@ def compute_industry_position(code: str, industry: str | None = None,
     }
 
 
+def compute_industry_leader_board(l2_code: str, trading_days: int = 120,
+                                  top_n: int = 10) -> dict:
+    """某个二级行业的**成分股龙头榜** (市值前 N + 涨幅前 N)
+
+    2026-11-12 加: 给 /t-analyze --sw 的行业版报告用 (个股版只有"我这只票在行业里排第几",
+    行业版要看"这个行业里谁是大票、谁在涨")。
+
+    ⚠️ 口径跟 compute_industry_position **完全一致**:
+       - 市值排名: 窗口**末日** total_mv 降序 (停牌/退市自然出局)
+       - 区间涨幅: total_mv 比值 (股东实际收益, 送转不失真)
+       - 窗口: _complete_window(trading_days) 挑覆盖完整的交易日 (别用 max(trade_date),
+         半拉日会让分母缩水 → 排名虚高)
+
+    Args:
+        l2_code:     二级行业代码 (801012.SI)
+        trading_days: 区间交易日数 (默认 120)
+        top_n:       每张榜取前 N (默认 10)
+
+    Returns:
+        {l2_code, l2_name, peer_total, start_date, end_date, trading_days,
+         mv_top:  [{ts_code, code, name, market_value_yi, market_value_rank,
+                    market_value_percentile, gain_pct, gain_rank, gain_percentile}],
+         gain_top: [同上, 按涨幅排]}
+    """
+    import pandas as pd
+
+    if not l2_code:
+        return {}
+
+    l2_name = ""
+    try:
+        from tools.storage.store import DataStore
+        l2_name = DataStore.get_industry_level_map().get(l2_code, {}).get("l2_name", "")
+    except Exception:
+        pass
+    members = _industry_members(l2_code, l2_name)
+    if not members:
+        return {}
+
+    start_date, end_date = _complete_window(trading_days)
+    if not end_date:
+        return {}
+    rows = _fetch_member_snapshot(members, start_date, end_date)
+    if not rows:
+        return {}
+
+    df = pd.DataFrame(rows)
+    end_df = df[df["trade_date"] == end_date].sort_values("total_mv", ascending=False).copy()
+    if end_df.empty:
+        return {}
+    end_df["mv_rank"] = range(1, len(end_df) + 1)
+    peer_total = len(end_df)
+
+    start_df = df[df["trade_date"] == start_date].set_index("ts_code")
+    end_idx = end_df.set_index("ts_code")
+
+    # 区间涨幅 (total_mv 比值)
+    gains: dict[str, float] = {}
+    for c in end_idx.index:
+        if c in start_df.index:
+            s_mv = float(start_df.loc[c, "total_mv"])
+            e_mv = float(end_idx.loc[c, "total_mv"])
+            if s_mv:
+                gains[c] = (e_mv / s_mv - 1) * 100
+    gain_sorted = sorted(gains.items(), key=lambda x: x[1], reverse=True)
+    gain_rank_map = {c: i for i, (c, _) in enumerate(gain_sorted, 1)}
+
+    # 成分股名字 (一次性取全表, 别逐只查)
+    name_map: dict[str, str] = {}
+    try:
+        from tools.storage.store import DataStore
+        for rec in DataStore.load_stock_basic().to_dict("records"):
+            ts = str(rec.get("ts_code") or "")
+            if ts:
+                name_map[ts] = str(rec.get("name") or "")
+    except Exception:
+        pass
+
+    def _row(ts: str) -> dict:
+        code6 = ts.split(".")[0]
+        mv_rank = int(end_idx.loc[ts, "mv_rank"])
+        gr = gain_rank_map.get(ts)
+        return {
+            "ts_code": ts,
+            "code": code6,
+            "name": name_map.get(ts) or code6,
+            "market_value_yi": float(end_idx.loc[ts, "total_mv"]) / 10000.0,
+            "market_value_rank": mv_rank,
+            "market_value_rank_total": peer_total,
+            "market_value_percentile": mv_rank / peer_total * 100,
+            "gain_pct": gains.get(ts),
+            "gain_rank": gr,
+            "gain_rank_total": len(gains),
+            "gain_percentile": (gr / len(gains) * 100) if (gr and gains) else None,
+        }
+
+    mv_top = [_row(ts) for ts in end_df["ts_code"].tolist()[:top_n]]
+    gain_top = [_row(ts) for ts, _ in gain_sorted[:top_n]]
+
+    return {
+        "l2_code": l2_code,
+        "l2_name": l2_name,
+        "peer_total": peer_total,
+        "start_date": start_date,
+        "end_date": end_date,
+        "trading_days": trading_days,
+        "mv_top": mv_top,
+        "gain_top": gain_top,
+    }
+
+
 def _judge_leader(market_value_percentile: float | None,
                   gain_percentile: float | None) -> tuple[str, str]:
     """龙头判定: 市值分位 + 涨幅分位 → 4 档

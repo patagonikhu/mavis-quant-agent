@@ -181,6 +181,15 @@ class RenderData:
     #   (规则下沉: 判定在分析层算, 渲染器只读)
     industry_position: Optional[dict] = field(default=None, repr=False)
 
+    # ===== 行业版报告专用 (2026-11-12 加, /t-analyze --sw) =====
+    # 个股版用 industry_position; 行业版用下面 3 个 (行业自己没"行业地位")
+    sw_valuation: Optional[dict] = field(default=None, repr=False)        # PE/PB/总市值/流通市值
+    sw_peer_position: Optional[dict] = field(default=None, repr=False)     # 行业间排名 (市值+涨幅)
+    sw_leader_board: Optional[dict] = field(default=None, repr=False)      # 行业内龙头榜 (市值前 N + 涨幅前 N)
+    # 资产标签 + 价格单位 (因子矩阵标题用): 个股 "股票"/"¥", 行业 "行业指数"/""
+    asset_label: str = "股票"
+    price_unit: str = "¥"
+
     # v5.10.35: 派生字段兼容层 — render 读 data.<字段> 现在自动从 analysis 拿
     # 之前 v5.10.34 前: 这些字段从 dump 顶层读; 现在挪到 analysis 层
     # render 改读 data.analysis.<字段> 太散, 加 property 兼容老代码

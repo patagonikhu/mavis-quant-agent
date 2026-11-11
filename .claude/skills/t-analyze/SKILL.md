@@ -31,7 +31,28 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all
 
 # 显式清理「不在 watchlist.json 里的历史孤儿 md」 (2026-11-12 起默认**不删**)
 T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all --prune-orphans
+
+# 行业版: 给申万二级行业指数出分析报告 → docs/sw/ (125 个, 10s)
+bash tools/with_venv.sh python -m tools.batch.t_analyze_all --sw
+
+# 行业版 (单个行业)
+bash tools/with_venv.sh python -m tools.batch.t_analyze_one --sw --code 801012.SI
 ```
+
+> 🏭 **行业版 (`--sw`, 2026-11-12 加)** —— 跟个股同款报告, 但换掉 2 个对行业不适用的段:
+>
+> | 个股段 | 行业版换成 | 为什么 |
+> |---|---|---|
+> | 「财务数据」 | **「📈 行业估值 (PE/PB/市值)」** | 行业指数没财报, 但申万指数自带 PE/PB/总市值/流通市值 |
+> | 「🏆 行业地位」 | **「🏆 行业间地位」** + **「👑 行业内龙头榜」** | 个股看"我在行业里排第几"; 行业看"我在所有行业里排第几" + "这个行业里谁是大票谁在涨" |
+>
+> 其余段 (MA / 因子历史 / 因子矩阵 / 因子详情 / XGBoost / 数据源) **零改动复用** →
+> 行业指数 K 线拼 RawContext 后走**同一套** AnalysisEngine/WyckoffStrategy。
+> 产物: `docs/sw/analyze-{801012}-{行业名}.md` · 125 个二级行业 (有 K 线数据的) · 8 worker **10s**。
+> 龙头榜口径跟个股版同源 (市值排名用总市值, 涨幅用**总市值比值** = 股东实际收益, 送转不失真)。
+>
+> ⚠️ 行业版**没有**「财务数据」段 → linter 按 `<!-- report_type: industry -->` 标记切到
+> `INDUSTRY_SECTIONS` 清单 (report_schema.py), 别拿个股的 8 段清单去卡它。
 
 > ⚠️ **批量入口默认不删任何 md** (2026-11-12 用户纠错后改的):
 > 用户让「刷新 docs/watchlist 下的 md」, 老默认把 65 份不在 `watchlist.json` 里的
@@ -86,6 +107,7 @@ T_ANALYZE_WORKERS=4 bash tools/with_venv.sh python -m tools.batch.t_analyze_all 
 ## 输出
 
 - `docs/portfolio/analyze-{code}-{name}.md` (持仓票) / `docs/watchlist/...` (自选)
+- `--sw` → `docs/sw/analyze-{行业代码}-{行业名}.md` (行业版, 125 个二级行业)
 - **批量模式汇总走 stdout** —— buy / sell 信号明细直接打在终端, 不落汇总 md
 - **blowout 段只落 M 阶段的票** (2026-11-09): `list_type=blowout` 是"业绩暴增候选池",
   批量跑时先筛出当前**日线 stage == Markup** 的票, 只有这些票出详报 → `docs/blowout/`

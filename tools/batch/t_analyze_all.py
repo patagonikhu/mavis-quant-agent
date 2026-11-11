@@ -53,8 +53,21 @@ _arg_parser = argparse.ArgumentParser(description="t-analyze --all 批量分析"
 _arg_parser.add_argument("--prune-orphans", action="store_true",
                           help="清理 docs/{portfolio,watchlist,blowout}/ 里不在 watchlist.json "
                                "的历史孤儿 md (默认不删, 全部保留)")
+_arg_parser.add_argument("--sw", action="store_true",
+                          help="行业版批量: 给申万二级行业指数出分析报告 → docs/sw/")
 _args, _unknown = _arg_parser.parse_known_args()
 PRUNE_ORPHANS = _args.prune_orphans
+
+# 2026-11-12: --sw → 行业版批量
+# ⚠️ 必须用 **os.execvp 换进程**, 不能在本进程里 import+调用:
+#    mp.spawn 的子进程会重新 import 父进程的 __main__ 模块
+#    (python -m X → __main__ = X), 而**本模块没有 `if __name__ == '__main__'` 保护**
+#    → 子进程会把整个个股批量又跑一遍 (实测: 个股批量在子进程里重跑, 输出串在一起)。
+#    execvp 换掉进程后, __main__ 变成 t_analyze_sw (它**有**保护) → 干净。
+if _args.sw:
+    import os
+    _rest = [a for a in sys.argv[1:] if a != "--sw"]
+    os.execvp(sys.executable, [sys.executable, "-m", "tools.batch.t_analyze_sw", *_rest])
 
 
 wl = DataStore.load_watchlist()['stocks']

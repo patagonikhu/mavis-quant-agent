@@ -748,3 +748,49 @@ Type: rule
 
 **apply when:** 任何批量入口 (t_analyze_all / wyckoff_a2m_scan / sync) 跑之前;
 任何要加"清理/删除"类副作用的时候; 任何 `~/.Trash` 恢复场景。
+
+### 行业版报告: 复用整条链路, 只换不适用的段 (2026-11-12)
+Type: rule
+> **摘要:** `/t-analyze --sw` 给申万二级行业出同款报告 —— 能复用的段**一行都不改**,
+> 只把对行业不成立的 2 段换掉; 但入口转发踩了 mp.spawn 的坑。
+
+**为什么能复用 (实测, 不是假设):**
+行业指数 K 线 (OHLCV) → 拼 RawContext → **直接调** AnalysisEngine().analyze_history()
+→ 跟个股**同一套** WyckoffStrategy, 零改动。
+(`industry_stage.py` 早就验过这条路: 120 日 0.28s / 全历史 1696 日 0.24s)
+
+**段级映射 (个股 → 行业):**
+
+| 个股段 | 行业版换成 | 为什么 |
+|---|---|---|
+| 「财务数据」 | 「📈 行业估值 (PE/PB/市值)」 | 行业指数没财报, 但申万指数自带 PE/PB/总市值/流通市值 |
+| 「🏆 行业地位 (龙头判定)」 | 「🏆 行业间地位」+「👑 行业内龙头榜」 | 个股看"我在行业里排第几"; 行业看"我在所有行业里排第几" + "谁是大票谁在涨" |
+
+其余 (MA / 因子历史 / 因子矩阵 / 因子详情 / XGBoost / 数据源) **直接 import 个股 renderer 的
+`_section_*` 函数复用** —— 复制一份 = 两边必然漂移。
+
+**linter 要能认出行业报告:**
+行业版 section 集合不同 → 报告顶部打 `<!-- report_type: industry -->` 标记,
+linter 按标记切到 `INDUSTRY_SECTIONS` 清单 (report_schema.py), 财务段专项检查对行业**跳过**。
+不这么做 → 125 份行业报告全部报「缺 ## 财务数据 section」。
+
+**⛔ 入口转发必须用 `os.execvp`, 不能 import + 调用:**
+```
+python -m tools.batch.t_analyze_all --sw
+  → mp.spawn 的子进程会重新 import 父进程的 __main__ 模块
+  → 而 tools/batch/t_analyze_all.py **无 `if __name__ == '__main__'` 保护** (见上面第 8 条)
+  → 子进程里把整个**个股批量**又跑了一遍 (输出串在一起, 详情页被覆盖)
+```
+修法: `os.execvp(sys.executable, [sys.executable, "-m", "tools.batch.t_analyze_sw", ...])`
+—— 换掉进程后 `__main__` 变成 t_analyze_sw (它**有**保护) → 子进程干净。
+
+**规律:** 任何"从 A 入口转发到 B 脚本"的写法, 只要 B 会开 mp.spawn 池,
+就必须**换进程** (exec) 而不是**同进程调用** —— 否则子进程会把 A 的副作用重跑一遍。
+根子还是 A 缺 `__main__` 保护; exec 是绕过, 补保护是根治。
+
+**⛔ 行业间排名要跟"全部行业"比, 不能只跟本次跑的子集比:**
+单跑 1 个行业时, 如果只把它自己放进比较池 → 它的"行业间排名"永远 1/1 (毫无信息量)。
+→ 比较池固定用**全部有 K 线数据的二级行业**, 报告里只取本次这个行业的名次。
+
+**apply when:** 加新的报告维度 (ETF / 行业 / 指数) 时; 任何 mp.spawn + 入口转发的组合;
+任何"新报告类型的 section 集合跟现有不同"的场景 (linter / schema 要一起改)。

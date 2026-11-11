@@ -108,13 +108,25 @@ def lint_report(md_path: str) -> dict[str, Any]:
     md_ids = re.findall(r"<!--\s*id:\s*([a-z0-9_]+)\s*-->", content)
 
     # 1. 检查 section 齐全 (linter 自身段不查, 避免自引用)
-    sections_to_check = [s for s in REQUIRED_SECTIONS if "Linter 校验报告" not in s]
+    # 2026-11-12: 行业版报告 (/t-analyze --sw) 的 section 集合跟个股不同
+    #   → 按 `<!-- report_type: industry -->` 标记切到 INDUSTRY_SECTIONS 清单
+    is_industry = "<!-- report_type: industry -->" in content
+    if is_industry:
+        try:
+            from tools.render.report_schema import get_industry_section_titles
+            sections_to_check = [s for s in get_industry_section_titles()
+                                 if "Linter 校验报告" not in s]
+        except ImportError:
+            sections_to_check = [s for s in REQUIRED_SECTIONS if "Linter 校验报告" not in s]
+    else:
+        sections_to_check = [s for s in REQUIRED_SECTIONS if "Linter 校验报告" not in s]
     # 优先用 id 注释匹配 (从 REPORT_SECTIONS 取 id), fallback 标题文案
     try:
         from tools.render.report_schema import get_section_ids
         id_to_title = {}
-        from tools.render.report_schema import REPORT_SECTIONS
-        for sec in REPORT_SECTIONS:
+        from tools.render.report_schema import REPORT_SECTIONS, INDUSTRY_SECTIONS
+        _schema = INDUSTRY_SECTIONS if is_industry else REPORT_SECTIONS
+        for sec in _schema:
             id_to_title[sec["id"]] = sec["title"]
     except ImportError:
         id_to_title = {}
@@ -590,8 +602,11 @@ def lint_report(md_path: str) -> dict[str, Any]:
         if linter_marker in content:
             content = content.split(linter_marker)[0]
         finance_warnings = lint_finance_section(content)
-        if finance_warnings:
-            result["warnings"] = result.get("warnings", []) + finance_warnings
+        # 2026-11-12: 行业版报告 (/t-analyze --sw) **没有**「财务数据」段 —— 行业指数没财报,
+        #   那一段换成了「行业估值 (PE/PB/市值)」。财务段专项检查对行业报告**不适用**, 跳过。
+        if "<!-- report_type: industry -->" not in content:
+            if finance_warnings:
+                result["warnings"] = result.get("warnings", []) + finance_warnings
     return result
 
 

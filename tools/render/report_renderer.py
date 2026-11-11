@@ -1204,6 +1204,9 @@ def _section_factor_matrix(data: RenderData) -> str:
             name=data.name,
             current_price=data.current_price or 0,
             signals_5method=data.analysis,  # 参数名暂保留, v5.10.26+ 内部就是 analysis dict
+            # 2026-11-12: 行业版报告用 "行业指数" / "点位" (个股默认 "股票" / "¥", 输出不变)
+            label=getattr(data, "asset_label", "股票"),
+            price_unit=getattr(data, "price_unit", "¥"),
         )
         return render_factor_matrix_md(matrix)
     except Exception as e:

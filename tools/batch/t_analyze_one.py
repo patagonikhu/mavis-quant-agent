@@ -188,7 +188,17 @@ def main() -> int:
                         help="强制输出子目录 (如 'wyckoff-a2m'), 跳过 watchlist 分流")
     parser.add_argument("--workers", type=int, default=0,
                         help="多进程 worker 数 (--codes 时用; 默认 0 = 单进程; 设 N 用 mp.spawn 并发)")
+    parser.add_argument("--sw", action="store_true",
+                        help="行业版: --code 传申万行业代码 (例 801012.SI) → 行业分析报告")
     args = parser.parse_args()
+
+    # 行业版 (2026-11-12): exec 换进程跑 t_analyze_sw
+    # ⚠️ 用 execvp 而不是 import+调用: mp.spawn 子进程会重新 import 父进程的 __main__,
+    #    本模块的 main() 只在 `__name__ == "__main__"` 下跑, 但换进程更干净 (口径统一)。
+    if args.sw:
+        import os
+        _rest = [a for a in sys.argv[1:] if a != "--sw"]
+        os.execvp(sys.executable, [sys.executable, "-m", "tools.batch.t_analyze_sw", *_rest])
 
     # 解析 codes
     if args.code and args.codes:

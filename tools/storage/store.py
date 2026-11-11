@@ -1829,6 +1829,41 @@ class DataStore:
         return _SW_INDEX_FRAME
 
     @classmethod
+    def list_sw_index_codes(cls) -> list[str]:
+        """有 K 线数据的行业指数代码列表 (sorted)
+
+        2026-11-12 加: /t-analyze --sw 行业版报告要遍历全部行业。
+        业务层禁直读 parquet → 这里出唯一入口。
+
+        返回的 ts_code 形如 '801012.SI' (申万 2021 二级行业指数)。
+        注意: 申万 9 个二级行业**没发数据** + 林业Ⅱ 停更, 所以列表 ≠ 成分表里的 131 个。
+        """
+        df = cls._sw_index_frame()
+        if df.empty:
+            return []
+        return sorted({str(c) for c in df["ts_code"].unique() if c})
+
+    @classmethod
+    def get_industry_level_map(cls) -> dict[str, dict]:
+        """{l2_code: {l1_code, l1_name, l2_name}} —— 二级行业 → 所属一级行业
+
+        2026-11-12 加: 行业版报告要在标题上显示"所属一级行业"(板块)。
+        来源: index_member_all 落的 industry_member.parquet (唯一真源) —— 逐股记录里去重派生。
+        """
+        out: dict[str, dict] = {}
+        for rec in cls._industry_member_info().values():
+            l2 = str(rec.get("l2_code") or "")
+            if not l2 or l2 in out:
+                continue
+            out[l2] = {
+                "l1_code": str(rec.get("l1_code") or ""),
+                "l1_name": str(rec.get("l1_name") or ""),
+                "l2_code": l2,
+                "l2_name": str(rec.get("l2_name") or ""),
+            }
+        return out
+
+    @classmethod
     def get_sw_index_bars(cls, ts_code: str) -> list[dict]:
         """申万行业指数日线 (1 个行业), 字段跟个股 ctx 一致
 

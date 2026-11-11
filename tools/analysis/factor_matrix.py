@@ -51,6 +51,8 @@ def build_factor_matrix(
     name: str,
     current_price: float,
     signals_5method: dict,
+    label: str = "股票",
+    price_unit: str = "¥",
 ) -> dict:
     """
     构建 因子 × 2 周期 矩阵 (威科夫对照)
@@ -95,6 +97,9 @@ def build_factor_matrix(
         'code': code,
         'name': name,
         'current_price': current_price,
+        # 2026-11-12: 行业版报告 (/t-analyze --sw) 用 —— 个股默认 "股票"/"¥", 输出零变化
+        'label': label,
+        'price_unit': price_unit,
         'matrix': matrix,
     }
 
@@ -115,7 +120,9 @@ def render_factor_matrix_md(matrix_result: dict) -> str:
     price = matrix_result['current_price']
 
     md = []
-    md.append(f"**股票**: {code} {name} ¥{price:.2f}\n")
+    _label = matrix_result.get('label', '股票')
+    _unit = matrix_result.get('price_unit', '¥')
+    md.append(f"**{_label}**: {code} {name} {_unit}{price:.2f}\n")
 
     md.append("**🎯 因子 × 2 周期 (威科夫 3 大阶段):**\n")
     md.append("| 维度 | 周线 (1.5x) | 日线 (1.0x) |")
