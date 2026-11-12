@@ -1,7 +1,7 @@
 # 项目专属教训 — 索引
 
 > 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
-> 共 **91 条**教训 (拆 47 + 后续新增 44)。
+> 共 **94 条**教训 (拆 47 + 后续新增 47)。
 > **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
 
@@ -10,8 +10,8 @@
 | 分册 | 主题 | 条数 |
 |---|---|---|
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
-| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 19 |
-| [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
+| [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 20 |
+| [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 8 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 22 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 24 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
@@ -66,6 +66,7 @@
 | 16 | 派生 cache 的写路径要收归单一 owner | 「读时顺手写」逼出文件锁; 写归 /t-sync-data、读侧 miss 就不显示 → 锁直接删; 机器强制靠守门员 AST 扫描 + 运行时守卫 |
 | 17 | ⚠️ 守门员的 tushare 正则盲区: 相对/绝对路径 import 全漏 | 正则抓不到 `from .sources.tushare import ...` 和别名调用 → 改 AST 精确识别; **守门员规则本身要有人测** (造违规反向验证) |
 | 18 | L3 行业指数 K 线: 按需拉, 别全量 | 全量 337 个 L3 = 337 请求 → 按需 139 个; **按需范围必须含 a2m 留档**, 漏了整列「—」; 分类表多 level 合并 (否则拉 L3 覆盖掉 L2) |
+| 19 | **stk_factor 落盘后缀可能跟 `_to_ts_code` 映射不一致** | 查 0 行有两种: 真没数据 / 找错门 (000688 科创50 代码查 .SH, 盘上是 .SZ) → 查 0 行先排错门 |
 
 ## 财务 / 估值口径
 
@@ -79,6 +80,8 @@
 | 4 | OBV / fflow / PEG / DCF 四个维度已彻底删除 | 已彻底删除禁止复活; 估值只看 PE(静态) + ROC/EY/毛利率/杠杆 |
 | 5 | stock_basic 股本兜底读已废弃的 daily_basic → 详报股本恒 0.00亿股 | 兜底不能读已废弃的 daily_basic, 否则详报股本恒 0.00 亿股 (已修 32d7d2b) |
 | 6 | 行业黑名单按旧版行业名写 → 银行/地产/公用一直漏网 | 旧名单 15 个名字只有 6 个真实存在 → 地产/公用 0 命中; 判定改按 l2_code, 且行业标签必须在**读取侧**覆盖 parquet 快照 |
+| 7 | **PE 字段取错: `pe` (上年报) vs `pe_ttm` (滚动)** | 项目 glossary 定义 PE = 市值/**TTM** 净利 → 取 `pe_ttm` 不是 `pe`; 全市场两口径平均差 1.32 倍, 37% 的票差 >20%; **同一报告两个 PE 打架 = 口径不一致的信号** |
+| 8 | **pandas NaN ≠ None: 表格漏出字面量 "nan"** | parquet 空值是 NaN 不是 None → `is not None` 判不出 → 表格出现 `nan`; 实测 100,065 行 (17.5%) 中招; 判空要判 NaN/NaT/Inf |
 
 ## A→M 扫描 / watchlist
 

@@ -814,6 +814,25 @@ def batch_load_daily_basic(code: str, dates: list[str]) -> dict[str, dict]:
               AND trade_date IN ({dates_str})
             """,
         ).df()
+        # 2026-11-13 加: 后缀回退 —— 同一数字代码在 stk_factor 里可能存成另一个市场后缀。
+        #   实测 000688 (科创50): _to_ts_code 按 _INDEX_SUFFIX 映射成 .SH, 但 tushare
+        #   落盘是 000688.SZ (1175 行 / pe_ttm 非空 1151) → 查 .SH 命中 0 → PE 列全「—」。
+        #   主查 0 行时再试另一个后缀 (只多 1 次 SQL, ~6ms), 避免整列空。
+        if df.empty:
+            base = ts_code.split(".")[0]
+            for alt in (f"{base}.SZ", f"{base}.SH", f"{base}.BJ"):
+                if alt == ts_code:
+                    continue
+                df = _conn().execute(
+                    f"""
+                    SELECT trade_date, total_mv, close, pe, pe_ttm, pb
+                    FROM read_parquet('{DAILY_BASIC_DIR}/*.parquet')
+                    WHERE ts_code = '{alt}'
+                      AND trade_date IN ({dates_str})
+                    """,
+                ).df()
+                if not df.empty:
+                    break
         return {row["trade_date"]: row.to_dict() for _, row in df.iterrows()}
     except Exception:
         return {}

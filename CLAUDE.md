@@ -66,6 +66,11 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 
 **只看 PE (静态) + 盈利质量 (ROC / EY / 毛利率 / 杠杆)**, 全部用已审计 TTM 财报算, **不依赖任何预测值**。
 
+⚠️ **命名坑**: 本项目「PE (静态)」= 市值 / **TTM** 净利 (名字叫静态, 用的是 TTM)。
+因子历史表的 PE 列**取 `stk_factor.pe_ttm`** (不是 `pe` = 上年报净利), 列头标 **「PE(TTM)」**。
+TTM 亏损的票该列显示「—」是诚实表现, 别拿 `pe` 兜底。
+→ `handbook/lessons/03-finance.md` 第 7/8 条
+
 **已彻底删除, 禁止复活**: OBV / fflow 主力资金流 / PEG / DCF L / 多市场共振 res / EPS 机构一致预期 / 因子矩阵投票。
 删除原因与事故实录 → `handbook/lessons/` (03-finance + 05-render-lint)。
 

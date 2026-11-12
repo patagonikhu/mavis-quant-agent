@@ -204,3 +204,77 @@ Type: rule
 
 **apply when:** 任何"按行业做的判定" (黑名单/分组/过滤)。
 先问: 这个行业名是**读的时候算的**还是**写的时候存的**? 存的快照一定会漂。
+
+---
+
+### PE 字段取错: `pe` (上年报) vs `pe_ttm` (滚动) (2026-11-13 修)
+Type: rule
+> **摘要:** 因子历史表 PE 列原来取 Tushare `pe` (市值/**上年度**净利),
+> 跟项目自己的定义 (市值/TTM 净利) 不一致; 37% 的票两个口径差 >20%
+
+**发现方式**: 用户看因子历史表说「pe 好像算得不对」—— **同一份报告里两个 PE 打架**:
+天安新材 因子历史 36 vs 财务表 73; 埃斯顿 658 vs 143。
+
+**根因**: `daily_basic` 有两个 PE 字段, 含义完全不同:
+| 字段 | 公式 | 本项目 |
+|---|---|---|
+| `pe` | 市值 / **上年度**净利润 | ❌ 不用 (业绩下滑的票系统性偏高) |
+| `pe_ttm` | 市值 / **最近 12 个月**净利润 | ✅ 本项目口径 |
+
+⚠️ 项目命名本身有坑: 「PE (静态)」在 glossary 里定义成 **市值/TTM 净利润** ——
+名字叫静态, 用的是 TTM。**别被字段名骗了, 按 glossary 的公式选字段。**
+
+**实测影响 (20261112 全市场)**:
+| 指标 | 数值 |
+|---|---|
+| `pe` / `pe_ttm` 平均 | **1.32 倍** |
+| 差 >20% 的票 | **37.1%** |
+| 差 >50% 的票 | 16.9% |
+| `pe` 空 / `pe_ttm` 空 | 539 / 619 只 |
+
+**代价 (要接受)**: TTM 亏损的票 `pe_ttm` 为 null → PE 列显示「—」。
+这是**诚实**: TTM 亏损本来没 PE, 用上年报 PE 反而是过期数据。
+(项目 A→M 扫描本来就剔亏损股, 影响面小)
+
+**⛔ 通用教训**: **同一个指标在报告里出现两次, 两个值打架 = 口径不一致的信号**。
+先查两处分别取自哪里 (字段 / 公式 / 时点), 再看定义文档 —— 别急着改数字。
+
+**apply when:** 任何"估值数字看着不对劲"的质疑; 任何在 Tushare 字段之间做选择的地方
+(`pe` vs `pe_ttm`, `ps` vs `ps_ttm`, `dv_ratio` vs `dv_ttm` 都是同款陷阱)。
+
+**相关代码:**
+- `tools/analysis/analysis_result_signals.py` (因子历史 PE 列取数)
+- `tools/render/report_renderer.py::FACTOR_HISTORY_HEADER` (列头标「PE(TTM)」)
+
+---
+
+### pandas NaN ≠ None: 表格里漏出字面量 "nan" (2026-11-13)
+Type: rule
+> **摘要:** parquet 空值读出来是 pandas **NaN**(float), 不是 `None` →
+> `if v is not None` 判不出来 → `round(float(nan))` = nan → 报告表格出现字面量 `nan`
+
+**症状**: 因子历史表 PE 列出现 `nan` 而不是「—」。
+TTM 亏损的票 (300024 机器人等) 全是这症状。
+
+**根因**: `duckdb` → `df.iterrows()` → `row.to_dict()` → NaN 保持 `float('nan')`。
+`is not None` 对 NaN 恒为 True, 于是 `round(float(nan), 2)` = `nan` 被当成正常值写进表。
+
+**修法**: 统一走一个转换函数 —— `None` / `NaN` / `Inf` 一律转 `None`, 渲染层再转「—」。
+```python
+def _num(v):
+    if v is None: return None
+    try: f = float(v)
+    except (TypeError, ValueError): return None
+    return None if math.isnan(f) or math.isinf(f) else round(f, 2)
+```
+
+**⛔ 通用教训**: **判空要判 NaN, 不能只判 None**。
+pandas / numpy / pyarrow 出来的空值有 3 种 (`None` / `NaN` / `NaT`), 判一个不够。
+
+**实测影响**: 全量 856 份报告 / 571,794 行因子历史 → **100,065 行 (17.5%)** 是 `nan`,
+改完重刷后 → **0 行**。
+
+**apply when:** 任何从 parquet / DataFrame 取值再渲染成表格的地方 (PE / PB / 涨跌幅 / 换手率)。
+
+**相关代码:**
+- `tools/analysis/analysis_result_signals.py` (`_num` 转换, PE / pe_ttm / pb 三列共用)

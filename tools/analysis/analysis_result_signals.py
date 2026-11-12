@@ -12,6 +12,8 @@ render 和回测都调 compute_factor_history，保证一致性。
 """
 from __future__ import annotations
 
+import math
+
 
 # ============================================================
 # 因子历史走势表的回看交易日数 (2026-11-05)
@@ -22,6 +24,24 @@ from __future__ import annotations
 #       且 ETF 普遍上市较晚 (不少只有 300~500 根), 多给 80 根才够看阶段切换。
 FACTOR_HISTORY_LOOKBACK = 120
 FACTOR_HISTORY_LOOKBACK_ETF = 200
+
+
+def _safe_num(v, nd: int = 2):
+    """安全转数字: None / NaN / Inf / 非法值 一律转 None。
+
+    2026-11-13 加: parquet 空值读出来是 pandas **NaN** (float), 不是 None →
+    `if v is not None` 判不出来 → `round(float(nan))` = nan → 报告表格出现字面量
+    "nan" (实测 100,065 行 / 17.5%)。判空必须覆盖 NaN / NaT / Inf。
+    """
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return round(f, nd)
 
 
 def factor_history_lookback(code: str) -> int:
@@ -143,13 +163,20 @@ def compute_factor_history(ctx, lookback: int = 60,
         # 2026-10-12 加: 每日 PE / PE_TTM / PB (走 batch_load_daily_basic, 0 网络)
         # 注: stk_factor 数据晚 1 天 (T+1 同步), 但用户想看日度变化
         db_row = daily_basic_map.get(date_clean) or {}
-        pe_v = db_row.get("pe")
-        pe_ttm_v = db_row.get("pe_ttm")
-        pb_v = db_row.get("pb")
+        # 2026-11-13 改 (用户: 「pe 好像算得不对」): PE 列改用 **pe_ttm**
+        #   原来取 `pe` = 市值 / **上年度**净利润 (Tushare 静态 PE) → 与
+        #   finance-glossary 的定义不一致 (「PE (静态) = 市值 / TTM 净利润」)。
+        #   实测全市场 20261112: pe/pe_ttm 平均 1.32, **37% 的票差 >20%**,
+        #   16.9% 差 >50% —— 业绩下滑的票静态 PE 系统性偏高 (埃斯顿 658 vs TTM 143),
+        #   而且跟同一份报告财务表的 PE (最新年化) 直接打架 (天安新材 36 vs 73)。
+        #   改 TTM 后与 glossary / 财务表口径统一。
+        #   ⚠️ 代价: TTM 亏损的票 pe_ttm 为 null → 该列显示「—」(实测空值 619 vs 539)。
+        pe_ttm_v = _safe_num(db_row.get("pe_ttm"))
+        pb_v = _safe_num(db_row.get("pb"))
         daily_val = {
-            "pe":       round(float(pe_v), 2)     if pe_v is not None else None,
-            "pe_ttm":   round(float(pe_ttm_v), 2) if pe_ttm_v is not None else None,
-            "pb":       round(float(pb_v), 2)     if pb_v is not None else None,
+            "pe":       pe_ttm_v,
+            "pe_ttm":   pe_ttm_v,
+            "pb":       pb_v,
         }
 
         rows.append({**_extract_row(result, date, close), **ma_devs, **daily_val})

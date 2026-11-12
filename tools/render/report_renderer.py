@@ -1224,7 +1224,7 @@ def _section_factor_matrix(data: RenderData) -> str:
 # 2026-11-06 删 1 列: 「变化」列 (用户指令) —— 相邻两行的 diff 摘要。
 #   diff_rows / extract_signals **不动** (仍供 signals_active + 汇总表「信号」列用),
 #   只删这个表里的展示列。
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 行业威科夫(日/周,三级) | 行业强度 | 行业子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 行业威科夫(日/周,三级) | 行业强度 | 行业子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE(TTM) |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)

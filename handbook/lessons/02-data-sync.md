@@ -658,3 +658,30 @@ Type: rule
 - `tools/storage/sync.py::action_sw_index(level, only_codes)` + `_needed_l3_codes()`
 - `tools/storage/sync.py` CLI: `--sw-index-level {L1,L2,L3,both}` + `--sw-l3-scope {needed,all}`
 - `tools/analysis/industry_stage.py::INDUSTRY_LEVEL` (显示层口径唯一真源)
+
+---
+
+### stk_factor 落盘的市场后缀可能跟 `_to_ts_code` 映射不一致 (2026-11-13)
+Type: rule
+> **摘要:** 同一数字代码在 `stk_factor` parquet 里的后缀, 可能跟代码里 `_to_ts_code()`
+> 推出来的不一致 → 查 0 行 → 整列显示「—」, 但数据其实在盘上
+
+**实测**: `000688` (科创50)
+| 项 | 值 |
+|---|---|
+| `_to_ts_code("000688")` | `000688.SH` (走 `_INDEX_SUFFIX` 映射) |
+| stk_factor 实际落盘 | **`000688.SZ`** (1175 行, pe_ttm 非空 1151) |
+| 查 `.SH` 命中 | **0 行** → 报告 PE 列整列「—」 |
+
+**修法**: `batch_load_daily_basic` 主查 0 行时, **回退**试同数字代码的另两个后缀
+(只多 1 次 SQL ≈ 6ms)。别改 `_INDEX_SUFFIX` —— 那是 K 线查询用的, 科创50 的
+本地 K 线确实是 `.SH`, 改了会把 K 线查没。
+
+**⛔ 通用教训**: 「查不到数据」有两种 —— **真没有** 和 **找错门**。
+区分方法: 同一个数字代码在表里有没有别的后缀版本。查 0 行时**先排错门, 再下结论说没数据**。
+
+**apply when:** 任何 `WHERE ts_code = '...'` 查 0 行的地方; 任何"某某票的 PE/市值全是空"的质疑。
+
+**相关代码:**
+- `tools/storage/store.py::batch_load_daily_basic` (后缀回退)
+- `tools/storage/store.py::_to_ts_code` + `_INDEX_SUFFIX` (K 线侧映射, 不要动)
