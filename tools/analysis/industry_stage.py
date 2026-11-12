@@ -229,12 +229,17 @@ def summarize_markup_industries(level: str = INDUSTRY_LEVEL) -> dict:
         return {"data_date": "", "total_industries": 0, "daily_markup": [],
                 "weekly_markup": [], "both_markup": [], "stale": []}
 
-    max_date = max((d for ds in dates_by_code.values() for d in ds), default="")
-
     lvl = str(level).upper()
     code_key = "l3_code" if lvl == "L3" else "l2_code"
     name_key = "l3_name" if lvl == "L3" else "l2_name"
     level_map = DataStore.get_industry_level_map(level=lvl)
+    # ⚠️ 2026-11-12 修: cache 里 L2/L3 **混存** (同一个 parquet, key = 行业代码+日期)。
+    #   不按层级过滤的话, L3 汇总里会混进 13 个 L2 行业, 名字还显示成 "801017.SI" 这种代码。
+    #   allowed = 该层级**有成分股**的行业 (337 个 L3 / 131 个 L2); 空壳行业成分股 0, 没意义。
+    allowed = set(level_map.keys())
+    # 最新交易日也只按本层级算 (停更的行业不该影响别人的 stale 判定)
+    max_date = max((d for c, ds in dates_by_code.items() if c in allowed
+                    for d in ds), default="")
     # 成分股数 (一次算全, 别逐行业扫成分表)
     member_count: dict[str, int] = {}
     for rec in DataStore._industry_member_info().values():
@@ -243,7 +248,11 @@ def summarize_markup_industries(level: str = INDUSTRY_LEVEL) -> dict:
             member_count[code] = member_count.get(code, 0) + 1
 
     daily, weekly, both, stale = [], [], [], []
+    n_scope = 0
     for code, dates in dates_by_code.items():
+        if code not in allowed:
+            continue                                  # 不是本层级的行业 → 跳过
+        n_scope += 1
         if not dates:
             continue
         d = max(dates)
@@ -278,7 +287,7 @@ def summarize_markup_industries(level: str = INDUSTRY_LEVEL) -> dict:
 
     return {
         "data_date": max_date,
-        "total_industries": len(dates_by_code),
+        "total_industries": n_scope,
         "daily_markup": daily,
         "weekly_markup": weekly,
         "both_markup": both,
