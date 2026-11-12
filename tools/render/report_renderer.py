@@ -1224,7 +1224,10 @@ def _section_factor_matrix(data: RenderData) -> str:
 # 2026-11-06 删 1 列: 「变化」列 (用户指令) —— 相邻两行的 diff 摘要。
 #   diff_rows / extract_signals **不动** (仍供 signals_active + 汇总表「信号」列用),
 #   只删这个表里的展示列。
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 行业威科夫(日/周,三级) | 行业强度 | 行业子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE(TTM) |"
+# 2026-11-13 改 2 列内容 (用户指令, 列数不变):
+#   ① 「MA20斜率」→「MA5/20斜率(%/日)」: 加 MA5 的 5 日斜率, 两值同列 (MA5/MA20)
+#   ② 「MA偏离(MA5/20/60)」→「MA偏离(MA5/20/60/200)」: 加 MA200 档
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 行业威科夫(日/周,三级) | 行业强度 | 行业子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA5/20斜率(%/日) | MA偏离(MA5/20/60/200) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE(TTM) |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
@@ -1234,7 +1237,7 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
     """单行因子历史 markdown 表格行 (23 列, header 跟 _section_factor_history 完全一致)
 
     Args:
-        rows: compute_factor_history 输出, 按日期升序 (含 ma20_slope 字段)
+        rows: compute_factor_history 输出, 按日期升序 (含 ma5_slope / ma20_slope 字段)
         idx:  当前行索引
 
     Returns:
@@ -1262,25 +1265,33 @@ def _format_factor_row(rows: list[dict], idx: int) -> str | None:
         return s.split(" (")[0]
     se = f"{se_short(row.get('sub_event_daily'))}/{se_short(row.get('sub_event_weekly'))}"
 
-    # MA 偏离 (MA5/20/60 三档日偏离) — v6.2.8 改: 标题"MA偏离(MA5/20/60)", cell 只显示 3 个分数
-    ma5_dev  = row.get('ma5_dev')
-    ma20_dev = row.get('ma_dev_daily')   # ma20 日偏离 (字段复用)
-    ma60_dev = row.get('ma60_dev')
-    ma_parts = []
-    for v in (ma5_dev, ma20_dev, ma60_dev):
-        if v is not None:
-            ma_parts.append(f"{v:+.1f}%")
-    ma_s = "/".join(ma_parts) if ma_parts else "—"
+    # MA 偏离 (MA5/20/60/200 四档日偏离) — v6.2.8 改: 标题"MA偏离(MA5/20/60)",
+    #   2026-11-13 加 MA200 档 (用户: 「MA偏离(MA5/20/60) 这一列加上 MA200」)
+    #   ⚠️ 缺失档位用「—」占位 (不跳过) —— 跳过会让后面的值往前挪, 位置含义不明。
+    ma5_dev   = row.get('ma5_dev')
+    ma20_dev  = row.get('ma_dev_daily')   # ma20 日偏离 (字段复用)
+    ma60_dev  = row.get('ma60_dev')
+    ma200_dev = row.get('ma200_dev')     # 2026-11-13 加
+    ma_parts = [
+        f"{v:+.1f}%" if v is not None else "—"
+        for v in (ma5_dev, ma20_dev, ma60_dev, ma200_dev)
+    ]
+    ma_s = "/".join(ma_parts)
 
-    # MA20 斜率 (从 row['ma20_slope'] 读, 由 compute_factor_history 预算好, 0 重算)
-    slope = row.get('ma20_slope')
-    if slope is not None:
-        if slope > 0.05:    arrow = "↗"
-        elif slope < -0.05: arrow = "↘"
-        else:               arrow = "→"
-        slope_s = f"{arrow}{slope:+.2f}%/日"
-    else:
-        slope_s = "—"
+    # MA5 / MA20 斜率 (从 row['ma5_slope'] / row['ma20_slope'] 读,
+    #   由 compute_factor_history 预算好, 0 重算)
+    #   2026-11-13 加 MA5 档 (用户: 「MA20斜率 这一列要加上 MA5 的斜率」)
+    #   ⚠️ 同上: 缺失档位用「—」占位, 顺序固定 MA5/MA20。
+    def _slope_cell(v):
+        if v is None:
+            return "—"
+        if v > 0.05:    arrow = "↗"
+        elif v < -0.05: arrow = "↘"
+        else:           arrow = "→"
+        return f"{arrow}{v:+.2f}%"
+
+    slope_s = "/".join((_slope_cell(row.get('ma5_slope')),
+                        _slope_cell(row.get('ma20_slope'))))
 
     # MACD 4 列变量 (line 拼接前必须先算, 2026-09-15 把 MACD 挪到第 3 列)
     macd_dif_v = row.get('macd_dif')

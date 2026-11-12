@@ -1,7 +1,7 @@
 # 项目专属教训 — 索引
 
 > 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
-> 共 **94 条**教训 (拆 47 + 后续新增 47)。
+> 共 **95 条**教训 (拆 47 + 后续新增 48)。
 > **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
 
@@ -13,7 +13,7 @@
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 20 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 8 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 22 |
-| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 24 |
+| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 25 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
 
 ## 威科夫 / Markup / fallback 判定体系
@@ -142,6 +142,7 @@
 | 22 | **「刷新」≠「删除」: 批量入口的清理副作用必须 opt-in** | 跑生产批量入口前先读它到底会做什么; 删是不可逆动作, 必须显式 flag |
 | 23 | **行业版报告: 复用整条链路, 只换不适用的段** | 能复用的段一行不改; 入口转发必须 os.execvp (mp.spawn 会让子进程重跑父模块) |
 | 24 | **下线一个 report section: 8 处连带 + 产物全量重生成** | 删段要动两个渲染器 + 两个 schema 清单 + linter 的 pattern; 产物重生成后 grep 全目录查漏网 |
+| 25 | **同一列加档位: 列数不变也要改 4 处 + 逐列 diff** | 表内多值: 单位放表头 / 缺失档位用「—」占位且位置固定 / 各值各带箭头; 数值口径不许顺手改; 验收用**逐列 diff** 不只看首行 |
 
 ## 历史十倍股启动特征 / walk-forward 筛子验证
 

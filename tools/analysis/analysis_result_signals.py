@@ -127,6 +127,7 @@ def compute_factor_history(ctx, lookback: int = 60,
         ma20    = d_arrs.get('ma20',  [None] * (ki+2))
         ma60    = d_arrs.get('ma60',  [None] * (ki+2))
         ma120   = d_arrs.get('ma120', [None] * (ki+2))
+        ma200   = d_arrs.get('ma200', [None] * (ki+2))
         boll_upper = d_arrs.get('boll_upper', [None] * (ki+2))
         boll_lower = d_arrs.get('boll_lower', [None] * (ki+2))
         boll_mid   = d_arrs.get('boll_mid',   [None] * (ki+2))
@@ -151,6 +152,12 @@ def compute_factor_history(ctx, lookback: int = 60,
             "ma5_dev":       ma5_dev,
             "ma60_dev":      ma60_dev,
             "ma120_dev":     _dev(close, ma120[ki] if ki < len(ma120) else None),
+            # 2026-11-13 加 (用户: 「MA偏离 这一列加上 MA200」): ma200 日偏离
+            #   ma200 = 标准 200 日滑动均线 (build_kline_features 里 'ma200'),
+            #   跟 ma5/ma20/ma60 同一套口径。⚠️ 跟威科夫判定的「真 MA200」不同 ——
+            #   威科夫用 ma_window (250 日), 这里用标准 200 日 (跟表里其余 MA 档一致)。
+            #   K 线不足 200 根 (行业指数短历史) → None → 该档不显示。
+            "ma200_dev":     _dev(close, ma200[ki] if ki < len(ma200) else None),
             "boll_upper":    boll_upper[ki] if ki < len(boll_upper) else None,
             "boll_lower":    boll_lower[ki] if ki < len(boll_lower) else None,
             "boll_mid":      boll_mid[ki]   if ki < len(boll_mid)   else None,
@@ -186,27 +193,54 @@ def compute_factor_history(ctx, lookback: int = 60,
     # 2026-11-05 删: post-process 计算连续 Accum 天数 (accum_days_daily/weekly)。
     #   原「A天(日/周)」列已改为「威科夫强度」列 (m/m1/m2/A/D), 该字段无消费方。
 
-    # post-process: MA20 5日斜率 (per-row, 行内字段 ma20_slope)
-    # 斜率 = (MA20[i] - MA20[i-5]) / MA20[i-5] / 5 * 100
-    # MA20 通过 close / (1 + ma_dev_daily/100) 反算 (跟 render 端同算法)
+    # post-process: MA5 / MA20 5日斜率 (per-row, 行内字段 ma5_slope / ma20_slope)
+    # 斜率 = (MA_N[i] - MA_N[i-5]) / MA_N[i-5] / 5 * 100
+    # MA_N 通过 close / (1 + ma_dev/100) 反算 (跟 render 端同算法)
+    #   ma20 用 ma_dev_daily (ma20 偏离), ma5 用 ma5_dev
     # 不足 5 天的行 (含首 5 行) 写 None
+    #
+    # 2026-11-13 加 ma5_slope (用户: 「MA20斜率 这一列要加上 MA5 的斜率」)
+    def _slope_of(row_prev, dev_key):
+        """由 close + 偏离反算 MA, 再算 5 日斜率 (%/日)。任一环缺失 → None。
+
+        ⚠️ `md == 0` 也当缺失 (沿用 2026-11-13 之前的原判据) —— 保持数值口径不变,
+        别为了"更正确"改口径, 那会让全量产物逐字节 diff 出噪音。
+        """
+        c0  = row_prev.get('close')
+        md0 = row_prev.get(dev_key)
+        if not (c0 and md0 is not None and md0 != 0):
+            return None
+        try:
+            ma0 = c0 / (1 + md0 / 100)
+        except ZeroDivisionError:
+            return None
+        return ma0
+
     for i, row in enumerate(rows):
         if i < 5:
             row['ma20_slope'] = None
+            row['ma5_slope'] = None
             continue
-        c0  = row.get('close')
-        md0 = row.get('ma_dev_daily')
-        c5  = rows[i - 5].get('close')
-        md5 = rows[i - 5].get('ma_dev_daily')
-        if not (c0 and md0 is not None and c5 and md5 is not None and c5 > 0 and md5 != 0):
+        prev = rows[i - 5]
+        ma0  = _slope_of(row, 'ma_dev_daily')
+        ma5  = _slope_of(prev, 'ma_dev_daily')
+        if ma0 is None or ma5 is None or ma5 <= 0:
             row['ma20_slope'] = None
-            continue
-        try:
-            ma0 = c0 / (1 + md0 / 100)
-            ma5 = c5 / (1 + md5 / 100)
-            row['ma20_slope'] = (ma0 - ma5) / ma5 / 5 * 100 if ma5 > 0 else None
-        except (ZeroDivisionError, TypeError):
-            row['ma20_slope'] = None
+        else:
+            try:
+                row['ma20_slope'] = (ma0 - ma5) / ma5 / 5 * 100
+            except (ZeroDivisionError, TypeError):
+                row['ma20_slope'] = None
+        # MA5 斜率 (同一算法, 偏离字段换 ma5_dev)
+        a0 = _slope_of(row, 'ma5_dev')
+        a5 = _slope_of(prev, 'ma5_dev')
+        if a0 is None or a5 is None or a5 <= 0:
+            row['ma5_slope'] = None
+        else:
+            try:
+                row['ma5_slope'] = (a0 - a5) / a5 / 5 * 100
+            except (ZeroDivisionError, TypeError):
+                row['ma5_slope'] = None
 
     # 2026-11-11 加: 行业威科夫 3 列 (行业 stage / 强度 / 子事件)
     #   判定在生产侧算好塞进行数据 (规则下沉) —— 渲染器只读不算。
