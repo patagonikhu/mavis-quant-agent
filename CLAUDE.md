@@ -57,7 +57,7 @@ sync_data → DataStore → AnalysisEngine → RenderData → report_renderer
 **`config/watchlist.json`**: 手维护 (持仓 / 自选 / blowout 候选池三段)
 
 **报告**: 7 有效 section (2026-11-11 加「🏆 行业地位 (龙头判定)」, **2026-11-12 删「MA 均线」**), 顺序与内容真源 = [`tools/render/report_schema.py`](tools/render/report_schema.py) (改 schema 别散到 `batch/*.py`)。
-**行业口径**: SW2021 **三级** (2026-11-12 改) —— 报告板块行 + 「🏆行业地位」+ `/t-wyckoff-a2m` 分档**三处同层级**; 归属信息本地现成 → **0 网络请求**。
+**行业口径**: SW2021 **三级** (2026-11-12 改) —— 报告板块行 + 「🏆行业地位」+ `/t-wyckoff-a2m` 分档 + 「因子历史·行业威科夫」列**四处同层级**; 归属信息本地现成 → **0 网络请求** (L3 指数 K 线按需拉, 见 `.claude/skills/t-sync-data/SKILL.md`)。
 **方向信号** = 威科夫阶段转变 (A→M 买 / M→D 卖) + 9 种 sub-event + MA 偏离。
 
 ---

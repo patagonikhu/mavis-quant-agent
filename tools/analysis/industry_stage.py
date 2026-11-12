@@ -33,6 +33,12 @@ from __future__ import annotations
 import sys
 
 
+# 行业威科夫列的行业层级 (2026-11-12 用户定调: 「我要显示三级的」)
+#   L2 = 申万二级 (801xxx.SI) / L3 = 申万三级 (850xxx.SI)
+#   跟个股报告的板块行 + 🏆行业地位 + A→M 分档 **三处同层级**。
+INDUSTRY_LEVEL = "L3"
+
+
 # ============================================================
 # 行业 K 线 / 行业归属 (走 DataStore)
 # ============================================================
@@ -48,10 +54,16 @@ def industry_name(ts_code: str) -> str:
     return str(bars[0].get("name") or "") if bars else ""
 
 
-def industry_of_stock(ts_code: str) -> str | None:
-    """查某只票的 SW2021 二级行业代码 (801xxx.SI), 没有返 None
+def industry_of_stock(ts_code: str, level: str = INDUSTRY_LEVEL) -> str | None:
+    """查某只票的 SW2021 行业代码, 没有返 None
 
-    ts_code 兼容 '300274' / '300274.SZ' 两种写法。
+    Args:
+        ts_code: '300274' / '300274.SZ' 两种写法都认
+        level:   "L3" (三级, 默认, 2026-11-12 用户定调) / "L2" (二级)
+
+    ⚠️ 2026-11-12 改默认 L3: 个股报告「因子历史」表的「行业威科夫」列要显示**三级**行业。
+       本地 850xxx 行业指数 K 线由 /t-sync-data 按需拉 (watchlist 涉及的 L3),
+       拉不到的 L3 → 该列显示「—」(跟 L2 缺数据时同一个约定)。
     """
     if not ts_code:
         return None
@@ -63,7 +75,7 @@ def industry_of_stock(ts_code: str) -> str | None:
             code = _to_ts_code(code)
         except Exception:
             code = (f"{code}.SH" if code.startswith(("60", "68")) else f"{code}.SZ")
-    return DataStore.get_industry_member_map().get(code)
+    return DataStore.get_industry_member_map(level=level).get(code)
 
 
 # ============================================================
@@ -84,7 +96,7 @@ def _warn_miss_once(n_missing: int, ts_code: str) -> None:
         return
     _MISS_WARNED = True
     print(f"  ⚠️ 行业威科夫 cache 缺 {n_missing} 行 (如行业 {ts_code}) → 该列显示「—」; "
-          f"跑 /t-sync-data (--sw-index) 补齐", file=sys.stderr)
+          f"跑 /t-sync-data --sw-index --sw-index-level L3 补齐", file=sys.stderr)
 
 
 def industry_wyckoff_rows(ts_code: str, dates: list[str]) -> dict[str, dict]:
@@ -185,12 +197,15 @@ def _today_events(events: list[dict], date: str) -> str:
 # 行业 Markup 汇总 (2026-11-12 加, /t-analyze 跑完的汇总段)
 # ============================================================
 
-def summarize_markup_industries() -> dict:
+def summarize_markup_industries(level: str = INDUSTRY_LEVEL) -> dict:
     """哪些行业当前在威科夫 Markup 阶段 (日线 / 周线)
 
     **数据源: 行业威科夫 cache (只读)** —— 唯一写者是 `/t-sync-data`。
     这里**不算**, 只查表: 跟个股报告「因子历史走势」表里的「行业威科夫」列**同源同数**,
     两处不会打架。
+
+    2026-11-12 加 level 参数 (默认 L3): 个股报告的行业威科夫列改三级后,
+    这个汇总段也跟着三级 —— 否则两处行业口径会打架。
 
     "当前" = 每个行业**自己**最新的那一条 cache 记录
     (行业停更的按它自己的末日算, 不跟全市场日期对齐 —— 对齐了它就是没数据)。
@@ -216,13 +231,16 @@ def summarize_markup_industries() -> dict:
 
     max_date = max((d for ds in dates_by_code.values() for d in ds), default="")
 
-    level_map = DataStore.get_industry_level_map()
+    lvl = str(level).upper()
+    code_key = "l3_code" if lvl == "L3" else "l2_code"
+    name_key = "l3_name" if lvl == "L3" else "l2_name"
+    level_map = DataStore.get_industry_level_map(level=lvl)
     # 成分股数 (一次算全, 别逐行业扫成分表)
     member_count: dict[str, int] = {}
     for rec in DataStore._industry_member_info().values():
-        l2 = str(rec.get("l2_code") or "")
-        if l2:
-            member_count[l2] = member_count.get(l2, 0) + 1
+        code = str(rec.get(code_key) or "")
+        if code:
+            member_count[code] = member_count.get(code, 0) + 1
 
     daily, weekly, both, stale = [], [], [], []
     for code, dates in dates_by_code.items():
@@ -235,7 +253,7 @@ def summarize_markup_industries() -> dict:
         meta = level_map.get(code, {})
         item = {
             "code": code,
-            "name": meta.get("l2_name") or code,
+            "name": meta.get(name_key) or code,
             "l1_name": meta.get("l1_name") or "",
             "stage_daily": row.get("stage_daily") or "?",
             "stage_weekly": row.get("stage_weekly") or "?",

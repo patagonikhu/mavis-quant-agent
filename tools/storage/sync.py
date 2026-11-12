@@ -525,7 +525,74 @@ def _sw_meta_save(meta: dict) -> None:
     p.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def action_sw_index(level: str = "L2") -> int:
+def _needed_l3_codes() -> set[str]:
+    """按需 L3 行业集合 —— **谁有报告, 谁就需要行业数据**
+
+    范围 = watchlist.json 全部票 + docs/ 下已有个股报告的票
+    (portfolio / watchlist / blowout / wyckoff-a2m / wyckoff-a2m-loose)
+
+    为什么按需 (用户要求「网络请求最少」):
+      - 全量 337 个 L3 → **337 次请求** (每指数 1 次, 单拉一次拿全历史);
+      - 按需只拉**会出个股报告的票**涉及的 L3 —— 2026-11-12 实测:
+        watchlist 177 只 → 75 个 L3 (占全量 22%); 加上 a2m 留档 100 只 → 约 130 个。
+
+    增量的边际成本 = 新出现的行业数 (每行业 1 次请求) ——
+    用户往 watchlist 加新股票 → 下次 sync 自动补它所属的 L3。
+
+    ⚠️ 漏掉 a2m 留档票的后果 (2026-11-12 实测): 112 份 a2m 详报里有 7 份
+       「行业威科夫」列整列显示「—」, 因为它们所属的 L3 不在按需集合里。
+
+    Returns:
+        {l3_code} 集合 (如 "850781.SI"); 查不到归属的票 (ETF / 指数) 跳过。
+    """
+    from .store import DataStore
+
+    ts_codes: set[str] = set()
+    try:
+        wl = DataStore.load_watchlist() or {}
+        for s in wl.get("stocks", []):
+            code = str(s.get("code") or "").strip()
+            if not code:
+                continue
+            if "." not in code:
+                code = (f"{code}.SH" if code.startswith(("60", "68"))
+                        else f"{code}.SZ")
+            ts_codes.add(code)
+    except Exception as e:
+        print(f"  ⚠️ 按需 L3 集合计算失败 (watchlist): {e}")
+
+    # docs/ 下已有个股报告的票 (a2m 留档 / 历史孤儿 / blowout 留档)
+    try:
+        import re
+        from pathlib import Path
+        for sub in ("portfolio", "watchlist", "blowout",
+                    "wyckoff-a2m", "wyckoff-a2m-loose"):
+            d = Path("docs") / sub
+            if not d.exists():
+                continue
+            for f in d.glob("analyze-*.md"):
+                m = re.match(r"analyze-(\d{6})-", f.name)
+                if not m:
+                    continue
+                c = m.group(1)
+                ts_codes.add(f"{c}.SH" if c.startswith(("60", "68"))
+                             else f"{c}.SZ")
+    except Exception as e:
+        print(f"  ⚠️ 按需 L3 集合计算失败 (docs): {e}")
+
+    out: set[str] = set()
+    try:
+        for ts in ts_codes:
+            info = DataStore.get_industry_info(ts)
+            l3 = str(info.get("l3_code") or "")
+            if l3:
+                out.add(l3)
+    except Exception as e:
+        print(f"  ⚠️ 按需 L3 集合计算失败 (归属查询): {e}")
+    return out
+
+
+def action_sw_index(level: str = "L2", only_codes: set[str] | None = None) -> int:
     """申万行业指数 (index_classify + sw_daily) —— 行业威科夫 stage 的数据源
 
     2026-11-11 加. **单一逻辑, 没有"首次/以后"两套** (用户明确要求):
@@ -536,8 +603,15 @@ def action_sw_index(level: str = "L2") -> int:
       4. 重新算缺口 → 批量没覆盖的 (历史没拉全 / 服务端缺 / 停更) 按 ts_code 单独补
       5. 落盘 meta (no_data / history_start / history_max)
 
-    请求数: 日常增量 1 次 / 首次或大缺口 1+N 次
-    落盘:   data/history/sw_index/sw_index.parquet (行业分类)
+    2026-11-12 加 (用户: 「我要显示三级的」):
+      - **分类表改成多 level 共存** (L1/L2/L3 各一次 index_classify, 合并进同一 parquet,
+        按 index_code 去重)。原来只有 1 个 level → 拉 L3 会把 L2 分类表覆盖掉。
+      - **only_codes**: 只处理指定的行业代码集合 (L3 按需拉取用) ——
+        全量 337 个 L3 = 337 次请求; 按需只拉「会出个股报告的票」涉及的 L3
+        (2026-11-12 实测: 177 只 watchlist → 75 个 L3, 占全量 22%)。
+
+    请求数: 日常增量 1 次 / 首次或大缺口 1+N 次 (N = 缺口行业数)
+    落盘:   data/history/sw_index/sw_index.parquet (行业分类, 多 level)
             data/history/sw_index/industry_member.parquet (成分表)
             data/history/sw_index/kline/<YYYY>.parquet (1 年 1 文件)
     """
@@ -556,15 +630,17 @@ def action_sw_index(level: str = "L2") -> int:
     if n_mig_files:
         print(f"  🔄 迁移旧布局 → 按年份分文件: {n_mig_files} 个文件 / {n_mig_rows} 行")
 
-    # ---------- 1. 行业分类 (30 天缓存) ----------
+    # ---------- 1. 行业分类 (30 天缓存, 多 level 共存) ----------
+    #   2026-11-12 改: 原来 1 个文件只存 1 个 level → 拉 L3 会覆盖掉 L2 分类表。
+    #   现在各 level 拉一次, **合并**进同一 parquet (按 index_code 去重, level 列区分)。
     need_classify = True
     if idx_path.exists():
         age_days = (time.time() - idx_path.stat().st_mtime) / 86400
         if age_days < 30:
             try:
-                local_level = str(
-                    pd.read_parquet(idx_path, columns=["level"])["level"].iloc[0])
-                need_classify = (local_level != level)
+                local_levels = set(
+                    pd.read_parquet(idx_path, columns=["level"])["level"].astype(str).unique())
+                need_classify = (str(level).upper() not in local_levels)
             except Exception:
                 need_classify = True
     if need_classify:
@@ -577,9 +653,22 @@ def action_sw_index(level: str = "L2") -> int:
         else:
             df = pd.DataFrame(rows)
             df["sync_date"] = today
+            if "level" not in df.columns:
+                df["level"] = str(level).upper()
+            df["level"] = df["level"].astype(str)
             idx_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_parquet(idx_path, index=False)
-            print(f"  ✅ 行业分类: {len(df)} 个 (level={level})")
+            if idx_path.exists():
+                try:
+                    old = pd.read_parquet(idx_path)
+                    merged = pd.concat([old, df], ignore_index=True)
+                except Exception:
+                    merged = df
+            else:
+                merged = df
+            merged = merged.drop_duplicates(subset=["index_code"], keep="last")
+            merged = merged.sort_values(["level", "index_code"]).reset_index(drop=True)
+            merged.to_parquet(idx_path, index=False)
+            print(f"  ✅ 行业分类: +{len(df)} 个 (level={level}), 累计 {len(merged)} 行")
 
     # ---------- 行业成分表 (60 天缓存) ----------
     #   个股 → SW2021 行业的唯一可靠映射 (stock_basic.industry 已删, 申万旧版对不上)
@@ -606,9 +695,23 @@ def action_sw_index(level: str = "L2") -> int:
         print(f"  ⏭ 行业成分表 {member_age:.0f} 天内已刷 (缓存 {SW_MEMBER_CACHE_DAYS} 天)")
 
     idx_df = pd.read_parquet(idx_path)
-    codes = idx_df["index_code"].astype(str).tolist()
+    idx_df["level"] = idx_df["level"].astype(str)
+    codes = idx_df.loc[idx_df["level"] == str(level).upper(),
+                        "index_code"].astype(str).tolist()
     code_set = set(codes)
     print(f"  📊 申万 {level} 行业: {len(codes)} 个")
+
+    # ---------- 1.5 按需范围 (2026-11-12 加, L3 用) ----------
+    #   全量 337 个 L3 = 337 次请求; 按需只拉「会出个股报告的票」涉及的 L3
+    #   (2026-11-12 实测: 177 只 watchlist → 75 个 L3, 占全量 22%)。
+    #   新增股票涉及新 L3 时, 下次 sync 自动补 1 次请求 (缺什么补什么)。
+    if only_codes is not None:
+        want = {str(c) for c in only_codes}
+        n_all = len(codes)
+        codes = [c for c in codes if c in want]
+        code_set = set(codes)
+        print(f"  🎯 按需范围: {n_all} → {len(codes)} 个 "
+              f"(只拉会出个股报告的票涉及的 L3)")
 
     # ---------- 2. 检测缺口 (0 网络) ----------
     local_range = _sw_index_local_ranges(SW_INDEX_KLINE_DIR)
@@ -1206,6 +1309,12 @@ def action_auto(force: bool = False, quiet: bool = False) -> int:
         # 2026-11-11 加: 申万行业指数段 auto 接入 (行业 stage 每天都要更新)
         print("  [5/7] --sw-index (auto 检测到 stale)")
         action_sw_index()
+        # 2026-11-12 加: L3 按需 (个股报告的行业威科夫列要三级)
+        #   日常增量 = 批量 1 次 + 新出现的 L3 行业每个 1 次
+        _l3_needed = _needed_l3_codes()
+        if _l3_needed:
+            print("  [5.5/7] --sw-index L3 (按需)")
+            action_sw_index(level="L3", only_codes=_l3_needed)
     print_data_freshness_summary()
     _print_api_call_stats()
     return 0
@@ -1259,7 +1368,9 @@ def main():
     actions.add_argument("--sw-index", action="store_true",
                          help="[2026-11-11 加] 申万行业指数 (index_classify + sw_daily, 给行业算威科夫 stage, 默认随 --auto 跑)")
     parser.add_argument("--sw-index-level", default="L2",
-                        help="申万行业层级: L1(31) / L2(134, 默认) / L3(346)")
+                        help="申万行业层级: L1(31) / L2(134, 默认) / L3(346) / both(L2+L3)")
+    parser.add_argument("--sw-l3-scope", default="needed", choices=["needed", "all"],
+                        help="L3 拉取范围: needed(默认, 只拉会出报告的票涉及的 L3, 省请求) / all(全量 346)")
     # 2026-09-09 删: --meta (板块/事件元数据, 引用不存在的 refresh_sectors, 死代码 + broken)
     actions.add_argument("--all-data", action="store_true",
                          help="[一键] --kline --stock-basic --financials 一起跑 (最常用)")
@@ -1371,8 +1482,15 @@ def main():
 
     # 2026-11-11 加: --sw-index (申万行业指数, 给行业算威科夫 stage)
     if args.sw_index:
-        print(f"\n[9/7] --sw-index (申万行业指数 level={args.sw_index_level})")
-        action_sw_index(level=args.sw_index_level)
+        _lvl = str(args.sw_index_level).upper()
+        _levels = ["L2", "L3"] if _lvl == "BOTH" else [_lvl]
+        for _lv in _levels:
+            _only = None
+            if _lv == "L3":
+                _only = _needed_l3_codes() if args.sw_l3_scope == "needed" else None
+            _extra = f", 按需 {len(_only)} 个" if _only else ""
+            print(f"\n[9/7] --sw-index (申万行业指数 level={_lv}{_extra})")
+            action_sw_index(level=_lv, only_codes=_only)
 
     # 全部 flag 都没开 + 也不是 --status → 给个友好提示
     if not any([args.kline, args.stock_basic, args.financials,

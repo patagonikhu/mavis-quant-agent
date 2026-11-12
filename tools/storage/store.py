@@ -1844,23 +1844,36 @@ class DataStore:
         return sorted({str(c) for c in df["ts_code"].unique() if c})
 
     @classmethod
-    def get_industry_level_map(cls) -> dict[str, dict]:
-        """{l2_code: {l1_code, l1_name, l2_name}} —— 二级行业 → 所属一级行业
+    def get_industry_level_map(cls, level: str = "L2") -> dict[str, dict]:
+        """{行业代码: {l1_code, l1_name, l2_code, l2_name, ...}} —— 行业 → 父级链
+
+        2026-11-12 加 level 参数: L2 (默认, 二级) / L3 (三级)
+          L2 → {l2_code: {l1_code, l1_name, l2_code, l2_name}}
+          L3 → {l3_code: {l1_code, l1_name, l2_code, l2_name, l3_code, l3_name}}
 
         2026-11-12 加: 行业版报告要在标题上显示"所属一级行业"(板块)。
         来源: index_member_all 落的 industry_member.parquet (唯一真源) —— 逐股记录里去重派生。
         """
+        lvl = str(level).upper()
+        code_key = "l3_code" if lvl == "L3" else "l2_code"
         out: dict[str, dict] = {}
         for rec in cls._industry_member_info().values():
-            l2 = str(rec.get("l2_code") or "")
-            if not l2 or l2 in out:
+            code = str(rec.get(code_key) or "")
+            if not code or code in out:
                 continue
-            out[l2] = {
+            item = {
                 "l1_code": str(rec.get("l1_code") or ""),
                 "l1_name": str(rec.get("l1_name") or ""),
-                "l2_code": l2,
+                "l2_code": str(rec.get("l2_code") or ""),
                 "l2_name": str(rec.get("l2_name") or ""),
             }
+            if lvl == "L3":
+                item["l3_code"] = code
+                item["l3_name"] = str(rec.get("l3_name") or "")
+            else:
+                item["l2_code"] = code
+                item["l2_name"] = str(rec.get("l2_name") or "")
+            out[code] = item
         return out
 
     @classmethod
