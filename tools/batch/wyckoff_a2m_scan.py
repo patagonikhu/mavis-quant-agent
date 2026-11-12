@@ -166,14 +166,21 @@ from tools.batch.a2m_report_common import (  # noqa: E402
 # 公共前置 (两档都生效, 候选池阶段就剔):
 #     ① ST/*ST 退市风险        ② 亏损股 (PE_TTM 算不出 = TTM 亏损)
 # 命中后分档 (两档互斥):
-#     strict → **行业内市值分位 ≤ 10%** (行业地位前 10%)
-#     loose  → 命中 A→M 但市值分位不在前 10%
+#     strict → **行业内市值分位 ≤ 30%** (行业地位前 30%)
+#     loose  → 命中 A→M 但市值分位不在前 30%
 #
 # 2026-11-12 换口径 (用户决定): 原来的 PE/质量/杠杆 三闸 **整档作废** ——
 # "现在的逻辑效果不好" → 改用**市值位置**。理由:
 #   - 市值分位是**静态**的 (窗口末日快照), 不像涨幅分位那样对"刚启动"的票天然吃亏
 #   - 跟报告 🏆行业地位 的市值排名**同口径同窗口** (120 交易日) → 两处数字能对上
 #   - 代价: 小行业 (≤10 家) 几乎不可能有票进 strict (第 1 名分位也 > 10%)
+#
+# 2026-11-12 再改: 行业层级 **L2 → L3** (用户要求「股票显示 L3 的板块」) ——
+#   分档口径跟着报告一起改 (两者必须同口径, 否则「行业位置」两处数字对不上)。
+#   **门槛维持 30%, 不能收到 10%** (实测 12 只命中票):
+#     L3 行业小 → 10% 门槛下 151/337 个 L3 (45%) 整档出局 (成分股 < 10 只的行业,
+#     第 1 名分位都 > 10%); 命中票 strict 数 5 → 1 只。
+#     30% 下只有 39 个 (12%) 出局, 且 L3 口径并不比 L2 松 (5 vs 6 只)。
 #
 # 为什么门槛放命中后而不是候选池: 放前面 loose 栏永远是空的 ——
 # 被门槛剔掉的票压根不会被扫到, 分不出「命中了但位置不够」这一批。
@@ -300,14 +307,23 @@ def load_stock_basic() -> dict:
 
     2026-11-12 改: 走 DataStore.load_stock_basic ——
     stock_basic.parquet 里的 industry 列已删 (申万旧版), 由 SW2021 成员表 merge 回来。
+    2026-11-12 再改: 行业名换成**三级行业** (L3) —— 跟分档口径 + 报告 🏆行业地位 保持一致。
+
+    ⚠️ 只在**本函数内**覆盖, 不动 DataStore 的 stock_basic.industry 列 ——
+       那列还被 Magic 的行业黑名单闸门用着 (按 L2 判定), 换成 L3 会让闸门失效。
     """
     try:
         from tools.storage.store import DataStore
         df = DataStore.load_stock_basic()
         if df.empty:
             return {}
-        return {str(r["ts_code"]).split(".")[0]: (r.get("name", ""), r.get("industry", ""))
-                for _, r in df.iterrows()}
+        l3_names = DataStore.get_industry_name_map("L3")
+        out = {}
+        for _, r in df.iterrows():
+            code = str(r["ts_code"]).split(".")[0]
+            ind = l3_names.get(str(r["ts_code"])) or r.get("industry", "")
+            out[code] = (r.get("name", ""), ind)
+        return out
     except Exception:
         return {}
 
@@ -357,7 +373,7 @@ def _print_effective_conditions(args) -> None:
 
     print(f"\n  【strict 档门槛】(命中后分档用, 不满足 → 进 loose 档)")
     print(f"    3. industry-pos-pctile: {pos_desc}")
-    print(f"    4. 行业位置口径        : SW2021 二级行业 · 总市值排名 · 窗口 120 交易日 (同报告 🏆行业地位)")
+    print(f"    4. 行业位置口径        : SW2021 **三级**行业 · 总市值排名 · 窗口 120 交易日 (同报告 🏆行业地位)")
     print(f"    5. PE / 质量 / 杠杆    : 仅展示, 不参与分档 (2026-11-12 起整档作废)")
 
     tier_desc = {"strict": "只输出 strict 档", "loose": "只输出 loose 档",
@@ -661,7 +677,7 @@ def main():
     lines.append(f"| ② exclude-loss (公共前置) | {'ON (剔亏损股 PE_TTM 缺失)' if (args.exclude_loss and not args.include_loss) else 'OFF'} |")
     lines.append(f"| ③ 行业市值分位 (strict 门槛) | "
                  f"{'ON (市值分位 ≤ ' + format(_thr['industry_pos_pctile'], 'g') + '% → strict)' if _thr['industry_pos_pctile'] > 0 else 'OFF (不限)'} |")
-    lines.append(f"| ④ 行业位置口径 | SW2021 二级行业 · 总市值排名 · 窗口 120 交易日 (同报告 🏆行业地位) |")
+    lines.append(f"| ④ 行业位置口径 | SW2021 **三级**行业 · 总市值排名 · 窗口 120 交易日 (同报告 🏆行业地位) |")
     lines.append(f"| 输出档位 | {args.tier} ({'两档都出' if args.tier == 'both' else ('只 strict' if args.tier == 'strict' else '只 loose')}) |")
     lines.append(f"| V13 严判 | 当前 M + 最近 40 根 M 占比<10% + 转折在 lookback 根内 + 单日涨跌<20% + K线≥11根 |")
     lines.append("")

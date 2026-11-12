@@ -30,6 +30,21 @@ STK_FACTOR_DIR = ROOT / "data" / "history" / "stk_factor"
 # 龙头判定阈值: 行业分位 (越小 = 越靠前)
 LEADER_TOP_PCTILE = 10.0        # 前 10% 算龙头
 
+# 行业口径层级: "L2" (申万二级) / "L3" (申万三级)
+# 2026-11-12 改: **默认 L3** (用户要求「股票显示 L3 的板块」) —— 个股报告的
+#   🏆行业地位 + /t-wyckoff-a2m 的 strict/loose 分档都用 L3 口径, 两处同口径
+#   (CLAUDE.md「跟报告 🏆行业地位 同口径同窗口」这条原则不能破)。
+#   L3 归属信息在 industry_member.parquet 里现成 (l3_code/l3_name) → **0 网络请求**。
+#
+# ⚠️ 门槛不能从 30% 收到 10% (2026-11-12 实测 12 只命中票):
+#   L3 行业小 → 10% 门槛下 151/337 个 L3 (45%) 整档出局 (成分股 < 10 只的行业,
+#   第 1 名分位都 > 10%, 一只都进不了 strict); 命中票 strict 数 5 → 1 只。
+#   30% 门槛下只有 39 个 (12%) 出局, 且 L3 口径并不比 L2 松 (5 vs 6 只)。
+INDUSTRY_LEVEL = "L3"
+
+# A→M strict 档门槛: 行业内市值分位上限 (%), 跟 INDUSTRY_LEVEL 同一个口径
+TIER_PCTILE = 30.0
+
 # 窗口缓存 (进程内): {交易日数: (start_date, end_date)}
 _WINDOW_CACHE: dict[int, tuple[int, int]] = {}
 
@@ -50,7 +65,29 @@ def _to_ts_code(code: str) -> str:
     return f"{c}.SZ"
 
 
-def _industry_members(l2_code: str, l2_name: str = "") -> list[str]:
+def _level_keys(level: str) -> tuple[str, str]:
+    """层级 → (code 字段名, name 字段名)"""
+    return ("l3_code", "l3_name") if str(level).upper() == "L3" else ("l2_code", "l2_name")
+
+
+def _lookup_industry(ts_code: str, level: str = INDUSTRY_LEVEL) -> tuple[str, str]:
+    """查该股的 SW2021 行业 → (行业代码, 行业名), 查不到返回 ("", "")
+
+    Args:
+        level: "L3" (三级, 默认) / "L2" (二级)
+
+    数据源: index_member_all 落的 industry_member.parquet (唯一真源)
+    """
+    try:
+        from tools.storage.store import DataStore
+        info = DataStore.get_industry_info(ts_code)
+        code_key, name_key = _level_keys(level)
+        return info.get(code_key, ""), info.get(name_key, "")
+    except Exception:
+        return "", ""
+
+
+def _industry_members(code: str, name: str = "", level: str = INDUSTRY_LEVEL) -> list[str]:
     """该行业的全部成员 ts_code
 
     2026-11-11 改: 行业口径统一到 **SW2021** (申万新版 134 个二级行业)
@@ -60,15 +97,19 @@ def _industry_members(l2_code: str, l2_name: str = "") -> list[str]:
 
     2026-11-12 改: 删掉申万旧版回退 —— stock_basic.industry 已删 (口径已废),
       成分表没覆盖就是没覆盖, 不拿旧口径凑 (凑出来的组是错的)。
+      同时加 level 参数: L3 (三级, 默认) / L2 (二级)。
 
     Args:
-        l2_code: SW2021 二级行业代码 (801735.SI); 空 → 返 []
-        l2_name: 兼容旧调用 (不再使用)
+        code:  行业代码 (L3 = 850781.SI 机器人 / L2 = 801735.SI)
+        name:  兼容旧调用 (不再使用)
+        level: "L3" (默认) / "L2"
     """
-    if not l2_code:
+    if not code:
         return []
     from tools.storage.store import DataStore
-    return DataStore.get_industry_members_by_l2(l2_code)
+    if str(level).upper() == "L3":
+        return DataStore.get_industry_members_by_l3(code)
+    return DataStore.get_industry_members_by_l2(code)
 
 
 def _fetch_member_snapshot(members: list[str], start_date: int,
@@ -131,16 +172,18 @@ def _complete_window(trading_days: int) -> tuple[int, int]:
 
 
 def compute_industry_market_cap_ranks(codes: list[str],
-                                      trading_days: int = 120) -> dict[str, dict]:
+                                      trading_days: int = 120,
+                                      level: str = INDUSTRY_LEVEL) -> dict[str, dict]:
     """一批票的行业内**市值排名** (批量版, 供 /t-wyckoff-a2m 分档用)
 
-    跟 compute_industry_position **同口径** (同窗口 / 同市值源 / 同分位算法),
+    跟 compute_industry_position **同口径** (同窗口 / 同市值源 / 同分位算法 / 同层级),
     区别只在效率: **按行业只算一次** —— 同行业的票共用一次市值快照, 不重复算。
     (per-stock 版每只票都重算一遍全行业排名, 30 只命中跨 20 个行业 = 20 倍浪费)
 
     Args:
         codes:       6 位股票代码列表
         trading_days: 窗口交易日数 (默认 120 = 跟报告 🏆行业地位 同窗口 → 同口径)
+        level:       行业层级 "L3" (默认) / "L2"
 
     Returns:
         {code: {industry, market_value_rank, market_value_rank_total,
@@ -152,12 +195,12 @@ def compute_industry_market_cap_ranks(codes: list[str],
 
     import pandas as pd
 
-    # 1. code → l2_code (SW2021 成分表唯一真源)
+    # 1. code → 行业代码 (SW2021 成分表唯一真源)
     by_ind: dict[str, tuple[str, list[str]]] = {}
     for c in codes:
-        l2_code, l2_name = _lookup_industry(c)
-        if l2_code:
-            by_ind.setdefault(l2_code, (l2_name, []))[1].append(c)
+        ind_code, ind_name = _lookup_industry(c, level)
+        if ind_code:
+            by_ind.setdefault(ind_code, (ind_name, []))[1].append(c)
     if not by_ind:
         return {}
 
@@ -168,8 +211,8 @@ def compute_industry_market_cap_ranks(codes: list[str],
 
     # 3. 所有涉及行业的成员 → 一次 SQL 拿市值快照
     all_members: set[str] = set()
-    for l2_code in by_ind:
-        all_members.update(_industry_members(l2_code))
+    for ind_code in by_ind:
+        all_members.update(_industry_members(ind_code, level=level))
     if not all_members:
         return {}
     rows = _fetch_member_snapshot(sorted(all_members), start_date, end_date)
@@ -180,8 +223,8 @@ def compute_industry_market_cap_ranks(codes: list[str],
     # 4. 每个行业按窗口末日市值排序 → rank (停牌/退市自然出局)
     out: dict[str, dict] = {}
     end_all = df[df["trade_date"] == end_date]
-    for l2_code, (l2_name, group) in by_ind.items():
-        members = set(_industry_members(l2_code))
+    for ind_code, (ind_name, group) in by_ind.items():
+        members = set(_industry_members(ind_code, level=level))
         sub = end_all[end_all["ts_code"].isin(members)].sort_values(
             "total_mv", ascending=False)
         if sub.empty:
@@ -194,7 +237,8 @@ def compute_industry_market_cap_ranks(codes: list[str],
             if not rank:
                 continue
             out[c] = {
-                "industry": l2_name,
+                "industry": ind_name,
+                "industry_level": str(level).upper(),
                 "market_value_rank": rank,
                 "market_value_rank_total": peer_total,
                 "market_value_percentile": rank / peer_total * 100,
@@ -203,7 +247,8 @@ def compute_industry_market_cap_ranks(codes: list[str],
 
 
 def compute_industry_position(code: str, industry: str | None = None,
-                              trading_days: int = 120) -> dict:
+                              trading_days: int = 120,
+                              level: str = INDUSTRY_LEVEL) -> dict:
     """算单只票的行业内地位 (龙头判定)
 
     Args:
@@ -211,6 +256,7 @@ def compute_industry_position(code: str, industry: str | None = None,
         industry:    行业名 (兼容旧调用, **不再用作回退** —— 行业一律以 SW2021 成分表为准);
                      None → 自动查
         trading_days: 区间交易日数 (默认 120 = 跟 /t-analyze 因子历史窗口一致)
+        level:       行业层级 "L3" (三级, 默认) / "L2" (二级)
 
     Returns:
         dict, 字段见下方; 无行业/无数据时返回 {} (调用方渲染成 "—")
@@ -219,17 +265,19 @@ def compute_industry_position(code: str, industry: str | None = None,
       - 行业归属 + 同行分组都走 index_member_all 落的 industry_member.parquet
     2026-11-12: industry 参数的回退**也删了** —— stock_basic.industry 已删,
       成分表没覆盖 → 返 {} (不出行业排名), 不拿旧口径凑
+    2026-11-12: 默认层级改 **L3** (用户要求「股票显示 L3 的板块」),
+      同时把父级链 (L2 名 / L1 名) 带出来给渲染层显示。
     """
     import pandas as pd
 
     ts_code = _to_ts_code(code)
 
     # SW2021 行业归属 (唯一真源)
-    l2_code, l2_name = _lookup_industry(ts_code)
-    if not l2_code:
+    ind_code, ind_name = _lookup_industry(ts_code, level)
+    if not ind_code:
         return {}
 
-    members = _industry_members(l2_code, l2_name)
+    members = _industry_members(ind_code, ind_name, level=level)
     if ts_code not in members:
         # 成分表里没有这只 (ETF / 次新未建档) → 不出行业排名
         return {}
@@ -299,8 +347,21 @@ def compute_industry_position(code: str, industry: str | None = None,
     # ---- 龙头判定 (规则在本层, 渲染器只读) ----
     verdict, verdict_level = _judge_leader(market_value_percentile, gain_percentile)
 
+    # ---- 父级链 (给渲染层显示 "机器人 · 自动化设备 · 机械设备") ----
+    l2_name = l1_name = ""
+    try:
+        from tools.storage.store import DataStore
+        info = DataStore.get_industry_info(ts_code)
+        l2_name = str(info.get("l2_name") or "")
+        l1_name = str(info.get("l1_name") or "")
+    except Exception:
+        pass
+
     return {
-        "industry": l2_name or industry or "",
+        "industry": ind_name or industry or "",
+        "industry_level": str(level).upper(),
+        "parent_industry": l2_name,
+        "top_industry": l1_name,
         "peer_total": peer_total,
         "start_date": start_date,
         "end_date": end_date,
@@ -359,7 +420,7 @@ def compute_industry_leader_board(l2_code: str, trading_days: int = 120,
         l2_name = DataStore.get_industry_level_map().get(l2_code, {}).get("l2_name", "")
     except Exception:
         pass
-    members = _industry_members(l2_code, l2_name)
+    members = _industry_members(l2_code, l2_name, level="L2")
     if not members:
         return {}
 
@@ -454,16 +515,3 @@ def _judge_leader(market_value_percentile: float | None,
     if market_value_percentile is None or gain_percentile is None:
         return ("— 数据不足, 无法判定", "unknown")
     return ("🌱 跟随者 — 市值 + 涨幅都不在行业前 10%", "follower")
-
-
-def _lookup_industry(ts_code: str) -> tuple[str, str]:
-    """查该股的 SW2021 二级行业 → (l2_code, l2_name), 查不到返回 ("", "")
-
-    数据源: index_member_all 落的 industry_member.parquet (唯一真源)
-    """
-    try:
-        from tools.storage.store import DataStore
-        info = DataStore.get_industry_info(ts_code)
-        return info.get("l2_code", ""), info.get("l2_name", "")
-    except Exception:
-        return "", ""

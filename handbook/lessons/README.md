@@ -1,7 +1,7 @@
 # 项目专属教训 — 索引
 
 > 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
-> 共 **89 条**教训 (拆 47 + 后续新增 42)。
+> 共 **90 条**教训 (拆 47 + 后续新增 43)。
 > **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
 
@@ -12,7 +12,7 @@
 | [`01-wyckoff.md`](01-wyckoff.md) | 威科夫 / Markup / fallback 判定体系 | 19 |
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 18 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 6 |
-| [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 21 |
+| [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 22 |
 | [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 24 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
 
@@ -106,6 +106,7 @@
 | 19 | ⛔ 单测别把实时值写死 | 命中数是实时值, 断言写死会让 verify 变红; 只校验结构自洽 |
 | 20 | 性能定位: 先 profile, 别拍脑袋 | 瓶颈在 `scan_sub_events` 全段扫 (纯 Python 循环), 优化前先量化 |
 | 21 | **分档口径换市值: strict = 行业内市值分位 ≤ 10%** | 财务三闸整档作废; 换口径会同时踩 3 个 bug (KeyError / 落错目录 / verify 静默失效) |
+| 22 | **行业口径升到 L3 (三级)**: 0 网络请求, 但门槛不许跟着收 | 显示 L3 归属本地现成 → 0 网络; L3 行业更小 → 门槛维持 30% (收 10% 会塌掉 45% 的 L3) |
 
 ## 报告渲染 / linter / 文档一致性
 

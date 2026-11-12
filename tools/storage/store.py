@@ -1930,26 +1930,18 @@ class DataStore:
         return info
 
     @classmethod
-    def get_industry_member_map(cls) -> dict[str, str]:
-        """{ts_code: l2_code} —— 申万 2021 二级行业归属
+    def get_industry_name_map(cls, level: str = "L2") -> dict[str, str]:
+        """{ts_code: 行业名} —— SW2021 行业**名**
 
-        数据源: data/history/sw_index/industry_member.parquet (index_member_all, 60 天缓存)
-
-        为什么不用 stock_basic.industry: 那列已删 (申万**旧版** 110 个, 跟 SW2021 (134 个)
-        只直接对上 25 个 (元器件 vs 元件 / 汽车配件 vs 汽车零部件) → 对不上。
-        """
-        return {code: str(r.get("l2_code") or "")
-                for code, r in cls._industry_member_info().items() if r.get("l2_code")}
-
-    @classmethod
-    def get_industry_name_map(cls) -> dict[str, str]:
-        """{ts_code: l2_name} —— SW2021 二级行业**名**
+        Args:
+            level: "L2" (二级, 默认) / "L3" (三级)
 
         判定 (黑名单) 用 l2_code → get_industry_member_map;
-        显示 / 分组用 l2_name → 本接口。
+        显示 / 分组用行业名 → 本接口。
         """
-        return {code: str(r.get("l2_name") or "")
-                for code, r in cls._industry_member_info().items() if r.get("l2_name")}
+        key = "l3_name" if str(level).upper() == "L3" else "l2_name"
+        return {code: str(r.get(key) or "")
+                for code, r in cls._industry_member_info().items() if r.get(key)}
 
     @classmethod
     def get_industry_members_by_l2(cls, l2_code: str) -> list[str]:
@@ -1962,6 +1954,37 @@ class DataStore:
         code = str(l2_code)
         return [ts for ts, rec in cls._industry_member_info().items()
                 if str(rec.get("l2_code") or "") == code]
+
+    @classmethod
+    def get_industry_members_by_l3(cls, l3_code: str) -> list[str]:
+        """某个 SW2021 **三级**行业的全部成员 ts_code
+
+        2026-11-12 加: 个股报告的「行业地位」改用 L3 口径 (850781.SI 机器人 这种)。
+        成分表本来就带 l3_code → **0 网络请求**。
+
+        数据源: index_member_all 落的 industry_member.parquet (跟 by_l2 同源)
+        """
+        if not l3_code:
+            return []
+        code = str(l3_code)
+        return [ts for ts, rec in cls._industry_member_info().items()
+                if str(rec.get("l3_code") or "") == code]
+
+    @classmethod
+    def get_industry_member_map(cls, level: str = "L2") -> dict[str, str]:
+        """{ts_code: 行业代码} —— 申万 2021 行业归属
+
+        Args:
+            level: "L2" (二级, 默认) / "L3" (三级)
+
+        数据源: data/history/sw_index/industry_member.parquet (index_member_all, 60 天缓存)
+
+        为什么不用 stock_basic.industry: 那列已删 (申万**旧版** 110 个, 跟 SW2021 (134 个)
+        只直接对上 25 个 (元器件 vs 元件 / 汽车配件 vs 汽车零部件) → 对不上。
+        """
+        key = "l3_code" if str(level).upper() == "L3" else "l2_code"
+        return {code: str(r.get(key) or "")
+                for code, r in cls._industry_member_info().items() if r.get(key)}
 
     @classmethod
     def get_industry_info(cls, ts_code: str) -> dict:

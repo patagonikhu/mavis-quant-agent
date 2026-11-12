@@ -83,6 +83,7 @@ bash tools/with_venv.sh python -m tools.batch.t_analyze_one --sw --code 801012.S
 - **0 网络**, 走 `DataStore.get_ctx()` + `AnalysisEngine.analyze()`, 详见 architecture.md §4
 - **缺数据**: 报"请先 /t-sync-data", 不兜底拉
 - **报告 7 section** (2026-11-11 加「🏆 行业地位 (龙头判定)」, 2026-11-12 删「MA 均线」): schema 在 `tools/render/report_schema.py`, 改这里不要散到 batch/*.py
+- **行业口径 = SW2021 三级** (2026-11-12): 板块行 + 「🏆 行业地位」都显示 L3 链 (`L3 名 · L2 名 · L1 名`), 跟 `/t-wyckoff-a2m` 分档同层级; 归属走成分表现成数据 → 0 网络请求
 
 ## 🚫 本 skill 不做什么 (越界 = 违规)
 

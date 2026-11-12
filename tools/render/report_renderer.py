@@ -72,6 +72,16 @@ def _section_quarterly_table(data: RenderData) -> str:
     if has_val:
         period_label = _val.get("period_label") or "—"
         industry = _val.get("industry") or "—"
+        # 2026-11-12: 行业显示改 **三级行业** (用户要求「股票显示 L3 的板块」)。
+        #   只改**显示**, 不改数据源 —— val["industry"] 仍是 L2 (Magic 行业黑名单闸门按
+        #   L2 判定, 换成 L3 会让「行业 X 已排除」失效)。
+        #   L3 链从 data.industry_position 取 (SW2021 成分表, 0 网络请求)。
+        _pos0 = getattr(data, "industry_position", None) or {}
+        _chain0 = " · ".join(x for x in (_pos0.get("industry"),
+                                         _pos0.get("parent_industry"),
+                                         _pos0.get("top_industry")) if x)
+        if _chain0:
+            industry = _chain0
         if period_label in ("—", "no_data", None, "") and data.quarterly_finance:
             latest_q = data.quarterly_finance[-1].get("quarter", "")
             if latest_q:
@@ -162,6 +172,14 @@ def _section_industry_position(data: RenderData) -> str:
     end_date = pos.get("end_date", "")
     trading_days = pos.get("trading_days", 120)
 
+    # 行业层级链 (2026-11-12): L3 口径 → "锂电池 · 电池 · 电力设备 (申万三级)"
+    level = str(pos.get("industry_level") or "L2").upper()
+    chain = " · ".join(x for x in (pos.get("industry"),
+                                   pos.get("parent_industry"),
+                                   pos.get("top_industry")) if x)
+    chain = chain or industry
+    level_tag = "申万三级" if level == "L3" else "申万二级"
+
     mv_rank = pos.get("market_value_rank")
     mv_total = pos.get("market_value_rank_total") or peer_total
     mv_pct = pos.get("market_value_percentile")
@@ -193,7 +211,7 @@ def _section_industry_position(data: RenderData) -> str:
         return "跟随行业"
 
     lines = [
-        f"**行业:** {industry} ({peer_total} 家) | **窗口:** {start_date} ~ {end_date} ({trading_days} 个交易日)",
+        f"**行业:** {chain} ({peer_total} 家, {level_tag}) | **窗口:** {start_date} ~ {end_date} ({trading_days} 个交易日)",
         "",
         "| 维度 | 本股 | 行业位置 | 解读 |",
         "|---|---|---|---|",
@@ -1206,7 +1224,7 @@ def _section_factor_matrix(data: RenderData) -> str:
 # 2026-11-06 删 1 列: 「变化」列 (用户指令) —— 相邻两行的 diff 摘要。
 #   diff_rows / extract_signals **不动** (仍供 signals_active + 汇总表「信号」列用),
 #   只删这个表里的展示列。
-FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 行业威科夫(日/周) | 行业强度 | 行业子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
+FACTOR_HISTORY_HEADER = "| 日期 | 收盘 | 威科夫(日/周) | 威科夫强度 | 子事件(日/周) | 行业威科夫(日/周,二级) | 行业强度 | 行业子事件(日/周) | RSI6 | MACD | DIF | DEA | BARΔ | 量比 | MA20斜率 | MA偏离(MA5/20/60) | 布林% | BBW | KDJ(K/D/J) | KDJ金叉 | ATR% | MACD状态 | PE |"
 # 2026-10-14 修: sep 从 header 自动算列数, 防止加列时 sep 跟 header 脱节
 # (昨天 KDJ 加 2 列漏改 sep 25 cell vs 24 cell → GFM 表格不渲染)
 FACTOR_HISTORY_SEP    = "|" + "---|" * (FACTOR_HISTORY_HEADER.count("|") - 1)
@@ -1537,9 +1555,22 @@ def render_report(data: RenderData, sector: str = "—") -> str:
 
     # 2026-11-02: 5️⃣ PEG/DCF 整档已删
     # 2026-10-28: 主力 fflow 维度整体删除, 6️⃣ 位取消
+    #
+    # 2026-11-12: 板块行改显示 **三级行业** (用户要求「股票显示 L3 的板块」)。
+    #   数据源 = data.industry_position (SW2021 成分表, 0 网络请求) → "锂电池 · 电池 · 电力设备"
+    #   调用方显式传了 sector 就用调用方的 (ETF 版 / 行业版有各自的板块口径)。
+    if sector and sector != "—":
+        sector_display = sector
+    else:
+        _pos = getattr(data, "industry_position", None) or {}
+        _chain = " · ".join(x for x in (_pos.get("industry"),
+                                        _pos.get("parent_industry"),
+                                        _pos.get("top_industry")) if x)
+        sector_display = _chain or "—"
+
     report = f"""# {code} {name} | {today}
 
-**板块:** {sector} | **股价:** {price_str}
+**板块:** {sector_display} | **股价:** {price_str}
 
 ---
 

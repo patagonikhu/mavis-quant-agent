@@ -530,3 +530,55 @@ Type: rule
 - `tools/batch/wyckoff_a2m_scan.py::FILTER_TIERS` (档位字典, 唯一真源)
 - `tools/analysis/industry_position.py::compute_industry_market_cap_ranks` (批量版, 一次 SQL 拿全部成员市值快照)
 - `tests/unit/test_a2m_filter_tiers.py` (门槛值 + 已删 flag 不许复活, 双保险)
+
+---
+
+### 行业口径升到 L3 (三级): 0 网络请求, 但门槛不许跟着收 (2026-11-12 用户定调)
+Type: rule
+> **摘要:** 个股报告 🏆行业地位 + A→M 分档一起改 SW2021 **三级**行业;
+> 归属信息本地现成 → **0 网络请求**; 门槛**维持 30%** (L3 行业更小, 收 10% 会整档塌)
+
+**用户原话:** 「我需要股票显示 L3 的板块, 而且网络请求最少」
+
+**核心认知 —— 显示 L3 ≠ 拉 L3 指数 K 线:**
+| 要的东西 | 数据源 | 网络成本 |
+|---|---|---|
+| 显示「这票属于哪个 L3 板块」 | `industry_member.parquet` 现成带 `l3_code`/`l3_name` | **0** |
+| L3 行业**自己的**威科夫 stage | 需 L3 指数 K 线 (本地只有 125 个 L2, 全是 801xxx) | 200~250 请求 |
+
+→ 「显示 L3 板块」这个需求**本身不该付任何网络代价**; 真要 L3 行业 stage 是**另一件事**, 别混。
+
+**⚠️ 口径必须三处同层级 (不然两处数字对不上):**
+个股报告 🏆行业地位 + A→M strict/loose 分档 → 一起改 L3。
+违反 CLAUDE.md「跟报告 🏆行业地位 同口径同窗口」这条原则 = 分档门槛算在一套行业上、报告显示另一套。
+
+**⚠️ 门槛维持 30%, 不能收 10% (实测 12 只命中票):**
+| 门槛 | L2 口径 strict | L3 口径 strict | L3 里整档出局的行业 |
+|---|---|---|---|
+| ≤10% | 2 只 | **1 只** | **151/337 (45%)** |
+| ≤30% | 6 只 | **5 只** | 39/337 (12%) |
+
+L3 行业**更小** (成分股 < 10 只的行业, 第 1 名分位都 > 10%) → 10% 门槛下 45% 的 L3
+一只都进不了 strict。**L3 口径并不比 L2 松**, 换层级 ≠ 自动更严/更松。
+
+**⛔ 三处不许跟着改 (改了会出事):**
+1. **`stock_basic.industry` 全局列** → Magic 行业黑名单闸门按 **L2** 判定, 换 L3 闸门失效。
+   只在扫描器的**局部 helper** (`load_stock_basic`) 内覆盖成 L3。
+2. **`val["industry"]` 数据源** → 同上 (闸门读它), 只在渲染层**显示**时换成 L3 链。
+3. **因子历史「行业威科夫」列** → 那个 cache 只有 125 个 **L2** 行业 (210,934 行全是 801xxx),
+   换 L3 会整列变「—」。列头加「,二级」标注, 不动数据。
+
+**⛔ 文件末尾的旧定义会静默覆盖新定义:** 改 `industry_position.py` 时, 文件末尾若还留着
+旧的 `_lookup_industry` / `_industry_members` (同名不同签名), Python 取**最后定义** →
+新参数被静默吞掉, 不报错。改完 grep 一遍同名函数。
+
+**官方 L3 = 346 个 vs 本地成分表 337 个:** 差 9 个是**空壳** (有分类无成分股)。
+「L3 行业数量」别照抄官方数, 本地能用的只有 337。
+
+**apply when:** 任何要改行业层级口径 (L2/L3) 的场合; 任何「显示 X 层级板块」的需求
+—— 先分清「归属信息」还是「该层级的指数行情」, 前者 0 网络, 后者要算请求数。
+
+**相关代码:**
+- `tools/analysis/industry_position.py::INDUSTRY_LEVEL` (层级唯一真源, 默认 "L3")
+- `tools/storage/store.py::get_industry_members_by_l3` / `get_industry_member_map(level)` / `get_industry_name_map(level)`
+- `tools/render/report_renderer.py::render_report` (板块行) / `_section_industry_position` (行业链)
