@@ -200,15 +200,18 @@ def compute_factor_history(ctx, lookback: int = 60,
     # 不足 5 天的行 (含首 5 行) 写 None
     #
     # 2026-11-13 加 ma5_slope (用户: 「MA20斜率 这一列要加上 MA5 的斜率」)
+    # 2026-11-13 修 (用户: 「修」): 去掉 `md == 0` 也当缺失的误加防御。
+    #   偏离恰好 0 (= 收盘价正好等于该均线) 是**完全合法**的值, 之前被当缺失跳过 →
+    #   MA20 斜率约 1.5% 的行显示「—」、MA5 斜率约 5.2% 的行显示「—」。
+    #   真实除零只发生在 md == -100 (收盘价为 0), 已由 ZeroDivisionError 兜住。
     def _slope_of(row_prev, dev_key):
         """由 close + 偏离反算 MA, 再算 5 日斜率 (%/日)。任一环缺失 → None。
 
-        ⚠️ `md == 0` 也当缺失 (沿用 2026-11-13 之前的原判据) —— 保持数值口径不变,
-        别为了"更正确"改口径, 那会让全量产物逐字节 diff 出噪音。
+        ⚠️ 偏离为 0 **不是**缺失 —— 那是「收盘价正好等于该均线」的合法状态。
         """
         c0  = row_prev.get('close')
         md0 = row_prev.get(dev_key)
-        if not (c0 and md0 is not None and md0 != 0):
+        if not (c0 and md0 is not None):
             return None
         try:
             ma0 = c0 / (1 + md0 / 100)
