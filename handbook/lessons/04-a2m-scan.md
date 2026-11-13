@@ -600,3 +600,45 @@ L3 行业**更小** (成分股 < 10 只的行业, 第 1 名分位都 > 10%) → 
 - `tools/analysis/industry_position.py::INDUSTRY_LEVEL` (层级唯一真源, 默认 "L3")
 - `tools/storage/store.py::get_industry_members_by_l3` / `get_industry_member_map(level)` / `get_industry_name_map(level)`
 - `tools/render/report_renderer.py::render_report` (板块行) / `_section_industry_position` (行业链)
+
+---
+
+### 分档口径换名次: strict = 行业内市值**名次** ≤ 3 (2026-11-13 用户定调)
+Type: rule
+> **摘要:** strict 档从「市值**分位** ≤ 30%」改成「市值**名次** ≤ 3」(行业市值前三名)。
+> 分位是相对口径, 门槛含义随行业规模漂移; 名次是绝对口径, 门槛含义稳定。
+
+**为什么换** (用户原话: 「strict 只看行业前三名」):
+
+| | 分位口径 (旧) | 名次口径 (新) |
+|---|---|---|
+| 定义 | 行业内市值分位 ≤ N% | 行业内市值名次 ≤ N |
+| 5 家行业, 30% | ≈ 前 1-2 名 | 前 3 名 (= 几乎全进) |
+| 21 家行业, 30% | ≈ 前 6-7 名 | 前 3 名 |
+| 门槛含义 | **随行业规模漂移** | 稳定 |
+| 12 只命中实测 | strict 8 只 | **strict 3 只** |
+
+**两套口径互斥** (代码层强制, 不靠"先判谁"隐式决定):
+`--industry-pos-pctile` 显式传入 → 名次门槛归 0; `--industry-pos-rank` 显式传入 → 分位归 0。
+两个门槛同时生效 = 分档结果取决于判定顺序 = **没法复现**, 回归测试锁住。
+
+**⛔ 死常量清理**: `industry_position.py::TIER_PCTILE = 30.0` 跟 `FILTER_TIERS` 重复定义,
+**实际没有任何消费者** (只有自己那行定义) → 改口径时差点漏改。已删, 注释指向真源。
+**门槛值只认 `FILTER_TIERS` 一处** —— 两处定义必然漂移。
+
+**strict 目录「门槛清退」** (用户: 「下面不符合的就 移走」):
+| 处境 | 处理 |
+|---|---|
+| 本次命中但落 loose (换档) | 旧副本移回收站 (原有「换档迁移」逻辑) |
+| 本次没命中 + **名次已超门槛** | **移走** (回收站, 可恢复) |
+| 本次没命中 + 名次仍在前 N | **保留留档** (仍符合门槛, 只是这次没启动, 复盘素材) |
+
+⚠️ 清退**只动 strict 目录**, 且**只清名次超门槛的** —— 不动「仍在前 N 但本次没命中」的留档票。
+实测: strict 目录 54 份 → 清退 29 份 → 剩 26 份 (3 只本次命中 + 23 只仍在前 3 名)。
+
+**apply when:** 任何改分档门槛的需求; 任何「目录里留了不符合新口径的旧档」要清理的场合。
+
+**相关代码:**
+- `tools/batch/wyckoff_a2m_scan.py::FILTER_TIERS` (门槛唯一真源) + `--industry-pos-rank`
+- `tools/batch/wyckoff_a2m_scan.py` (expel_codes 清退段)
+- `tests/unit/test_a2m_filter_tiers.py` (阈值 + 互斥回归测试)

@@ -42,8 +42,11 @@ LEADER_TOP_PCTILE = 10.0        # 前 10% 算龙头
 #   30% 门槛下只有 39 个 (12%) 出局, 且 L3 口径并不比 L2 松 (5 vs 6 只)。
 INDUSTRY_LEVEL = "L3"
 
-# A→M strict 档门槛: 行业内市值分位上限 (%), 跟 INDUSTRY_LEVEL 同一个口径
-TIER_PCTILE = 30.0
+# A→M strict 档门槛的真源 = `tools/batch/wyckoff_a2m_scan.py::FILTER_TIERS`
+#   (2026-11-13: 分位口径 → 名次口径, 门槛值 = 行业市值前 3 名)
+# ⚠️ 这里**不要**再定义一份门槛常量 —— 2026-11-13 之前这里有个 `TIER_PCTILE = 30.0`,
+#   跟 FILTER_TIERS 重复定义, 实际没人读它 (死代码), 改口径时差点漏改。
+#   单一真源 = FILTER_TIERS, 本模块只负责**算**位置 (rank / total / percentile)。
 
 # 窗口缓存 (进程内): {交易日数: (start_date, end_date)}
 _WINDOW_CACHE: dict[int, tuple[int, int]] = {}

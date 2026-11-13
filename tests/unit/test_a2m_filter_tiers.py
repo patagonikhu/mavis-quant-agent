@@ -8,6 +8,7 @@
   3. 细 flag 覆盖机制不漏字段 (漏一个 = 显式传的 flag 静默失效)
 """
 import argparse
+import inspect
 
 from tools.batch.wyckoff_a2m_scan import (
     DEFAULT_TIER,
@@ -22,11 +23,29 @@ def test_strict_tier_thresholds_pinned():
     """strict 档门槛是固化口径 —— 数值变了 = 投资口径变了, 必须重跑实测
 
     2026-11-12: 门槛从 PE/质量/杠杆 六项 → **一项** (行业内市值分位上限 %)。
-    市值分位是静态快照, 不随 lookback 窗口漂移。
-    2026-11-12 当天: 10% → **30%** (用户放宽; 前 10% 只剩 2 只, 太严)
+    2026-11-13 再换: **分位 → 名次** (用户: 「strict 只看行业前三名」)。
+    - 分位是相对口径: 行业多大决定进几个人 (5 家行业 30% ≈ 前 1-2 名,
+      21 家行业 30% ≈ 前 6-7 名) → 门槛含义随行业规模漂移。
+    - 名次是绝对口径: 不管行业 3 家还是 30 家, strict 就是该行业市值前 3 名。
     """
     strict = FILTER_TIERS["strict"]
-    assert strict["industry_pos_pctile"] == 30.0   # 行业内市值分位 ≤ 30% → strict
+    assert strict["industry_pos_rank"] == 3      # 行业内市值名次 ≤ 3 → strict
+    assert strict["industry_pos_pctile"] == 0.0  # 分位口径默认让位 (0 = 不用)
+
+
+def test_rank_and_pctile_gates_are_mutually_exclusive():
+    """名次口径 + 分位口径**互斥** —— 两个同时生效 = 分档结果取决于判定顺序, 没法复现。
+
+    显式传 --industry-pos-pctile → 名次门槛归 0; 显式传 --industry-pos-rank → 分位归 0。
+    """
+    import tools.batch.wyckoff_a2m_scan as m
+    src = inspect.getsource(m)
+    # 互斥解析必须在代码里显式做 (不能靠"先判谁"隐式决定)
+    assert 'tier_thr["industry_pos_rank"] = 0' in src
+    assert 'tier_thr["industry_pos_pctile"] = 0.0' in src
+    # 分档判定: rank > 0 用名次, 否则才看 pctile
+    assert 'pos["market_value_rank"] <= rank_thr' in src
+    assert 'pos["market_value_percentile"] <= pctile_thr' in src
 
 
 def test_strict_tier_has_no_finance_gates():
