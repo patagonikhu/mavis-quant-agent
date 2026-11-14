@@ -507,107 +507,130 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     #       同一个报告里不同阶段的「判定透明度」不一致。现在 Accumulation 一律展示。
     #   (2) 「实际」列补「公式 + 代入值 + 结果」 (原来只有裸值 + 阈值提示) ——
     #       跟上面的 AND 门表 / 三层门表统一到同一信息层级。
-    if stage == "Accumulation":
-        _sl60 = fv.get("slope_60", 0)
-        _tr30 = fv.get("trend_30", 0)
-        _pos = fv.get("pos_pct", 0)
-        _dev200 = fv.get("dev_ma200", 0)
-        _rl = fv.get("recent_low", 0)
-        _rh = fv.get("recent_high", 0)
-        _ma250 = fv.get("ma200", 0)          # window(250) 均线 —— dev_ma200 的分母
-        # _snames / _accum_ev 已在 AND 门表之前算好 (2026-11-14 提到前面), 这里直接复用。
-        # 2026-11-03: A/B/C 判定**读生产侧 accum_detail**, 渲染器不再自己复刻
-        #   (复刻一旦跟生产漂移, 报告就会说谎 —— fallback 标签就是这么错的)。
-        _wA = bool(accum_d.get("weak_A_ok", False))
-        _wB = bool(accum_d.get("weak_B_ok", False))
-        _wC = bool(accum_d.get("weak_C_ok", False))
-        _hit = accum_d.get("weak_hit") or ""
-        _pass_all = bool(accum_d.get("pass_all", False))
-        # fallback2 → Accumulation 分支: 同样以生产侧 channel 为准
-        _fb2_accum = (channel == "fallback2_accum")
+    # 2026-11-14 (用户: 「我要的是这个东西, 好像还是没看到呀」):
+    #   弱信号路径 (A OR B OR C) + fallback2 → Accumulation 两块 → **无条件渲染**。
+    #   原来整块被 `if stage == "Accumulation"` 挡住 → 当前阶段是 Markup / Distribution / ? 的票
+    #   完全看不到这段, 读者无从知道「Accumulation 的分数从哪来、为什么不是它」。
+    _sl60 = fv.get("slope_60", 0)
+    _tr30 = fv.get("trend_30", 0)
+    _pos = fv.get("pos_pct", 0)
+    _dev200 = fv.get("dev_ma200", 0)
+    _rl = fv.get("recent_low", 0)
+    _rh = fv.get("recent_high", 0)
+    _ma250 = fv.get("ma200", 0)          # window(250) 均线 —— dev_ma200 的分母
+    # _snames / _accum_ev 已在 AND 门表之前算好 (2026-11-14 提到前面), 这里直接复用。
+    # 2026-11-03: A/B/C 判定**读生产侧 accum_detail**, 渲染器不再自己复刻
+    #   (复刻一旦跟生产漂移, 报告就会说谎 —— fallback 标签就是这么错的)。
+    _wA = bool(accum_d.get("weak_A_ok", False))
+    _wB = bool(accum_d.get("weak_B_ok", False))
+    _wC = bool(accum_d.get("weak_C_ok", False))
+    _hit = accum_d.get("weak_hit") or ""
+    _pass_all = bool(accum_d.get("pass_all", False))
+    # fallback2 → Accumulation 分支: 同样以生产侧 channel 为准
+    _fb2_accum = (channel == "fallback2_accum")
 
-        def _cell(formula: str, subst: str, result: str) -> str:
-            """「公式 + 代入值 + 结果」三段式 (2026-11-08)"""
-            return f"`{formula}` → `{subst}` → {result}"
+    def _cell(formula: str, subst: str, result: str) -> str:
+        """「公式 + 代入值 + 结果」三段式 (2026-11-08)"""
+        return f"`{formula}` → `{subst}` → {result}"
 
-        # ── 公式 + 代入值 + 结果 (公式全部对齐 stage_factor.py / helpers.py 真实算法) ──
-        _c_slope_abs = _cell(
-            "abs(slope_60)=abs((p/closes[i-60]-1)*100)",
-            f"abs(({p:.2f}/{c_i_60:.2f}-1)*100)=abs({_sl60:+.2f})",
-            f"= {abs(_sl60):.2f}")
-        _c_slope_raw = _cell(
-            "slope_60=(p/closes[i-60]-1)*100",
-            f"({p:.2f}/{c_i_60:.2f}-1)*100={_sl60:+.2f}",
-            f"= {_sl60:+.2f}%")
-        _c_trend_raw = _cell(
-            "trend_30=(p/closes[i-31]-1)*100",
-            f"({p:.2f}/{c_i_31:.2f}-1)*100={_tr30:+.2f}",
-            f"= {_tr30:+.2f}%")
-        _c_pos = _cell(
-            "pos_pct=(p-recent_low)/(recent_high-recent_low)*100",
-            f"({p:.2f}-{_rl:.2f})/({_rh:.2f}-{_rl:.2f})*100={_pos:.1f}",
-            f"= {_pos:.1f}%")
-        _c_dev = _cell(
-            "dev_ma200=(p/MA250-1)*100",
-            f"({p:.2f}/{_ma250:.2f}-1)*100={_dev200:+.2f}",
-            f"= {_dev200:+.2f}%")
-        _c_ev = f"累积类事件 `{_accum_ev or '无'}` (需 ≥1 个 Spring/LPS/EVR)"
-        _c_ns = f"`len(sub_events)`={len(_snames)} (需 ≥1)"
+    # ── 公式 + 代入值 + 结果 (公式全部对齐 stage_factor.py / helpers.py 真实算法) ──
+    _c_slope_abs = _cell(
+        "abs(slope_60)=abs((p/closes[i-60]-1)*100)",
+        f"abs(({p:.2f}/{c_i_60:.2f}-1)*100)=abs({_sl60:+.2f})",
+        f"= {abs(_sl60):.2f}")
+    _c_slope_raw = _cell(
+        "slope_60=(p/closes[i-60]-1)*100",
+        f"({p:.2f}/{c_i_60:.2f}-1)*100={_sl60:+.2f}",
+        f"= {_sl60:+.2f}%")
+    _c_trend_raw = _cell(
+        "trend_30=(p/closes[i-31]-1)*100",
+        f"({p:.2f}/{c_i_31:.2f}-1)*100={_tr30:+.2f}",
+        f"= {_tr30:+.2f}%")
+    _c_pos = _cell(
+        "pos_pct=(p-recent_low)/(recent_high-recent_low)*100",
+        f"({p:.2f}-{_rl:.2f})/({_rh:.2f}-{_rl:.2f})*100={_pos:.1f}",
+        f"= {_pos:.1f}%")
+    _c_dev = _cell(
+        "dev_ma200=(p/MA250-1)*100",
+        f"({p:.2f}/{_ma250:.2f}-1)*100={_dev200:+.2f}",
+        f"= {_dev200:+.2f}%")
+    _c_ev = f"累积类事件 `{_accum_ev or '无'}` (需 ≥1 个 Spring/LPS/EVR)"
+    _c_ns = f"`len(sub_events)`={len(_snames)} (需 ≥1)"
 
-        def _score_mark(branch: str) -> str:
-            """实际计分列 — pass_all=True 时弱信号分支未参与计分"""
-            if _pass_all:
-                return "— (严格门已给分)"
-            return "✅ **+1 (命中分支)**" if _hit == branch else "⬜ 未走"
+    def _score_mark(branch: str) -> str:
+        """实际计分列 — pass_all=True 时弱信号分支未参与计分"""
+        if _pass_all:
+            return "— (严格门已给分)"
+        return "✅ **+1 (命中分支)**" if _hit == branch else "⬜ 未走"
 
-        if not (_wA or _wB or _wC) and _fb2_accum:
-            # 分数来自 fallback2, 不是主路径弱信号
-            rows.append(f"> ⚠️ **严格 AND 门未通过 (pass_all=False), 但仍判 Accumulation** —— "
-                        f"这一分**不是**主路径弱信号给的, 而是 **fallback2 → Accumulation 分支** "
-                        f"(主路径累积/派发/主升三个分数全为 0 时才轮得到):")
-            rows.append("")
-            rows.append("| fallback2 → Accumulation | 阈值 | 实际 (公式 + 代入值 + 结果) | 满足 |")
-            rows.append("|---|---|---|---|")
-            rows.append(f"| 真跌势 (60{_u}+30{_u}双向下) | 有 sub_event 且 `slope_60 < -5` 且 `trend_30 < -5` | "
-                        f"①{_c_slope_raw} (需 <-5)<br>②{_c_trend_raw} (需 <-5)<br>③{_c_ns} | ✅ |")
-            rows.append("")
-            rows.append(f"> **该分支语义**: 60 {_u}与 30 {_u}**双向下** → 判定为「真跌势中的底部累积区」, "
-                        f"而不是主升浪。注意它**不看 MA200 位置 / 不看量能 / 不要求近期事件**。")
-            rows.append("")
+    # ── 弱信号路径 (A OR B OR C) —— **始终渲染** (2026-11-14 用户要求) ──
+    #   原来整块被 `if stage == "Accumulation"` 挡住 → 当前阶段是 Markup / Distribution / ? 的票
+    #   完全看不到 → 读者无从知道「Accumulation 的分数从哪来、为什么最终阶段不是它」。
+    _hit_disp = _hit or "—"
+    if _pass_all:
+        if stage == "Accumulation":
+            rows.append("> ✅ **严格 AND 门通过 (pass_all=True)** —— Accumulation 由**严格门**直接给出。"
+                        "下面同时列出**弱信号路径 (A OR B OR C)** 各自的成立情况 (评分制: 命中会再 +1 分, "
+                        "但严格门已先得分, 弱信号分支**未参与计分**):")
         else:
-            _hit = _hit or "—"
-            if _pass_all:
-                rows.append(f"> ✅ **严格 AND 门通过 (pass_all=True)** —— Accumulation 由**严格门**直接给出。"
-                            f"下面同时列出**弱信号路径 (A OR B OR C)** 各自的成立情况 (评分制: 命中会再 +1 分, "
-                            f"但严格门已先得分, 弱信号分支**未参与计分**):")
-            else:
-                rows.append(f"> ⚠️ **严格 AND 门未通过 (pass_all=False), 但仍判 Accumulation** —— "
-                            f"Accumulation 是**评分制不是 AND 门**, 实际给分的是下面的**弱信号路径** (score={current_score}):")
-            rows.append("")
-            rows.append("**弱信号路径 — 逻辑关系: `A OR B OR C`** (三条并列, 任一成立即 +1 分; "
-                        "**可同时成立**, 不互斥)")
-            rows.append("")
-            rows.append("| 弱信号分支 | 阈值 | 实际 (公式 + 代入值 + 结果) | 条件成立 | 实际计分 |")
-            rows.append("|---|---|---|---|---|")
-            rows.append(f"| **A. 横盘/低位 + 累积 sub-event** ⭐ | `abs(slope_60) < 8` 且 `25 < pos_pct < 75` 且有 Spring/LPS/EVR | "
-                        f"①{_c_slope_abs} (需 <8)<br>②{_c_pos} (需 25~75)<br>③{_c_ev} | {_yn(_wA)} | {_score_mark('A')} |")
-            rows.append(f"| B. 深跌 + 累积 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且有 Spring/LPS/EVR | "
-                        f"①{_c_pos} (需 <30)<br>②{_c_dev} (需 <-5%)<br>③{_c_ev} | {_yn(_wB)} | {_score_mark('B')} |")
-            rows.append(f"| C. 深跌 + 任意 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且 `len(sub_events) >= 1` | "
-                        f"①{_c_pos} (需 <30)<br>②{_c_dev} (需 <-5%)<br>③{_c_ns} | {_yn(_wC)} | {_score_mark('C')} |")
-            rows.append("")
-            if _pass_all:
-                rows.append("> **实际命中分支: —** —— 严格 AND 门已通过并给出分数, 弱信号 A/B/C 分支**未参与计分**。")
-            else:
-                _also = [n for n, ok in (("A", _wA), ("B", _wB), ("C", _wC)) if ok and n != _hit]
-                _extra = (f" (同时成立但被 elif 顺序挡在后面的: {', '.join(_also)})" if _also else "")
-                rows.append(f"> **实际命中分支: {_hit}** —— 得分来自 {_hit} 条 (条件成立 → +1 分){_extra}。")
-            rows.append(">")
-            rows.append("> **⚠️ 「条件成立」≠「实际计分」**: 代码是 `if/elif` 链, A→B→C 顺序**只记第一条**成立的分支; "
-                        "所以「条件成立」列可能有多条 ✅, 但只有命中分支拿到那 +1 分。")
-            rows.append(">")
-            rows.append(f"> 「子阶段」({stage_detail}) 由另一条链判定 (L407-416), 与 AND 门无关。")
-            rows.append("")
+            rows.append(f"> ℹ️ 当前阶段是 **{stage}** —— 下面是 **Accumulation** 的评分构成 (参考): "
+                        f"严格 AND 门 `pass_all=True` (已给 3 分), "
+                        f"弱信号路径 (A OR B OR C) 各自的成立情况如下 (**未参与计分**):")
+    elif stage == "Accumulation":
+        rows.append(f"> ⚠️ **严格 AND 门未通过 (pass_all=False), 但仍判 Accumulation** —— "
+                    f"Accumulation 是**评分制不是 AND 门**, 实际给分的是下面的**弱信号路径** (score={current_score}):")
+    else:
+        rows.append(f"> ℹ️ 当前阶段是 **{stage}** —— 下面是 **Accumulation** 的评分构成 (参考): "
+                    f"严格 AND 门 `pass_all=False`, 弱信号路径 (A OR B OR C) 各自的成立情况如下:")
+    rows.append("")
+    rows.append("**弱信号路径 — 逻辑关系: `A OR B OR C`** (三条并列, 任一成立即 +1 分; "
+                "**可同时成立**, 不互斥)")
+    rows.append("")
+    rows.append("| 弱信号分支 | 阈值 | 实际 (公式 + 代入值 + 结果) | 条件成立 | 实际计分 |")
+    rows.append("|---|---|---|---|---|")
+    rows.append(f"| **A. 横盘/低位 + 累积 sub-event** ⭐ | `abs(slope_60) < 8` 且 `25 < pos_pct < 75` 且有 Spring/LPS/EVR | "
+                f"①{_c_slope_abs} (需 <8)<br>②{_c_pos} (需 25~75)<br>③{_c_ev} | {_yn(_wA)} | {_score_mark('A')} |")
+    rows.append(f"| B. 深跌 + 累积 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且有 Spring/LPS/EVR | "
+                f"①{_c_pos} (需 <30)<br>②{_c_dev} (需 <-5%)<br>③{_c_ev} | {_yn(_wB)} | {_score_mark('B')} |")
+    rows.append(f"| C. 深跌 + 任意 sub-event | `pos_pct < 30` 且 `dev_ma200 < -5` 且 `len(sub_events) >= 1` | "
+                f"①{_c_pos} (需 <30)<br>②{_c_dev} (需 <-5%)<br>③{_c_ns} | {_yn(_wC)} | {_score_mark('C')} |")
+    rows.append("")
+    if _pass_all:
+        rows.append("> **实际命中分支: —** —— 严格 AND 门已通过并给出分数, 弱信号 A/B/C 分支**未参与计分**。")
+    elif _hit:
+        _also = [n for n, ok in (("A", _wA), ("B", _wB), ("C", _wC)) if ok and n != _hit]
+        _extra = (f" (同时成立但被 elif 顺序挡在后面的: {', '.join(_also)})" if _also else "")
+        rows.append(f"> **实际命中分支: {_hit}** —— Accumulation 的分数来自 {_hit} 条 (条件成立 → +1 分){_extra}。")
+    else:
+        rows.append("> **实际命中分支: —** —— 弱信号 A/B/C **三条都不成立**, Accumulation 这一分**没拿到**。")
+    if stage != "Accumulation":
+        rows.append(">")
+        rows.append(f"> (本票最终阶段是 **{stage}** —— 按三阶段得分高者取, 所以 Accumulation 这一分没被选为最终阶段)")
+    rows.append(">")
+    rows.append("> **⚠️ 「条件成立」≠「实际计分」**: 代码是 `if/elif` 链, A→B→C 顺序**只记第一条**成立的分支; "
+                "所以「条件成立」列可能有多条 ✅, 但只有命中分支拿到那 +1 分。")
+    rows.append(">")
+    rows.append(f"> 「子阶段」({stage_detail or '—'}) 由另一条链判定 (L407-416), 与 AND 门无关。")
+    rows.append("")
+
+    # ── fallback2 → Accumulation 分支 —— **始终渲染** (2026-11-14 用户要求) ──
+    #   原来只在「分数真来自这条分支」时渲染 → 看不到这条分支长什么样、什么时候轮得到。
+    if _fb2_accum:
+        rows.append("> ⚠️ **本票的 Accumulation 分来自 fallback2 → Accumulation 分支** —— "
+                    "不是主路径弱信号给的 (主路径累积/派发/主升三个分数全为 0 时才轮得到):")
+    else:
+        rows.append("> ℹ️ **fallback2 → Accumulation 分支** —— 本票**未走**这条分支 (仅供对照, "
+                    "什么时候轮得到见下面的「该分支语义」):")
+    rows.append("")
+    rows.append("| fallback2 → Accumulation | 阈值 | 实际 (公式 + 代入值 + 结果) | 本次状态 |")
+    rows.append("|---|---|---|---|")
+    rows.append(f"| 真跌势 (60{_u}+30{_u}双向下) | 有 sub_event 且 `slope_60 < -5` 且 `trend_30 < -5` | "
+                f"①{_c_slope_raw} (需 <-5)<br>②{_c_trend_raw} (需 <-5)<br>③{_c_ns} | "
+                f"{'✅ **本票走的就是这条**' if _fb2_accum else '⬜ 未走'} |")
+    rows.append("")
+    rows.append(f"> **该分支语义**: 60 {_u}与 30 {_u}**双向下** → 判定为「真跌势中的底部累积区」, "
+                f"而不是主升浪。注意它**不看 MA200 位置 / 不看量能 / 不要求近期事件**。")
+    rows.append("")
 
     # Markup 主升浪条件 (核心修改: 实际列展开公式)
     rows.append("**Markup 主升浪** (AND 门):")

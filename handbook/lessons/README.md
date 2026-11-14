@@ -1,7 +1,7 @@
 # 项目专属教训 — 索引
 
 > 2026-11-05 从 `handbook/project-lessons.md` (单文件 1300+ 行) 拆成 5 个主题分册。
-> 共 **97 条**教训 (拆 47 + 后续新增 50)。
+> 共 **98 条**教训 (拆 47 + 后续新增 51)。
 > **内容一字未删**, 只做了拆分 + 加一句话摘要 + 建索引。
 > 用法: **grep 查**, 不用通读 —— 提到具体话题先在本页扫摘要, 再进对应分册看细节。
 
@@ -13,7 +13,7 @@
 | [`02-data-sync.md`](02-data-sync.md) | 数据同步 / tushare / parquet 落盘 | 20 |
 | [`03-finance.md`](03-finance.md) | 财务 / 估值口径 | 8 |
 | [`04-a2m-scan.md`](04-a2m-scan.md) | A→M 扫描 / watchlist | 23 |
-| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 26 |
+| [`05-render-lint.md`](05-render-lint.md) | 报告渲染 / linter / 文档一致性 | 27 |
 | [`06-tenbagger-launch.md`](06-tenbagger-launch.md) | 历史十倍股启动特征 / walk-forward 筛子验证 | 1 |
 
 ## 威科夫 / Markup / fallback 判定体系
@@ -145,6 +145,7 @@
 | 24 | **下线一个 report section: 8 处连带 + 产物全量重生成** | 删段要动两个渲染器 + 两个 schema 清单 + linter 的 pattern; 产物重生成后 grep 全目录查漏网 |
 | 25 | **同一列加档位: 列数不变也要改 4 处 + 逐列 diff** | 表内多值: 单位放表头 / 缺失档位用「—」占位且位置固定 / 各值各带箭头; 改口径要**拆成独立改动**; 验收用**逐列 diff** 不只看首行 |
 | 26 | **报告里的分数必须能在报告里对上账** | AND 门 3 条条件只能解释 3 分, score=6 的另外 +2/+1 两条**只活在打分里从没渲染过** (git 全历史无记录 → 不是被删, 是一直没做); 满足列还要区分「严格门已计入」vs「成立但未计分」 |
+| 27 | **判定明细不能按阶段条件渲染** | 弱信号路径 A/B/C 块被 `if stage == "Accumulation"` 挡住 → Markup/Distribution/? 的票完全看不到「为什么不是这个阶段」; 提出来**无条件渲染** + 文案按场景自适应 + 「命中分支」补第三态 |
 
 ## 历史十倍股启动特征 / walk-forward 筛子验证
 
