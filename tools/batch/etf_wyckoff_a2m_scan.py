@@ -575,6 +575,23 @@ def main() -> int:
         reps, details = _dedup_hits(hits, klines, basic_by_ts)
     print(f"     去重后 {len(reps)} 只 (同一跟踪指数合并)")
 
+    # 6. 汇总 md
+    #    ⚠️ 必须在「无命中」早退**之前**写 —— 否则 0 命中时汇总 md 永远停在旧日期。
+    #    实测 (2026-11-14): ETF 全市场 18 只 0 命中 → docs/etf-wyckoff-a2m.md 停在 20261112,
+    #    而 18 份详报已刷到 20261113 (详报那条路已在 059c014 修好, 汇总这条没修)。
+    #    股票版 (wyckoff_a2m_scan) 的汇总写在 `if hits:` 之外, 0 命中也写 —— 这里对齐。
+    #    last_date: 有命中用命中的末日; 0 命中回退到**实际扫描到的数据末日** (不是 "—")。
+    _scan_dates = [str(r.get("trade_date") or "").replace("-", "")[:8]
+                   for rows in klines.values() for r in rows]
+    scan_date = max([d for d in _scan_dates if d], default="—")
+    last_date = max((h["last_date"] for h in reps), default=scan_date)
+    if not args.no_md:
+        out = _write_md(reps, details, hits, scanned, len(candidate_ts), elapsed,
+                        Path(args.output),
+                        ",".join(sorted(allow_types)) if allow_types else "全部(除排除项)",
+                        not args.no_dedup, last_date)
+        print(f"\n📄 汇总: {out}")
+
     if not reps:
         print("\n  (无命中)")
         # 2026-11-14 修: **不要在这里直接 return** ——
@@ -593,15 +610,6 @@ def main() -> int:
         print(f"     {h['ts_code']}  {h.get('name', '')}  {h['trans_date']}  "
               f"¥{h['last_close']:.3f}  M占比{h['m_ratio'] * 100:.0f}%  "
               f"{'/'.join(h['trans_stages'][-8:])}")
-
-    # 6. 汇总 md
-    last_date = max((h["last_date"] for h in reps), default="—")
-    if not args.no_md:
-        out = _write_md(reps, details, hits, scanned, len(candidate_ts), elapsed,
-                        Path(args.output),
-                        ",".join(sorted(allow_types)) if allow_types else "全部(除排除项)",
-                        not args.no_dedup, last_date)
-        print(f"\n📄 汇总: {out}")
 
     # 7. 逐只详报 (跟 /t-wyckoff-a2m 一致)
     if args.no_full_report:

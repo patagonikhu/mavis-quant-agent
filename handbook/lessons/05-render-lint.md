@@ -999,3 +999,35 @@ if not reps:
 任何 `if not <命中集>: return` 的提前退出, 都要先问一句「目录里已有的留档谁刷」。
 
 **apply when**: 任何带「留档 / stale 刷新」语义的扫描器; 任何"跑完了但文件 mtime 没变"的排查。
+
+---
+
+### 29. 「汇总 md」和「详报」是两条独立的写出路径 —— 修了一条不会带出另一条 (2026-11-14)
+
+**根因**: 第 28 条修了 ETF 扫描器的**详报**停摆 (`if not reps: return` 前先刷留档),
+但**汇总 md** 的写出 `_write_md(...)` 写在**同一个 `if not reps:` 块的后面** ——
+早退照样把它跳过了。
+
+**后果**: `docs/etf-wyckoff-a2m/` 里 18 份详报刷到了 20261113,
+但 `docs/etf-wyckoff-a2m.md` (汇总) 还停在 **20261112** → 同一次刷新, 两个产物两个时点,
+看目录以为全刷了, 实际漏一份。
+
+**改法**: 汇总 md 的写出**提到早退之前**, 并且 `last_date` 在 0 命中时回退到
+**实际扫描到的数据末日** (从 `klines` 里取 max trade_date), 而不是 `default="—"`:
+```python
+_scan_dates = [str(r.get("trade_date") or "").replace("-", "")[:8]
+               for rows in klines.values() for r in rows]
+scan_date = max([d for d in _scan_dates if d], default="—")
+last_date = max((h["last_date"] for h in reps), default=scan_date)
+if not args.no_md:
+    out = _write_md(reps, details, hits, scanned, len(candidate_ts), elapsed, ...)
+```
+> ⚠️ 股票版 `wyckoff_a2m_scan.py` 的汇总写在 `if hits:` **之外**, 0 命中也写 —— ETF 版要对齐这个结构。
+
+**验收**: 重跑 ETF 扫描 → 日志出现 `📄 汇总: ...` **且** `(无命中)` → 汇总 md 头部
+`数据日期: 20261113 | 命中: 0 只` → **18 份详报 md5 逐字节不变** (证明只动汇总, 判定零漂移)。
+
+**铁律**: **改「刷新链」时, 一个扫描器至少有 2 条独立写出路径 (汇总 md + 逐只详报),
+每条都要单独验。** 只验详报会漏汇总。
+
+**apply when**: 任何扫描器/批处理脚本的「产物写出」环节; 任何"目录刷了但汇总还是旧的"的排查。
