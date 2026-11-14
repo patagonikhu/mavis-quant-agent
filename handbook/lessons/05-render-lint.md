@@ -961,3 +961,41 @@ MA200 = 前 n 根的均价(不是真 200 日均线)。这是**项目既有统一
 
 **apply when**: 任何"判定明细 / 评分构成 / 条件表"的渲染; 任何用户说"某个表我没看到"的排查
 —— 先查它是不是被某个 `if stage == ...` 之类的**阶段条件**挡住了。
+
+---
+
+### 28. 「本次没命中」≠「目录不用刷」—— 提前 return 会让整个目录停摆 (2026-11-14)
+
+**现象**: 全量刷新跑完, ETF 目录 18 份详报**一份没动**(mtime 还停在前一天)。
+ETF 扫描日志停在 `原始命中 0 只 / 去重后 0 只 / (无命中)` —— 后面没有任何刷新动作。
+
+**根因**: `etf_wyckoff_a2m_scan.py` 里:
+```python
+if not reps:
+    print("\n  (无命中)")
+    return 0          # ← 提前返回, 跳过了后面的「留档刷新」
+```
+**「留档」(曾命中过, 本次没命中) 的刷新逻辑在 `_run_reports()` 里, 它本来完全支持 `reps=[]`**
+(只跑 C 类 stale 任务) —— 但提前 return 让它根本走不到。
+
+**后果**: 目录里 18 份全是留档 → **只要某一次扫描没命中, 整个目录就永远停在旧数据上**,
+而且日志完全正常 (rc=0), 看日志根本发现不了。
+
+**改法**: 提前 return 之前, 先刷已存在的留档:
+```python
+if not reps:
+    print("\n  (无命中)")
+    if not args.no_full_report:
+        _existing = scan_existing_reports(ROOT / "docs" / args.report_subdir)
+        if _existing:
+            _run_reports([], {h["code"] for h in hits}, args.report_subdir, _existing, ...)
+    return 0
+```
+> ⚠️ **股票版 `wyckoff_a2m_scan.py` 没有这个提前 return** —— 只有 ETF 版有。两个扫描器要一起审。
+
+**验收**: 重跑 ETF 扫描 → `C. 历史留档 18 只 [会刷新数据]` → `详报完成 18/18` → 因子历史到 20261113。
+
+**铁律**: **「本次没命中」只代表不新增, 不代表不刷新。**
+任何 `if not <命中集>: return` 的提前退出, 都要先问一句「目录里已有的留档谁刷」。
+
+**apply when**: 任何带「留档 / stale 刷新」语义的扫描器; 任何"跑完了但文件 mtime 没变"的排查。

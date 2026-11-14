@@ -577,6 +577,16 @@ def main() -> int:
 
     if not reps:
         print("\n  (无命中)")
+        # 2026-11-14 修: **不要在这里直接 return** ——
+        #   目录里已有的「历史留档」详报 (曾命中过, 本次没命中) 必须照常刷新到新数据。
+        #   原来一旦某次扫描没命中就提前 return → 整个目录的详报**永远停在旧交易日**。
+        #   实测 (2026-11-14): ETF 目录 18 份全是留档, 一次没命中就全停摆。
+        #   股票版 (wyckoff_a2m_scan) 没有这个提前 return —— 只有 ETF 版有。
+        if not args.no_full_report:
+            _existing = scan_existing_reports(ROOT / "docs" / args.report_subdir)
+            if _existing:
+                _run_reports([], {h["code"] for h in hits}, args.report_subdir, _existing,
+                             args.keep_stale, args.stale_only, args.report_top, args.workers)
         return 0
 
     for h in sorted(reps, key=lambda x: x["trans_date"], reverse=True):
