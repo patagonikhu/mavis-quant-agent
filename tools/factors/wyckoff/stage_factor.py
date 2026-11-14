@@ -283,11 +283,18 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label):
     elif accum_weak_C_ok:
         accum_weak_hit = "C"
 
+    # 2026-11-14: 两个加分项抽成具名变量 —— 报告要显示它们。
+    #   原来这两个条件**只活在打分里**, 报告的「Accumulation 累积」表只列 AND 门 3 条 →
+    #   score=6 用表里 3 条条件根本对不上账 (用户 2026-11-14 指出)。
+    #   _has_accum_ev 已在上面算好 (语义与原来的 any(...) 完全相同), 直接复用。
+    accum_event_bonus_ok = _has_accum_ev
+    accum_short_ma_bonus_ok = dev_ma20 < 5 and dev_ma60 < 0
+
     if accum_abc_pass:
         score_Accumulation += 3
-        if any(e in sub_events for e in ('Spring', 'LPS', 'EVR')):
+        if accum_event_bonus_ok:
             score_Accumulation += 2
-        if dev_ma20 < 5 and dev_ma60 < 0:
+        if accum_short_ma_bonus_ok:
             score_Accumulation += 1
     elif accum_weak_A_ok:
         score_Accumulation += 1
@@ -537,6 +544,10 @@ def wyckoff_judge(i, arrs, sub_events, window, period_label):
             "base_low_ok": accum_base_low_ok, "ma_gap_ok": accum_ma_gap_ok,
             "volume_dry_ok": accum_volume_ok, "b_test_count": accum_b_test_count_n,
             "c_stage_ok": accum_c_ok, "pass_all": accum_abc_pass,
+            # 2026-11-14: 严格门通过后的两个**加分项** (事件 +2 / 短期均线 +1)。
+            #   下沉到 accum_detail 是为了让渲染器**直接读**, 不自己复刻 (同 11-03 教训)。
+            "event_bonus_ok": accum_event_bonus_ok,
+            "short_ma_bonus_ok": accum_short_ma_bonus_ok,
             # 2026-11-03: 弱信号 A/B/C 真实判定 (OR 关系, 报告直接读, 渲染器不再复刻)
             #   weak_A_ok/weak_B_ok/weak_C_ok = 各条条件是否成立
             #   weak_hit                   = 实际拿到那 +1 分的是哪条 (A/B/C, 空 = 严格门已过或都没成立)

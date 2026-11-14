@@ -410,6 +410,19 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     # 2026-10-17 v3: 把"实际"列改成"公式 + 代入值 + 计算结果"一格展示
     # 用户不用翻另一张表就能看到计算过程
 
+    # 2026-11-14: sub_event 名字集合提到 AND 门表**之前**算 ——
+    #   「累积类事件 (加分项 +2)」那行要用它, 而且要**始终显示** (不依赖当前阶段)。
+    #   后面 `if stage == "Accumulation"` 块里复用同一份, 不再重算。
+    _snames = set()
+    for _e in (sub_events or []):
+        if isinstance(_e, str):
+            _snames.add(_e)
+        elif isinstance(_e, dict):
+            _nm = _e.get("name", "")
+            if _nm:
+                _snames.add(_nm)
+    _accum_ev = sorted(_snames & {"Spring", "LPS", "EVR"})
+
     # Accumulation 累积条件
     rows.append("**Accumulation 累积** (AND 门, 需全满足才严格通过):")
     rows.append("")
@@ -439,8 +452,41 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
     vol_baseline_days = fv.get("vol_baseline_days", "?")
     vol_ratio_accum  = vol_recent_avg / vol_baseline_avg if vol_baseline_avg > 0 else 0
     rows.append(f"| 量能萎缩 (近 {vol_recent_days}{_u} < 基线 {vol_baseline_days}{_u}) | vol_recent_avg / vol_baseline_avg < 0.75 | `{vol_recent_avg:.0f} / {vol_baseline_avg:.0f} = {vol_ratio_accum:.3f}` | {_yn(accum_d.get('volume_dry_ok', False))} |")
+    # 2026-11-14 加: 严格门通过后的**两个加分项** (生产侧 stage_factor.py 累积打分块)。
+    #   这两条决定 score 里除 AND 门 3 分以外的分 (事件 +2 / 短期均线 +1), 但报告一直没渲染
+    #   → score=6 用表里 3 条 AND 门条件**对不上账** (用户 2026-11-14 指出)。
+    #   「要始终显示出来」→ 无条件渲染, 不管当前是不是 Accumulation 阶段。
+    #   满足列读**生产侧标志** (渲染器不自己复刻 —— 同 2026-11-03 教训)。
+    _ma20_f = fv.get("ma20", 0)
+    _ma60_f = fv.get("ma60", 0)
+    _dev20_f = fv.get("dev_ma20", 0)
+    _dev60_f = fv.get("dev_ma60", 0)
+    _accum_pass_all = bool(accum_d.get("pass_all", False))
+
+    def _bonus_mark(ok: bool) -> str:
+        """加分项的满足列 —— 要区分「已计入分数」和「条件成立但严格门没过 → 没计分」。
+
+        两种情况都显示 ✅ 会让人以为 3+2+1=6 分, 实际 score 只有 1 分 (弱信号路径)。
+        """
+        if not ok:
+            return "❌"
+        return "✅ (严格门已计入)" if _accum_pass_all else "✅ (条件成立, 严格门未过 → 未计分)"
+    _dev20_sub = (f"({p:.2f}/{_ma20_f:.2f}-1)*100={_dev20_f:+.2f}" if _ma20_f > 0
+                  else f"MA20 缺失 → dev_ma20={_dev20_f:+.2f}")
+    _dev60_sub = (f"({p:.2f}/{_ma60_f:.2f}-1)*100={_dev60_f:+.2f}" if _ma60_f > 0
+                  else f"MA60 缺失 → dev_ma60={_dev60_f:+.2f}")
+    rows.append(f"| 累积类事件 (加分项 +2) | 有 ≥1 个 Spring/LPS/EVR (严格门通过时计入 +2 分) | "
+                f"`累积类事件 {_accum_ev or '无'}` (共 {len(_snames)} 个 sub_event) | "
+                f"{_bonus_mark(bool(accum_d.get('event_bonus_ok', False)))} |")
+    rows.append(f"| 短期均线未走强 (加分项 +1) | `dev_ma20 < 5%` 且 `dev_ma60 < 0%` (严格门通过时计入 +1 分) | "
+                f"①`dev_ma20=(p/MA20-1)*100` → `{_dev20_sub}` → = {_dev20_f:+.2f}% (需 <5%)<br>"
+                f"②`dev_ma60=(p/MA60-1)*100` → `{_dev60_sub}` → = {_dev60_f:+.2f}% (需 <0%) | "
+                f"{_bonus_mark(bool(accum_d.get('short_ma_bonus_ok', False)))} |")
     rows.append(f"| **子阶段** | 累积 A: 前置满足 / 累积 B: ≥3次测试底部 / 累积 C: 不破低 | `b_test_count={accum_d.get('b_test_count', 0)} (近 60 {_u} abs(low-period_low)/period_low ≤ 5% 的{_u}数), c_stage_ok={accum_d.get('c_stage_ok', '—')}` | — |")
     rows.append(f"| 综合通过 | 上面 +1 全满足 | `pass_all={accum_d.get('pass_all', '—')}` | {_yn(accum_d.get('pass_all', False))} |")
+    rows.append("")
+    rows.append("> ℹ️ **Accumulation 得分构成**: 严格 AND 门 **3 分** + 累积类事件 **+2** + 短期均线未走强 **+1** = 最高 **6 分**。"
+                "后两项**只在严格门通过时计入**; 走弱信号路径 (A/B/C) 则为 **1 分**。")
     rows.append("")
 
     # 2026-11-03 加: Accumulation 是**评分制**, 严格 AND 门只是其中一条路径。
@@ -469,15 +515,7 @@ def _wy_criteria_md(stage: str, accum_d: dict, markup_d: dict, dist_d: dict, sco
         _rl = fv.get("recent_low", 0)
         _rh = fv.get("recent_high", 0)
         _ma250 = fv.get("ma200", 0)          # window(250) 均线 —— dev_ma200 的分母
-        _snames = set()
-        for _e in (sub_events or []):
-            if isinstance(_e, str):
-                _snames.add(_e)
-            elif isinstance(_e, dict):
-                _nm = _e.get("name", "")
-                if _nm:
-                    _snames.add(_nm)
-        _accum_ev = sorted(_snames & {"Spring", "LPS", "EVR"})
+        # _snames / _accum_ev 已在 AND 门表之前算好 (2026-11-14 提到前面), 这里直接复用。
         # 2026-11-03: A/B/C 判定**读生产侧 accum_detail**, 渲染器不再自己复刻
         #   (复刻一旦跟生产漂移, 报告就会说谎 —— fallback 标签就是这么错的)。
         _wA = bool(accum_d.get("weak_A_ok", False))
