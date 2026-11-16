@@ -193,10 +193,17 @@ from tools.batch.a2m_report_common import (  # noqa: E402
 #     21 家的行业 30% ≈ 前 6-7 名) → 门槛含义会随行业规模漂移。
 #   - 名次是**绝对**口径: 不管行业 3 家还是 30 家, strict 就是该行业市值前 3 名。
 #   ⚠️ 两套口径**互斥**: rank > 0 时用名次判, pctile 只在显式传 flag 时才生效。
+#
+# 2026-11-16 再加一道门槛 (用户: 「流通市值也要前三才行」):
+#   strict = 行业内**总市值名次** ≤ 3 **且** **流通市值名次** ≤ 3 (两个都要)。
+#   - 为什么加: 总市值第一但流通盘小 (国有大行 / 大额限售股) 的票不是真龙头。
+#   - 实测 (2026-11-16, 25 只命中): 现有 10 只 strict 恰好流通市值也都是前三
+#     → 命中集不变, 但规则变严 (以后「总市值前三 + 流通名次靠后」的票会被挡掉)。
 FILTER_TIERS: dict[str, dict] = {
-    # strict 档: 行业内市值排名前 N 名 (2026-11-13 用户定调「只看行业前三名」)
+    # strict 档: 行业内总市值排名前 N 名 **且** 流通市值排名前 N 名
+    #   (2026-11-13 用户定调「只看行业前三名」; 2026-11-16 加流通市值同口径)
     "strict": {
-        "industry_pos_rank": 3,      # 行业内市值名次 ≤ 这个值 → strict (0 = 不限, 全进)
+        "industry_pos_rank": 3,      # 总市值名次 ≤ 这个值 且 流通市值名次 ≤ 这个值 → strict (0 = 不限, 全进)
         "industry_pos_pctile": 0.0,  # 备用口径: 市值分位上限 % (默认 0 = 不用)
     },
     # loose 档: strict 的补集 (命中 A→M 但位置不够), 无额外门槛
@@ -213,6 +220,21 @@ TIER_OVERRIDE_KEYS = (
     "industry_pos_rank",
     "industry_pos_pctile",
 )
+
+
+def _is_industry_leader(pos: dict, rank_thr: int) -> bool:
+    """strict 档判定: 行业内**总市值名次**和**流通市值名次**都要 ≤ rank_thr
+
+    2026-11-16 用户定调: 「流通市值也要前三才行」→ 两个口径都得是行业前列。
+    缺任一名次 (窗口末日没市值 / 流通市值缺失) → 判定不了 → 不算 strict。
+    """
+    if not pos or rank_thr <= 0:
+        return False
+    total_rank = pos.get("market_value_rank")
+    circ_rank = pos.get("circulating_value_rank")
+    if not total_rank or not circ_rank:
+        return False
+    return total_rank <= rank_thr and circ_rank <= rank_thr
 
 
 def _hit_row(r: dict, basic: dict, args) -> str:
@@ -234,7 +256,13 @@ def _hit_row(r: dict, basic: dict, args) -> str:
         rank = pos.get("market_value_rank")
         total = pos.get("market_value_rank_total")
         pct = pos.get("market_value_percentile")
+        circ_rank = pos.get("circulating_value_rank")
+        circ_total = pos.get("circulating_value_rank_total")
         pos_s = f"{rank}/{total} (前{pct:.1f}%)"
+        if circ_rank:
+            pos_s += f" · 流通 {circ_rank}/{circ_total}"
+        else:
+            pos_s += " · 流通 —"
     else:
         pos_s = "—"   # 不在 SW2021 成分表 / 窗口末日没市值 → 判定不了
     return (f"| **T-{r['trans_idx']}** | `{code}` | {name} | {industry} | "
@@ -361,7 +389,8 @@ def _print_effective_conditions(args) -> None:
     _rank = thr.get("industry_pos_rank", 0)
     _pct = thr.get("industry_pos_pctile", 0)
     if _rank > 0:
-        pos_desc = f"✅ ON  行业内市值名次 ≤ {_rank:g} (行业市值前 {_rank:g} 名) → strict"
+        pos_desc = (f"✅ ON  行业内总市值名次 ≤ {_rank:g} 且 流通市值名次 ≤ {_rank:g} "
+                    f"(两个口径都要行业前 {_rank:g} 名) → strict")
     elif _pct > 0:
         pos_desc = f"✅ ON  行业内市值分位 ≤ {_pct:g}% → strict (名次口径已让位)"
     else:
@@ -386,7 +415,7 @@ def _print_effective_conditions(args) -> None:
 
     print(f"\n  【strict 档门槛】(命中后分档用, 不满足 → 进 loose 档)")
     print(f"    3. industry-pos-rank  : {pos_desc}")
-    print(f"    4. 行业位置口径        : SW2021 **三级**行业 · 总市值排名 · 窗口 120 交易日 (同报告 🏆行业地位)")
+    print(f"    4. 行业位置口径        : SW2021 **三级**行业 · 总市值 + 流通市值 双排名 · 窗口 120 交易日 (同报告 🏆行业地位)")
     print(f"    5. PE / 质量 / 杠杆    : 仅展示, 不参与分档 (2026-11-12 起整档作废)")
 
     tier_desc = {"strict": "只输出 strict 档", "loose": "只输出 loose 档",
@@ -468,8 +497,9 @@ def main():
     ap.add_argument("--include-st", action="store_true",
                     help="包含 ST/*ST 股 (覆盖 --exclude-st)")
     ap.add_argument("--industry-pos-rank", type=int, default=None,
-                    help="strict 档门槛: 行业内市值**名次**上限 (≤ 该名 → strict; "
-                         "0=不限, 默认取 FILTER_TIERS = 3 即「行业市值前 3 名」)")
+                    help="strict 档门槛: 行业内**总市值名次**和**流通市值名次**的共同上限 "
+                         "(两个都要 ≤ 该名 → strict; 0=不限, 默认取 FILTER_TIERS = 3 "
+                         "即「总市值和流通市值都在行业前 3 名」)")
     ap.add_argument("--industry-pos-pctile", type=float, default=None,
                     help="strict 档门槛 (备用口径): 行业内市值分位上限 %% (≤ 该值 → strict; "
                          "0=不限)。⚠️ 与 --industry-pos-rank **互斥**: 显式传本 flag 会让名次口径让位")
@@ -646,7 +676,7 @@ def main():
                 ok = False              # 判定不了位置 (不在成分表 / 窗口末日没市值) → 不能算 strict
                 n_no_pos += 1
             elif rank_thr > 0:
-                ok = pos["market_value_rank"] <= rank_thr
+                ok = _is_industry_leader(pos, rank_thr)   # 总市值名次 + 流通市值名次 都要 ≤ N
             elif pctile_thr > 0:
                 ok = pos["market_value_percentile"] <= pctile_thr
             else:
@@ -662,7 +692,7 @@ def main():
                 h['pe_ttm'] = info.get('pe_ttm')
 
         if rank_thr > 0:
-            thr_desc = f"行业市值名次 ≤ {rank_thr:g}"
+            thr_desc = f"行业总市值名次 ≤ {rank_thr:g} 且 流通市值名次 ≤ {rank_thr:g}"
         elif pctile_thr > 0:
             thr_desc = f"行业市值分位 ≤ {pctile_thr:g}%"
         else:
@@ -702,7 +732,7 @@ def main():
             _ex_pos = compute_industry_market_cap_ranks(_ex_codes)
             for _c in _ex_codes:
                 _p = _ex_pos.get(_c)
-                if _p and _p["market_value_rank"] > _rank_gate:
+                if _p and not _is_industry_leader(_p, _rank_gate):
                     expel_codes.add(_c)
                     _exp_pos_all[_c] = _p
     lines = []
@@ -730,8 +760,8 @@ def main():
     _rank_thr = _thr.get("industry_pos_rank", 0)
     _pct_thr = _thr.get("industry_pos_pctile", 0)
     if _rank_thr > 0:
-        _thr_label = f"行业内市值名次 ≤ {_rank_thr:g}"
-        _thr_desc = f"ON ({_thr_label}, 即行业市值前 {_rank_thr:g} 名 → strict)"
+        _thr_label = f"行业内总市值名次 ≤ {_rank_thr:g} 且 流通市值名次 ≤ {_rank_thr:g}"
+        _thr_desc = f"ON ({_thr_label}, 即两个市值口径都在行业前 {_rank_thr:g} 名 → strict)"
     elif _pct_thr > 0:
         _thr_label = f"行业内市值分位 ≤ {_pct_thr:g}%"
         _thr_desc = f"ON ({_thr_label} → strict)"
@@ -741,7 +771,7 @@ def main():
     lines.append(f"| ① exclude-st (公共前置) | {'ON (排除 ST/*ST)' if (args.exclude_st and not args.include_st) else 'OFF'} |")
     lines.append(f"| ② exclude-loss (公共前置) | {'ON (剔亏损股 PE_TTM 缺失)' if (args.exclude_loss and not args.include_loss) else 'OFF'} |")
     lines.append(f"| ③ 行业市值位置 (strict 门槛) | {_thr_desc} |")
-    lines.append(f"| ④ 行业位置口径 | SW2021 **三级**行业 · 总市值排名 · 窗口 120 交易日 (同报告 🏆行业地位) |")
+    lines.append(f"| ④ 行业位置口径 | SW2021 **三级**行业 · 总市值 + 流通市值 双排名 · 窗口 120 交易日 (同报告 🏆行业地位) |")
     lines.append(f"| 输出档位 | {args.tier} ({'两档都出' if args.tier == 'both' else ('只 strict' if args.tier == 'strict' else '只 loose')}) |")
     lines.append(f"| V13 严判 | 当前 M + 最近 40 根 M 占比<10% + 转折在 lookback 根内 + 单日涨跌<20% + K线≥11根 |")
     lines.append("")
@@ -775,7 +805,7 @@ def main():
     if hits:
         lines.append("## 命中清单\n")
         _hdr = ("| 转变天数 | 代码 | 名称 | 行业 | 转变日 | 转变价 | 当前价 | 涨幅% | "
-                "行业位置 (市值排名) | PE | PE_TTM | 阶段序列 |")
+                "行业位置 (总市值/流通市值 名次) | PE | PE_TTM | 阶段序列 |")
         _sep = "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
         if args.tier in ("strict", "both"):
             lines.append(f"### strict 档 ({len(strict_hits)} 只) — {_thr_label}\n")
@@ -824,9 +854,11 @@ def main():
                 note = f" — 转变日 {r.get('trans_date', '?')}, 涨幅 {_chg:+.1f}%, 阶段 {_sg}"
                 _pos = r.get('ind_pos') or {}
                 if _pos:
-                    note += (f", 行业位置 {_pos.get('market_value_rank')}/"
+                    note += (f", 行业位置 总市值 {_pos.get('market_value_rank')}/"
                              f"{_pos.get('market_value_rank_total')} "
-                             f"(前{_pos.get('market_value_percentile', 0):.1f}%)")
+                             f"(前{_pos.get('market_value_percentile', 0):.1f}%), "
+                             f"流通市值 {_pos.get('circulating_value_rank')}/"
+                             f"{_pos.get('circulating_value_rank_total')}")
                 else:
                     note += ", 行业位置判定不了 (不在 SW2021 成分表 / 窗口末日无市值)"
                 tasks.append((code, nm, subdir, "hit", note))
@@ -928,24 +960,31 @@ def main():
             _old = existing.get(_c)
             if _old and _old["path"].exists():
                 if safe_delete(_old["path"],
-                               reason=f"A→M strict 门槛不符 (行业市值名次 > {_rank_gate}) → 移走"):
+                               reason=f"A→M strict 门槛不符 (总市值或流通市值名次 > {_rank_gate}) → 移走"):
                     _expelled += 1
         print(f"  🧹 门槛清退: {_expelled} 份 strict 目录留档票已移到回收站 "
-              f"(行业市值名次 > {_rank_gate}; 共 {len(expel_codes)} 只不符)")
+              f"(总市值或流通市值名次 > {_rank_gate}; 共 {len(expel_codes)} 只不符)")
         if _expelled:
             _exp_list = [c for c in sorted(expel_codes) if c in existing]
-            lines.append("## 门槛清退 (strict 目录, 行业市值名次已超门槛)\n")
-            lines.append(f"> strict 档 = 行业市值名次 ≤ {_rank_gate}。这些票名次已超门槛 → "
-                         "从 strict 目录移走 (走回收站, 可恢复)。\n")
-            lines.append("| 代码 | 名称 | 行业位置 |")
-            lines.append("|---|---|---|")
+            lines.append("## 门槛清退 (strict 目录, 市值名次已超门槛)\n")
+            lines.append(f"> strict 档 = 行业总市值名次 ≤ {_rank_gate} **且** 流通市值名次 ≤ {_rank_gate}。"
+                         "这些票已不满足门槛 → 从 strict 目录移走 (走回收站, 可恢复)。\n")
+            lines.append("| 代码 | 名称 | 行业 | 总市值名次 | 流通市值名次 |")
+            lines.append("|---|---|---|---|---|")
             for _c in _exp_list:
                 _p = _exp_pos_all.get(_c)
-                _pos_s = (f"{_p['market_value_rank']}/{_p['market_value_rank_total']}"
-                          if _p else "—")
                 _ind_s = (_p.get("industry", "—") if _p else "—")
-                lines.append(f"| `{_c}` | {existing[_c]['name']} | {_ind_s} {_pos_s} |")
+                _tot_s = (f"{_p['market_value_rank']}/{_p['market_value_rank_total']}"
+                          if _p else "—")
+                _cir_s = (f"{_p.get('circulating_value_rank')}/"
+                          f"{_p.get('circulating_value_rank_total')}" if _p else "—")
+                lines.append(f"| `{_c}` | {existing[_c]['name']} | {_ind_s} | {_tot_s} | {_cir_s} |")
             lines.append("")
+            # ⚠️ 2026-11-16 修: md 早先已写过 (在清退之前) → 这里重写一次, 把清退名单补进去
+            #    (之前这段只 append 到 lines, 从没落盘 → 清退动作在 md 里查不到)
+            if args.write_md:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text("\n".join(lines), encoding="utf-8")
 
     if tasks:
         n_workers = args.workers if args.workers > 0 else (os.cpu_count() or 4)

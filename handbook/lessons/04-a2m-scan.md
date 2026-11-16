@@ -642,3 +642,37 @@ Type: rule
 - `tools/batch/wyckoff_a2m_scan.py::FILTER_TIERS` (门槛唯一真源) + `--industry-pos-rank`
 - `tools/batch/wyckoff_a2m_scan.py` (expel_codes 清退段)
 - `tests/unit/test_a2m_filter_tiers.py` (阈值 + 互斥回归测试)
+
+---
+
+### strict 门槛加流通市值: 总市值前三 **且** 流通市值前三 (2026-11-16 用户定调)
+Type: rule
+> **摘要:** 「流通市值也要前三才行」= 两个口径都要 ≤ 3 (不是把总市值换成流通市值)。
+> 命中集当天没变 (10 只 strict), 但规则变严 —— 全市场有 96 只「总市值前三但流通市值不前三」被挡。
+
+**为什么加这道**: 总市值第一但流通盘小 (国有大行 / 大额限售股) 的票不是真龙头。
+- 601939 国有大型银行Ⅲ: 总市值 1/6, 流通市值 **6/6** → 挡掉
+- 688235 化学制剂: 总市值 1/111, 流通市值 **8/111** → 挡掉
+
+**实现**:
+| 层 | 改动 |
+|---|---|
+| 排名 | `industry_position.compute_industry_market_cap_ranks` 多返 `circulating_value_rank` (按 `circ_mv` 降序, 缺流通市值的票名次 = None) |
+| 判定 | `wyckoff_a2m_scan._is_industry_leader()` —— 总市值名次 ≤ N **且** 流通市值名次 ≤ N, 缺任一名次 → 判定不了 → 不算 strict |
+| 清退 | strict 目录的「门槛清退」也用同一函数 (否则旧档按老口径留着) |
+| 展示 | 命中清单「行业位置」列改成 `总市值 3/15 (前20.0%) · 流通 2/15` |
+
+**⚠️ 顺带修的 md 落盘 bug**: 「## 门槛清退」那段 append 到 lines 的时机在**落盘之后** → 移走了哪几只
+从来查不到 (实测 3 只留档票被移走, md 里零痕迹)。现在清退后重写一次 md。
+
+**⛔ 通用教训**:
+1. **门槛写进 md 的内容, 要检查落盘时机** —— append 到内存列表 ≠ 写进文件。
+   自查: 「这次运行发生了什么」在产物里能不能查到?
+2. **口径加严后先量影响面** —— 本次 96 只 (全市场) 会被挡, 命中集 0 变化 → 说明是「加固」不是「换池」。
+
+**apply when:** 改 strict/loose 分档门槛; 改「行业地位」类排名口径。
+
+**相关代码:**
+- `tools/analysis/industry_position.py::compute_industry_market_cap_ranks` (双排名)
+- `tools/batch/wyckoff_a2m_scan.py::_is_industry_leader` (双门槛判定) + `FILTER_TIERS`
+- `tests/unit/test_a2m_filter_tiers.py` (双门槛回归测试)

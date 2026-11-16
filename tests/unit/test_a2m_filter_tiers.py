@@ -27,6 +27,7 @@ def test_strict_tier_thresholds_pinned():
     - 分位是相对口径: 行业多大决定进几个人 (5 家行业 30% ≈ 前 1-2 名,
       21 家行业 30% ≈ 前 6-7 名) → 门槛含义随行业规模漂移。
     - 名次是绝对口径: 不管行业 3 家还是 30 家, strict 就是该行业市值前 3 名。
+    2026-11-16 再加: 名次门槛同时管**总市值**和**流通市值**两个口径 (都要 ≤ 3)。
     """
     strict = FILTER_TIERS["strict"]
     assert strict["industry_pos_rank"] == 3      # 行业内市值名次 ≤ 3 → strict
@@ -43,9 +44,29 @@ def test_rank_and_pctile_gates_are_mutually_exclusive():
     # 互斥解析必须在代码里显式做 (不能靠"先判谁"隐式决定)
     assert 'tier_thr["industry_pos_rank"] = 0' in src
     assert 'tier_thr["industry_pos_pctile"] = 0.0' in src
-    # 分档判定: rank > 0 用名次, 否则才看 pctile
-    assert 'pos["market_value_rank"] <= rank_thr' in src
+    # 分档判定: rank > 0 用名次 (总市值 + 流通市值 双门槛), 否则才看 pctile
+    assert '_is_industry_leader(pos, rank_thr)' in src
     assert 'pos["market_value_percentile"] <= pctile_thr' in src
+
+
+def test_strict_gate_requires_both_total_and_circulating_rank():
+    """2026-11-16 加门槛 (用户: 「流通市值也要前三才行」)
+
+    strict = 行业内**总市值名次** ≤ N **且** **流通市值名次** ≤ N。
+    只按总市值排会放进「总市值第一但流通盘小」的票 (国有大行 / 大额限售股)。
+    """
+    from tools.batch.wyckoff_a2m_scan import _is_industry_leader
+
+    # 两个口径都 ≤ 3 → 算 strict
+    assert _is_industry_leader({"market_value_rank": 1, "circulating_value_rank": 3}, 3)
+    # 总市值前三但流通市值第 4 → 不算 (新增门槛的作用点)
+    assert not _is_industry_leader({"market_value_rank": 1, "circulating_value_rank": 4}, 3)
+    # 流通市值缺失 → 判定不了 → 不算 strict
+    assert not _is_industry_leader({"market_value_rank": 1, "circulating_value_rank": None}, 3)
+    # 总市值缺失 → 判定不了 → 不算 strict
+    assert not _is_industry_leader({"market_value_rank": None, "circulating_value_rank": 1}, 3)
+    # 名次门槛为 0 (不限) → 不走本函数判定
+    assert not _is_industry_leader({"market_value_rank": 1, "circulating_value_rank": 1}, 0)
 
 
 def test_strict_tier_has_no_finance_gates():

@@ -190,7 +190,8 @@ def compute_industry_market_cap_ranks(codes: list[str],
 
     Returns:
         {code: {industry, market_value_rank, market_value_rank_total,
-                market_value_percentile}}
+                market_value_percentile, circulating_value_rank,
+                circulating_value_rank_total}}
         不在成分表 / 窗口末日没市值数据 → 该 code **不在返回里** (调用方当"判定不了")
     """
     if not codes:
@@ -228,12 +229,18 @@ def compute_industry_market_cap_ranks(codes: list[str],
     end_all = df[df["trade_date"] == end_date]
     for ind_code, (ind_name, group) in by_ind.items():
         members = set(_industry_members(ind_code, level=level))
-        sub = end_all[end_all["ts_code"].isin(members)].sort_values(
-            "total_mv", ascending=False)
+        sub = end_all[end_all["ts_code"].isin(members)]
         if sub.empty:
             continue
         peer_total = len(sub)
-        rank_map = {ts: i for i, ts in enumerate(sub["ts_code"].tolist(), 1)}
+        rank_map = {ts: i for i, ts in enumerate(sub.sort_values(
+            "total_mv", ascending=False)["ts_code"].tolist(), 1)}
+        # 流通市值名次 (2026-11-16 加): 同行业里按 circ_mv 降序 → 绝对名次
+        #   跟总市值名次同窗口同层级; 流通市值缺失的票不参与排名 (名次 = None → 判定不了)
+        circ_sub = sub[sub["circ_mv"].notna() & (sub["circ_mv"] > 0)]
+        circ_peer_total = len(circ_sub)
+        circ_rank_map = {ts: i for i, ts in enumerate(circ_sub.sort_values(
+            "circ_mv", ascending=False)["ts_code"].tolist(), 1)}
         for c in group:
             ts = _to_ts_code(c)
             rank = rank_map.get(ts)
@@ -245,6 +252,8 @@ def compute_industry_market_cap_ranks(codes: list[str],
                 "market_value_rank": rank,
                 "market_value_rank_total": peer_total,
                 "market_value_percentile": rank / peer_total * 100,
+                "circulating_value_rank": circ_rank_map.get(ts),
+                "circulating_value_rank_total": circ_peer_total,
             }
     return out
 
