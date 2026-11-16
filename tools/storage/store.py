@@ -83,6 +83,13 @@ _SW_INDEX_BARS_CACHE: dict[str, list[dict]] = {}
 _SW_INDEX_FRAME = None            # 全量行业 K 线 DataFrame (按年份文件拼一次)
 _INDUSTRY_MEMBER_INFO: dict | None = None   # {ts_code: {l1_code, l2_code, l2_name, ...}}
 
+# 进程内缓存的「文件指纹」—— 判断缓存是否过期 (2026-11-16 加)
+#   指纹 = 文件名 + 大小 + 修改时间; 磁盘上的文件被写过 → 指纹变了 → 缓存作废重读。
+#   修的 bug: 原来帧一旦加载就永不刷新 → 同一进程里 sync 先写 L2 行业 K 线,
+#   再补算 L3 行业威科夫时读到的是旧帧 → 123 个 L3 行业的威科夫 cache 卡在旧日期。
+_SW_INDEX_FILES_STATE: tuple = ()
+_INDUSTRY_MEMBER_FILES_STATE: tuple = ()
+
 # 2026-11-11: THS 同花顺概念板块 —— --ths 已删 (白名单源 2026-10-14 起不存在, 死段)
 #   data/history/ths/ 里 18 份概念数据停在 2026-10-08, 纯存档不再更新;
 #   这个常量只标位置, 将来要读存档时用 (拉数据的封装在 sources/tushare.py 的 get_ths_*)
@@ -350,6 +357,45 @@ def _append_records_by_year(records: list[dict], target_dir: Path,
         combined.to_parquet(path, index=False)
         total += len(group)
     return total
+
+
+# ============================================================
+# 进程内缓存的文件指纹 (2026-11-16 加)
+# ============================================================
+
+def _file_state(path: Path) -> tuple:
+    """单个文件的指纹 (大小 + 修改时间) —— 判断进程内缓存是否过期
+
+    文件不存在 → 返空元组 (跟「文件存在但为空」区分开)。
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return ()
+    return (st.st_size, st.st_mtime_ns)
+
+
+def _sw_index_files_state() -> tuple:
+    """申万行业 K 线年文件的指纹集合 —— 判断进程内缓存是否过期
+
+    用途: sync 落盘后, 同一进程里再读行业 K 线必须拿到新数据。
+    修的 bug: 原来帧只加载一次不刷新 → L2 写盘 → L3 补算读到旧帧
+    → 123 个 L3 行业的威科夫 cache 卡在旧日期。
+    """
+    state = []
+    try:
+        with os.scandir(SW_INDEX_KLINE_DIR) as entries:
+            for entry in entries:
+                if not entry.name.endswith(".parquet"):
+                    continue
+                try:
+                    st = entry.stat()
+                except OSError:
+                    continue
+                state.append((entry.name, (st.st_size, st.st_mtime_ns)))
+    except OSError:
+        return ()
+    return tuple(sorted(state))
 
 
 def migrate_sw_index_kline_to_year(kline_dir: Path) -> tuple[int, int]:
@@ -1825,9 +1871,15 @@ class DataStore:
 
     @classmethod
     def _sw_index_frame(cls):
-        """全量行业 K 线 DataFrame (按年份文件拼一次, 进程内缓存)"""
-        global _SW_INDEX_FRAME
-        if _SW_INDEX_FRAME is not None:
+        """全量行业 K 线 DataFrame (按年份文件拼一次, 进程内缓存)
+
+        2026-11-16 改: 加「年文件指纹」判断 —— 磁盘上的年文件被写过 (sync 落盘)
+        就重建帧并清掉单行业缓存; 否则同一进程读到的永远是旧数据
+        (事故: sync 先写 L2 → 再补算 L3 行业威科夫时读到旧帧 → 123 个 L3 行业卡在旧日期)。
+        """
+        global _SW_INDEX_FRAME, _SW_INDEX_FILES_STATE, _SW_INDEX_BARS_CACHE
+        files_state = _sw_index_files_state()
+        if _SW_INDEX_FRAME is not None and files_state == _SW_INDEX_FILES_STATE:
             return _SW_INDEX_FRAME
 
         import pandas as pd
@@ -1845,6 +1897,8 @@ class DataStore:
         else:
             df = pd.DataFrame()
         _SW_INDEX_FRAME = df
+        _SW_INDEX_FILES_STATE = files_state
+        _SW_INDEX_BARS_CACHE.clear()      # 帧换了 → 单行业缓存里的旧 bars 一起作废
         return _SW_INDEX_FRAME
 
     @classmethod
@@ -1913,10 +1967,10 @@ class DataStore:
         if not ts_code:
             return []
         code = str(ts_code)
+        # 先校验帧 (年文件被写过 → 帧 + 单行业缓存一起作废)
+        df = cls._sw_index_frame()
         if code in _SW_INDEX_BARS_CACHE:
             return _SW_INDEX_BARS_CACHE[code]
-
-        df = cls._sw_index_frame()
         if df.empty:
             _SW_INDEX_BARS_CACHE[code] = []
             return []
@@ -1940,9 +1994,14 @@ class DataStore:
 
     @classmethod
     def _industry_member_info(cls) -> dict:
-        """{ts_code: {l1_code, l1_name, l2_code, l2_name, l3_code, l3_name}} —— 进程内缓存"""
-        global _INDUSTRY_MEMBER_INFO
-        if _INDUSTRY_MEMBER_INFO is not None:
+        """{ts_code: {l1_code, l1_name, l2_code, l2_name, l3_code, l3_name}} —— 进程内缓存
+
+        2026-11-16 改: 加文件指纹判断 —— 成分表刚被 sync 落盘过时, 同一进程必须读到新的
+        (否则算出来的三级行业归属是旧的, 行业威科夫列会挂错行业)。
+        """
+        global _INDUSTRY_MEMBER_INFO, _INDUSTRY_MEMBER_FILES_STATE
+        files_state = _file_state(SW_INDEX_MEMBER_PARQUET)
+        if _INDUSTRY_MEMBER_INFO is not None and files_state == _INDUSTRY_MEMBER_FILES_STATE:
             return _INDUSTRY_MEMBER_INFO
 
         info: dict = {}
@@ -1959,6 +2018,7 @@ class DataStore:
             except Exception as e:
                 print(f"  ⚠️ _industry_member_info 失败: {e}", file=sys.stderr)
         _INDUSTRY_MEMBER_INFO = info
+        _INDUSTRY_MEMBER_FILES_STATE = files_state
         return info
 
     @classmethod

@@ -685,3 +685,42 @@ Type: rule
 **相关代码:**
 - `tools/storage/store.py::batch_load_daily_basic` (后缀回退)
 - `tools/storage/store.py::_to_ts_code` + `_INDEX_SUFFIX` (K 线侧映射, 不要动)
+
+---
+
+### 进程内缓存写盘后不失效 → 同进程读到的永远是旧数据 (2026-11-16 修)
+Type: rule
+> **摘要:** 模块级缓存 (整帧 / dict) 一旦加载就永不刷新 → 同一进程里「先写盘、后读」
+> 读到的必然是旧值。表现**静默**: 补算逻辑打印「已是最新, 无需补算」, 但数据其实缺着。
+
+**事故**: `/t-sync-data` 的 auto 流程同进程跑两段 —— 先 `action_sw_index()` (L2 段)
+→ 再 `action_sw_index(level="L3")` (L3 按需段)。L2 段读过一次行业 K 线帧后, L3 段写盘,
+再读**仍是 L2 阶段的旧帧** → 123 个 L3 行业的威科夫 cache 卡在 20261113。
+用**独立进程**再跑一次 L3 就补齐了 → 证明不是数据源问题, 是**进程内缓存**问题。
+
+**根因**: `tools/storage/store.py` 里 `_SW_INDEX_FRAME` (全量 K 线帧) +
+`_SW_INDEX_BARS_CACHE` (单行业 bars) 只在「未加载」时读盘, 加载后**永不过期**;
+写盘路径 (`sync.py` 落盘) 没有通知读侧。同理 `_INDUSTRY_MEMBER_INFO` (行业成分表)
+也是一次性缓存 → 刚落盘的新成分表在同进程里读到的还是旧的。
+
+**修法** (2026-11-16): 缓存自带**文件指纹**判断过期 —— 不靠「谁记得调用失效函数」
+
+| 层 | 改动 |
+|---|---|
+| 指纹 | `_file_state()` = (大小, 修改时间); `_sw_index_files_state()` = 年文件集合指纹 |
+| 帧 | `_sw_index_frame()` 先比指纹 → 变了就重建帧 + **清空单行业 bars 缓存** |
+| 读 | `get_sw_index_bars()` 先过一遍帧校验 (原来提前命中 bars 缓存直接返回, 根本不校验) |
+| 成分表 | `_industry_member_info()` 同样按文件指纹重读 |
+
+**⛔ 通用教训**:
+1. **「读时缓存」必须能感知「写」** —— 同进程写完再读, 拿到的必须是新值。
+   判据: 缓存的失效条件 = **磁盘文件变了**, 而不是「谁记得调失效函数」(后者一定会漏调)。
+2. **「已是最新 / 无需补算」这种"好消息"输出要当 bug 信号看** —— 静默 stale 的典型表现。
+
+**apply when:** 任何「模块级缓存 + 同进程内先写后读」的组合 (帧 / dict / list 缓存)。
+写盘后要么显式失效, 要么缓存自带指纹判断 —— 后者更稳。
+
+**相关代码:**
+- `tools/storage/store.py::_file_state` / `_sw_index_files_state` (指纹)
+- `tools/storage/store.py::DataStore._sw_index_frame` / `get_sw_index_bars` / `_industry_member_info`
+- `tests/unit/test_store_sw_index_cache.py` (回归测试: 撤掉修复 → 3 条红 / 4 passed)
